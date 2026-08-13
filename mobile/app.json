@@ -42,7 +42,12 @@
       "reactCompiler": true
     },
     "extra": {
-      "reciperealApiBaseUrl": "https://recipe-real.softland.tech"
-    }
+      "reciperealApiBaseUrl": "https://recipe-real.softland.tech",
+      "router": {},
+      "eas": {
+        "projectId": "777a9ceb-79de-4f98-be53-0d3dafc9305b"
+      }
+    },
+    "owner": "mamounhisham1"
   }
 }
