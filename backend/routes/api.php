@@ -7,8 +7,8 @@ use App\Http\Controllers\Api\CookSessionController;
 use App\Http\Controllers\Api\PaceCalibrationController;
 use App\Http\Controllers\Api\RecipeController;
 use App\Http\Controllers\Api\UsageController;
+use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebhookController;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 // Public auth + recipe-browsing routes (mobile-first; recipes are public in MVP).
@@ -33,9 +33,7 @@ Route::middleware('throttle:60,1')->group(function (): void {
 Route::middleware(['throttle:60,1', 'auth:sanctum'])->group(function (): void {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
 
-    Route::get('/user', function (Request $request) {
-        return $request->user();
-    });
+    Route::get('/user', UserController::class);
 
     Route::post('/cook-sessions', [CookSessionController::class, 'store']);
     Route::get('/cook-sessions', [CookSessionController::class, 'index']);
