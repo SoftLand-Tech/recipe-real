@@ -211,7 +211,7 @@ function parseStep(row: RecipeStepRow): RecipeStep {
     id: row.id,
     step_number: row.step_number,
     description: row.description,
-    step_type: row.step_type ?? "prep",
+    step_type: row.step_type ?? "active",
     publisher_minutes: row.publisher_minutes,
     community_minutes: row.community_minutes,
   };

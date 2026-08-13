@@ -23,12 +23,30 @@ class CookSessionController extends Controller
         $data = $request->validated();
 
         $session = DB::transaction(function () use ($request, $data) {
+            // Idempotency: if the client supplied a key and we already recorded a
+            // session for this user with that key, return the existing one as-is
+            // (HTTP 200, set below) without creating a duplicate cook session or
+            // any timing submissions, and without re-dispatching the pace job.
+            // This guards against dropped responses (server processed the POST,
+            // client never read the 201) being retried offline.
+            if ($request->filled('idempotency_key')) {
+                $existing = CookSession::where('user_id', $request->user()->id)
+                    ->where('idempotency_key', $request->input('idempotency_key'))
+                    ->first();
+                if ($existing !== null) {
+                    return ['__idempotent__' => $existing];
+                }
+            }
+
             $session = CookSession::create([
                 'user_id' => $request->user()->id,
                 'recipe_id' => $data['recipe_id'],
                 'total_actual_minutes' => $data['total_actual_minutes'],
                 'cleanup_minutes' => $data['cleanup_minutes'] ?? null,
                 'feedback' => $data['feedback'] ?? null,
+                'idempotency_key' => $request->filled('idempotency_key')
+                    ? $request->input('idempotency_key')
+                    : null,
             ]);
 
             $sessionId = Str::uuid()->toString();
@@ -44,6 +62,17 @@ class CookSessionController extends Controller
 
             return $session;
         });
+
+        // Idempotent short-circuit: return the previously-created session as a
+        // 200 (not 201) and do NOT re-dispatch the pace calibration job.
+        if (is_array($session) && isset($session['__idempotent__'])) {
+            $existing = $session['__idempotent__'];
+            $existing->load('recipe');
+
+            return (new CookSessionResource($existing))
+                ->response()
+                ->setStatusCode(200);
+        }
 
         $session->load('recipe');
 

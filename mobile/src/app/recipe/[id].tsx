@@ -1,5 +1,5 @@
 import { useLocalSearchParams, router } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -49,7 +49,7 @@ function cleanupChips(factors: CleanupFactors | undefined): string[] {
 }
 
 function StepBadge({ stepType }: { stepType: string }) {
-  const label = stepType && stepType.length > 0 ? stepType : "prep";
+  const label = stepType && stepType.length > 0 ? stepType : "active";
   return (
     <View style={[styles.badge, badgeColor(label)]}>
       <Text style={styles.badgeText}>{label.toUpperCase()}</Text>
@@ -59,11 +59,11 @@ function StepBadge({ stepType }: { stepType: string }) {
 
 function badgeColor(stepType: string) {
   switch (stepType) {
-    case "cook":
+    case "active":
       return { backgroundColor: "#FEF3C7" };
     case "cleanup":
       return { backgroundColor: "#E0E7FF" };
-    case "prep":
+    case "passive":
     default:
       return { backgroundColor: "#DCFCE7" };
   }
@@ -78,9 +78,15 @@ export default function RecipeDetailScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [calibrations, setCalibrations] = useState<PaceCalibration[]>([]);
 
+  // Mirror of `recipe` for use inside `loadRecipe`'s catch block without
+  // forcing `recipe` into the callback's dependency array (which would
+  // re-fire the load effect on every successful fetch -> infinite loop).
+  const recipeRef = useRef<Recipe | null>(null);
+
   const loadRecipe = useCallback(async () => {
     setState("loading");
     setErrorMessage(null);
+    recipeRef.current = null;
     try {
       const numericId = Number(id);
       let result = await getCachedRecipe(numericId);
@@ -89,6 +95,7 @@ export default function RecipeDetailScreen() {
         result = await getRecipe(id);
       }
       setRecipe(result);
+      recipeRef.current = result;
       setState("ready");
       // Fire-and-forget analytics once the recipe is successfully loaded.
       track("recipe_viewed", { recipe_id: result.id });
@@ -97,7 +104,7 @@ export default function RecipeDetailScreen() {
       // A 402 means the free-tier recipe limit is reached. Only surface the
       // paywall when we have no cached copy to fall back on; the cache path
       // above would have resolved before reaching the network fetch.
-      if (recipe == null && isPaywallError(error)) {
+      if (recipeRef.current == null && isPaywallError(error)) {
         setState("paywall");
         return;
       }
@@ -106,7 +113,7 @@ export default function RecipeDetailScreen() {
       );
       setState("error");
     }
-  }, [id, recipe]);
+  }, [id]);
 
   useEffect(() => {
     loadRecipe();

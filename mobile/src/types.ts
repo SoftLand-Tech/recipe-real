@@ -1,6 +1,6 @@
 /** Shared domain types for the RecipeReal mobile client. */
 
-export type StepType = "prep" | "cook" | "cleanup" | string;
+export type StepType = "active" | "passive" | "cleanup" | string;
 
 export interface User {
   id: number;
@@ -75,6 +75,7 @@ export interface CookSessionPayload {
   total_actual_minutes: number;
   cleanup_minutes: number | null;
   feedback: Feedback | null;
+  idempotency_key: string;
   timing_submissions: TimingSubmissionInput[];
 }
 

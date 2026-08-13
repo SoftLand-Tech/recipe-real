@@ -13,6 +13,7 @@ class CookSession extends Model
         'total_actual_minutes',
         'cleanup_minutes',
         'feedback',
+        'idempotency_key',
     ];
 
     protected function casts(): array

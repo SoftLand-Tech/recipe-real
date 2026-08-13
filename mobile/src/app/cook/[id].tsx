@@ -47,13 +47,32 @@ function round2(v: number): number {
   return Math.round(v * 100) / 100;
 }
 
+/**
+ * Generate a UUID v4. Uses the native Web Crypto API when available, falling
+ * back to a small RFC-4122 v4 helper for older runtimes. Used to produce a
+ * stable idempotency key per cook session so offline retries don't create
+ * duplicate submissions server-side.
+ */
+function makeId(): string {
+  const c = globalThis.crypto as Crypto | undefined;
+  if (c && typeof c.randomUUID === "function") {
+    return c.randomUUID();
+  }
+  // Fallback: RFC-4122 v4 via getrandom-style Math.random (non-crypto-grade,
+  // but adequate for client-side idempotency dedupe).
+  const rnd = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, "0");
+  return `${rnd()}${rnd()}-${rnd()}-4${rnd().slice(1)}-${
+    ((Math.random() * 0x4) | 0x8).toString(16)
+  }${rnd().slice(1)}-${rnd()}${rnd()}${rnd()}`;
+}
+
 function badgeColor(stepType: string): ViewStyle {
   switch (stepType) {
-    case "cook":
+    case "active":
       return { backgroundColor: "#FEF3C7" };
     case "cleanup":
       return { backgroundColor: "#E0E7FF" };
-    case "prep":
+    case "passive":
     default:
       return { backgroundColor: "#DCFCE7" };
   }
@@ -81,6 +100,9 @@ export default function CookModeScreen() {
 
   const runningRef = useRef(true);
   const stepStartRef = useRef<number>(Date.now());
+  // Stable per-session idempotency key (generated on first submission) so
+  // retried/offline-replayed POSTs don't create duplicate cook sessions.
+  const idempotencyKey = useRef<string>("");
 
   const [phase, setPhase] = useState<Phase>("cooking");
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
@@ -260,11 +282,15 @@ export default function CookModeScreen() {
       });
       setPhase("submitting");
       setSubmitMsg(null);
+      // Lazily mint one idempotency key per cook session; it is stable across
+      // retries (offline queue stores the whole payload as JSON, key included).
+      if (!idempotencyKey.current) idempotencyKey.current = makeId();
       const payload: CookSessionPayload = {
         recipe_id: recipe.id,
         total_actual_minutes: summary.total_actual_minutes,
         cleanup_minutes: summary.cleanup_minutes,
         feedback,
+        idempotency_key: idempotencyKey.current,
         timing_submissions: summary.perStep.map((p) => ({
           recipe_step_id: p.step.id,
           actual_minutes: p.actual_minutes,
@@ -327,7 +353,7 @@ export default function CookModeScreen() {
                 style={[styles.badge, badgeColor(item.step_type)]}
               >
                 <Text style={styles.badgeText}>
-                  {(item.step_type || "prep").toUpperCase()}
+                  {(item.step_type || "active").toUpperCase()}
                 </Text>
               </View>
               <Text style={styles.estimate}>
