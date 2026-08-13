@@ -1,0 +1,14 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Env / secrets (also ignored per-project, repeated for safety)
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
