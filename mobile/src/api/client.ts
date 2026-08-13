@@ -5,6 +5,7 @@ import { API_BASE_URL, AUTH_TOKEN_KEY } from "@/config";
 import { enqueuePendingCookSession } from "@/db/database";
 import type {
   AuthResponse,
+  CleanupFactors,
   CookSessionPayload,
   CookSessionSummary,
   GetRecipesParams,
@@ -76,11 +77,23 @@ function normalizeStep(s: any): RecipeStep {
 }
 
 function normalizeRecipe(r: any): Recipe {
+  const factorsSrc = r?.cleanup_factors;
+  const cleanup_factors: CleanupFactors | undefined = factorsSrc
+    ? {
+        dish_count: toNum(factorsSrc.dish_count),
+        grease_level:
+          factorsSrc.grease_level == null ? null : String(factorsSrc.grease_level),
+        dishwasher_safe:
+          factorsSrc.dishwasher_safe == null ? null : !!factorsSrc.dishwasher_safe,
+      }
+    : undefined;
   return {
     ...r,
     publisher_time_minutes: toNum(r.publisher_time_minutes),
     community_avg_minutes: toNum(r.community_avg_minutes),
     cleanup_avg_minutes: toNum(r.cleanup_avg_minutes),
+    cleanup_estimate_minutes: toNum(r.cleanup_estimate_minutes),
+    ...(cleanup_factors ? { cleanup_factors } : {}),
     recipe_steps: Array.isArray(r.recipe_steps)
       ? r.recipe_steps.map(normalizeStep)
       : r.recipe_steps,

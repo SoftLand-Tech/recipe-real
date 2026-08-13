@@ -83,6 +83,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 20,
             'community_avg_minutes' => 24.00,
             'cleanup_avg_minutes' => 8.00,
+            'dish_count' => 4,
+            'grease_level' => 'low',
+            'dishwasher_safe' => true,
             'steps_data' => [
                 ['Bring a large pot of salted water to a boil and cook the spaghetti until al dente.', 'active', 10, 11.00],
                 ['While the pasta cooks, warm olive oil over low heat and slowly toast the sliced garlic until just golden (do not burn).', 'active', 5, 6.00],
@@ -121,6 +124,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 30,
             'community_avg_minutes' => 38.00,
             'cleanup_avg_minutes' => 12.00,
+            'dish_count' => 4,
+            'grease_level' => 'medium',
+            'dishwasher_safe' => false,
             'steps_data' => [
                 ['Bring salted water to a boil and cook the penne until al dente.', 'active', 11, 12.00],
                 ['Season and sear the diced chicken in olive oil until golden and cooked through, then remove from the pan.', 'active', 7, 9.00],
@@ -161,6 +167,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 25,
             'community_avg_minutes' => 32.00,
             'cleanup_avg_minutes' => 10.00,
+            'dish_count' => 3,
+            'grease_level' => 'low',
+            'dishwasher_safe' => false,
             'steps_data' => [
                 ['Toss sliced chicken with soy sauce and cornstarch; let it marinate briefly.', 'active', 5, 5.00],
                 ['Let the chicken sit and absorb the marinade while you prep vegetables.', 'passive', 5, 7.00],
@@ -201,6 +210,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 30,
             'community_avg_minutes' => 42.00,
             'cleanup_avg_minutes' => 11.00,
+            'dish_count' => 4,
+            'grease_level' => 'medium',
+            'dishwasher_safe' => false,
             'steps_data' => [
                 ['Toss sliced beef with baking soda and let it sit to tenderize, then rinse and pat dry.', 'active', 5, 6.00],
                 ['Let the tenderized beef rest while you prep the other ingredients.', 'passive', 10, 15.00],
@@ -240,6 +252,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 15,
             'community_avg_minutes' => 20.00,
             'cleanup_avg_minutes' => 6.00,
+            'dish_count' => 4,
+            'grease_level' => 'low',
+            'dishwasher_safe' => true,
             'steps_data' => [
                 ['Drain and rinse the chickpeas and let them air-dry in a colander.', 'active', 3, 3.00],
                 ['Dice the cucumber, halve the tomatoes, and finely dice the red onion.', 'active', 5, 7.00],
@@ -279,6 +294,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 20,
             'community_avg_minutes' => 26.00,
             'cleanup_avg_minutes' => 9.00,
+            'dish_count' => 4,
+            'grease_level' => 'low',
+            'dishwasher_safe' => false,
             'steps_data' => [
                 ['Season the chicken with olive oil, paprika, garlic powder, salt, and pepper.', 'active', 2, 2.00],
                 ['Let the seasoned chicken rest while the grill heats.', 'passive', 5, 6.00],
@@ -317,6 +335,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 35,
             'community_avg_minutes' => 42.00,
             'cleanup_avg_minutes' => 10.00,
+            'dish_count' => 5,
+            'grease_level' => 'low',
+            'dishwasher_safe' => true,
             'steps_data' => [
                 ['Heat olive oil and sauté the chopped onion until soft.', 'active', 5, 6.00],
                 ['Add the garlic and tomato paste and cook until fragrant and darkened.', 'active', 2, 3.00],
@@ -356,6 +377,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 40,
             'community_avg_minutes' => 48.00,
             'cleanup_avg_minutes' => 8.00,
+            'dish_count' => 4,
+            'grease_level' => 'low',
+            'dishwasher_safe' => true,
             'steps_data' => [
                 ['Heat olive oil and sauté the onion, carrots, and celery until softened.', 'active', 6, 7.00],
                 ['Add the garlic, cumin, and smoked paprika and stir until fragrant.', 'active', 2, 3.00],
@@ -394,6 +418,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 20,
             'community_avg_minutes' => 28.00,
             'cleanup_avg_minutes' => 9.00,
+            'dish_count' => 3,
+            'grease_level' => 'low',
+            'dishwasher_safe' => false,
             'steps_data' => [
                 ['Whisk together the flour, sugar, baking powder, baking soda, and salt.', 'active', 2, 2.00],
                 ['Whisk the buttermilk, eggs, melted butter, and vanilla in a separate bowl.', 'active', 3, 4.00],
@@ -432,6 +459,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 15,
             'community_avg_minutes' => 19.00,
             'cleanup_avg_minutes' => 6.00,
+            'dish_count' => 4,
+            'grease_level' => 'low',
+            'dishwasher_safe' => true,
             'steps_data' => [
                 ['Whisk the eggs with milk, salt, and pepper until uniform.', 'active', 2, 2.00],
                 ['Sauté the onion and bell pepper in olive oil until softened.', 'active', 3, 4.00],
@@ -469,6 +499,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 35,
             'community_avg_minutes' => 40.00,
             'cleanup_avg_minutes' => 4.00,
+            'dish_count' => 4,
+            'grease_level' => 'low',
+            'dishwasher_safe' => true,
             'steps_data' => [
                 ['Toss the halved potatoes with olive oil, salt, and oregano and spread on a sheet pan.', 'active', 4, 5.00],
                 ['Roast the potatoes until they start to soften.', 'passive', 15, 17.00],
@@ -507,6 +540,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 30,
             'community_avg_minutes' => 35.00,
             'cleanup_avg_minutes' => 5.00,
+            'dish_count' => 4,
+            'grease_level' => 'low',
+            'dishwasher_safe' => true,
             'steps_data' => [
                 ['Slice the chicken, bell peppers, and onion into even strips.', 'active', 6, 8.00],
                 ['Toss everything with olive oil, fajita seasoning, cumin, paprika, lime, salt, and pepper.', 'active', 3, 4.00],
@@ -546,6 +582,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 30,
             'community_avg_minutes' => 36.00,
             'cleanup_avg_minutes' => 7.00,
+            'dish_count' => 3,
+            'grease_level' => 'low',
+            'dishwasher_safe' => true,
             'steps_data' => [
                 ['Heat oil and sauté the onion until translucent.', 'active', 4, 5.00],
                 ['Add the garlic and ginger and cook until fragrant.', 'active', 1, 2.00],
@@ -584,6 +623,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 30,
             'community_avg_minutes' => 38.00,
             'cleanup_avg_minutes' => 8.00,
+            'dish_count' => 3,
+            'grease_level' => 'medium',
+            'dishwasher_safe' => true,
             'steps_data' => [
                 ['Scoop the thick coconut cream from the top of the can and fry it in oil until it splits.', 'active', 3, 4.00],
                 ['Stir in the green curry paste and fry until fragrant.', 'active', 2, 3.00],
@@ -624,6 +666,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 60,
             'community_avg_minutes' => 95.00,
             'cleanup_avg_minutes' => 10.00,
+            'dish_count' => 4,
+            'grease_level' => 'high',
+            'dishwasher_safe' => false,
             'steps_data' => [
                 ['Season the pork chunks generously with salt, pepper, cumin, oregano, and paprika.', 'active', 4, 5.00],
                 ['Sear the pork in a heavy pot in batches until deeply browned.', 'active', 8, 10.00],
@@ -663,6 +708,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 35,
             'community_avg_minutes' => 40.00,
             'cleanup_avg_minutes' => 6.00,
+            'dish_count' => 3,
+            'grease_level' => 'low',
+            'dishwasher_safe' => true,
             'steps_data' => [
                 ['Toss the sweet potato cubes with olive oil, cumin, paprika, and chili powder.', 'active', 4, 5.00],
                 ['Roast the sweet potatoes on a sheet pan until tender and caramelized.', 'passive', 22, 25.00],
@@ -699,6 +747,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 25,
             'community_avg_minutes' => 35.00,
             'cleanup_avg_minutes' => 7.00,
+            'dish_count' => 4,
+            'grease_level' => 'low',
+            'dishwasher_safe' => true,
             'steps_data' => [
                 ['Let the dough come to room temperature so it stretches easily.', 'passive', 15, 20.00],
                 ['Preheat the oven (with stone or steel) to its hottest setting.', 'active', 1, 2.00],
@@ -738,6 +789,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 30,
             'community_avg_minutes' => 38.00,
             'cleanup_avg_minutes' => 8.00,
+            'dish_count' => 4,
+            'grease_level' => 'low',
+            'dishwasher_safe' => true,
             'steps_data' => [
                 ['Preheat the oven and pizza stone to the hottest setting.', 'active', 1, 2.00],
                 ['Sauté the mushrooms in butter and oil until deeply browned, then add garlic and thyme.', 'active', 8, 10.00],
@@ -778,6 +832,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 35,
             'community_avg_minutes' => 45.00,
             'cleanup_avg_minutes' => 5.00,
+            'dish_count' => 4,
+            'grease_level' => 'low',
+            'dishwasher_safe' => true,
             'steps_data' => [
                 ['Season the chicken thighs with salt, pepper, paprika, and thyme.', 'active', 2, 2.00],
                 ['Sear the chicken in olive oil until the skin is crisp; remove and set aside.', 'active', 7, 9.00],
@@ -817,6 +874,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 25,
             'community_avg_minutes' => 32.00,
             'cleanup_avg_minutes' => 5.00,
+            'dish_count' => 4,
+            'grease_level' => 'low',
+            'dishwasher_safe' => true,
             'steps_data' => [
                 ['Brown the mushrooms in butter and oil until deeply caramelized; set half aside for garnish.', 'active', 7, 9.00],
                 ['Sauté the shallot, garlic, and thyme in the same pan.', 'active', 2, 3.00],
@@ -857,6 +917,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 45,
             'community_avg_minutes' => 60.00,
             'cleanup_avg_minutes' => 11.00,
+            'dish_count' => 4,
+            'grease_level' => 'high',
+            'dishwasher_safe' => false,
             'steps_data' => [
                 ['Brown the ground beef in olive oil, breaking it up; drain excess fat.', 'active', 6, 7.00],
                 ['Sauté the onion, carrots, and celery until softened, then add the garlic and tomato paste.', 'active', 6, 8.00],
@@ -896,6 +959,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 15,
             'community_avg_minutes' => 18.00,
             'cleanup_avg_minutes' => 5.00,
+            'dish_count' => 4,
+            'grease_level' => 'low',
+            'dishwasher_safe' => true,
             'steps_data' => [
                 ['Whisk olive oil, red wine vinegar, garlic, Dijon, and oregano for the dressing.', 'active', 3, 4.00],
                 ['Cut the tomatoes into wedges and slice the cucumber, onion, and bell pepper.', 'active', 5, 6.00],
@@ -937,6 +1003,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 35,
             'community_avg_minutes' => 44.00,
             'cleanup_avg_minutes' => 9.00,
+            'dish_count' => 5,
+            'grease_level' => 'low',
+            'dishwasher_safe' => true,
             'steps_data' => [
                 ['Char the halved onion and ginger slices over an open flame or in a dry pan.', 'active', 5, 6.00],
                 ['Toast the cloves, star anise, and cinnamon briefly to release their oils.', 'active', 2, 2.00],
@@ -976,6 +1045,9 @@ class RecipeSeeder extends Seeder
             'publisher_time_minutes' => 30,
             'community_avg_minutes' => 36.00,
             'cleanup_avg_minutes' => 7.00,
+            'dish_count' => 4,
+            'grease_level' => 'low',
+            'dishwasher_safe' => true,
             'steps_data' => [
                 ['Sauté the onion and bell peppers in olive oil until softened.', 'active', 6, 7.00],
                 ['Add the garlic, cumin, smoked paprika, cayenne, and tomato paste and cook until fragrant.', 'active', 2, 3.00],

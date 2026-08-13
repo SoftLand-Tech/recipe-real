@@ -21,6 +21,12 @@ class RecipeResource extends JsonResource
             'publisher_time_minutes' => $this->publisher_time_minutes,
             'community_avg_minutes' => $this->community_avg_minutes,
             'cleanup_avg_minutes' => $this->cleanup_avg_minutes,
+            'cleanup_estimate_minutes' => $this->cleanupEstimateMinutes(),
+            'cleanup_factors' => [
+                'dish_count' => $this->dish_count,
+                'grease_level' => $this->grease_level,
+                'dishwasher_safe' => (bool) $this->dishwasher_safe,
+            ],
             'recipe_steps' => RecipeStepResource::collection($this->whenLoaded('recipeSteps')),
         ];
     }

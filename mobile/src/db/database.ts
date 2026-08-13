@@ -10,6 +10,9 @@ import type {
 
 const DB_NAME = "recipereal.db";
 
+/** Current version of the local cache schema. Bump when columns/tables change. */
+const CACHE_SCHEMA_VERSION = 2;
+
 let dbInstance: SQLite.SQLiteDatabase | null = null;
 
 async function getDb(): Promise<SQLite.SQLiteDatabase> {
@@ -21,52 +24,115 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbInstance;
 }
 
+/** Full DDL for the recipes cache table (Week 4 shape, incl. cleanup cols). */
+const RECIPES_DDL = `
+  CREATE TABLE IF NOT EXISTS recipes (
+    id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    source_url TEXT,
+    ingredients TEXT NOT NULL,
+    steps TEXT NOT NULL,
+    publisher_time_minutes INTEGER,
+    community_avg_minutes REAL,
+    cleanup_avg_minutes REAL,
+    cleanup_estimate_minutes REAL,
+    dish_count INTEGER,
+    grease_level TEXT,
+    dishwasher_safe INTEGER
+  );
+`;
+
+const RECIPE_STEPS_DDL = `
+  CREATE TABLE IF NOT EXISTS recipe_steps (
+    id INTEGER PRIMARY KEY,
+    recipe_id INTEGER NOT NULL,
+    step_number INTEGER NOT NULL,
+    description TEXT NOT NULL,
+    step_type TEXT,
+    publisher_minutes REAL,
+    community_minutes REAL,
+    FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
+  );
+`;
+
+const RECIPE_STEPS_INDEX_DDL = `
+  CREATE INDEX IF NOT EXISTS idx_recipe_steps_recipe_id
+    ON recipe_steps(recipe_id);
+`;
+
+const PENDING_COOK_SESSIONS_DDL = `
+  CREATE TABLE IF NOT EXISTS pending_cook_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    payload TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+`;
+
+const PACE_CALIBRATIONS_DDL = `
+  CREATE TABLE IF NOT EXISTS pace_calibrations (
+    step_type TEXT PRIMARY KEY,
+    personal_avg_minutes REAL,
+    community_avg_minutes REAL,
+    multiplier REAL,
+    confidence REAL
+  );
+`;
+
 /**
- * Create the local cache tables mirroring recipes + recipe_steps.
- * Safe to call repeatedly (uses IF NOT EXISTS).
+ * Create the local cache tables mirroring recipes + recipe_steps, and evolve
+ * the schema to CACHE_SCHEMA_VERSION when needed. Safe to call repeatedly.
+ *
+ * Schema bumps drop + recreate the recipe cache tables (the app re-seeds them
+ * on the next `seedAndCacheRecipes` call). The pending-cook-session and
+ * pace-calibration tables are left untouched on a bump (their data is not
+ * trivially re-derivable).
  */
 export async function initDatabase(): Promise<void> {
   const db = await getDb();
+
+  // Always ensure the meta + non-recipe tables exist.
   await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS recipes (
-      id INTEGER PRIMARY KEY,
-      title TEXT NOT NULL,
-      source_url TEXT,
-      ingredients TEXT NOT NULL,
-      steps TEXT NOT NULL,
-      publisher_time_minutes INTEGER,
-      community_avg_minutes REAL,
-      cleanup_avg_minutes REAL
+    CREATE TABLE IF NOT EXISTS meta (
+      key TEXT PRIMARY KEY,
+      value TEXT
     );
 
-    CREATE TABLE IF NOT EXISTS recipe_steps (
-      id INTEGER PRIMARY KEY,
-      recipe_id INTEGER NOT NULL,
-      step_number INTEGER NOT NULL,
-      description TEXT NOT NULL,
-      step_type TEXT,
-      publisher_minutes REAL,
-      community_minutes REAL,
-      FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
-    );
+    ${PENDING_COOK_SESSIONS_DDL}
 
-    CREATE INDEX IF NOT EXISTS idx_recipe_steps_recipe_id
-      ON recipe_steps(recipe_id);
-
-    CREATE TABLE IF NOT EXISTS pending_cook_sessions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      payload TEXT NOT NULL,
-      created_at INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS pace_calibrations (
-      step_type TEXT PRIMARY KEY,
-      personal_avg_minutes REAL,
-      community_avg_minutes REAL,
-      multiplier REAL,
-      confidence REAL
-    );
+    ${PACE_CALIBRATIONS_DDL}
   `);
+
+  // Read the recorded schema version (missing on first launch / pre-Week-4).
+  const metaRow = await db.getFirstAsync<{ value: string | null }>(
+    `SELECT value FROM meta WHERE key = 'schema_version';`,
+  );
+  const recorded = metaRow?.value ? Number(metaRow.value) : 0;
+  const needsBump =
+    !Number.isFinite(recorded) || recorded < CACHE_SCHEMA_VERSION;
+
+  if (needsBump) {
+    // Drop the recipe cache tables so they get recreated at the current shape.
+    await db.execAsync(`
+      DROP TABLE IF EXISTS recipe_steps;
+      DROP TABLE IF EXISTS recipes;
+
+      ${RECIPES_DDL}
+      ${RECIPE_STEPS_DDL}
+      ${RECIPE_STEPS_INDEX_DDL}
+    `);
+    await db.runAsync(
+      `INSERT INTO meta (key, value) VALUES ('schema_version', ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value;`,
+      [String(CACHE_SCHEMA_VERSION)],
+    );
+  } else {
+    // Already at the current version: just ensure tables exist (idempotent).
+    await db.execAsync(`
+      ${RECIPES_DDL}
+      ${RECIPE_STEPS_DDL}
+      ${RECIPE_STEPS_INDEX_DDL}
+    `);
+  }
 }
 
 /** Row shape for the cached recipe table. */
@@ -79,6 +145,10 @@ interface RecipeRow {
   publisher_time_minutes: number | null;
   community_avg_minutes: number | null;
   cleanup_avg_minutes: number | null;
+  cleanup_estimate_minutes: number | null;
+  dish_count: number | null;
+  grease_level: string | null;
+  dishwasher_safe: number | null;
 }
 
 interface RecipeStepRow {
@@ -108,7 +178,7 @@ function parseRecipe(row: RecipeRow): Recipe {
     steps = row.steps ? [row.steps] : [];
   }
 
-  return {
+  const recipe: Recipe = {
     id: row.id,
     title: row.title,
     source_url: row.source_url,
@@ -117,7 +187,23 @@ function parseRecipe(row: RecipeRow): Recipe {
     publisher_time_minutes: row.publisher_time_minutes,
     community_avg_minutes: row.community_avg_minutes,
     cleanup_avg_minutes: row.cleanup_avg_minutes,
+    cleanup_estimate_minutes: row.cleanup_estimate_minutes,
   };
+
+  // Reconstruct cleanup_factors only when at least one factor column is set,
+  // so recipes without factors don't carry a meaningless empty object.
+  const hasDish = row.dish_count != null;
+  const hasGrease = row.grease_level != null && row.grease_level.length > 0;
+  const hasDishwasher = row.dishwasher_safe != null;
+  if (hasDish || hasGrease || hasDishwasher) {
+    recipe.cleanup_factors = {
+      dish_count: row.dish_count,
+      grease_level: row.grease_level,
+      dishwasher_safe: row.dishwasher_safe == null ? null : !!row.dishwasher_safe,
+    };
+  }
+
+  return recipe;
 }
 
 function parseStep(row: RecipeStepRow): RecipeStep {
@@ -145,11 +231,13 @@ export async function seedAndCacheRecipes(): Promise<Recipe[]> {
     await db.execAsync("DELETE FROM recipes;");
 
     for (const recipe of recipes) {
+      const factors = recipe.cleanup_factors;
       await db.runAsync(
         `INSERT OR REPLACE INTO recipes
           (id, title, source_url, ingredients, steps,
-           publisher_time_minutes, community_avg_minutes, cleanup_avg_minutes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+           publisher_time_minutes, community_avg_minutes, cleanup_avg_minutes,
+           cleanup_estimate_minutes, dish_count, grease_level, dishwasher_safe)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         [
           recipe.id,
           recipe.title,
@@ -159,6 +247,10 @@ export async function seedAndCacheRecipes(): Promise<Recipe[]> {
           recipe.publisher_time_minutes ?? null,
           recipe.community_avg_minutes ?? null,
           recipe.cleanup_avg_minutes ?? null,
+          recipe.cleanup_estimate_minutes ?? null,
+          factors?.dish_count ?? null,
+          factors?.grease_level ?? null,
+          factors?.dishwasher_safe == null ? null : factors.dishwasher_safe ? 1 : 0,
         ],
       );
 

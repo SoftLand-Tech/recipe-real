@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getRecipe, hasToken } from "@/api/client";
 import { getCachedRecipe, refreshPaceCalibrations } from "@/db/database";
-import type { PaceCalibration, Recipe, RecipeStep } from "@/types";
+import type { CleanupFactors, PaceCalibration, Recipe, RecipeStep } from "@/types";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -20,6 +20,31 @@ type LoadState = "loading" | "ready" | "error";
 function roundMin(value: number | null | undefined): number | null {
   if (value == null) return null;
   return Math.round(value);
+}
+
+/** Capitalize the first letter (e.g. grease level "medium" -> "Medium"). */
+function capitalize(value: string): string {
+  if (!value) return value;
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+/**
+ * Build the cleanup-burden chip labels from the factors object. Each entry is
+ * only included when its underlying value is non-null.
+ */
+function cleanupChips(factors: CleanupFactors | undefined): string[] {
+  if (!factors) return [];
+  const chips: string[] = [];
+  if (factors.dish_count != null) {
+    chips.push(`${Math.round(factors.dish_count)} dishes`);
+  }
+  if (factors.grease_level) {
+    chips.push(capitalize(factors.grease_level));
+  }
+  if (factors.dishwasher_safe != null) {
+    chips.push(factors.dishwasher_safe ? "Dishwasher-safe" : "Hand-wash");
+  }
+  return chips;
 }
 
 function StepBadge({ stepType }: { stepType: string }) {
@@ -97,10 +122,15 @@ export default function RecipeDetailScreen() {
 
   const publisher = roundMin(recipe?.publisher_time_minutes);
   const community = roundMin(recipe?.community_avg_minutes);
-  const cleanup = roundMin(recipe?.cleanup_avg_minutes);
+  const cleanupAvg = roundMin(recipe?.cleanup_avg_minutes);
+  const cleanupEstimate = roundMin(recipe?.cleanup_estimate_minutes);
+  // Prefer the model-based cleanup estimate, fall back to community average.
+  const cleanup = cleanupEstimate ?? cleanupAvg;
 
   const totalInclCleanup =
     community != null && cleanup != null ? community + cleanup : null;
+
+  const chips = recipe ? cleanupChips(recipe.cleanup_factors) : [];
 
   const steps: RecipeStep[] = recipe?.recipe_steps ?? [];
 
@@ -149,6 +179,8 @@ export default function RecipeDetailScreen() {
         { paddingTop: 16, paddingBottom: insets.bottom + 32 },
       ]}
     >
+      {/* Centered, max-width column so the screen reads cleanly on tablets. */}
+      <View style={styles.columnWrap}>
       {state === "loading" && (
         <View style={styles.center}>
           <ActivityIndicator size="large" />
@@ -184,6 +216,10 @@ export default function RecipeDetailScreen() {
               Publisher says {publisher ?? "—"} min · home cooks average{" "}
               {community ?? "—"} min
             </Text>
+            <Text style={styles.breakdownLine}>
+              Focused: {community ?? "—"} min · Cleanup: {cleanup ?? "—"} min ·
+              Total: {totalInclCleanup ?? "—"} min
+            </Text>
             <Text style={styles.summaryTotal}>
               Total incl. cleanup: {totalInclCleanup ?? "—"} min
             </Text>
@@ -192,10 +228,19 @@ export default function RecipeDetailScreen() {
                 Your pace: ~{personalTotal} min
               </Text>
             ) : null}
-            {cleanup != null ? (
+            {cleanupAvg != null ? (
               <Text style={styles.mutedSmall}>
-                Cleanup avg: {cleanup} min
+                Cleanup avg: {cleanupAvg} min
               </Text>
+            ) : null}
+            {chips.length > 0 ? (
+              <View style={styles.chipRow}>
+                {chips.map((label) => (
+                  <View key={label} style={styles.chip}>
+                    <Text style={styles.chipText}>{label}</Text>
+                  </View>
+                ))}
+              </View>
             ) : null}
           </View>
 
@@ -266,6 +311,7 @@ export default function RecipeDetailScreen() {
           </Pressable>
         </View>
       )}
+      </View>
     </ScrollView>
   );
 }
@@ -277,6 +323,11 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 16,
+  },
+  columnWrap: {
+    width: "100%",
+    maxWidth: 720,
+    alignSelf: "center",
   },
   section: {
     gap: 12,
@@ -302,6 +353,28 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#111827",
     fontWeight: "500",
+  },
+  breakdownLine: {
+    fontSize: 15,
+    color: "#374151",
+    fontWeight: "600",
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 2,
+  },
+  chip: {
+    backgroundColor: "#F3F4F6",
+    borderRadius: 999,
+    paddingVertical: 3,
+    paddingHorizontal: 10,
+  },
+  chipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#374151",
   },
   summaryTotal: {
     fontSize: 16,

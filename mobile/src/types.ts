@@ -22,6 +22,12 @@ export interface RecipeStep {
   community_minutes: number | null;
 }
 
+export interface CleanupFactors {
+  dish_count: number | null;
+  grease_level: string | null;
+  dishwasher_safe: boolean | null;
+}
+
 export interface Recipe {
   id: number;
   title: string;
@@ -31,6 +37,10 @@ export interface Recipe {
   publisher_time_minutes: number | null;
   community_avg_minutes: number | null;
   cleanup_avg_minutes: number | null;
+  /** Model-based cleanup estimate (Week 4). */
+  cleanup_estimate_minutes?: number | null;
+  /** Cleanup-burden factors backing the estimate (Week 4). */
+  cleanup_factors?: CleanupFactors;
   /** Present on the detail / seed payloads. */
   recipe_steps?: RecipeStep[];
 }

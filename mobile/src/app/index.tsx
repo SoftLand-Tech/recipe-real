@@ -7,6 +7,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
   type ListRenderItem,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -31,6 +32,11 @@ function fmtMinutes(value: number | null | undefined): string {
 
 export default function RecipeListScreen() {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+
+  // Tablet (width >= 768): two columns. Phones: one column.
+  const numColumns = width >= 768 ? 2 : 1;
+  const columnGap = 12;
 
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [state, setState] = useState<LoadState>("loading");
@@ -106,6 +112,7 @@ export default function RecipeListScreen() {
         <Pressable
           style={({ pressed }) => [
             styles.card,
+            numColumns > 1 && styles.cardColumn,
             pressed && styles.cardPressed,
           ]}
           onPress={() => router.push(`/recipe/${item.id}`)}
@@ -119,7 +126,7 @@ export default function RecipeListScreen() {
         </Pressable>
       );
     },
-    [],
+    [numColumns],
   );
 
   return (
@@ -175,13 +182,24 @@ export default function RecipeListScreen() {
 
       {state === "ready" && (
         <FlatList
+          key={numColumns === 1 ? "list-1col" : "list-2col"}
           data={visibleRecipes}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderItem}
+          numColumns={numColumns}
           contentContainerStyle={styles.listContent}
+          columnWrapperStyle={
+            numColumns > 1
+              ? { justifyContent: "flex-start", gap: columnGap }
+              : undefined
+          }
           refreshing={refreshing}
           onRefresh={handleRefresh}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          ItemSeparatorComponent={() =>
+            numColumns > 1 ? <View style={{ height: columnGap }} /> : (
+              <View style={styles.separator} />
+            )
+          }
           ListEmptyComponent={
             <View style={styles.center}>
               <Text style={styles.muted}>
@@ -259,6 +277,9 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 1 },
     elevation: 1,
+  },
+  cardColumn: {
+    flex: 1,
   },
   cardPressed: {
     backgroundColor: "#F9FAFB",

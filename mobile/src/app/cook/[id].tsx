@@ -237,6 +237,10 @@ export default function CookModeScreen() {
     return { perStep, cleanup_minutes, total_actual_minutes };
   }, [steps, elapsedMs]);
 
+  // Recipe cleanup estimate shown as context on the feedback phase.
+  const cleanupEstimate =
+    recipe?.cleanup_estimate_minutes ?? recipe?.cleanup_avg_minutes ?? null;
+
   const handleSubmit = useCallback(
     async (feedback: Feedback | null) => {
       if (!recipe) return;
@@ -391,6 +395,11 @@ export default function CookModeScreen() {
               ? ` · cleanup ${summary.cleanup_minutes}`
               : ""}
           </Text>
+          {cleanupEstimate != null ? (
+            <Text style={styles.cleanupEstimate}>
+              Cleanup estimate: ~{Math.round(cleanupEstimate)} min
+            </Text>
+          ) : null}
           <Text style={styles.muted}>How did it feel vs. the estimate?</Text>
 
           {phase !== "done" ? (
@@ -689,6 +698,11 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: "#2563EB",
     fontWeight: "700",
+  },
+  cleanupEstimate: {
+    fontSize: 13,
+    color: "#6B7280",
+    fontWeight: "500",
   },
   feedbackButtons: {
     width: "100%",
