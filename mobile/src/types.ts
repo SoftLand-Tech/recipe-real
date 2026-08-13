@@ -96,3 +96,13 @@ export interface PaceCalibration {
   multiplier: number;
   confidence: number;
 }
+
+// ---- Billing & Usage (Week 5) -----------------------------------------------
+
+export type BillingPlan = "monthly" | "yearly";
+
+export interface Usage {
+  premium: boolean;
+  views_this_month: number;
+  limit: number;
+}

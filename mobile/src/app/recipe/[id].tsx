@@ -10,11 +10,11 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { getRecipe, hasToken } from "@/api/client";
+import { getRecipe, hasToken, isPaywallError } from "@/api/client";
 import { getCachedRecipe, refreshPaceCalibrations } from "@/db/database";
 import type { CleanupFactors, PaceCalibration, Recipe, RecipeStep } from "@/types";
 
-type LoadState = "loading" | "ready" | "error";
+type LoadState = "loading" | "ready" | "error" | "paywall";
 
 /** Rounds a nullable minute value, returning null when absent. */
 function roundMin(value: number | null | undefined): number | null {
@@ -91,12 +91,19 @@ export default function RecipeDetailScreen() {
       setState("ready");
     } catch (error) {
       console.warn("[RecipeReal] loadRecipe failed:", error);
+      // A 402 means the free-tier recipe limit is reached. Only surface the
+      // paywall when we have no cached copy to fall back on; the cache path
+      // above would have resolved before reaching the network fetch.
+      if (recipe == null && isPaywallError(error)) {
+        setState("paywall");
+        return;
+      }
       setErrorMessage(
         error instanceof Error ? error.message : "Failed to load recipe.",
       );
       setState("error");
     }
-  }, [id]);
+  }, [id, recipe]);
 
   useEffect(() => {
     loadRecipe();
@@ -196,6 +203,22 @@ export default function RecipeDetailScreen() {
           </Text>
           <Pressable style={styles.button} onPress={loadRecipe}>
             <Text style={styles.buttonText}>Retry</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {state === "paywall" && (
+        <View style={styles.center}>
+          <Text style={styles.paywallTitle}>Free limit reached</Text>
+          <Text style={styles.muted}>
+            You've reached the free limit (5 recipes/month). Upgrade for
+            unlimited recipes.
+          </Text>
+          <Pressable
+            style={styles.button}
+            onPress={() => router.push("/upgrade")}
+          >
+            <Text style={styles.buttonText}>Upgrade</Text>
           </Pressable>
         </View>
       )}
@@ -491,6 +514,11 @@ const styles = StyleSheet.create({
     color: "#B91C1C",
     fontSize: 16,
     fontWeight: "600",
+  },
+  paywallTitle: {
+    color: "#7C3AED",
+    fontSize: 17,
+    fontWeight: "700",
   },
   button: {
     marginTop: 8,

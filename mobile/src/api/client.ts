@@ -5,6 +5,7 @@ import { API_BASE_URL, AUTH_TOKEN_KEY } from "@/config";
 import { enqueuePendingCookSession } from "@/db/database";
 import type {
   AuthResponse,
+  BillingPlan,
   CleanupFactors,
   CookSessionPayload,
   CookSessionSummary,
@@ -13,6 +14,7 @@ import type {
   Paginated,
   Recipe,
   RecipeStep,
+  Usage,
 } from "@/types";
 
 /** A configured axios instance for the RecipeReal backend. */
@@ -271,9 +273,56 @@ export async function getPaceCalibrations(): Promise<PaceCalibration[]> {
       ? data.data.map(normalizePaceCalibration)
       : [];
   } catch (error) {
+    // A 401 (e.g. token cleared) degrades silently to an empty list; a 402
+    // paywall is rethrown so callers can surface the upgrade CTA.
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       return [];
     }
     throw error;
   }
+}
+
+// ---- Billing & Usage (Week 5) ----------------------------------------------
+
+/**
+ * Whether an error is an HTTP 402 (Payment Required) paywall response from the
+ * backend. Used by screens to decide between rendering a paywall CTA vs. a
+ * generic error state.
+ */
+export function isPaywallError(e: unknown): boolean {
+  return axios.isAxiosError(e) && e.response?.status === 402;
+}
+
+/**
+ * Start a Stripe Checkout session for the given plan. Returns the hosted
+ * Checkout URL to open in an in-app browser. Throws on any failure (including
+ * 503 when billing is not yet configured on the backend).
+ */
+export async function createCheckout(plan: BillingPlan): Promise<string> {
+  const { data } = await api.post<{ url: string }>("/api/billing/checkout", {
+    plan,
+  });
+  return data.url;
+}
+
+/**
+ * Open the Stripe customer portal to manage an existing subscription. Returns
+ * the portal URL; callers open it best-effort. Throws on failure.
+ */
+export async function openBillingPortal(): Promise<string> {
+  const { data } = await api.post<{ url: string }>("/api/billing/portal");
+  return data.url;
+}
+
+/**
+ * Fetch the authenticated user's usage / premium status. Numeric fields are
+ * normalized defensively (the backend may serialize them as strings).
+ */
+export async function getUsage(): Promise<Usage> {
+  const { data } = await api.get<Usage>("/api/usage");
+  return {
+    premium: Boolean(data?.premium),
+    views_this_month: Number(data?.views_this_month) || 0,
+    limit: Number(data?.limit) || 0,
+  };
 }

@@ -46,6 +46,7 @@ export default function RootLayout() {
           />
           <Stack.Screen name="recipe/[id]" options={{ title: "Recipe" }} />
           <Stack.Screen name="pace" options={{ title: "Your Pace" }} />
+          <Stack.Screen name="upgrade" options={{ title: "Upgrade" }} />
           <Stack.Screen
             name="cook/[id]"
             options={{ title: "Cook Mode", headerShown: false }}

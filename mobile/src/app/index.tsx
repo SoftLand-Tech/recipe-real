@@ -139,15 +139,26 @@ export default function RecipeListScreen() {
       <View style={styles.header}>
         <View style={styles.titleRow}>
           <Text style={styles.heading}>Recipes</Text>
-          <Pressable
-            style={({ pressed }) => [
-              styles.paceButton,
-              pressed && styles.paceButtonPressed,
-            ]}
-            onPress={() => router.push("/pace")}
-          >
-            <Text style={styles.paceButtonText}>Your pace</Text>
-          </Pressable>
+          <View style={styles.headerActions}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.premiumPill,
+                pressed && styles.premiumPillPressed,
+              ]}
+              onPress={() => router.push("/upgrade")}
+            >
+              <Text style={styles.premiumPillText}>Go Premium</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.paceButton,
+                pressed && styles.paceButtonPressed,
+              ]}
+              onPress={() => router.push("/pace")}
+            >
+              <Text style={styles.paceButtonText}>Your pace</Text>
+            </Pressable>
+          </View>
         </View>
         <TextInput
           style={styles.searchInput}
@@ -247,6 +258,25 @@ const styles = StyleSheet.create({
   },
   paceButtonText: {
     color: "#2563EB",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  premiumPill: {
+    backgroundColor: "#F5F3FF",
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  premiumPillPressed: {
+    backgroundColor: "#EDE9FE",
+  },
+  premiumPillText: {
+    color: "#7C3AED",
     fontSize: 14,
     fontWeight: "600",
   },

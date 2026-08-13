@@ -1,9 +1,12 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BillingController;
 use App\Http\Controllers\Api\CookSessionController;
 use App\Http\Controllers\Api\PaceCalibrationController;
 use App\Http\Controllers\Api\RecipeController;
+use App\Http\Controllers\Api\UsageController;
+use App\Http\Controllers\Api\WebhookController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -33,3 +36,14 @@ Route::middleware(['throttle:60,1', 'auth:sanctum'])->group(function (): void {
 
     Route::get('/pace-calibrations', PaceCalibrationController::class);
 });
+
+// Protected billing + usage routes.
+Route::middleware(['throttle:60,1', 'auth:sanctum'])->group(function (): void {
+    Route::post('/billing/checkout', [BillingController::class, 'checkout']);
+    Route::post('/billing/portal', [BillingController::class, 'portal']);
+    Route::get('/usage', UsageController::class);
+});
+
+// Stripe webhook: public, no auth, no throttle group (Cashier's signature
+// middleware validates the request using STRIPE_WEBHOOK_SECRET).
+Route::post('/stripe/webhook', [WebhookController::class, 'handleWebhook']);

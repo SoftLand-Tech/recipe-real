@@ -7,12 +7,13 @@ import {
   Text,
   View,
 } from "react-native";
+import { router } from "expo-router";
 
-import { getCookSessions, hasToken } from "@/api/client";
+import { getCookSessions, getUsage, hasToken, isPaywallError } from "@/api/client";
 import { refreshPaceCalibrations } from "@/db/database";
 import type { PaceCalibration } from "@/types";
 
-type LoadState = "loading" | "ready" | "error";
+type LoadState = "loading" | "ready" | "error" | "locked";
 
 /** Capitalize the first letter of a step_type for display. */
 function capitalize(value: string): string {
@@ -42,6 +43,16 @@ export default function PaceScreen() {
         setState("ready");
         return;
       }
+
+      // Usage is the authoritative premium signal. Pace calibration is a
+      // Premium feature: if the user is not premium, surface the upgrade CTA
+      // instead of the multipliers.
+      const usage = await getUsage().catch(() => null);
+      if (usage && usage.premium === false) {
+        setState("locked");
+        return;
+      }
+
       const [paceResult, sessions] = await Promise.all([
         refreshPaceCalibrations(),
         getCookSessions().catch(() => null),
@@ -50,6 +61,11 @@ export default function PaceScreen() {
       setCookCount(sessions?.meta?.total ?? sessions?.data?.length ?? 0);
       setState("ready");
     } catch (error) {
+      // A 402 from the pace fetch is also a paywall state.
+      if (isPaywallError(error)) {
+        setState("locked");
+        return;
+      }
       console.warn("[RecipeReal] pace screen load failed:", error);
       setState("error");
     }
@@ -91,6 +107,25 @@ export default function PaceScreen() {
           <Text style={styles.muted}>Could not load your pace data.</Text>
           <Pressable style={styles.button} onPress={load}>
             <Text style={styles.buttonText}>Retry</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  if (state === "locked") {
+    return (
+      <View style={styles.container}>
+        <View style={styles.center}>
+          <Text style={styles.lockedTitle}>Premium feature</Text>
+          <Text style={styles.muted}>
+            Pace calibration is a Premium feature.
+          </Text>
+          <Pressable
+            style={styles.button}
+            onPress={() => router.push("/upgrade")}
+          >
+            <Text style={styles.buttonText}>Upgrade</Text>
           </Pressable>
         </View>
       </View>
@@ -216,6 +251,11 @@ const styles = StyleSheet.create({
     color: "#B91C1C",
     fontSize: 16,
     fontWeight: "600",
+  },
+  lockedTitle: {
+    color: "#7C3AED",
+    fontSize: 17,
+    fontWeight: "700",
   },
   button: {
     marginTop: 8,

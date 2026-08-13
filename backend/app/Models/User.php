@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Cashier\Billable;
 use Laravel\Sanctum\HasApiTokens;
 
 #[Fillable(['name', 'email', 'password', 'skill_level'])]
@@ -18,7 +19,7 @@ use Laravel\Sanctum\HasApiTokens;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable;
+    use Billable, HasApiTokens, HasFactory, Notifiable;
 
     /**
      * Boot the model and auto-create a profile on user creation.
@@ -63,5 +64,13 @@ class User extends Authenticatable
     public function paceCalibrations(): HasMany
     {
         return $this->hasMany(PaceCalibration::class);
+    }
+
+    /**
+     * Whether the user has an active subscription to the default plan.
+     */
+    public function isPremium(): bool
+    {
+        return $this->subscribed('default');
     }
 }
