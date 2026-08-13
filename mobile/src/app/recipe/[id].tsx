@@ -189,150 +189,159 @@ export default function RecipeDetailScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={[
-        styles.content,
-        { paddingTop: 16, paddingBottom: insets.bottom + 32 },
-      ]}
-    >
-      {/* Centered, max-width column so the screen reads cleanly on tablets. */}
-      <View style={styles.columnWrap}>
-      {state === "loading" && (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" />
-          <Text style={styles.muted}>Loading recipe…</Text>
-        </View>
-      )}
+    <View style={styles.screen}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: 16, paddingBottom: 24 },
+        ]}
+      >
+        {/* Centered, max-width column so the screen reads cleanly on tablets. */}
+        <View style={styles.columnWrap}>
+          {state === "loading" && (
+            <View style={styles.center}>
+              <ActivityIndicator size="large" />
+              <Text style={styles.muted}>Loading recipe…</Text>
+            </View>
+          )}
 
-      {state === "error" && (
-        <View style={styles.center}>
-          <Text style={styles.errorTitle}>Something went wrong</Text>
-          <Text style={styles.muted}>
-            {errorMessage ?? "Could not load this recipe."}
-          </Text>
-          <Pressable style={styles.button} onPress={loadRecipe}>
-            <Text style={styles.buttonText}>Retry</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {state === "paywall" && (
-        <View style={styles.center}>
-          <Text style={styles.paywallTitle}>Free limit reached</Text>
-          <Text style={styles.muted}>
-            You've reached the free limit (5 recipes/month). Upgrade for
-            unlimited recipes.
-          </Text>
-          <Pressable
-            style={styles.button}
-            onPress={() => router.push("/upgrade")}
-          >
-            <Text style={styles.buttonText}>Upgrade</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {state === "ready" && recipe && (
-        <View style={styles.section}>
-          <Text style={styles.title}>{recipe.title}</Text>
-
-          {recipe.source_url ? (
-            <Text style={styles.source} numberOfLines={1}>
-              {recipe.source_url}
-            </Text>
-          ) : null}
-
-          {/* Cook-time summary */}
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryLine}>
-              Publisher says {publisher ?? "—"} min · home cooks average{" "}
-              {community ?? "—"} min
-            </Text>
-            <Text style={styles.breakdownLine}>
-              Focused: {community ?? "—"} min · Cleanup: {cleanup ?? "—"} min ·
-              Total: {totalInclCleanup ?? "—"} min
-            </Text>
-            <Text style={styles.summaryTotal}>
-              Total incl. cleanup: {totalInclCleanup ?? "—"} min
-            </Text>
-            {personalTotal != null ? (
-              <Text style={styles.paceLine}>
-                Your pace: ~{personalTotal} min
+          {state === "error" && (
+            <View style={styles.center}>
+              <Text style={styles.errorTitle}>Something went wrong</Text>
+              <Text style={styles.muted}>
+                {errorMessage ?? "Could not load this recipe."}
               </Text>
-            ) : null}
-            {cleanupAvg != null ? (
-              <Text style={styles.mutedSmall}>
-                Cleanup avg: {cleanupAvg} min
+              <Pressable style={styles.button} onPress={loadRecipe}>
+                <Text style={styles.buttonText}>Retry</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {state === "paywall" && (
+            <View style={styles.center}>
+              <Text style={styles.paywallTitle}>Free limit reached</Text>
+              <Text style={styles.muted}>
+                You've reached the free limit (5 recipes/month). Upgrade for
+                unlimited recipes.
               </Text>
-            ) : null}
-            {chips.length > 0 ? (
-              <View style={styles.chipRow}>
-                {chips.map((label) => (
-                  <View key={label} style={styles.chip}>
-                    <Text style={styles.chipText}>{label}</Text>
+              <Pressable
+                style={styles.button}
+                onPress={() => router.push("/upgrade")}
+              >
+                <Text style={styles.buttonText}>Upgrade</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {state === "ready" && recipe && (
+            <View style={styles.section}>
+              <Text style={styles.title}>{recipe.title}</Text>
+
+              {recipe.source_url ? (
+                <Text style={styles.source} numberOfLines={1}>
+                  {recipe.source_url}
+                </Text>
+              ) : null}
+
+              {/* Cook-time summary */}
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryLine}>
+                  Publisher says {publisher ?? "—"} min · home cooks average{" "}
+                  {community ?? "—"} min
+                </Text>
+                <Text style={styles.breakdownLine}>
+                  Focused: {community ?? "—"} min · Cleanup: {cleanup ?? "—"}{" "}
+                  min · Total: {totalInclCleanup ?? "—"} min
+                </Text>
+                <Text style={styles.summaryTotal}>
+                  Total incl. cleanup: {totalInclCleanup ?? "—"} min
+                </Text>
+                {personalTotal != null ? (
+                  <Text style={styles.paceLine}>
+                    Your pace: ~{personalTotal} min
+                  </Text>
+                ) : null}
+                {cleanupAvg != null ? (
+                  <Text style={styles.mutedSmall}>
+                    Cleanup avg: {cleanupAvg} min
+                  </Text>
+                ) : null}
+                {chips.length > 0 ? (
+                  <View style={styles.chipRow}>
+                    {chips.map((label) => (
+                      <View key={label} style={styles.chip}>
+                        <Text style={styles.chipText}>{label}</Text>
+                      </View>
+                    ))}
                   </View>
-                ))}
+                ) : null}
               </View>
-            ) : null}
-          </View>
 
-          {/* Ingredients */}
-          <Text style={styles.sectionHeading}>Ingredients</Text>
-          {recipe.ingredients.length > 0 ? (
-            <View style={styles.list}>
-              {recipe.ingredients.map((ingredient, idx) => (
-                <View key={`ing-${idx}`} style={styles.bulletRow}>
-                  <Text style={styles.bullet}>•</Text>
-                  <Text style={styles.bulletText}>{ingredient}</Text>
-                </View>
-              ))}
-            </View>
-          ) : (
-            <Text style={styles.muted}>No ingredients listed.</Text>
-          )}
-
-          {/* Steps */}
-          <Text style={styles.sectionHeading}>Steps</Text>
-          {steps.length > 0 ? (
-            <View style={styles.list}>
-              {steps.map((step) => {
-                const adjusted = adjustedForStep(step);
-                return (
-                  <View key={`step-${step.id}`} style={styles.stepRow}>
-                    <View style={styles.stepHeader}>
-                      <Text style={styles.stepNumber}>#{step.step_number}</Text>
-                      <StepBadge stepType={step.step_type} />
-                      <Text style={styles.stepTime}>
-                        {step.community_minutes != null
-                          ? `${Math.round(step.community_minutes)} min`
-                          : ""}
-                      </Text>
+              {/* Ingredients */}
+              <Text style={styles.sectionHeading}>Ingredients</Text>
+              {recipe.ingredients.length > 0 ? (
+                <View style={styles.list}>
+                  {recipe.ingredients.map((ingredient, idx) => (
+                    <View key={`ing-${idx}`} style={styles.bulletRow}>
+                      <Text style={styles.bullet}>•</Text>
+                      <Text style={styles.bulletText}>{ingredient}</Text>
                     </View>
-                    {adjusted != null ? (
-                      <Text style={styles.stepAdjusted}>
-                        ~{adjusted} min (you)
-                      </Text>
-                    ) : null}
-                    <Text style={styles.stepDescription}>
-                      {step.description}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
-          ) : (
-            <View style={styles.list}>
-              {recipe.steps.map((step, idx) => (
-                <View key={`plain-step-${idx}`} style={styles.bulletRow}>
-                  <Text style={styles.bullet}>{idx + 1}.</Text>
-                  <Text style={styles.bulletText}>{step}</Text>
+                  ))}
                 </View>
-              ))}
+              ) : (
+                <Text style={styles.muted}>No ingredients listed.</Text>
+              )}
+
+              {/* Steps */}
+              <Text style={styles.sectionHeading}>Steps</Text>
+              {steps.length > 0 ? (
+                <View style={styles.list}>
+                  {steps.map((step) => {
+                    const adjusted = adjustedForStep(step);
+                    return (
+                      <View key={`step-${step.id}`} style={styles.stepRow}>
+                        <View style={styles.stepHeader}>
+                          <Text style={styles.stepNumber}>
+                            #{step.step_number}
+                          </Text>
+                          <StepBadge stepType={step.step_type} />
+                          <Text style={styles.stepTime}>
+                            {step.community_minutes != null
+                              ? `${Math.round(step.community_minutes)} min`
+                              : ""}
+                          </Text>
+                        </View>
+                        {adjusted != null ? (
+                          <Text style={styles.stepAdjusted}>
+                            ~{adjusted} min (you)
+                          </Text>
+                        ) : null}
+                        <Text style={styles.stepDescription}>
+                          {step.description}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : (
+                <View style={styles.list}>
+                  {recipe.steps.map((step, idx) => (
+                    <View key={`plain-step-${idx}`} style={styles.bulletRow}>
+                      <Text style={styles.bullet}>{idx + 1}.</Text>
+                      <Text style={styles.bulletText}>{step}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
           )}
+        </View>
+      </ScrollView>
 
-          {/* Cook Mode placeholder (Week 2) */}
+      {/* Pinned footer: Cook Mode button stays visible regardless of scroll. */}
+      {state === "ready" && recipe && (
+        <View style={[styles.cookFooter, { paddingBottom: insets.bottom + 10 }]}>
           <Pressable
             style={({ pressed }) => [
               styles.cookButton,
@@ -344,18 +353,27 @@ export default function RecipeDetailScreen() {
           </Pressable>
         </View>
       )}
-      </View>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
     backgroundColor: "#FFFFFF",
   },
+  scroll: {
+    flex: 1,
+  },
   content: {
     paddingHorizontal: 16,
+  },
+  cookFooter: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6",
+    backgroundColor: "#FFFFFF",
   },
   columnWrap: {
     width: "100%",
@@ -494,7 +512,9 @@ const styles = StyleSheet.create({
     color: "#374151",
   },
   cookButton: {
-    marginTop: 8,
+    width: "100%",
+    maxWidth: 720,
+    alignSelf: "center",
     backgroundColor: "#2563EB",
     borderRadius: 12,
     paddingVertical: 14,

@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>RecipeReal — screen preview</title>
+<style>
+  :root{ --blue:#2563EB; --blue-d:#1D4ED8; --blue-bg:#EFF6FF; --blue-bg2:#DBEAFE;
+    --purple:#7C3AED; --purple-bg:#F5F3FF; --ink:#111827; --ink2:#374151; --muted:#6B7280;
+    --muted2:#9CA3AF; --line:#F3F4F6; --line2:#E5E7EB; --bg:#F9FAFB; --err:#B91C1C; --ok:#16A34A; }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  body{ background:#E5E7EB; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+        color:var(--ink); display:flex; flex-direction:column; align-items:center; gap:32px; padding:36px; }
+  h1.cap{ font-size:20px; font-weight:800; color:#374151; letter-spacing:.5px; }
+  .row{ display:flex; gap:32px; align-items:flex-start; flex-wrap:wrap; justify-content:center; }
+  .screen{ display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .label{ font-size:13px; font-weight:700; color:#4B5563; }
+  /* phone frame */
+  .phone{ width:390px; height:844px; background:#fff; border-radius:46px;
+    box-shadow:0 0 0 11px #0b0b0d, 0 0 0 13px #2a2a2e, 0 30px 60px rgba(0,0,0,.35);
+    overflow:hidden; position:relative; }
+  .notch{ position:absolute; top:11px; left:50%; transform:translateX(-50%);
+    width:122px; height:32px; background:#0b0b0d; border-radius:20px; z-index:5; }
+  .statusbar{ height:50px; padding:0 28px; display:flex; align-items:flex-end; justify-content:space-between;
+    padding-bottom:8px; font-size:15px; font-weight:600; color:#111827; position:relative; z-index:4; }
+  .statusbar .right{ display:flex; gap:6px; align-items:center; }
+  .battery{ width:24px; height:11px; border:1.2px solid #111827; border-radius:3px; position:relative; padding:1px; }
+  .battery::after{ content:""; position:absolute; right:-3px; top:3px; width:2px; height:5px; background:#111827; border-radius:0 2px 2px 0;}
+  .battery i{ display:block; width:80%; height:100%; background:#111827; border-radius:1px; }
+  .sig{ display:flex; gap:2px; align-items:flex-end; }
+  .sig span{ width:3px; background:#111827; border-radius:1px; }
+  .sig span:nth-child(1){height:4px}.sig span:nth-child(2){height:6px}.sig span:nth-child(3){height:8px}.sig span:nth-child(4){height:10px}
+  .content{ height:calc(844px - 50px); overflow:hidden; }
+
+  /* shared atoms */
+  .pill{ border-radius:999px; padding:6px 12px; font-size:14px; font-weight:600; }
+  .blue-pill{ background:var(--blue-bg); color:var(--blue); }
+  .purple-pill{ background:var(--purple-bg); color:var(--purple); }
+
+  /* ===== HOME (index) ===== */
+  .home .head{ padding:4px 16px 12px; display:flex; flex-direction:column; gap:8px; }
+  .home .titlerow{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .home h2{ font-size:28px; font-weight:700; color:var(--ink); }
+  .home .actions{ display:flex; gap:8px; }
+  .home .search{ border:1px solid var(--line2); border-radius:12px; padding:10px 12px; font-size:16px;
+    background:var(--bg); color:var(--ink); }
+  .home .search .ph{ color:#9CA3AF; }
+  .home .list{ padding:4px 16px 24px; display:flex; flex-direction:column; gap:10px; }
+  .home .card{ background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px 16px;
+    box-shadow:0 1px 6px rgba(0,0,0,.04); display:flex; flex-direction:column; gap:4px; }
+  .home .card .t{ font-size:17px; font-weight:600; color:var(--ink); }
+  .home .card .s{ font-size:13px; color:var(--muted); }
+
+  /* ===== RECIPE DETAIL ===== */
+  .detail{ overflow-y:auto; height:calc(844px - 50px); }
+  .detail .nav{ height:44px; border-bottom:1px solid var(--line); display:flex; align-items:center; padding:0 8px; }
+  .detail .nav .back{ font-size:26px; color:var(--blue); padding:0 6px; line-height:1; }
+  .detail .nav .navt{ font-size:17px; font-weight:600; color:var(--ink); }
+  .detail .body{ max-width:720px; margin:0 auto; padding:16px 16px 40px; display:flex; flex-direction:column; gap:12px; }
+  .detail h2{ font-size:26px; font-weight:700; color:var(--ink); }
+  .detail .src{ font-size:13px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .summary{ background:var(--bg); border:1px solid var(--line); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:6px; }
+  .summary .l{ font-size:15px; font-weight:500; color:var(--ink); }
+  .summary .b{ font-size:15px; font-weight:600; color:var(--ink2); }
+  .summary .tot{ font-size:16px; font-weight:700; color:var(--blue); }
+  .summary .cln{ font-size:12px; color:var(--muted); }
+  .chips{ display:flex; gap:6px; flex-wrap:wrap; margin-top:2px; }
+  .chip{ background:var(--line); border-radius:999px; padding:3px 10px; font-size:12px; font-weight:600; color:var(--ink2); }
+  .sec-h{ font-size:19px; font-weight:700; color:var(--ink); margin-top:8px; }
+  .bullets{ display:flex; flex-direction:column; gap:8px; }
+  .brow{ display:flex; gap:8px; }
+  .brow .b{ color:#9CA3AF; font-size:15px; line-height:21px; }
+  .brow .bt{ flex:1; font-size:15px; color:var(--ink2); line-height:21px; }
+  .steps{ display:flex; flex-direction:column; gap:8px; }
+  .step{ background:#fff; border:1px solid var(--line); border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:6px; }
+  .step-h{ display:flex; align-items:center; gap:8px; }
+  .step-n{ font-size:13px; font-weight:700; color:var(--muted); }
+  .step-t{ margin-left:auto; font-size:13px; font-weight:600; color:var(--blue); }
+  .step-d{ font-size:15px; color:var(--ink); line-height:21px; }
+  .badge{ border-radius:999px; padding:2px 8px; font-size:10px; font-weight:700; color:var(--ink2); }
+  .b-active{ background:#FEF3C7; } .b-cleanup{ background:#E0E7FF; } .b-passive{ background:#DCFCE7; }
+  .cook-btn{ margin-top:8px; background:var(--blue); border-radius:12px; padding:14px; text-align:center;
+    color:#fff; font-weight:700; font-size:16px; }
+
+  /* ===== COOK MODE ===== */
+  .cook .nav{ height:48px; display:flex; align-items:center; justify-content:space-between; padding:0 16px; }
+  .cook .close{ color:var(--blue); font-size:15px; font-weight:600; }
+  .cook .prog{ font-size:14px; font-weight:700; color:var(--ink2); }
+  .cook .spacer{ width:48px; }
+  .cook .page{ height:560px; display:flex; align-items:center; justify-content:center; padding:8px 20px; }
+  .stepcard{ width:100%; background:var(--bg); border:1px solid var(--line); border-radius:20px; padding:24px;
+    display:flex; flex-direction:column; align-items:center; gap:16px; }
+  .stepmeta{ width:100%; display:flex; align-items:center; gap:8px; }
+  .stepmeta .est{ margin-left:auto; font-size:13px; color:var(--blue); font-weight:600; }
+  .timer{ font-size:64px; font-weight:800; color:var(--ink); letter-spacing:1px; font-variant-numeric:tabular-nums; }
+  .stepdesc{ font-size:18px; color:var(--ink); line-height:26px; text-align:center; }
+  .cook .footer{ position:absolute; bottom:0; left:0; right:0; display:flex; gap:12px; padding:12px 16px 24px;
+    border-top:1px solid var(--line); background:#fff; }
+  .pause{ flex:1; background:var(--line); border-radius:14px; padding:16px; text-align:center; font-weight:700; font-size:16px; color:var(--ink); }
+  .done{ flex:2; background:var(--blue); border-radius:14px; padding:16px; text-align:center; font-weight:700; font-size:18px; color:#fff; }
+
+  /* ===== COOK FEEDBACK ===== */
+  .fb{ display:flex; flex-direction:column; align-items:center; justify-content:center; height:calc(844px - 50px - 48px);
+    padding:0 24px; gap:12px; }
+  .fb h2{ font-size:28px; font-weight:800; color:var(--ink); }
+  .fb .tot{ font-size:20px; font-weight:700; color:var(--blue); }
+  .fb .ce{ font-size:13px; color:var(--muted); font-weight:500; }
+  .fb .q{ font-size:14px; color:var(--muted); text-align:center; }
+  .fb-btns{ width:100%; display:flex; flex-direction:column; gap:12px; margin-top:8px; }
+  .fb-btn{ border-radius:14px; padding:18px; text-align:center; font-weight:700; font-size:18px; color:var(--ink); }
+  .fb-fast{ background:#DCFCE7; } .fb-exp{ background:#FEF3C7; } .fb-slow{ background:#FFE4E6; }
+  .skip{ margin-top:8px; color:var(--muted); font-size:15px; font-weight:600; }
+
+  /* ===== PACE ===== */
+  .pace{ overflow-y:auto; height:calc(844px - 50px); padding:16px; display:flex; flex-direction:column; gap:12px; }
+  .pace .hcard{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  .pace h2{ font-size:26px; font-weight:700; color:var(--ink); }
+  .pace .sub{ font-size:15px; color:var(--muted); }
+  .pace .pcard{ background:var(--bg); border:1px solid var(--line); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:6px; }
+  .pace .ph{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .pace .pt{ font-size:18px; font-weight:700; color:var(--ink); }
+  .pace .tag{ font-size:13px; font-weight:600; color:var(--blue); }
+  .pace .mult{ font-size:15px; color:var(--ink2); font-weight:500; }
+  .pace .conf{ font-size:12px; color:#9CA3AF; }
+
+  /* ===== UPGRADE ===== */
+  .up{ overflow-y:auto; height:calc(844px - 50px); padding:16px; }
+  .up .col{ max-width:720px; margin:0 auto; display:flex; flex-direction:column; gap:16px; }
+  .up h2{ font-size:26px; font-weight:700; color:var(--ink); }
+  .up .subt{ font-size:15px; color:var(--muted); line-height:21px; }
+  .plancard{ background:var(--bg); border:1px solid var(--line); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:10px; }
+  .plancard .plh{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .plancard .pln{ font-size:18px; font-weight:700; color:var(--ink); }
+  .save{ background:#DCFCE7; border-radius:999px; padding:3px 10px; font-size:12px; font-weight:700; color:#15803D; }
+  .price{ font-size:22px; font-weight:700; color:var(--ink); }
+  .price small{ font-size:14px; font-weight:500; color:var(--muted); }
+  .cta{ background:var(--blue); border-radius:12px; padding:14px; text-align:center; color:#fff; font-weight:700; font-size:16px; }
+  .manage{ text-align:center; padding:8px; color:var(--blue); font-size:14px; font-weight:600; }
+
+  .scroll-hide::-webkit-scrollbar{ display:none; }
+</style>
+</head>
+<body>
+<h1 class="cap">RecipeReal · mobile screens (faithful render of src/app/* from real backend data)</h1>
+
+<div class="row">
+
+  <!-- 1. HOME -->
+  <div class="screen">
+    <div class="phone home">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span>
+        <span class="right"><span class="sig"><span></span><span></span><span></span><span></span></span><span class="battery"><i></i></span></span>
+      </div>
+      <div class="content" style="overflow:hidden">
+        <div class="head">
+          <div class="titlerow">
+            <h2>Recipes</h2>
+            <div class="actions">
+              <span class="pill purple-pill">Go Premium</span>
+              <span class="pill blue-pill">Your pace</span>
+            </div>
+          </div>
+          <div class="search"><span class="ph">Search recipes</span></div>
+        </div>
+        <div class="list">
+          <div class="card"><div class="t">Spaghetti Aglio e Olio</div><div class="s">Community avg: 24 min · Cleanup: 8 min</div></div>
+          <div class="card"><div class="t">Creamy Tuscan Chicken Penne</div><div class="s">Community avg: 38 min · Cleanup: 12 min</div></div>
+          <div class="card"><div class="t">Garlic Ginger Chicken Stir-Fry</div><div class="s">Community avg: 32 min · Cleanup: 10 min</div></div>
+          <div class="card"><div class="t">Beef and Broccoli with Oyster Sauce</div><div class="s">Community avg: 42 min · Cleanup: 11 min</div></div>
+          <div class="card"><div class="t">Lemon Herb Chickpea Salad</div><div class="s">Community avg: 20 min · Cleanup: 6 min</div></div>
+          <div class="card"><div class="t">Grilled Chicken Caesar Salad</div><div class="s">Community avg: 26 min · Cleanup: 9 min</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="label">1 · Home / recipe list — index.tsx</div>
+  </div>
+
+  <!-- 2. RECIPE DETAIL -->
+  <div class="screen">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span>
+        <span class="right"><span class="sig"><span></span><span></span><span></span><span></span></span><span class="battery"><i></i></span></span>
+      </div>
+      <div class="detail">
+        <div class="nav"><span class="back">‹</span><span class="navt">Recipe</span></div>
+        <div class="body">
+          <h2>Spaghetti Aglio e Olio</h2>
+          <div class="src">https://example.com/recipes/spaghetti-aglio-e-olio</div>
+          <div class="summary">
+            <div class="l">Publisher says 20 min · home cooks average 24 min</div>
+            <div class="b">Focused: 24 min · Cleanup: 8 min · Total: 32 min</div>
+            <div class="tot">Total incl. cleanup: 32 min</div>
+            <div class="cln">Cleanup avg: 8 min</div>
+            <div class="chips"><span class="chip">3 dishes</span><span class="chip">Low grease</span><span class="chip">Dishwasher-safe</span></div>
+          </div>
+          <div class="sec-h">Ingredients</div>
+          <div class="bullets">
+            <div class="brow"><span class="b">•</span><span class="bt">8 oz spaghetti</span></div>
+            <div class="brow"><span class="b">•</span><span class="bt">1/4 cup extra-virgin olive oil</span></div>
+            <div class="brow"><span class="b">•</span><span class="bt">6 garlic cloves, thinly sliced</span></div>
+            <div class="brow"><span class="b">•</span><span class="bt">1 tsp red pepper flakes</span></div>
+            <div class="brow"><span class="b">•</span><span class="bt">1/4 cup fresh parsley, chopped</span></div>
+          </div>
+          <div class="sec-h">Steps</div>
+          <div class="steps">
+            <div class="step"><div class="step-h"><span class="step-n">#1</span><span class="badge b-active">ACTIVE</span><span class="step-t">11 min</span></div><div class="step-d">Bring a large pot of salted water to a boil and cook the spaghetti until al dente.</div></div>
+            <div class="step"><div class="step-h"><span class="step-n">#2</span><span class="badge b-active">ACTIVE</span><span class="step-t">6 min</span></div><div class="step-d">While the pasta cooks, warm olive oil over low heat and slowly toast the sliced garlic until just golden.</div></div>
+            <div class="step"><div class="step-h"><span class="step-n">#5</span><span class="badge b-passive">PASSIVE</span><span class="step-t">2 min</span></div><div class="step-d">Let the sauce cling to the noodles for a moment off the heat.</div></div>
+          </div>
+          <div class="cook-btn">Start Cook Mode</div>
+        </div>
+      </div>
+    </div>
+    <div class="label">2 · Recipe detail — recipe/[id].tsx</div>
+  </div>
+
+  <!-- 3. COOK MODE -->
+  <div class="screen">
+    <div class="phone cook">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span>
+        <span class="right"><span class="sig"><span></span><span></span><span></span><span></span></span><span class="battery"><i></i></span></span>
+      </div>
+      <div class="nav">
+        <span class="close">Close</span><span class="prog">Step 2 of 7</span><span class="spacer"></span>
+      </div>
+      <div class="page">
+        <div class="stepcard">
+          <div class="stepmeta">
+            <span class="badge b-active">ACTIVE</span>
+            <span class="est">~6 min estimate</span>
+          </div>
+          <div class="timer">0:08</div>
+          <div class="stepdesc">While the pasta cooks, warm olive oil over low heat and slowly toast the sliced garlic until just golden (do not burn).</div>
+        </div>
+      </div>
+      <div class="footer">
+        <div class="pause">Pause</div>
+        <div class="done">Done</div>
+      </div>
+    </div>
+    <div class="label">3 · Cook Mode (live timer) — cook/[id].tsx</div>
+  </div>
+
+  <!-- 4. COOK FEEDBACK -->
+  <div class="screen">
+    <div class="phone cook">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span>
+        <span class="right"><span class="sig"><span></span><span></span><span></span><span></span></span><span class="battery"><i></i></span></span>
+      </div>
+      <div class="nav"><span class="close">Close</span><span class="prog"></span><span class="spacer"></span></div>
+      <div class="fb">
+        <h2>You cooked it!</h2>
+        <div class="tot">33 min · cleanup 8</div>
+        <div class="ce">Cleanup estimate: ~8 min</div>
+        <div class="q">How did it feel vs. the estimate?</div>
+        <div class="fb-btns">
+          <div class="fb-btn fb-fast">Faster</div>
+          <div class="fb-btn fb-exp">As expected</div>
+          <div class="fb-btn fb-slow">Slower</div>
+        </div>
+        <div class="skip">Skip</div>
+      </div>
+    </div>
+    <div class="label">4 · Cook Mode (feedback) — cook/[id].tsx</div>
+  </div>
+
+  <!-- 5. PACE -->
+  <div class="screen">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span>
+        <span class="right"><span class="sig"><span></span><span></span><span></span><span></span></span><span class="battery"><i></i></span></span>
+      </div>
+      <div class="pace">
+        <div class="hcard"><h2>Your Pace</h2><div class="sub">7 cooks logged</div></div>
+        <div class="pcard"><div class="ph"><span class="pt">Active</span><span class="tag">Faster than average</span></div><div class="mult">0.9× the community average</div><div class="conf">confidence: 78%</div></div>
+        <div class="pcard"><div class="ph"><span class="pt">Passive</span><span class="tag">About average</span></div><div class="mult">1.0× the community average</div><div class="conf">confidence: 61%</div></div>
+        <div class="pcard"><div class="ph"><span class="pt">Cleanup</span><span class="tag">Slower than average</span></div><div class="mult">1.3× the community average</div><div class="conf">confidence: 54%</div></div>
+      </div>
+    </div>
+    <div class="label">5 · Your Pace (Premium) — pace.tsx</div>
+  </div>
+
+  <!-- 6. UPGRADE -->
+  <div class="screen">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span>
+        <span class="right"><span class="sig"><span></span><span></span><span></span><span></span></span><span class="battery"><i></i></span></span>
+      </div>
+      <div class="up">
+        <div class="col">
+          <h2>Upgrade to Premium</h2>
+          <div class="subt">Unlock unlimited recipes, personalized pace calibration, and cleanup estimates.</div>
+          <div class="plancard">
+            <div class="plh"><span class="pln">Monthly</span></div>
+            <div class="price">$5.99<small> / month</small></div>
+            <div class="cta">Subscribe</div>
+          </div>
+          <div class="plancard">
+            <div class="plh"><span class="pln">Yearly</span><span class="save">save ~30%</span></div>
+            <div class="price">$49.99<small> / year</small></div>
+            <div class="cta">Subscribe</div>
+          </div>
+          <div class="manage">Manage subscription</div>
+        </div>
+      </div>
+    </div>
+    <div class="label">6 · Upgrade — upgrade.tsx</div>
+  </div>
+
+</div>
+</body>
+</html>
