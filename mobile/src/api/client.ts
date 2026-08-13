@@ -8,6 +8,7 @@ import type {
   CookSessionPayload,
   CookSessionSummary,
   GetRecipesParams,
+  PaceCalibration,
   Paginated,
   Recipe,
   RecipeStep,
@@ -126,6 +127,20 @@ export async function logout(): Promise<void> {
   }
 }
 
+/**
+ * Whether a bearer token is currently stored in SecureStore. Used by screens
+ * to decide whether to attempt authenticated-only calls (e.g. pace data).
+ * Best-effort: any SecureStore failure resolves to false.
+ */
+export async function hasToken(): Promise<boolean> {
+  try {
+    const token = await SecureStore.getItemAsync(AUTH_TOKEN_KEY);
+    return Boolean(token);
+  } catch {
+    return false;
+  }
+}
+
 // ---- Recipes ---------------------------------------------------------------
 
 export async function getRecipes(
@@ -210,4 +225,42 @@ export async function getCookSessions(): Promise<Paginated<CookSessionSummary>> 
     "/api/cook-sessions",
   );
   return { ...data, data: data.data.map(normalizeCookSession) };
+}
+
+// ---- Pace calibration ------------------------------------------------------
+
+/**
+ * Coerce a raw pace-calibration row from the backend. Numeric columns can
+ * arrive as strings (Laravel decimal serialization); normalize them so later
+ * arithmetic never string-concatenates.
+ */
+function normalizePaceCalibration(c: any): PaceCalibration {
+  return {
+    step_type: String(c.step_type),
+    personal_avg_minutes: toNum(c.personal_avg_minutes),
+    community_avg_minutes: toNum(c.community_avg_minutes),
+    multiplier: toNum(c.multiplier) ?? 1,
+    confidence: toNum(c.confidence) ?? 0,
+  };
+}
+
+/**
+ * Fetch the authenticated user's per-step-type pace calibrations. Auth is
+ * handled by the existing request interceptor. On a 401 (e.g. token cleared),
+ * returns an empty array instead of throwing so callers can degrade silently.
+ */
+export async function getPaceCalibrations(): Promise<PaceCalibration[]> {
+  try {
+    const { data } = await api.get<{ data: PaceCalibration[] }>(
+      "/api/pace-calibrations",
+    );
+    return Array.isArray(data?.data)
+      ? data.data.map(normalizePaceCalibration)
+      : [];
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      return [];
+    }
+    throw error;
+  }
 }

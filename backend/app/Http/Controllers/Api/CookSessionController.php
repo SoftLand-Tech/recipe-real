@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreCookSessionRequest;
 use App\Http\Resources\CookSessionResource;
+use App\Jobs\RecalculatePaceCalibration;
 use App\Models\CookSession;
 use App\Models\TimingSubmission;
 use Illuminate\Http\Request;
@@ -45,6 +46,8 @@ class CookSessionController extends Controller
         });
 
         $session->load('recipe');
+
+        RecalculatePaceCalibration::dispatch($request->user()->id);
 
         return (new CookSessionResource($session))->response()->setStatusCode(201);
     }

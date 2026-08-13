@@ -76,3 +76,13 @@ export interface CookSessionSummary {
   feedback: Feedback | null;
   created_at: string;
 }
+
+// ---- Personal Pace Calibration (Week 3) ------------------------------------
+
+export interface PaceCalibration {
+  step_type: string;
+  personal_avg_minutes: number | null;
+  community_avg_minutes: number | null;
+  multiplier: number;
+  confidence: number;
+}

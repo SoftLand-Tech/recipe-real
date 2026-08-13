@@ -1,7 +1,12 @@
 import * as SQLite from "expo-sqlite";
 
-import { postCookSessionRaw, seedRecipes } from "@/api/client";
-import type { CookSessionPayload, Recipe, RecipeStep } from "@/types";
+import { getPaceCalibrations, postCookSessionRaw, seedRecipes } from "@/api/client";
+import type {
+  CookSessionPayload,
+  PaceCalibration,
+  Recipe,
+  RecipeStep,
+} from "@/types";
 
 const DB_NAME = "recipereal.db";
 
@@ -52,6 +57,14 @@ export async function initDatabase(): Promise<void> {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       payload TEXT NOT NULL,
       created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS pace_calibrations (
+      step_type TEXT PRIMARY KEY,
+      personal_avg_minutes REAL,
+      community_avg_minutes REAL,
+      multiplier REAL,
+      confidence REAL
     );
   `);
 }
@@ -295,4 +308,77 @@ export async function flushPendingCookSessions(): Promise<number> {
   }
 
   return flushed;
+}
+
+// ---- Pace calibration cache (Week 3) ---------------------------------------
+
+interface PaceCalibrationRow {
+  step_type: string;
+  personal_avg_minutes: number | null;
+  community_avg_minutes: number | null;
+  multiplier: number | null;
+  confidence: number | null;
+}
+
+function parsePaceCalibration(row: PaceCalibrationRow): PaceCalibration {
+  return {
+    step_type: row.step_type,
+    personal_avg_minutes: row.personal_avg_minutes,
+    community_avg_minutes: row.community_avg_minutes,
+    multiplier: row.multiplier ?? 1,
+    confidence: row.confidence ?? 0,
+  };
+}
+
+/**
+ * Bulk-replace the cached pace calibrations. Runs within a single transaction:
+ * clears all rows, then inserts each calibration keyed by step_type.
+ */
+export async function cachePaceCalibrations(
+  items: PaceCalibration[],
+): Promise<void> {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.execAsync("DELETE FROM pace_calibrations;");
+    for (const item of items) {
+      await db.runAsync(
+        `INSERT OR REPLACE INTO pace_calibrations
+          (step_type, personal_avg_minutes, community_avg_minutes,
+           multiplier, confidence)
+         VALUES (?, ?, ?, ?, ?);`,
+        [
+          item.step_type,
+          item.personal_avg_minutes,
+          item.community_avg_minutes,
+          item.multiplier,
+          item.confidence,
+        ],
+      );
+    }
+  });
+}
+
+/** Return all cached pace calibrations. */
+export async function getCachedPaceCalibrations(): Promise<PaceCalibration[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<PaceCalibrationRow>(
+    `SELECT * FROM pace_calibrations;`,
+  );
+  return rows.map(parsePaceCalibration);
+}
+
+/**
+ * Refresh pace calibrations from the network, cache the result, and return it.
+ * Best-effort: on any error, falls back to the cached rows so callers can
+ * degrade gracefully when offline.
+ */
+export async function refreshPaceCalibrations(): Promise<PaceCalibration[]> {
+  try {
+    const items = await getPaceCalibrations();
+    await cachePaceCalibrations(items);
+    return items;
+  } catch (error) {
+    console.warn("[RecipeReal] refreshPaceCalibrations failed:", error);
+    return getCachedPaceCalibrations();
+  }
 }

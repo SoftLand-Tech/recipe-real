@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CookSessionController;
+use App\Http\Controllers\Api\PaceCalibrationController;
 use App\Http\Controllers\Api\RecipeController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -29,4 +30,6 @@ Route::middleware(['throttle:60,1', 'auth:sanctum'])->group(function (): void {
 
     Route::post('/cook-sessions', [CookSessionController::class, 'store']);
     Route::get('/cook-sessions', [CookSessionController::class, 'index']);
+
+    Route::get('/pace-calibrations', PaceCalibrationController::class);
 });

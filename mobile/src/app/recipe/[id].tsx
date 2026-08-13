@@ -10,9 +10,9 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { getRecipe } from "@/api/client";
-import { getCachedRecipe } from "@/db/database";
-import type { Recipe, RecipeStep } from "@/types";
+import { getRecipe, hasToken } from "@/api/client";
+import { getCachedRecipe, refreshPaceCalibrations } from "@/db/database";
+import type { PaceCalibration, Recipe, RecipeStep } from "@/types";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -50,6 +50,7 @@ export default function RecipeDetailScreen() {
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [calibrations, setCalibrations] = useState<PaceCalibration[]>([]);
 
   const loadRecipe = useCallback(async () => {
     setState("loading");
@@ -76,6 +77,24 @@ export default function RecipeDetailScreen() {
     loadRecipe();
   }, [loadRecipe]);
 
+  // Best-effort: load personalized pace multipliers after the recipe renders.
+  // Only when authenticated; never blocks the recipe view.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!(await hasToken())) return;
+      try {
+        const items = await refreshPaceCalibrations();
+        if (!cancelled) setCalibrations(items);
+      } catch (error) {
+        console.warn("[RecipeReal] pace load failed:", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const publisher = roundMin(recipe?.publisher_time_minutes);
   const community = roundMin(recipe?.community_avg_minutes);
   const cleanup = roundMin(recipe?.cleanup_avg_minutes);
@@ -84,6 +103,43 @@ export default function RecipeDetailScreen() {
     community != null && cleanup != null ? community + cleanup : null;
 
   const steps: RecipeStep[] = recipe?.recipe_steps ?? [];
+
+  // Build a step_type -> multiplier map and compute the personalized estimate.
+  const paceMap = new Map<string, number>();
+  for (const c of calibrations) paceMap.set(c.step_type, c.multiplier);
+
+  /**
+   * Personalized total: sum each non-cleanup step's community minutes scaled
+   * by its multiplier, plus the recipe-level cleanup_avg scaled if a cleanup
+   * calibration exists. Falls back to the raw community value (multiplier 1)
+   * when no calibration is present.
+   */
+  let personalTotal: number | null = null;
+  if (calibrations.length > 0 && recipe) {
+    let sum = 0;
+    let hasAny = false;
+    for (const step of steps) {
+      if (step.step_type === "cleanup") continue;
+      if (step.community_minutes == null) continue;
+      const mult = paceMap.get(step.step_type) ?? 1;
+      sum += step.community_minutes * mult;
+      hasAny = true;
+    }
+    if (recipe.cleanup_avg_minutes != null) {
+      const cleanupMult = paceMap.get("cleanup");
+      sum += recipe.cleanup_avg_minutes * (cleanupMult ?? 1);
+      hasAny = true;
+    }
+    if (hasAny) personalTotal = Math.round(sum);
+  }
+
+  /** Adjusted minutes for a single step (null when no calibration applies). */
+  function adjustedForStep(step: RecipeStep): number | null {
+    if (step.community_minutes == null) return null;
+    const mult = paceMap.get(step.step_type);
+    if (mult == null || mult === 1) return null;
+    return Math.round(step.community_minutes * mult);
+  }
 
   return (
     <ScrollView
@@ -131,6 +187,11 @@ export default function RecipeDetailScreen() {
             <Text style={styles.summaryTotal}>
               Total incl. cleanup: {totalInclCleanup ?? "—"} min
             </Text>
+            {personalTotal != null ? (
+              <Text style={styles.paceLine}>
+                Your pace: ~{personalTotal} min
+              </Text>
+            ) : null}
             {cleanup != null ? (
               <Text style={styles.mutedSmall}>
                 Cleanup avg: {cleanup} min
@@ -157,22 +218,30 @@ export default function RecipeDetailScreen() {
           <Text style={styles.sectionHeading}>Steps</Text>
           {steps.length > 0 ? (
             <View style={styles.list}>
-              {steps.map((step) => (
-                <View key={`step-${step.id}`} style={styles.stepRow}>
-                  <View style={styles.stepHeader}>
-                    <Text style={styles.stepNumber}>#{step.step_number}</Text>
-                    <StepBadge stepType={step.step_type} />
-                    <Text style={styles.stepTime}>
-                      {step.community_minutes != null
-                        ? `${Math.round(step.community_minutes)} min`
-                        : ""}
+              {steps.map((step) => {
+                const adjusted = adjustedForStep(step);
+                return (
+                  <View key={`step-${step.id}`} style={styles.stepRow}>
+                    <View style={styles.stepHeader}>
+                      <Text style={styles.stepNumber}>#{step.step_number}</Text>
+                      <StepBadge stepType={step.step_type} />
+                      <Text style={styles.stepTime}>
+                        {step.community_minutes != null
+                          ? `${Math.round(step.community_minutes)} min`
+                          : ""}
+                      </Text>
+                    </View>
+                    {adjusted != null ? (
+                      <Text style={styles.stepAdjusted}>
+                        ~{adjusted} min (you)
+                      </Text>
+                    ) : null}
+                    <Text style={styles.stepDescription}>
+                      {step.description}
                     </Text>
                   </View>
-                  <Text style={styles.stepDescription}>
-                    {step.description}
-                  </Text>
-                </View>
-              ))}
+                );
+              })}
             </View>
           ) : (
             <View style={styles.list}>
@@ -239,6 +308,11 @@ const styles = StyleSheet.create({
     color: "#2563EB",
     fontWeight: "700",
   },
+  paceLine: {
+    fontSize: 15,
+    color: "#7C3AED",
+    fontWeight: "700",
+  },
   mutedSmall: {
     fontSize: 12,
     color: "#6B7280",
@@ -290,6 +364,12 @@ const styles = StyleSheet.create({
     marginLeft: "auto",
     fontSize: 13,
     color: "#2563EB",
+    fontWeight: "600",
+  },
+  stepAdjusted: {
+    alignSelf: "flex-end",
+    fontSize: 12,
+    color: "#7C3AED",
     fontWeight: "600",
   },
   stepDescription: {

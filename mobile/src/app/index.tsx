@@ -130,7 +130,18 @@ export default function RecipeListScreen() {
       ]}
     >
       <View style={styles.header}>
-        <Text style={styles.heading}>Recipes</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.heading}>Recipes</Text>
+          <Pressable
+            style={({ pressed }) => [
+              styles.paceButton,
+              pressed && styles.paceButtonPressed,
+            ]}
+            onPress={() => router.push("/pace")}
+          >
+            <Text style={styles.paceButtonText}>Your pace</Text>
+          </Pressable>
+        </View>
         <TextInput
           style={styles.searchInput}
           placeholder="Search recipes"
@@ -196,10 +207,30 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 8,
   },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
   heading: {
     fontSize: 28,
     fontWeight: "700",
     color: "#111827",
+  },
+  paceButton: {
+    backgroundColor: "#EFF6FF",
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  paceButtonPressed: {
+    backgroundColor: "#DBEAFE",
+  },
+  paceButtonText: {
+    color: "#2563EB",
+    fontSize: 14,
+    fontWeight: "600",
   },
   searchInput: {
     borderWidth: 1,
