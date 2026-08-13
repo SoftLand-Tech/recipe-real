@@ -8,6 +8,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 DOMAIN="recipe-real.softland.tech"
 
+# Repo is www-data-owned (so php-fpm/supervisor can write); tell git it's trusted
+# when this runs as root.
+git config --global --add safe.directory "$ROOT" 2>/dev/null || true
+
 echo "==> git pull origin main"
 git pull --ff-only origin main
 
