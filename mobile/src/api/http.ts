@@ -2,6 +2,12 @@ import axios, { type AxiosInstance } from "axios";
 import * as SecureStore from "expo-secure-store";
 
 import { API_BASE_URL, AUTH_TOKEN_KEY } from "@/config";
+import type {
+  CleanupFactors,
+  PaceCalibration,
+  Recipe,
+  RecipeStep,
+} from "@/types";
 
 /**
  * A configured axios instance for the RecipeReal backend. Owned here so it can
@@ -55,4 +61,88 @@ http.interceptors.response.use(
  */
 export async function postCookSessionRaw(payload: unknown): Promise<void> {
   await http.post("/api/cook-sessions", payload);
+}
+
+// ---- Normalizers & seed/pace fetchers --------------------------------------
+// These live here (rather than `@/api/client`) so that `@/db/database` can
+// import `seedRecipes` / `getPaceCalibrations` without pulling in the client
+// (which would create a circular import via `enqueuePendingCookSession`).
+
+/**
+ * The backend serializes decimal columns as strings (e.g.
+ * `"community_avg_minutes": "24.00"`), but the TS types declare `number | null`.
+ * The SQLite cache path normalizes via REAL affinity; this normalizes the raw
+ * network path so arithmetic never accidentally string-concatenates.
+ */
+export const toNum = (v: unknown): number | null =>
+  v === null || v === undefined ? null : Number(v);
+
+export function normalizeStep(s: any): RecipeStep {
+  return {
+    ...s,
+    publisher_minutes: toNum(s.publisher_minutes),
+    community_minutes: toNum(s.community_minutes),
+  };
+}
+
+export function normalizeRecipe(r: any): Recipe {
+  const factorsSrc = r?.cleanup_factors;
+  const cleanup_factors: CleanupFactors | undefined = factorsSrc
+    ? {
+        dish_count: toNum(factorsSrc.dish_count),
+        grease_level:
+          factorsSrc.grease_level == null ? null : String(factorsSrc.grease_level),
+        dishwasher_safe:
+          factorsSrc.dishwasher_safe == null ? null : !!factorsSrc.dishwasher_safe,
+      }
+    : undefined;
+  return {
+    ...r,
+    publisher_time_minutes: toNum(r.publisher_time_minutes),
+    community_avg_minutes: toNum(r.community_avg_minutes),
+    cleanup_avg_minutes: toNum(r.cleanup_avg_minutes),
+    cleanup_estimate_minutes: toNum(r.cleanup_estimate_minutes),
+    ...(cleanup_factors ? { cleanup_factors } : {}),
+    recipe_steps: Array.isArray(r.recipe_steps)
+      ? r.recipe_steps.map(normalizeStep)
+      : r.recipe_steps,
+  };
+}
+
+export function normalizePaceCalibration(c: any): PaceCalibration {
+  return {
+    step_type: String(c.step_type),
+    personal_avg_minutes: toNum(c.personal_avg_minutes),
+    community_avg_minutes: toNum(c.community_avg_minutes),
+    multiplier: toNum(c.multiplier) ?? 1,
+    confidence: toNum(c.confidence) ?? 0,
+  };
+}
+
+export async function seedRecipes(): Promise<Recipe[]> {
+  const { data } = await http.get<{ data: Recipe[] }>("/api/recipes/seed");
+  return data.data.map(normalizeRecipe);
+}
+
+/**
+ * Fetch the authenticated user's per-step-type pace calibrations. Auth is
+ * handled by the existing request interceptor. On a 401 (e.g. token cleared),
+ * returns an empty array instead of throwing so callers can degrade silently.
+ */
+export async function getPaceCalibrations(): Promise<PaceCalibration[]> {
+  try {
+    const { data } = await http.get<{ data: PaceCalibration[] }>(
+      "/api/pace-calibrations",
+    );
+    return Array.isArray(data?.data)
+      ? data.data.map(normalizePaceCalibration)
+      : [];
+  } catch (error) {
+    // A 401 (e.g. token cleared) degrades silently to an empty list; a 402
+    // paywall is rethrown so callers can surface the upgrade CTA.
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      return [];
+    }
+    throw error;
+  }
 }
