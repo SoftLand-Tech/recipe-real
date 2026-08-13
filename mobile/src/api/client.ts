@@ -1,8 +1,18 @@
-import axios, { type AxiosInstance } from "axios";
+import axios from "axios";
 import * as SecureStore from "expo-secure-store";
 
-import { API_BASE_URL, AUTH_TOKEN_KEY } from "@/config";
+import { AUTH_TOKEN_KEY } from "@/config";
 import { enqueuePendingCookSession } from "@/db/database";
+import { http, postCookSessionRaw } from "@/api/http";
+
+// Re-export the shared axios instance + raw POST so existing
+// `import { http } from "@/api/client"` and
+// `import { postCookSessionRaw } from "@/api/client"` continue to work.
+export { http, postCookSessionRaw };
+
+// Use the shared instance for all calls below.
+const api = http;
+
 import type {
   AuthResponse,
   BillingPlan,
@@ -16,48 +26,6 @@ import type {
   RecipeStep,
   Usage,
 } from "@/types";
-
-/** A configured axios instance for the RecipeReal backend. */
-const api: AxiosInstance = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 15000,
-  headers: {
-    Accept: "application/json",
-    "Content-Type": "application/json",
-  },
-});
-
-/** Attach the bearer token from SecureStore to every request, if present. */
-api.interceptors.request.use(async (config) => {
-  const token = await SecureStore.getItemAsync(AUTH_TOKEN_KEY);
-  if (token) {
-    config.headers = config.headers ?? {};
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
-/**
- * On a 401 response, clear the stored auth token (it is no longer valid).
- * We don't navigate anywhere yet (there is no auth screen); callers still see
- * the original error. The interceptor swallows its own failures so a buggy
- * clear never masks the real 401.
- */
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    if (error?.response?.status === 401) {
-      try {
-        await SecureStore.deleteItemAsync(AUTH_TOKEN_KEY);
-      } catch {
-        // Swallow: don't let a failed clear mask the original 401.
-      }
-    }
-    return Promise.reject(error);
-  },
-);
-
-export const http = api;
 
 // ---- Normalizers -----------------------------------------------------------
 
@@ -201,15 +169,10 @@ function normalizeCookSession(s: any): CookSessionSummary {
 }
 
 /**
- * Raw POST to `/api/cook-sessions`. Throws on ANY failure (network or server).
- * Used directly by `flushPendingCookSessions` in db.ts to avoid re-triggering
- * the offline fallback (which would re-enqueue and loop).
+ * Raw POST to `/api/cook-sessions` is now provided by `@/api/http` (re-exported
+ * above) so it can be shared with `flushPendingCookSessions` without creating a
+ * circular import with the db layer.
  */
-export async function postCookSessionRaw(
-  payload: CookSessionPayload,
-): Promise<void> {
-  await api.post("/api/cook-sessions", payload);
-}
 
 /**
  * Submit a completed cook session. On a network error (offline — no response

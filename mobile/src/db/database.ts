@@ -1,6 +1,7 @@
 import * as SQLite from "expo-sqlite";
 
-import { getPaceCalibrations, postCookSessionRaw, seedRecipes } from "@/api/client";
+import { getPaceCalibrations, seedRecipes } from "@/api/client";
+import { postCookSessionRaw } from "@/api/http";
 import type {
   CookSessionPayload,
   PaceCalibration,
@@ -13,15 +14,41 @@ const DB_NAME = "recipereal.db";
 /** Current version of the local cache schema. Bump when columns/tables change. */
 const CACHE_SCHEMA_VERSION = 2;
 
-let dbInstance: SQLite.SQLiteDatabase | null = null;
+/**
+ * Memoized ready-promise for the single DB connection.
+ *
+ * On app launch, both `_layout.tsx` (`initDatabase`) and `index.tsx`
+ * (`loadFromCache` → `countCachedRecipes`) can call into the DB nearly
+ * simultaneously. A plain lazy variable would let the second concurrent caller
+ * also see `dbInstance === null` and open the database a SECOND time, which
+ * makes expo-sqlite hand back a wrapper whose native handle is null — every
+ * subsequent `prepareAsync` then throws NullPointerException.
+ *
+ * Memoizing the *promise* (not the resolved value) guarantees exactly one
+ * `openDatabaseAsync` call, and all schema setup runs inside it so no query can
+ * execute before the schema is ready.
+ */
+let dbReady: Promise<SQLite.SQLiteDatabase> | null = null;
 
-async function getDb(): Promise<SQLite.SQLiteDatabase> {
-  if (!dbInstance) {
-    dbInstance = await SQLite.openDatabaseAsync(DB_NAME);
-    await dbInstance.execAsync("PRAGMA journal_mode = WAL;");
-    await dbInstance.execAsync("PRAGMA foreign_keys = ON;");
+function getDb(): Promise<SQLite.SQLiteDatabase> {
+  if (!dbReady) {
+    dbReady = (async () => {
+      const db = await SQLite.openDatabaseAsync(DB_NAME);
+      try {
+        await db.execAsync("PRAGMA journal_mode = WAL;");
+      } catch {
+        // Non-fatal: a PRAGMA failure must never break the connection.
+      }
+      try {
+        await db.execAsync("PRAGMA foreign_keys = ON;");
+      } catch {
+        // Non-fatal: a PRAGMA failure must never break the connection.
+      }
+      await ensureSchema(db);
+      return db;
+    })();
   }
-  return dbInstance;
+  return dbReady;
 }
 
 /** Full DDL for the recipes cache table (Week 4 shape, incl. cleanup cols). */
@@ -80,27 +107,28 @@ const PACE_CALIBRATIONS_DDL = `
 
 /**
  * Create the local cache tables mirroring recipes + recipe_steps, and evolve
- * the schema to CACHE_SCHEMA_VERSION when needed. Safe to call repeatedly.
+ * the schema to CACHE_SCHEMA_VERSION when needed. Runs inside the memoized
+ * `getDb()` promise so no query can execute before the schema is ready, and so
+ * concurrent callers never trigger a second open.
  *
  * Schema bumps drop + recreate the recipe cache tables (the app re-seeds them
  * on the next `seedAndCacheRecipes` call). The pending-cook-session and
  * pace-calibration tables are left untouched on a bump (their data is not
  * trivially re-derivable).
+ *
+ * Each statement runs in its own `execAsync` call — concatenating multiple
+ * statements into one string can fail silently on some drivers.
  */
-export async function initDatabase(): Promise<void> {
-  const db = await getDb();
-
+async function ensureSchema(db: SQLite.SQLiteDatabase): Promise<void> {
   // Always ensure the meta + non-recipe tables exist.
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS meta (
       key TEXT PRIMARY KEY,
       value TEXT
     );
-
-    ${PENDING_COOK_SESSIONS_DDL}
-
-    ${PACE_CALIBRATIONS_DDL}
   `);
+  await db.execAsync(PENDING_COOK_SESSIONS_DDL);
+  await db.execAsync(PACE_CALIBRATIONS_DDL);
 
   // Read the recorded schema version (missing on first launch / pre-Week-4).
   const metaRow = await db.getFirstAsync<{ value: string | null }>(
@@ -112,14 +140,11 @@ export async function initDatabase(): Promise<void> {
 
   if (needsBump) {
     // Drop the recipe cache tables so they get recreated at the current shape.
-    await db.execAsync(`
-      DROP TABLE IF EXISTS recipe_steps;
-      DROP TABLE IF EXISTS recipes;
-
-      ${RECIPES_DDL}
-      ${RECIPE_STEPS_DDL}
-      ${RECIPE_STEPS_INDEX_DDL}
-    `);
+    await db.execAsync("DROP TABLE IF EXISTS recipe_steps;");
+    await db.execAsync("DROP TABLE IF EXISTS recipes;");
+    await db.execAsync(RECIPES_DDL);
+    await db.execAsync(RECIPE_STEPS_DDL);
+    await db.execAsync(RECIPE_STEPS_INDEX_DDL);
     await db.runAsync(
       `INSERT INTO meta (key, value) VALUES ('schema_version', ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value;`,
@@ -127,12 +152,19 @@ export async function initDatabase(): Promise<void> {
     );
   } else {
     // Already at the current version: just ensure tables exist (idempotent).
-    await db.execAsync(`
-      ${RECIPES_DDL}
-      ${RECIPE_STEPS_DDL}
-      ${RECIPE_STEPS_INDEX_DDL}
-    `);
+    await db.execAsync(RECIPES_DDL);
+    await db.execAsync(RECIPE_STEPS_DDL);
+    await db.execAsync(RECIPE_STEPS_INDEX_DDL);
   }
+}
+
+/**
+ * Trigger early initialization of the SQLite cache (open + PRAGMAs + schema).
+ * `_layout.tsx` calls this on app mount; screens that call DB functions also
+ * `await getDb()` internally, so they always get a ready db.
+ */
+export function initDatabase(): Promise<SQLite.SQLiteDatabase> {
+  return getDb();
 }
 
 /** Row shape for the cached recipe table. */
