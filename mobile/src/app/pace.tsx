@@ -10,6 +10,7 @@ import {
 import { router } from "expo-router";
 
 import { getCookSessions, getUsage, hasToken, isPaywallError } from "@/api/client";
+import { track } from "@/analytics";
 import { refreshPaceCalibrations } from "@/db/database";
 import type { PaceCalibration } from "@/types";
 
@@ -60,6 +61,10 @@ export default function PaceScreen() {
       setCalibrations(paceResult);
       setCookCount(sessions?.meta?.total ?? sessions?.data?.length ?? 0);
       setState("ready");
+      // Fire-and-forget analytics: pace dashboard rendered with multipliers.
+      if (paceResult.length > 0) {
+        track("pace_viewed");
+      }
     } catch (error) {
       // A 402 from the pace fetch is also a paywall state.
       if (isPaywallError(error)) {

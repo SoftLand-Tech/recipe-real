@@ -13,6 +13,7 @@ import {
 import { StatusBar } from "expo-status-bar";
 
 import "@/global.css";
+import { track } from "@/analytics";
 import { initDatabase } from "@/db/database";
 
 /**
@@ -27,6 +28,8 @@ export default function RootLayout() {
       // Cache failures are non-fatal: screens fall back to the network.
       console.warn("[RecipeReal] initDatabase failed:", error);
     });
+    // Fire-and-forget analytics. Runs once on app mount.
+    track("app_open");
   }, []);
 
   return (

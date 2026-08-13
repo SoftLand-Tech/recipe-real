@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getRecipe, hasToken, isPaywallError } from "@/api/client";
+import { track } from "@/analytics";
 import { getCachedRecipe, refreshPaceCalibrations } from "@/db/database";
 import type { CleanupFactors, PaceCalibration, Recipe, RecipeStep } from "@/types";
 
@@ -89,6 +90,8 @@ export default function RecipeDetailScreen() {
       }
       setRecipe(result);
       setState("ready");
+      // Fire-and-forget analytics once the recipe is successfully loaded.
+      track("recipe_viewed", { recipe_id: result.id });
     } catch (error) {
       console.warn("[RecipeReal] loadRecipe failed:", error);
       // A 402 means the free-tier recipe limit is reached. Only surface the

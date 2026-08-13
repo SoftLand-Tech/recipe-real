@@ -15,6 +15,7 @@ import { useKeepAwake } from "expo-keep-awake";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getRecipe, submitCookSession } from "@/api/client";
+import { track } from "@/analytics";
 import {
   flushPendingCookSessions,
   getCachedRecipe,
@@ -123,8 +124,15 @@ export default function CookModeScreen() {
       stepStartRef.current = Date.now();
       runningRef.current = true;
       setRunning(true);
+      // Fire-and-forget analytics: cook started once steps are present.
+      if (recipe?.id != null) {
+        track("cook_started", {
+          recipe_id: recipe.id,
+          step_count: steps.length,
+        });
+      }
     }
-  }, [steps, elapsedMs.length]);
+  }, [steps, elapsedMs.length, recipe]);
 
   // ---- Live ticking --------------------------------------------------------
   useEffect(() => {
@@ -244,6 +252,12 @@ export default function CookModeScreen() {
   const handleSubmit = useCallback(
     async (feedback: Feedback | null) => {
       if (!recipe) return;
+      // Fire-and-forget analytics when a feedback button is chosen or skipped.
+      track("cook_completed", {
+        recipe_id: recipe.id,
+        total_actual_minutes: summary.total_actual_minutes,
+        feedback,
+      });
       setPhase("submitting");
       setSubmitMsg(null);
       const payload: CookSessionPayload = {

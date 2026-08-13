@@ -60,3 +60,48 @@ with the `nativewind/babel` preset, and `metro.config.js` using
 `withNativeWind`). The screens themselves use React Native `StyleSheet` for
 layout/colour values to keep the UI deterministic and resilient; the Tailwind
 pipeline is available for any component that opts into `className`.
+
+## EAS builds
+
+The app is configured for [EAS Build](https://docs.expo.dev/build/introduction/)
+via [`eas.json`](./eas.json). Builds require an Expo account and (for store
+submissions) Apple Developer and Google Play Console accounts — these cannot be
+set up from this environment.
+
+Setup (one-time):
+
+```bash
+npm install -g eas-cli
+eas login
+```
+
+Before the first build, initialize the EAS project to populate
+`expo.extra.eas.projectId` in `app.json` (this step is intentionally left for you
+to run — a placeholder would break EAS):
+
+```bash
+eas init
+```
+
+Profiles:
+
+- **development** — development build (internal) with the dev client:
+
+  ```bash
+  eas build --profile development --platform ios
+  eas build --profile development --platform android
+  ```
+
+- **preview** — internal beta (TestFlight internal / Play internal testing; ships
+  an APK on Android and an internal iOS build) on the `preview` release channel:
+
+  ```bash
+  eas build --profile preview
+  ```
+
+- **production** — store submission on the `production` release channel:
+
+  ```bash
+  eas build --profile production --platform ios --auto-submit
+  ```
+

@@ -15,6 +15,7 @@ import {
   hasToken,
   openBillingPortal,
 } from "@/api/client";
+import { track } from "@/analytics";
 import type { BillingPlan } from "@/types";
 
 const PLANS: {
@@ -55,12 +56,19 @@ export default function UpgradeScreen() {
     };
   }, []);
 
+  // Fire-and-forget analytics: upgrade screen viewed.
+  useEffect(() => {
+    track("upgrade_viewed");
+  }, []);
+
   async function handleSubscribe(plan: BillingPlan) {
     setError(null);
     setPendingPlan(plan);
     try {
       const url = await createCheckout(plan);
       if (url) {
+        // Fire-and-forget analytics right before opening the checkout browser.
+        track("upgrade_checkout_opened", { plan });
         await openBrowserAsync(url);
       }
     } catch (e) {

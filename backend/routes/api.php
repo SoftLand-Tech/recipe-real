@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BillingController;
 use App\Http\Controllers\Api\CookSessionController;
@@ -21,6 +22,11 @@ Route::middleware('throttle:60,1')->group(function (): void {
     // /seed MUST come before /{recipe} to avoid route shadowing.
     Route::get('/recipes/seed', [RecipeController::class, 'seed']);
     Route::get('/recipes/{recipe}', [RecipeController::class, 'show']);
+
+    // Self-hosted product analytics: auth-optional (anonymous app_open events
+    // are allowed), with a tighter throttle to limit anonymous spam.
+    Route::post('/events', [AnalyticsController::class, 'store'])
+        ->middleware('throttle:30,1');
 });
 
 // Protected routes.
