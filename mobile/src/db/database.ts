@@ -1,7 +1,7 @@
 import * as SQLite from "expo-sqlite";
 
-import { seedRecipes } from "@/api/client";
-import type { Recipe, RecipeStep } from "@/types";
+import { postCookSessionRaw, seedRecipes } from "@/api/client";
+import type { CookSessionPayload, Recipe, RecipeStep } from "@/types";
 
 const DB_NAME = "recipereal.db";
 
@@ -47,6 +47,12 @@ export async function initDatabase(): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS idx_recipe_steps_recipe_id
       ON recipe_steps(recipe_id);
+
+    CREATE TABLE IF NOT EXISTS pending_cook_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      payload TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
   `);
 }
 
@@ -215,4 +221,78 @@ export async function countCachedRecipes(): Promise<number> {
     `SELECT COUNT(*) AS count FROM recipes;`,
   );
   return row?.count ?? 0;
+}
+
+// ---- Pending cook sessions (offline queue) ---------------------------------
+
+interface PendingCookSessionRow {
+  id: number;
+  payload: string;
+  created_at: number;
+}
+
+/**
+ * Persist a cook-session payload locally so it can be synced later when the
+ * device is back online. The raw JSON is stored verbatim.
+ */
+export async function enqueuePendingCookSession(
+  payload: CookSessionPayload,
+): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT INTO pending_cook_sessions (payload, created_at) VALUES (?, ?);`,
+    [JSON.stringify(payload), Date.now()],
+  );
+}
+
+/** Number of cook sessions waiting to be synced. */
+export async function getPendingCookSessionCount(): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ count: number }>(
+    `SELECT COUNT(*) AS count FROM pending_cook_sessions;`,
+  );
+  return row?.count ?? 0;
+}
+
+/**
+ * Attempt to upload every queued cook session. Walks rows oldest-first; on
+ * success deletes the row, on network failure stops (later rows likely fail
+ * too). Returns the number of rows successfully flushed.
+ *
+ * Uses `postCookSessionRaw` directly (which throws on any failure) rather than
+ * `submitCookSession`, so a failure here doesn't re-enqueue and loop.
+ */
+export async function flushPendingCookSessions(): Promise<number> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<PendingCookSessionRow>(
+    `SELECT * FROM pending_cook_sessions ORDER BY created_at ASC, id ASC;`,
+  );
+
+  let flushed = 0;
+  for (const row of rows) {
+    let payload: CookSessionPayload;
+    try {
+      payload = JSON.parse(row.payload) as CookSessionPayload;
+    } catch {
+      // Unparseable row — drop it so it doesn't block the queue forever.
+      await db.runAsync(`DELETE FROM pending_cook_sessions WHERE id = ?;`, [
+        row.id,
+      ]);
+      continue;
+    }
+
+    try {
+      await postCookSessionRaw(payload);
+    } catch (error) {
+      // Stop on the first failure: assume still offline.
+      return flushed;
+    }
+
+    await db.runAsync(`DELETE FROM pending_cook_sessions WHERE id = ?;`, [
+      row.id,
+    ]);
+    flushed += 1;
+  }
+
+  return flushed;
 }

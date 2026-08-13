@@ -45,6 +45,10 @@ export default function RootLayout() {
             options={{ headerShown: false, title: "Recipes" }}
           />
           <Stack.Screen name="recipe/[id]" options={{ title: "Recipe" }} />
+          <Stack.Screen
+            name="cook/[id]"
+            options={{ title: "Cook Mode", headerShown: false }}
+          />
         </Stack>
       </SafeAreaProvider>
     </ThemeProvider>

@@ -2,8 +2,11 @@ import axios, { type AxiosInstance } from "axios";
 import * as SecureStore from "expo-secure-store";
 
 import { API_BASE_URL, AUTH_TOKEN_KEY } from "@/config";
+import { enqueuePendingCookSession } from "@/db/database";
 import type {
   AuthResponse,
+  CookSessionPayload,
+  CookSessionSummary,
   GetRecipesParams,
   Paginated,
   Recipe,
@@ -147,4 +150,64 @@ export async function getRecipe(id: number | string): Promise<Recipe> {
 export async function seedRecipes(): Promise<Recipe[]> {
   const { data } = await api.get<{ data: Recipe[] }>("/api/recipes/seed");
   return data.data.map(normalizeRecipe);
+}
+
+// ---- Cook sessions ---------------------------------------------------------
+
+/**
+ * Normalize a cook-session summary from the backend. Numeric columns can come
+ * back as strings (Laravel decimal serialization); coerce them to numbers.
+ */
+function normalizeCookSession(s: any): CookSessionSummary {
+  return {
+    ...s,
+    total_actual_minutes: toNum(s.total_actual_minutes),
+    cleanup_minutes: toNum(s.cleanup_minutes),
+    recipe: {
+      ...s.recipe,
+      community_avg_minutes: toNum(s.recipe?.community_avg_minutes),
+    },
+  };
+}
+
+/**
+ * Raw POST to `/api/cook-sessions`. Throws on ANY failure (network or server).
+ * Used directly by `flushPendingCookSessions` in db.ts to avoid re-triggering
+ * the offline fallback (which would re-enqueue and loop).
+ */
+export async function postCookSessionRaw(
+  payload: CookSessionPayload,
+): Promise<void> {
+  await api.post("/api/cook-sessions", payload);
+}
+
+/**
+ * Submit a completed cook session. On a network error (offline — no response
+ * from the server), fall back to the local pending queue and resolve
+ * successfully so the user is never blocked. On a real server error
+ * (has `.response`), rethrow.
+ */
+export async function submitCookSession(
+  payload: CookSessionPayload,
+): Promise<void> {
+  try {
+    await postCookSessionRaw(payload);
+  } catch (error) {
+    // Offline = axios error with no response (e.g. timeout, no network).
+    const isOffline =
+      !axios.isAxiosError(error) || typeof error.response === "undefined";
+    if (isOffline) {
+      await enqueuePendingCookSession(payload);
+      return;
+    }
+    throw error;
+  }
+}
+
+/** Fetch the user's cook-session history. */
+export async function getCookSessions(): Promise<Paginated<CookSessionSummary>> {
+  const { data } = await api.get<Paginated<CookSessionSummary>>(
+    "/api/cook-sessions",
+  );
+  return { ...data, data: data.data.map(normalizeCookSession) };
 }

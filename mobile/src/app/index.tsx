@@ -14,6 +14,7 @@ import { router } from "expo-router";
 
 import {
   countCachedRecipes,
+  flushPendingCookSessions,
   getCachedRecipes,
   seedAndCacheRecipes,
 } from "@/db/database";
@@ -74,6 +75,10 @@ export default function RecipeListScreen() {
     loadFromCache().then(() => {
       // After showing cached data, refresh in the background once.
       refreshInBackground();
+      // Best-effort: upload any cook sessions queued while offline.
+      flushPendingCookSessions().catch((error) => {
+        console.warn("[RecipeReal] background flush failed:", error);
+      });
     });
     // We intentionally run this only once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps

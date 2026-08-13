@@ -50,3 +50,29 @@ export interface GetRecipesParams {
   search?: string;
   maxTime?: number;
 }
+
+// ---- Cook Mode (Week 2) ----------------------------------------------------
+
+export type Feedback = "faster" | "as_expected" | "slower";
+
+export interface TimingSubmissionInput {
+  recipe_step_id: number;
+  actual_minutes: number;
+}
+
+export interface CookSessionPayload {
+  recipe_id: number;
+  total_actual_minutes: number;
+  cleanup_minutes: number | null;
+  feedback: Feedback | null;
+  timing_submissions: TimingSubmissionInput[];
+}
+
+export interface CookSessionSummary {
+  id: number;
+  recipe: { id: number; title: string; community_avg_minutes: number | null };
+  total_actual_minutes: number | null;
+  cleanup_minutes: number | null;
+  feedback: Feedback | null;
+  created_at: string;
+}

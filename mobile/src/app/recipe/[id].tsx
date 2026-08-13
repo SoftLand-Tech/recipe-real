@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -191,7 +191,7 @@ export default function RecipeDetailScreen() {
               styles.cookButton,
               pressed && styles.cookButtonPressed,
             ]}
-            onPress={() => console.log("[RecipeReal] Cook Mode — coming in Week 2")}
+            onPress={() => router.push(`/cook/${id}`)}
           >
             <Text style={styles.cookButtonText}>Start Cook Mode</Text>
           </Pressable>

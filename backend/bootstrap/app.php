@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -13,9 +14,18 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // API-only app: never build a login redirect (no such route).
+        // Returning null lets the Authenticate middleware construct an
+        // AuthenticationException (redirect = null) so the render handler
+        // in withExceptions() below can respond with JSON 401 instead of
+        // crashing with "Route [login] not defined."
+        $middleware->redirectGuestsTo(fn (Request $request) => null);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->render(function (AuthenticationException $e, Request $request) {
+            return response()->json(['message' => $e->getMessage()], 401);
+        });
+
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
