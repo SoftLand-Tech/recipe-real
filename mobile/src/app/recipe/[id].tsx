@@ -194,7 +194,7 @@ export default function RecipeDetailScreen() {
         style={styles.scroll}
         contentContainerStyle={[
           styles.content,
-          { paddingTop: 16, paddingBottom: 24 },
+          { paddingTop: 16, paddingBottom: 120 },
         ]}
       >
         {/* Centered, max-width column so the screen reads cleanly on tablets. */}
@@ -360,6 +360,7 @@ export default function RecipeDetailScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+    position: "relative",
     backgroundColor: "#FFFFFF",
   },
   scroll: {
@@ -369,6 +370,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   cookFooter: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
     paddingHorizontal: 16,
     paddingTop: 10,
     borderTopWidth: 1,
