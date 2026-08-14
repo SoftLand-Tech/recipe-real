@@ -1,0 +1,87 @@
+import { Pressable, StyleSheet, View } from "react-native";
+
+import { Color, Space } from "@/theme";
+
+export interface StepDotsProps {
+  count: number;
+  current: number;
+  done: boolean[];
+  onJump?: (index: number) => void;
+}
+
+export function StepDots({ count, current, done, onJump }: StepDotsProps) {
+  const dots = Array.from({ length: Math.max(0, count) }, (_, i) => i);
+
+  return (
+    <View style={styles.row}>
+      {dots.map((i) => {
+        const isDone = !!done[i];
+        const isCurrent = i === current;
+        const isUpcoming = !isDone && !isCurrent;
+
+        const dot = (
+          <View
+            style={[
+              styles.dot,
+              isDone && styles.dotDone,
+              isCurrent && styles.dotCurrent,
+              isUpcoming && styles.dotUpcoming,
+            ]}
+          />
+        );
+
+        if (!onJump) return <View key={i}>{dot}</View>;
+
+        return (
+          <Pressable
+            key={i}
+            onPress={() => onJump(i)}
+            hitSlop={Space.sm}
+            style={styles.hit}
+          >
+            {dot}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Space.sm,
+  },
+  hit: {
+    padding: Space.xs,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: Color.surface,
+    borderWidth: 1,
+    borderColor: Color.hairlineStrong,
+  },
+  dotDone: {
+    backgroundColor: Color.accent,
+    borderColor: Color.accent,
+  },
+  dotCurrent: {
+    width: 12,
+    height: 12,
+    backgroundColor: Color.accent,
+    borderColor: Color.accent,
+    // The slightly larger bordered wrapper = the "ring".
+    margin: -2,
+    shadowColor: Color.accent,
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 2,
+  },
+  dotUpcoming: {
+    backgroundColor: "transparent",
+  },
+});

@@ -98,6 +98,10 @@ export function normalizeRecipe(r: any): Recipe {
     : undefined;
   return {
     ...r,
+    image_url:
+      r?.image_url && String(r.image_url).trim()
+        ? String(r.image_url).trim()
+        : null,
     publisher_time_minutes: toNum(r.publisher_time_minutes),
     community_avg_minutes: toNum(r.community_avg_minutes),
     cleanup_avg_minutes: toNum(r.cleanup_avg_minutes),

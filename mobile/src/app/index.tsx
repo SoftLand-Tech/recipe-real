@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
@@ -20,15 +19,16 @@ import {
   seedAndCacheRecipes,
 } from "@/db/database";
 import type { Recipe } from "@/types";
+import { Color, Radius, Space, Type } from "@/theme";
+import {
+  Card,
+  Chip,
+  HeroImage,
+  SkeletonCard,
+  TimeChip,
+} from "@/components/ui";
 
 type LoadState = "loading" | "ready" | "error";
-
-/** Formats a community/cleanup minute value into a short label fragment. */
-function fmtMinutes(value: number | null | undefined): string {
-  if (value == null) return "—";
-  const rounded = Math.round(value);
-  return `${rounded} min`;
-}
 
 export default function RecipeListScreen() {
   const insets = useSafeAreaInsets();
@@ -36,7 +36,7 @@ export default function RecipeListScreen() {
 
   // Tablet (width >= 768): two columns. Phones: one column.
   const numColumns = width >= 768 ? 2 : 1;
-  const columnGap = 12;
+  const columnGap = Space.lg;
 
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [state, setState] = useState<LoadState>("loading");
@@ -103,31 +103,38 @@ export default function RecipeListScreen() {
     return recipes.filter((r) => r.title.toLowerCase().includes(q));
   }, [recipes, search]);
 
+  const stepCount = (item: Recipe) =>
+    item.recipe_steps?.length ?? item.steps?.length ?? 0;
+
   const renderItem: ListRenderItem<Recipe> = useCallback(
-    ({ item }) => {
-      const summary = `Community avg: ${fmtMinutes(
-        item.community_avg_minutes,
-      )} · Cleanup: ${fmtMinutes(item.cleanup_avg_minutes)}`;
-      return (
-        <Pressable
-          style={({ pressed }) => [
-            styles.card,
-            numColumns > 1 && styles.cardColumn,
-            pressed && styles.cardPressed,
-          ]}
-          onPress={() => router.push(`/recipe/${item.id}`)}
-          accessibilityRole="button"
-          accessibilityLabel={`Open recipe ${item.title}`}
-        >
+    ({ item }) => (
+      <Card
+        onPress={() => router.push(`/recipe/${item.id}`)}
+        padding={0}
+        shadow="card"
+        style={numColumns > 1 ? styles.cardColumn : styles.card}
+      >
+        <HeroImage uri={item.image_url} height={150} rounded={Radius.lg} />
+        <View style={styles.cardBody}>
           <Text style={styles.cardTitle} numberOfLines={2}>
             {item.title}
           </Text>
-          <Text style={styles.cardSummary}>{summary}</Text>
-        </Pressable>
-      );
-    },
+          <View style={styles.cardChips}>
+            <TimeChip minutes={item.community_avg_minutes} label="Focused" />
+            <TimeChip minutes={item.cleanup_avg_minutes} label="Cleanup" />
+            <Chip
+              tone="amber"
+              label={`${stepCount(item)} steps`}
+              size="sm"
+            />
+          </View>
+        </View>
+      </Card>
+    ),
     [numColumns],
   );
+
+  const showSkeletons = state === "loading" && recipes.length === 0;
 
   return (
     <View
@@ -140,53 +147,66 @@ export default function RecipeListScreen() {
         <View style={styles.titleRow}>
           <Text style={styles.heading}>Recipes</Text>
           <View style={styles.headerActions}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.premiumPill,
-                pressed && styles.premiumPillPressed,
-              ]}
-              onPress={() => router.push("/upgrade")}
-            >
-              <Text style={styles.premiumPillText}>Go Premium</Text>
+            <Pressable onPress={() => router.push("/upgrade")}>
+              <Chip tone="accent" label="Premium" size="sm" />
             </Pressable>
-            <Pressable
-              style={({ pressed }) => [
-                styles.paceButton,
-                pressed && styles.paceButtonPressed,
-              ]}
-              onPress={() => router.push("/pace")}
-            >
-              <Text style={styles.paceButtonText}>Your pace</Text>
+            <Pressable onPress={() => router.push("/pace")}>
+              <Chip tone="neutral" label="Your pace" size="sm" />
             </Pressable>
           </View>
         </View>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search recipes"
-          placeholderTextColor="#9CA3AF"
-          value={search}
-          onChangeText={setSearch}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
-        />
+        <View style={styles.searchWrap}>
+          <Text style={styles.searchGlyph}>⌕</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search recipes"
+            placeholderTextColor={Color.inkFaint}
+            value={search}
+            onChangeText={setSearch}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+          />
+        </View>
       </View>
 
-      {state === "loading" && (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" />
-          <Text style={styles.muted}>Loading recipes…</Text>
-        </View>
+      {showSkeletons && (
+        <FlatList
+          key={numColumns === 1 ? "skel-1col" : "skel-2col"}
+          data={[0, 1, 2, 3]}
+          keyExtractor={(item) => `skel-${item}`}
+          numColumns={numColumns}
+          renderItem={() => (
+            <View
+              style={
+                numColumns > 1
+                  ? [styles.cardColumn, { paddingHorizontal: 0 }]
+                  : null
+              }
+            >
+              <SkeletonCard hasImage />
+            </View>
+          )}
+          contentContainerStyle={styles.listContent}
+          columnWrapperStyle={
+            numColumns > 1
+              ? { justifyContent: "flex-start", gap: columnGap }
+              : undefined
+          }
+          ItemSeparatorComponent={() => <View style={{ height: columnGap }} />}
+          scrollEnabled={false}
+        />
       )}
 
       {state === "error" && (
         <View style={styles.center}>
+          <Text style={styles.emptyGlyph}>🍲</Text>
           <Text style={styles.errorTitle}>Something went wrong</Text>
           <Text style={styles.muted}>
             {errorMessage ?? "Could not load recipes."}
           </Text>
-          <Pressable style={styles.button} onPress={loadFromCache}>
-            <Text style={styles.buttonText}>Retry</Text>
+          <Pressable style={styles.retry} onPress={loadFromCache}>
+            <Text style={styles.retryText}>Retry</Text>
           </Pressable>
         </View>
       )}
@@ -206,13 +226,10 @@ export default function RecipeListScreen() {
           }
           refreshing={refreshing}
           onRefresh={handleRefresh}
-          ItemSeparatorComponent={() =>
-            numColumns > 1 ? <View style={{ height: columnGap }} /> : (
-              <View style={styles.separator} />
-            )
-          }
+          ItemSeparatorComponent={() => <View style={{ height: columnGap }} />}
           ListEmptyComponent={
             <View style={styles.center}>
+              <Text style={styles.emptyGlyph}>🍳</Text>
               <Text style={styles.muted}>
                 {search
                   ? "No recipes match your search."
@@ -229,129 +246,100 @@ export default function RecipeListScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: Color.canvas,
   },
   header: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 8,
+    paddingHorizontal: Space.lg,
+    paddingVertical: Space.md,
+    gap: Space.sm,
   },
   titleRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 12,
+    gap: Space.md,
   },
   heading: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  paceButton: {
-    backgroundColor: "#EFF6FF",
-    borderRadius: 999,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
-  paceButtonPressed: {
-    backgroundColor: "#DBEAFE",
-  },
-  paceButtonText: {
-    color: "#2563EB",
-    fontSize: 14,
-    fontWeight: "600",
+    ...Type.h1,
+    color: Color.ink,
   },
   headerActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: Space.sm,
   },
-  premiumPill: {
-    backgroundColor: "#F5F3FF",
-    borderRadius: 999,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Color.surfaceSoft,
+    borderWidth: 1,
+    borderColor: Color.hairline,
+    borderRadius: Radius.pill,
+    paddingHorizontal: Space.md,
   },
-  premiumPillPressed: {
-    backgroundColor: "#EDE9FE",
-  },
-  premiumPillText: {
-    color: "#7C3AED",
-    fontSize: 14,
-    fontWeight: "600",
+  searchGlyph: {
+    fontSize: 16,
+    color: Color.inkFaint,
+    marginRight: Space.xs,
   },
   searchInput: {
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    backgroundColor: "#F9FAFB",
-    color: "#111827",
+    flex: 1,
+    paddingVertical: Space.md,
+    fontSize: Type.body.fontSize,
+    color: Color.ink,
   },
   listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
+    paddingHorizontal: Space.lg,
+    paddingBottom: Space.xxl,
   },
   card: {
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    gap: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
+    marginBottom: 0,
   },
   cardColumn: {
     flex: 1,
   },
-  cardPressed: {
-    backgroundColor: "#F9FAFB",
+  cardBody: {
+    padding: Space.lg,
+    gap: Space.sm,
   },
   cardTitle: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: "#111827",
+    ...Type.title,
+    color: Color.ink,
   },
-  cardSummary: {
-    fontSize: 13,
-    color: "#6B7280",
-  },
-  separator: {
-    height: 10,
+  cardChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Space.xs,
   },
   center: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 24,
-    gap: 8,
+    paddingHorizontal: Space.xxl,
+    gap: Space.sm,
+  },
+  emptyGlyph: {
+    fontSize: 40,
+    marginBottom: Space.xs,
   },
   muted: {
-    color: "#6B7280",
-    fontSize: 14,
+    ...Type.body,
+    color: Color.inkSecondary,
     textAlign: "center",
   },
   errorTitle: {
-    color: "#B91C1C",
-    fontSize: 16,
-    fontWeight: "600",
+    ...Type.h3,
+    color: Color.danger,
   },
-  button: {
-    marginTop: 8,
-    backgroundColor: "#2563EB",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 10,
+  retry: {
+    marginTop: Space.sm,
+    paddingHorizontal: Space.xl,
+    paddingVertical: Space.md,
+    borderRadius: Radius.pill,
+    backgroundColor: Color.accent,
   },
-  buttonText: {
-    color: "#FFFFFF",
-    fontWeight: "600",
+  retryText: {
+    color: Color.surface,
+    fontWeight: "700",
   },
 });

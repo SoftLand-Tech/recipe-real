@@ -13,7 +13,24 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getRecipe, hasToken, isPaywallError } from "@/api/client";
 import { track } from "@/analytics";
 import { getCachedRecipe, refreshPaceCalibrations } from "@/db/database";
-import type { CleanupFactors, PaceCalibration, Recipe, RecipeStep } from "@/types";
+import type {
+  CleanupFactors,
+  PaceCalibration,
+  Recipe,
+  RecipeStep,
+} from "@/types";
+import { Color, MaxContentWidth, Radius, Shadow, Space, Type } from "@/theme";
+import {
+  Badge,
+  Button,
+  Card,
+  Chip,
+  HeroImage,
+  SectionHeader,
+  StatPill,
+  TimeChip,
+  fmtMinutes,
+} from "@/components/ui";
 
 type LoadState = "loading" | "ready" | "error" | "paywall";
 
@@ -46,27 +63,6 @@ function cleanupChips(factors: CleanupFactors | undefined): string[] {
     chips.push(factors.dishwasher_safe ? "Dishwasher-safe" : "Hand-wash");
   }
   return chips;
-}
-
-function StepBadge({ stepType }: { stepType: string }) {
-  const label = stepType && stepType.length > 0 ? stepType : "active";
-  return (
-    <View style={[styles.badge, badgeColor(label)]}>
-      <Text style={styles.badgeText}>{label.toUpperCase()}</Text>
-    </View>
-  );
-}
-
-function badgeColor(stepType: string) {
-  switch (stepType) {
-    case "active":
-      return { backgroundColor: "#FEF3C7" };
-    case "cleanup":
-      return { backgroundColor: "#E0E7FF" };
-    case "passive":
-    default:
-      return { backgroundColor: "#DCFCE7" };
-  }
 }
 
 export default function RecipeDetailScreen() {
@@ -188,20 +184,19 @@ export default function RecipeDetailScreen() {
     return Math.round(step.community_minutes * mult);
   }
 
+  const ready = state === "ready" && recipe;
+
   return (
     <View style={styles.screen}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: 16, paddingBottom: 120 },
-        ]}
+        contentContainerStyle={[styles.content, { paddingBottom: 120 }]}
       >
         {/* Centered, max-width column so the screen reads cleanly on tablets. */}
         <View style={styles.columnWrap}>
           {state === "loading" && (
             <View style={styles.center}>
-              <ActivityIndicator size="large" />
+              <ActivityIndicator size="large" color={Color.accent} />
               <Text style={styles.muted}>Loading recipe…</Text>
             </View>
           )}
@@ -212,8 +207,8 @@ export default function RecipeDetailScreen() {
               <Text style={styles.muted}>
                 {errorMessage ?? "Could not load this recipe."}
               </Text>
-              <Pressable style={styles.button} onPress={loadRecipe}>
-                <Text style={styles.buttonText}>Retry</Text>
+              <Pressable style={styles.retry} onPress={loadRecipe}>
+                <Text style={styles.retryText}>Retry</Text>
               </Pressable>
             </View>
           )}
@@ -226,128 +221,203 @@ export default function RecipeDetailScreen() {
                 unlimited recipes.
               </Text>
               <Pressable
-                style={styles.button}
+                style={styles.retry}
                 onPress={() => router.push("/upgrade")}
               >
-                <Text style={styles.buttonText}>Upgrade</Text>
+                <Text style={styles.retryText}>Upgrade</Text>
               </Pressable>
             </View>
           )}
 
-          {state === "ready" && recipe && (
-            <View style={styles.section}>
-              <Text style={styles.title}>{recipe.title}</Text>
+          {ready && (
+            <>
+                {/* HERO — full-bleed, ignores side padding. */}
+                <View style={styles.heroWrap}>
+                  <HeroImage
+                    uri={recipe.image_url}
+                    height={340}
+                    withScrim
+                    rounded={0}
+                  >
+                  <View
+                    style={[
+                      styles.heroOverlay,
+                      {
+                        paddingBottom: Space.xl,
+                        paddingTop: insets.top + Space.huge,
+                      },
+                    ]}
+                  >
+                    <Text style={styles.heroTitle} numberOfLines={3}>
+                      {recipe.title}
+                    </Text>
+                    {recipe.source_url ? (
+                      <Text style={styles.heroSource} numberOfLines={1}>
+                        {recipe.source_url}
+                      </Text>
+                    ) : null}
+                  </View>
+                </HeroImage>
+              </View>
 
-              {recipe.source_url ? (
-                <Text style={styles.source} numberOfLines={1}>
-                  {recipe.source_url}
-                </Text>
-              ) : null}
+              {/* Floating back button over the hero. */}
+              <Pressable
+                style={[
+                  styles.backButton,
+                  { top: insets.top + Space.sm },
+                ]}
+                onPress={() => router.back()}
+                accessibilityLabel="Go back"
+                accessibilityRole="button"
+                hitSlop={Space.sm}
+              >
+                <Text style={styles.backGlyph}>‹</Text>
+              </Pressable>
 
-              {/* Cook-time summary */}
-              <View style={styles.summaryCard}>
-                <Text style={styles.summaryLine}>
-                  Publisher says {publisher ?? "—"} min · home cooks average{" "}
-                  {community ?? "—"} min
-                </Text>
-                <Text style={styles.breakdownLine}>
-                  Focused: {community ?? "—"} min · Cleanup: {cleanup ?? "—"}{" "}
-                  min · Total: {totalInclCleanup ?? "—"} min
-                </Text>
-                <Text style={styles.summaryTotal}>
-                  Total incl. cleanup: {totalInclCleanup ?? "—"} min
-                </Text>
+              {/* RISING CONTENT CARD overlapping the hero. */}
+              <View style={styles.contentCard}>
+                {/* 1. STAT GRID */}
+                <View style={styles.statGrid}>
+                  <View style={styles.statCell}>
+                    <StatPill
+                      label="Publisher"
+                      value={fmtMinutes(publisher ?? 0)}
+                    />
+                  </View>
+                  <View style={styles.statCell}>
+                    <StatPill
+                      label="Focused"
+                      value={fmtMinutes(community ?? 0)}
+                    />
+                  </View>
+                  <View style={styles.statCell}>
+                    <StatPill
+                      label="Cleanup"
+                      value={fmtMinutes(cleanupAvg ?? 0)}
+                    />
+                  </View>
+                  <View style={styles.statCell}>
+                    <StatPill
+                      label="Total incl. cleanup"
+                      value={fmtMinutes(totalInclCleanup ?? 0)}
+                      tone="accent"
+                    />
+                  </View>
+                </View>
+
+                {/* 2. YOUR PACE */}
                 {personalTotal != null ? (
-                  <Text style={styles.paceLine}>
-                    Your pace: ~{personalTotal} min
-                  </Text>
+                  <View style={styles.paceRow}>
+                    <Chip
+                      tone="accent"
+                      label={`Your pace · ~${fmtMinutes(personalTotal)}`}
+                    />
+                  </View>
                 ) : null}
-                {cleanupAvg != null ? (
-                  <Text style={styles.mutedSmall}>
-                    Cleanup avg: {cleanupAvg} min
-                  </Text>
-                ) : null}
+
+                {/* 3. CLEANUP CHIPS */}
                 {chips.length > 0 ? (
                   <View style={styles.chipRow}>
                     {chips.map((label) => (
-                      <View key={label} style={styles.chip}>
-                        <Text style={styles.chipText}>{label}</Text>
-                      </View>
+                      <Chip key={label} tone="neutral" label={label} size="sm" />
                     ))}
                   </View>
                 ) : null}
-              </View>
 
-              {/* Ingredients */}
-              <Text style={styles.sectionHeading}>Ingredients</Text>
-              {recipe.ingredients.length > 0 ? (
-                <View style={styles.list}>
-                  {recipe.ingredients.map((ingredient, idx) => (
-                    <View key={`ing-${idx}`} style={styles.bulletRow}>
-                      <Text style={styles.bullet}>•</Text>
-                      <Text style={styles.bulletText}>{ingredient}</Text>
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <Text style={styles.muted}>No ingredients listed.</Text>
-              )}
-
-              {/* Steps */}
-              <Text style={styles.sectionHeading}>Steps</Text>
-              {steps.length > 0 ? (
-                <View style={styles.list}>
-                  {steps.map((step) => {
-                    const adjusted = adjustedForStep(step);
-                    return (
-                      <View key={`step-${step.id}`} style={styles.stepRow}>
-                        <View style={styles.stepHeader}>
-                          <Text style={styles.stepNumber}>
-                            #{step.step_number}
-                          </Text>
-                          <StepBadge stepType={step.step_type} />
-                          <Text style={styles.stepTime}>
-                            {step.community_minutes != null
-                              ? `${Math.round(step.community_minutes)} min`
-                              : ""}
-                          </Text>
+                {/* 4. INGREDIENTS */}
+                <View style={styles.section}>
+                  <SectionHeader title="Ingredients" />
+                  {recipe.ingredients.length > 0 ? (
+                    <View style={styles.bulletList}>
+                      {recipe.ingredients.map((ingredient, idx) => (
+                        <View key={`ing-${idx}`} style={styles.bulletRow}>
+                          <Text style={styles.bullet}>•</Text>
+                          <Text style={styles.bulletText}>{ingredient}</Text>
                         </View>
-                        {adjusted != null ? (
-                          <Text style={styles.stepAdjusted}>
-                            ~{adjusted} min (you)
-                          </Text>
-                        ) : null}
-                        <Text style={styles.stepDescription}>
-                          {step.description}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              ) : (
-                <View style={styles.list}>
-                  {recipe.steps.map((step, idx) => (
-                    <View key={`plain-step-${idx}`} style={styles.bulletRow}>
-                      <Text style={styles.bullet}>{idx + 1}.</Text>
-                      <Text style={styles.bulletText}>{step}</Text>
+                      ))}
                     </View>
-                  ))}
+                  ) : (
+                    <Text style={styles.muted}>No ingredients listed.</Text>
+                  )}
                 </View>
-              )}
-            </View>
+
+                {/* 5. STEPS */}
+                <View style={styles.section}>
+                  <SectionHeader title="Steps" />
+                  {steps.length > 0 ? (
+                    <View style={styles.stepList}>
+                      {steps.map((step) => {
+                        const adjusted = adjustedForStep(step);
+                        return (
+                          <Card key={`step-${step.id}`} padding={Space.lg}>
+                            <View style={styles.stepHeader}>
+                              <View style={styles.stepNumber}>
+                                <Text style={styles.stepNumberText}>
+                                  {step.step_number}
+                                </Text>
+                              </View>
+                              <Badge
+                                label={step.step_type}
+                                stepType={step.step_type}
+                              />
+                              <View style={styles.stepTime}>
+                                <TimeChip minutes={step.community_minutes} />
+                              </View>
+                            </View>
+                            {adjusted != null ? (
+                              <View style={styles.stepAdjustedRow}>
+                                <Chip
+                                  tone="accent"
+                                  label={`~${fmtMinutes(adjusted)} you`}
+                                  size="sm"
+                                />
+                              </View>
+                            ) : null}
+                            <Text style={styles.stepDescription}>
+                              {step.description}
+                            </Text>
+                          </Card>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <View style={styles.stepList}>
+                      {recipe.steps.map((step, idx) => (
+                        <Card key={`plain-step-${idx}`} padding={Space.lg}>
+                          <View style={styles.bulletRow}>
+                            <View style={styles.stepNumber}>
+                              <Text style={styles.stepNumberText}>
+                                {idx + 1}
+                              </Text>
+                            </View>
+                            <Text style={styles.bulletText}>{step}</Text>
+                          </View>
+                        </Card>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              </View>
+            </>
           )}
         </View>
       </ScrollView>
 
       {/* Pinned footer: Cook Mode button stays visible regardless of scroll. */}
-      {state === "ready" && recipe && (
-        <View style={[styles.cookFooter, { paddingBottom: insets.bottom + 10 }]}>
-          <Pressable
-            style={styles.cookButton}
+      {ready && (
+        <View
+          style={[
+            styles.cookFooter,
+            { paddingBottom: insets.bottom + Space.sm },
+          ]}
+        >
+          <Button
+            variant="primary"
+            size="lg"
+            fullWidth
+            title="Start Cook Mode"
             onPress={() => router.push(`/cook/${id}`)}
-          >
-            <Text style={styles.cookButtonText}>Start Cook Mode</Text>
-          </Pressable>
+          />
         </View>
       )}
     </View>
@@ -358,206 +428,181 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     position: "relative",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: Color.canvas,
   },
   scroll: {
     flex: 1,
   },
   content: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 0,
+  },
+  columnWrap: {
+    width: "100%",
+    maxWidth: MaxContentWidth,
+    alignSelf: "center",
+  },
+  heroWrap: {
+    width: "100%",
+  },
+  heroOverlay: {
+    paddingHorizontal: Space.lg,
+  },
+  heroTitle: {
+    ...Type.h1,
+    color: Color.surface,
+    textShadowColor: "rgba(0,0,0,0.55)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
+  },
+  heroSource: {
+    ...Type.caption,
+    color: "rgba(255,255,255,0.85)",
+    marginTop: Space.xs,
+  },
+  backButton: {
+    position: "absolute",
+    left: Space.lg,
+    width: 38,
+    height: 38,
+    borderRadius: Radius.pill,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 10,
+  },
+  backGlyph: {
+    color: Color.surface,
+    fontSize: 26,
+    fontWeight: "600",
+    lineHeight: 28,
+    marginTop: -2,
+  },
+  contentCard: {
+    backgroundColor: Color.surface,
+    borderTopLeftRadius: Radius.xl,
+    borderTopRightRadius: Radius.xl,
+    marginTop: -Space.huge,
+    paddingHorizontal: Space.lg,
+    paddingTop: Space.xl,
+    paddingBottom: Space.huge,
+  },
+  statGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginHorizontal: -Space.sm,
+    marginTop: -Space.sm,
+  },
+  statCell: {
+    width: "50%",
+    paddingHorizontal: Space.sm,
+    paddingTop: Space.sm,
+  },
+  paceRow: {
+    flexDirection: "row",
+    marginTop: Space.lg,
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Space.xs,
+    marginTop: Space.lg,
+  },
+  section: {
+    marginTop: Space.xxl,
+  },
+  bulletList: {
+    gap: Space.xs,
+  },
+  bulletRow: {
+    flexDirection: "row",
+    gap: Space.sm,
+    alignItems: "flex-start",
+  },
+  bullet: {
+    fontSize: Type.body.fontSize,
+    color: Color.accent,
+    lineHeight: 22,
+    fontWeight: "700",
+  },
+  bulletText: {
+    flex: 1,
+    ...Type.body,
+    color: Color.ink,
+  },
+  stepList: {
+    gap: Space.md,
+  },
+  stepHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Space.sm,
+    marginBottom: Space.sm,
+  },
+  stepNumber: {
+    width: 26,
+    height: 26,
+    borderRadius: Radius.pill,
+    backgroundColor: Color.accentSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepNumberText: {
+    color: Color.accent,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  stepTime: {
+    marginLeft: "auto",
+  },
+  stepAdjustedRow: {
+    marginBottom: Space.sm,
+  },
+  stepDescription: {
+    ...Type.body,
+    color: Color.ink,
   },
   cookFooter: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: 16,
-    paddingTop: 10,
+    backgroundColor: Color.surface,
     borderTopWidth: 1,
-    borderTopColor: "#F3F4F6",
-    backgroundColor: "#FFFFFF",
-  },
-  columnWrap: {
-    width: "100%",
-    maxWidth: 720,
-    alignSelf: "center",
-  },
-  section: {
-    gap: 12,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  source: {
-    fontSize: 13,
-    color: "#6B7280",
-  },
-  summaryCard: {
-    backgroundColor: "#F9FAFB",
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-    borderRadius: 12,
-    padding: 14,
-    gap: 6,
-  },
-  summaryLine: {
-    fontSize: 15,
-    color: "#111827",
-    fontWeight: "500",
-  },
-  breakdownLine: {
-    fontSize: 15,
-    color: "#374151",
-    fontWeight: "600",
-  },
-  chipRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    marginTop: 2,
-  },
-  chip: {
-    backgroundColor: "#F3F4F6",
-    borderRadius: 999,
-    paddingVertical: 3,
-    paddingHorizontal: 10,
-  },
-  chipText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#374151",
-  },
-  summaryTotal: {
-    fontSize: 16,
-    color: "#2563EB",
-    fontWeight: "700",
-  },
-  paceLine: {
-    fontSize: 15,
-    color: "#7C3AED",
-    fontWeight: "700",
-  },
-  mutedSmall: {
-    fontSize: 12,
-    color: "#6B7280",
-  },
-  sectionHeading: {
-    fontSize: 19,
-    fontWeight: "700",
-    color: "#111827",
-    marginTop: 8,
-  },
-  list: {
-    gap: 8,
-  },
-  bulletRow: {
-    flexDirection: "row",
-    gap: 8,
-    alignItems: "flex-start",
-  },
-  bullet: {
-    fontSize: 15,
-    color: "#9CA3AF",
-    lineHeight: 21,
-  },
-  bulletText: {
-    flex: 1,
-    fontSize: 15,
-    color: "#374151",
-    lineHeight: 21,
-  },
-  stepRow: {
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-    borderRadius: 12,
-    padding: 12,
-    gap: 6,
-  },
-  stepHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  stepNumber: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#6B7280",
-  },
-  stepTime: {
-    marginLeft: "auto",
-    fontSize: 13,
-    color: "#2563EB",
-    fontWeight: "600",
-  },
-  stepAdjusted: {
-    alignSelf: "flex-end",
-    fontSize: 12,
-    color: "#7C3AED",
-    fontWeight: "600",
-  },
-  stepDescription: {
-    fontSize: 15,
-    color: "#111827",
-    lineHeight: 21,
-  },
-  badge: {
-    borderRadius: 999,
-    paddingVertical: 2,
-    paddingHorizontal: 8,
-  },
-  badgeText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#374151",
-  },
-  cookButton: {
-    backgroundColor: "#2563EB",
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: "center",
-  },
-  cookButtonPressed: {
-    backgroundColor: "#1D4ED8",
-  },
-  cookButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 16,
+    borderTopColor: Color.hairline,
+    paddingHorizontal: Space.lg,
+    paddingTop: Space.sm,
+    ...Shadow.floating,
   },
   center: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    paddingVertical: 64,
+    gap: Space.sm,
+    paddingVertical: Space.mega,
+    paddingHorizontal: Space.xxl,
   },
   muted: {
-    color: "#6B7280",
-    fontSize: 14,
+    ...Type.body,
+    color: Color.inkSecondary,
     textAlign: "center",
   },
   errorTitle: {
-    color: "#B91C1C",
-    fontSize: 16,
-    fontWeight: "600",
+    ...Type.h3,
+    color: Color.danger,
   },
   paywallTitle: {
-    color: "#7C3AED",
-    fontSize: 17,
+    ...Type.h3,
+    color: Color.accent,
+  },
+  retry: {
+    marginTop: Space.sm,
+    paddingHorizontal: Space.xl,
+    paddingVertical: Space.md,
+    borderRadius: Radius.pill,
+    backgroundColor: Color.accent,
+  },
+  retryText: {
+    color: Color.surface,
     fontWeight: "700",
-  },
-  button: {
-    marginTop: 8,
-    backgroundColor: "#2563EB",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  buttonText: {
-    color: "#FFFFFF",
-    fontWeight: "600",
   },
 });

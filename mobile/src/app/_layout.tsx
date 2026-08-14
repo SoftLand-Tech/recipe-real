@@ -47,7 +47,10 @@ export default function RootLayout() {
             name="index"
             options={{ headerShown: false, title: "Recipes" }}
           />
-          <Stack.Screen name="recipe/[id]" options={{ title: "Recipe" }} />
+          <Stack.Screen
+            name="recipe/[id]"
+            options={{ title: "Recipe", headerShown: false }}
+          />
           <Stack.Screen name="pace" options={{ title: "Your Pace" }} />
           <Stack.Screen name="upgrade" options={{ title: "Upgrade" }} />
           <Stack.Screen

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,6 +16,8 @@ import {
 } from "@/api/client";
 import { track } from "@/analytics";
 import type { BillingPlan } from "@/types";
+import { Color, MaxContentWidth, Space, Type } from "@/theme";
+import { Button, Card, Chip } from "@/components/ui";
 
 const PLANS: {
   plan: BillingPlan;
@@ -100,7 +101,7 @@ export default function UpgradeScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.center}>
-          <ActivityIndicator size="large" />
+          <ActivityIndicator size="large" color={Color.accent} />
         </View>
       </View>
     );
@@ -111,7 +112,7 @@ export default function UpgradeScreen() {
       style={styles.container}
       contentContainerStyle={[
         styles.content,
-        { paddingTop: 16, paddingBottom: insets.bottom + 32 },
+        { paddingTop: Space.lg, paddingBottom: insets.bottom + 32 },
       ]}
     >
       <View style={styles.columnWrap}>
@@ -122,45 +123,37 @@ export default function UpgradeScreen() {
         </Text>
 
         {authed === false ? (
-          <View style={styles.loginCard}>
+          <Card>
             <Text style={styles.loginText}>Log in to subscribe.</Text>
-          </View>
+          </Card>
         ) : (
           <View style={styles.plans}>
             {PLANS.map(({ plan, price, cadence, note }) => {
               const busy = pendingPlan === plan;
               return (
-                <View key={plan} style={styles.planCard}>
+                <Card key={plan} style={styles.planCard}>
                   <View style={styles.planHeader}>
                     <Text style={styles.planName}>
                       {plan === "yearly" ? "Yearly" : "Monthly"}
                     </Text>
                     {note ? (
-                      <View style={styles.saveBadge}>
-                        <Text style={styles.saveBadgeText}>{note}</Text>
-                      </View>
+                      <Chip label={note} tone="success" size="sm" />
                     ) : null}
                   </View>
                   <Text style={styles.planPrice}>
                     {price}
                     <Text style={styles.planCadence}> {cadence}</Text>
                   </Text>
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.cta,
-                      pressed && styles.ctaPressed,
-                      busy && styles.ctaDisabled,
-                    ]}
-                    onPress={() => handleSubscribe(plan)}
+                  <Button
+                    title="Subscribe"
+                    variant="primary"
+                    size="lg"
+                    fullWidth
+                    loading={busy}
                     disabled={pendingPlan != null}
-                  >
-                    {busy ? (
-                      <ActivityIndicator color="#FFFFFF" size="small" />
-                    ) : (
-                      <Text style={styles.ctaText}>Subscribe</Text>
-                    )}
-                  </Pressable>
-                </View>
+                    onPress={() => handleSubscribe(plan)}
+                  />
+                </Card>
               );
             })}
           </View>
@@ -168,18 +161,13 @@ export default function UpgradeScreen() {
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-        <Pressable
-          style={({ pressed }) => [
-            styles.manageLink,
-            pressed && styles.manageLinkPressed,
-          ]}
+        <Button
+          title={portalPending ? "Loading…" : "Manage subscription"}
+          variant="ghost"
           onPress={handleManage}
           disabled={portalPending || authed === false}
-        >
-          <Text style={styles.manageLinkText}>
-            {portalPending ? "Loading…" : "Manage subscription"}
-          </Text>
-        </Pressable>
+          fullWidth
+        />
       </View>
     </ScrollView>
   );
@@ -188,115 +176,59 @@ export default function UpgradeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: Color.canvas,
   },
   content: {
-    paddingHorizontal: 16,
+    paddingHorizontal: Space.lg,
   },
   columnWrap: {
     width: "100%",
-    maxWidth: 720,
+    maxWidth: MaxContentWidth,
     alignSelf: "center",
-    gap: 16,
+    gap: Space.lg,
   },
   title: {
-    fontSize: 26,
-    fontWeight: "700",
-    color: "#111827",
+    ...Type.h1,
+    color: Color.ink,
   },
   subtitle: {
-    fontSize: 15,
-    color: "#6B7280",
-    lineHeight: 21,
+    ...Type.body,
+    color: Color.inkSecondary,
   },
   plans: {
-    gap: 12,
+    gap: Space.md,
   },
   planCard: {
-    backgroundColor: "#F9FAFB",
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-    borderRadius: 14,
-    padding: 16,
-    gap: 10,
+    gap: Space.md,
   },
   planHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 8,
+    gap: Space.sm,
   },
   planName: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  saveBadge: {
-    backgroundColor: "#DCFCE7",
-    borderRadius: 999,
-    paddingVertical: 3,
-    paddingHorizontal: 10,
-  },
-  saveBadgeText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#15803D",
+    ...Type.h3,
+    color: Color.ink,
   },
   planPrice: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#111827",
+    ...Type.h2,
+    color: Color.ink,
   },
   planCadence: {
-    fontSize: 14,
+    ...Type.body,
     fontWeight: "500",
-    color: "#6B7280",
-  },
-  cta: {
-    backgroundColor: "#2563EB",
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  ctaPressed: {
-    backgroundColor: "#1D4ED8",
-  },
-  ctaDisabled: {
-    opacity: 0.7,
-  },
-  ctaText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 16,
-  },
-  loginCard: {
-    backgroundColor: "#F9FAFB",
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-    borderRadius: 14,
-    padding: 16,
+    color: Color.inkSecondary,
   },
   loginText: {
-    fontSize: 15,
-    color: "#374151",
+    ...Type.body,
+    color: Color.ink,
     fontWeight: "500",
   },
   errorText: {
-    fontSize: 13,
-    color: "#B91C1C",
+    ...Type.bodySm,
+    color: Color.danger,
     textAlign: "center",
-  },
-  manageLink: {
-    paddingVertical: 8,
-    alignItems: "center",
-  },
-  manageLinkPressed: {
-    opacity: 0.6,
-  },
-  manageLinkText: {
-    color: "#2563EB",
-    fontSize: 14,
-    fontWeight: "600",
   },
   center: {
     flex: 1,

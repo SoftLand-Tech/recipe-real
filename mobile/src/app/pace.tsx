@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +12,8 @@ import { getCookSessions, getUsage, hasToken, isPaywallError } from "@/api/clien
 import { track } from "@/analytics";
 import { refreshPaceCalibrations } from "@/db/database";
 import type { PaceCalibration } from "@/types";
+import { Color, Space, Type } from "@/theme";
+import { Button, Card, Chip, StatPill } from "@/components/ui";
 
 type LoadState = "loading" | "ready" | "error" | "locked";
 
@@ -27,6 +28,13 @@ function interpretPace(multiplier: number): string {
   if (multiplier < 0.9) return "Faster than average";
   if (multiplier > 1.1) return "Slower than average";
   return "About average";
+}
+
+/** Map a pace interpretation to a Chip tone. */
+function paceTone(multiplier: number): "accent" | "neutral" | "amber" | "danger" {
+  if (multiplier < 0.9) return "accent";
+  if (multiplier > 1.1) return "danger";
+  return "amber";
 }
 
 export default function PaceScreen() {
@@ -97,7 +105,7 @@ export default function PaceScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.center}>
-          <ActivityIndicator size="large" />
+          <ActivityIndicator size="large" color={Color.accent} />
           <Text style={styles.muted}>Loading your pace…</Text>
         </View>
       </View>
@@ -110,9 +118,7 @@ export default function PaceScreen() {
         <View style={styles.center}>
           <Text style={styles.errorTitle}>Something went wrong</Text>
           <Text style={styles.muted}>Could not load your pace data.</Text>
-          <Pressable style={styles.button} onPress={load}>
-            <Text style={styles.buttonText}>Retry</Text>
-          </Pressable>
+          <Button title="Retry" onPress={load} style={styles.cta} />
         </View>
       </View>
     );
@@ -126,12 +132,11 @@ export default function PaceScreen() {
           <Text style={styles.muted}>
             Pace calibration is a Premium feature.
           </Text>
-          <Pressable
-            style={styles.button}
+          <Button
+            title="Upgrade"
             onPress={() => router.push("/upgrade")}
-          >
-            <Text style={styles.buttonText}>Upgrade</Text>
-          </Pressable>
+            style={styles.cta}
+          />
         </View>
       </View>
     );
@@ -161,18 +166,23 @@ export default function PaceScreen() {
               Math.max(0, Math.min(1, c.confidence)) * 100,
             );
             return (
-              <View key={c.step_type} style={styles.card}>
+              <Card key={c.step_type} style={styles.card}>
                 <View style={styles.cardHeader}>
                   <Text style={styles.cardTitle}>{capitalize(c.step_type)}</Text>
-                  <Text style={styles.paceTag}>{interpretPace(c.multiplier)}</Text>
+                  <Chip
+                    label={interpretPace(c.multiplier)}
+                    tone={paceTone(c.multiplier)}
+                    size="sm"
+                  />
                 </View>
                 <Text style={styles.multiplier}>
                   {c.multiplier.toFixed(1)}× the community average
                 </Text>
-                <Text style={styles.confidence}>
-                  confidence: {confidencePct}%
-                </Text>
-              </View>
+                <StatPill
+                  label="Confidence"
+                  value={`${confidencePct}%`}
+                />
+              </Card>
             );
           })}
         </View>
@@ -184,93 +194,68 @@ export default function PaceScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: Color.canvas,
   },
   content: {
-    padding: 16,
+    padding: Space.lg,
     paddingBottom: 40,
   },
   headerCard: {
-    gap: 4,
-    marginBottom: 16,
+    gap: Space.xs,
+    marginBottom: Space.lg,
   },
   heading: {
-    fontSize: 26,
-    fontWeight: "700",
-    color: "#111827",
+    ...Type.h1,
+    color: Color.ink,
   },
   subheading: {
-    fontSize: 15,
-    color: "#6B7280",
+    ...Type.body,
+    color: Color.inkSecondary,
   },
   list: {
-    gap: 12,
+    gap: Space.md,
   },
   card: {
-    backgroundColor: "#F9FAFB",
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-    borderRadius: 14,
-    padding: 16,
-    gap: 6,
+    gap: Space.sm,
   },
   cardHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 8,
+    gap: Space.sm,
   },
   cardTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  paceTag: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#2563EB",
+    ...Type.h3,
+    color: Color.ink,
   },
   multiplier: {
-    fontSize: 15,
-    color: "#374151",
+    ...Type.body,
+    color: Color.ink,
     fontWeight: "500",
-  },
-  confidence: {
-    fontSize: 12,
-    color: "#9CA3AF",
   },
   center: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: Space.sm,
     paddingVertical: 64,
-    paddingHorizontal: 24,
+    paddingHorizontal: Space.xxl,
   },
   muted: {
-    color: "#6B7280",
-    fontSize: 14,
+    ...Type.body,
+    color: Color.inkSecondary,
     textAlign: "center",
   },
   errorTitle: {
-    color: "#B91C1C",
-    fontSize: 16,
-    fontWeight: "600",
+    ...Type.title,
+    color: Color.danger,
   },
   lockedTitle: {
-    color: "#7C3AED",
-    fontSize: 17,
+    ...Type.title,
+    color: Color.accent,
     fontWeight: "700",
   },
-  button: {
-    marginTop: 8,
-    backgroundColor: "#2563EB",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  buttonText: {
-    color: "#FFFFFF",
-    fontWeight: "600",
+  cta: {
+    marginTop: Space.sm,
   },
 });

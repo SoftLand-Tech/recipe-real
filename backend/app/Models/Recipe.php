@@ -10,6 +10,7 @@ class Recipe extends Model
     protected $fillable = [
         'title',
         'source_url',
+        'image_url',
         'ingredients',
         'steps',
         'publisher_time_minutes',

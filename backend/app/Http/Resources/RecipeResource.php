@@ -20,6 +20,7 @@ class RecipeResource extends JsonResource
             'id' => $this->id,
             'title' => $this->title,
             'source_url' => $this->source_url,
+            'image_url' => $this->image_url,
             'ingredients' => $this->ingredients,
             'steps' => $this->steps,
             'publisher_time_minutes' => $this->publisher_time_minutes,

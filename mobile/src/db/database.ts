@@ -11,7 +11,7 @@ import type {
 const DB_NAME = "recipereal.db";
 
 /** Current version of the local cache schema. Bump when columns/tables change. */
-const CACHE_SCHEMA_VERSION = 2;
+const CACHE_SCHEMA_VERSION = 3;
 
 /**
  * Memoized ready-promise for the single DB connection.
@@ -56,6 +56,7 @@ const RECIPES_DDL = `
     id INTEGER PRIMARY KEY,
     title TEXT NOT NULL,
     source_url TEXT,
+    image_url TEXT,
     ingredients TEXT NOT NULL,
     steps TEXT NOT NULL,
     publisher_time_minutes INTEGER,
@@ -171,6 +172,7 @@ interface RecipeRow {
   id: number;
   title: string;
   source_url: string | null;
+  image_url: string | null;
   ingredients: string;
   steps: string;
   publisher_time_minutes: number | null;
@@ -213,6 +215,7 @@ function parseRecipe(row: RecipeRow): Recipe {
     id: row.id,
     title: row.title,
     source_url: row.source_url,
+    image_url: row.image_url ?? null,
     ingredients,
     steps,
     publisher_time_minutes: row.publisher_time_minutes,
@@ -265,14 +268,15 @@ export async function seedAndCacheRecipes(): Promise<Recipe[]> {
       const factors = recipe.cleanup_factors;
       await db.runAsync(
         `INSERT OR REPLACE INTO recipes
-          (id, title, source_url, ingredients, steps,
+          (id, title, source_url, image_url, ingredients, steps,
            publisher_time_minutes, community_avg_minutes, cleanup_avg_minutes,
            cleanup_estimate_minutes, dish_count, grease_level, dishwasher_safe)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         [
           recipe.id,
           recipe.title,
           recipe.source_url ?? null,
+          recipe.image_url ?? null,
           JSON.stringify(recipe.ingredients ?? []),
           JSON.stringify(recipe.steps ?? []),
           recipe.publisher_time_minutes ?? null,

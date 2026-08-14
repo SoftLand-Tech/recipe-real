@@ -51,6 +51,8 @@ class RecipeSeeder extends Seeder
         $steps = $recipe['steps_data'];
         unset($recipe['steps_data']);
 
+        $recipe['image_url'] ??= self::imageUrlForTitle($recipe['title']);
+
         $model = Recipe::create($recipe);
 
         foreach ($steps as $i => $step) {
@@ -66,12 +68,143 @@ class RecipeSeeder extends Seeder
     }
 
     /**
+     * Deterministically map a recipe title to a verified real Unsplash food photo.
+     * Category is inferred from title keywords (the seed data has no category column).
+     * abs(crc32(title)) % poolSize picks a stable index so the same title always
+     * resolves to the same image across reseeds (robust to the ID-shift-on-reseed gotcha).
+     */
+    private static function imageUrlForTitle(string $title): string
+    {
+        $t = strtolower($title);
+
+        $rules = [
+            'pasta'     => '/spaghetti|penne|pasta|linguine|fettuccine|rigatoni|carbonara|lasagna|gnocchi|macaroni|noodle|cacio|bolognese|pesto|arrabbiata|puttanesca|alfredo|risotto|ramen|udon/',
+            'curry'     => '/curry|tikka|korma|vindaloo|dal|makhani|biryani|masala|rogan/',
+            'taco'      => '/taco|burrito|quesadilla|fajita|enchilada|taquito|nacho/',
+            'pizza'     => '/pizza|flatbread|calzone|margherita|focaccia/',
+            'burger'    => '/burger|slider|patty|patty melt/',
+            'sandwich'  => '/sandwich|panini|wrap|sub |melt|grilled cheese|cuban|banh mi|po.?boy|hoagie|muffuletta/',
+            'soup'      => '/soup|chowder|minestrone|pho|broth|gumbo|bisque|stew|goulash|posole|pozole|ramen|laksa/',
+            'salad'     => '/salad|slaw|caprese|cobb|caesar|niçoise|nicoise|tabbouleh|fattoush/',
+            'breakfast' => '/egg|omelet|omelette|pancake|waffle|oatmeal|porridge|frittata|hash|breakfast|granola|shakshuka|avocado toast|french toast|scramble|benedict/',
+            'seafood'   => '/salmon|shrimp|prawn|tuna|cod|halibut|sea bass|seafood|crab|lobster|scallops|mussels|clam|tilapia|trout|swordfish|snapper|barramundi|halibut|oyster/',
+            'bowl'      => '/bowl|poke|bibimbap|grain|quinoa|buddha/',
+            'stirfry'   => '/stir[- ]?fry|lo mein|chow mein|fried rice|kung pao|teriyaki|sweet & sour|sweet and sour|pad thai|drunken noodle|mongolian|peanut/',
+            'sheetpan'  => '/sheet pan|sheet-pan|roasted|roast |baked|traybake|one-pan|one pan|mediterrveg|vegetable/',
+        ];
+
+        $category = 'default';
+        foreach ($rules as $key => $pattern) {
+            if (preg_match($pattern, $t)) {
+                $category = $key;
+                break;
+            }
+        }
+
+        $pool = self::IMAGE_POOLS[$category] ?? self::IMAGE_POOLS['default'];
+        $index = abs(crc32($title)) % count($pool);
+        $photoId = $pool[$index];
+
+        return "https://images.unsplash.com/{$photoId}?q=80&w=800&auto=format&fit=crop";
+    }
+
+    /**
      * Helper kept for reference / future url-slug generation.
      */
     public static function slug(string $title): string
     {
         return Str::slug($title);
     }
+
+    private const IMAGE_POOLS = [
+        'pasta' => [
+            'photo-1551183053-bf91a1d81141',
+            'photo-1481931098730-318b6f776db0',
+            'photo-1564501049412-61c2a3083791',
+            'photo-1473093295043-cdd812d0e601',
+            'photo-1432139509613-5c4255815697',
+        ],
+        'curry' => [
+            'photo-1565557623262-b51c2513a641',
+            'photo-1455619452474-d2be8b1e70cd',
+            'photo-1565958011703-44f9829ba187',
+            'photo-1567620832903-9fc6debc209f',
+            'photo-1596797038530-2c107229654b',
+        ],
+        'taco' => [
+            'photo-1551504734-5ee1c4a1479b',
+            'photo-1565299585323-38d6b0865b47',
+            'photo-1599974579688-8dbdd335c77f',
+            'photo-1525351326368-efbb5cb6814d',
+        ],
+        'pizza' => [
+            'photo-1565299624946-b28f40a0ae38',
+            'photo-1513104890138-7c749659a591',
+            'photo-1574071318508-1cdbab80d002',
+            'photo-1571997478779-2adcbbe9ab2f',
+        ],
+        'burger' => [
+            'photo-1568901346375-23c9450c58cd',
+            'photo-1571091718767-18b5b1457add',
+            'photo-1550547660-d9450f859349',
+        ],
+        'sandwich' => [
+            'photo-1528735602780-2552fd46c7af',
+            'photo-1521305916504-4a1121188589',
+            'photo-1514516345957-556ca7d90a29',
+        ],
+        'soup' => [
+            'photo-1547592180-85f173990554',
+            'photo-1547928576-b822bc410bdf',
+            'photo-1559847844-5315695dadae',
+            'photo-1540420773420-3366772f4999',
+        ],
+        'salad' => [
+            'photo-1512621776951-a57141f2eefd',
+            'photo-1546069901-ba9599a7e63c',
+            'photo-1540189549336-e6e99c3679fe',
+            'photo-1505253716362-afaea1d3d1af',
+            'photo-1495521821757-a1efb6729352',
+        ],
+        'breakfast' => [
+            'photo-1525351484163-7529414344d8',
+            'photo-1533089860892-a7c6f0a88666',
+            'photo-1484723091739-30a097e8f929',
+            'photo-1551782450-a2132b4ba21d',
+            'photo-1556910103-1c02745aae4d',
+            'photo-1606491956689-2ea866880c84',
+        ],
+        'seafood' => [
+            'photo-1467003909585-2f8a72700288',
+            'photo-1559737558-2f5a35f4523b',
+            'photo-1565680018434-b513d5e5fd47',
+            'photo-1559339352-11d035aa65de',
+        ],
+        'bowl' => [
+            'photo-1543339308-43e59d6b73a6',
+            'photo-1490645935967-10de6ba17061',
+            'photo-1498837167922-ddd27525d352',
+            'photo-1466637574441-749b8f19452f',
+        ],
+        'stirfry' => [
+            'photo-1603133872878-684f208fb84b',
+            'photo-1512058564366-18510be2db19',
+            'photo-1525755662778-989d0524087e',
+            'photo-1482049016688-2d3e1b311543',
+        ],
+        'sheetpan' => [
+            'photo-1565895405138-6c3a1555da6a',
+            'photo-1467453678174-768ec283a940',
+            'photo-1473093226795-af9932fe5856',
+            'photo-1476224203421-9ac39bcb3327',
+            'photo-1543353071-873f17a7a088',
+        ],
+        'default' => [
+            'photo-1504674900247-0877df9cc836',
+            'photo-1414235077428-338989a2e8c0',
+            'photo-1606787366850-de6330128bfc',
+        ],
+    ];
 
     /**
      * @var list<array<string, mixed>>

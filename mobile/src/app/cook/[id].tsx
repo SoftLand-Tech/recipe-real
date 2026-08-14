@@ -2,14 +2,10 @@ import { useLocalSearchParams, router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Dimensions,
-  FlatList,
   Pressable,
   StyleSheet,
   Text,
   View,
-  type ListRenderItem,
-  type ViewStyle,
 } from "react-native";
 import { useKeepAwake } from "expo-keep-awake";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,6 +17,8 @@ import {
   getCachedRecipe,
   getPendingCookSessionCount,
 } from "@/db/database";
+import { Button, Badge, Chip, Card, StepDots, fmtMinutes } from "@/components/ui";
+import { Color, Radius, Shadow, Space, Type } from "@/theme";
 import type {
   CookSessionPayload,
   Feedback,
@@ -30,8 +28,8 @@ import type {
 
 type LoadState = "loading" | "ready" | "error";
 type Phase = "cooking" | "feedback" | "submitting" | "done";
+type TimerState = "idle" | "running" | "paused" | "done";
 
-const SCREEN_WIDTH = Dimensions.get("window").width;
 const TICK_MS = 250;
 
 /** Format an elapsed duration (ms) as `M:SS`. */
@@ -66,18 +64,6 @@ function makeId(): string {
   }${rnd().slice(1)}-${rnd()}${rnd()}${rnd()}`;
 }
 
-function badgeColor(stepType: string): ViewStyle {
-  switch (stepType) {
-    case "active":
-      return { backgroundColor: "#FEF3C7" };
-    case "cleanup":
-      return { backgroundColor: "#E0E7FF" };
-    case "passive":
-    default:
-      return { backgroundColor: "#DCFCE7" };
-  }
-}
-
 export default function CookModeScreen() {
   // Keep the screen on for the entire cook.
   useKeepAwake();
@@ -93,12 +79,11 @@ export default function CookModeScreen() {
   const [currentIndex, setCurrentIndex] = useState(0);
   /** Accumulated paused/ms per step (excludes the live running segment). */
   const [elapsedMs, setElapsedMs] = useState<number[]>([]);
-  /** Whether the current step's clock is running (resets to true per step). */
-  const [running, setRunning] = useState(true);
+  /** Per-step timer state. The cook decides when to start each step. */
+  const [timerState, setTimerState] = useState<TimerState[]>([]);
   /** Re-render tick: only updated while running, to drive the live display. */
   const [now, setNow] = useState(Date.now());
 
-  const runningRef = useRef(true);
   const stepStartRef = useRef<number>(Date.now());
   // Stable per-session idempotency key (generated on first submission) so
   // retried/offline-replayed POSTs don't create duplicate cook sessions.
@@ -106,8 +91,6 @@ export default function CookModeScreen() {
 
   const [phase, setPhase] = useState<Phase>("cooking");
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
-
-  const listRef = useRef<FlatList<RecipeStep>>(null);
 
   const steps: RecipeStep[] = useMemo(
     () => recipe?.recipe_steps ?? [],
@@ -139,13 +122,13 @@ export default function CookModeScreen() {
     loadRecipe();
   }, [loadRecipe]);
 
-  // Initialize the elapsed array + step start once steps are known.
+  // Initialize the elapsed + timer-state arrays once steps are known.
+  // Per the new interaction model, steps start IDLE — the cook starts the
+  // timer when they begin each step.
   useEffect(() => {
     if (steps.length > 0 && elapsedMs.length === 0) {
       setElapsedMs(new Array(steps.length).fill(0));
-      stepStartRef.current = Date.now();
-      runningRef.current = true;
-      setRunning(true);
+      setTimerState(new Array(steps.length).fill("idle"));
       // Fire-and-forget analytics: cook started once steps are present.
       if (recipe?.id != null) {
         track("cook_started", {
@@ -157,95 +140,95 @@ export default function CookModeScreen() {
   }, [steps, elapsedMs.length, recipe]);
 
   // ---- Live ticking --------------------------------------------------------
+  // Only tick while the current step is actively running.
   useEffect(() => {
-    if (!running || phase !== "cooking") return;
+    if (phase !== "cooking" || timerState[currentIndex] !== "running") return;
     const handle = setInterval(() => setNow(Date.now()), TICK_MS);
     return () => clearInterval(handle);
-  }, [running, phase]);
-
-  // ---- Pager sync ----------------------------------------------------------
-  const getItemLayout = useCallback(
-    (_: any, index: number) => ({
-      length: SCREEN_WIDTH,
-      offset: SCREEN_WIDTH * index,
-      index,
-    }),
-    [],
-  );
-
-  // Keep the FlatList page in sync with currentIndex.
-  useEffect(() => {
-    if (steps.length === 0) return;
-    const clamped = Math.max(0, Math.min(currentIndex, steps.length - 1));
-    listRef.current?.scrollToIndex({
-      index: clamped,
-      animated: true,
-    });
-  }, [currentIndex, steps.length]);
-
-  const onMomentumScrollEnd = useCallback(
-    (e: { nativeEvent: { contentOffset: { x: number } } }) => {
-      const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
-      if (idx !== currentIndex && idx >= 0 && idx < steps.length) {
-        // Swiping away folds the live segment of the step we're leaving.
-        commitLiveSegment();
-        setCurrentIndex(idx);
-        // Reset running state for the newly entered step (default running).
-        stepStartRef.current = Date.now();
-        runningRef.current = true;
-        setRunning(true);
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [currentIndex, steps.length],
-  );
+  }, [phase, timerState, currentIndex]);
 
   // ---- Timer actions -------------------------------------------------------
-  /** Fold the current running segment into elapsedMs[currentIndex]. */
+  /** Fold the current running segment into elapsedMs[currentIndex], then reset
+   *  the baseline so the same segment can never be re-committed (e.g. when
+   *  navigating away from and back to a running step). Computing the delta
+   *  outside the state updater also avoids re-running it under StrictMode. */
   const commitLiveSegment = useCallback(() => {
-    if (!runningRef.current) return;
     const delta = Date.now() - stepStartRef.current;
+    stepStartRef.current = Date.now();
+    if (delta <= 0) return;
+    const i = currentIndex;
     setElapsedMs((prev) => {
       const next = [...prev];
-      const i = currentIndex;
       next[i] = (next[i] ?? 0) + delta;
       return next;
     });
   }, [currentIndex]);
 
-  const togglePause = useCallback(() => {
-    if (runningRef.current) {
-      // Pause: fold live elapsed, stop running.
-      commitLiveSegment();
-      runningRef.current = false;
-      setRunning(false);
-    } else {
-      // Resume: start a new segment.
+  const startTimer = useCallback(
+    (i: number) => {
       stepStartRef.current = Date.now();
-      runningRef.current = true;
-      setRunning(true);
       setNow(Date.now());
-    }
-  }, [commitLiveSegment]);
+      setTimerState((s) => s.map((t, idx) => (idx === i ? "running" : t)));
+    },
+    [],
+  );
 
-  /** "Done" on current step: fold live elapsed, stop, advance. */
-  const completeStep = useCallback(() => {
-    commitLiveSegment();
-    runningRef.current = false;
-    setRunning(false);
-    if (currentIndex >= steps.length - 1) {
-      // Last step done -> feedback phase.
-      setPhase("feedback");
-    } else {
-      const nextIndex = currentIndex + 1;
-      setCurrentIndex(nextIndex);
-      // Start the next step running.
+  const pauseTimer = useCallback(
+    (i: number) => {
+      if (currentIndex === i) commitLiveSegment();
+      setTimerState((s) => s.map((t, idx) => (idx === i ? "paused" : t)));
+    },
+    [commitLiveSegment, currentIndex],
+  );
+
+  const resumeTimer = useCallback(
+    (i: number) => {
       stepStartRef.current = Date.now();
-      runningRef.current = true;
-      setRunning(true);
       setNow(Date.now());
+      setTimerState((s) => s.map((t, idx) => (idx === i ? "running" : t)));
+    },
+    [],
+  );
+
+  /** "Next" = mark current step done + advance. The cook is in control. */
+  const nextStep = useCallback(() => {
+    if (timerState[currentIndex] === "running") commitLiveSegment();
+    setTimerState((s) =>
+      s.map((t, idx) => (idx === currentIndex ? "done" : t)),
+    );
+    if (currentIndex < steps.length - 1) {
+      setCurrentIndex(currentIndex + 1);
+    } else {
+      setPhase("feedback");
     }
-  }, [commitLiveSegment, currentIndex, steps.length]);
+  }, [commitLiveSegment, currentIndex, steps.length, timerState]);
+
+  const prevStep = useCallback(() => {
+    if (timerState[currentIndex] === "running") {
+      commitLiveSegment();
+      // Pause the step we're leaving so its timer doesn't keep accruing while
+      // we view another step; the cook resumes it explicitly on return.
+      setTimerState((s) =>
+        s.map((t, idx) => (idx === currentIndex ? "paused" : t)),
+      );
+    }
+    setCurrentIndex(Math.max(0, currentIndex - 1));
+  }, [commitLiveSegment, currentIndex, timerState]);
+
+  const onJump = useCallback(
+    (i: number) => {
+      if (i === currentIndex) return;
+      if (timerState[currentIndex] === "running") {
+        commitLiveSegment();
+        // Pause the running step we're leaving (see prevStep).
+        setTimerState((s) =>
+          s.map((t, idx) => (idx === currentIndex ? "paused" : t)),
+        );
+      }
+      setCurrentIndex(i);
+    },
+    [commitLiveSegment, currentIndex, timerState],
+  );
 
   // ---- Submission summary --------------------------------------------------
   const summary = useMemo(() => {
@@ -334,49 +317,15 @@ export default function CookModeScreen() {
   );
 
   const finish = useCallback(() => {
-    router.replace(`/recipe/${id}`);
+    router.push(`/recipe/${id}`);
   }, [id]);
-
-  const renderItem: ListRenderItem<RecipeStep> = useCallback(
-    ({ item, index }) => {
-      const isCurrent = index === currentIndex;
-      const acc = elapsedMs[index] ?? 0;
-      const live =
-        isCurrent && running && phase === "cooking"
-          ? acc + (now - stepStartRef.current)
-          : acc;
-      return (
-        <View style={styles.page}>
-          <View style={styles.stepCard}>
-            <View style={styles.stepMeta}>
-              <View
-                style={[styles.badge, badgeColor(item.step_type)]}
-              >
-                <Text style={styles.badgeText}>
-                  {(item.step_type || "active").toUpperCase()}
-                </Text>
-              </View>
-              <Text style={styles.estimate}>
-                {item.community_minutes != null
-                  ? `~${Math.round(item.community_minutes)} min estimate`
-                  : ""}
-              </Text>
-            </View>
-            <Text style={styles.timer}>{formatMSS(live)}</Text>
-            <Text style={styles.stepDescription}>{item.description}</Text>
-          </View>
-        </View>
-      );
-    },
-    [currentIndex, elapsedMs, now, running, phase],
-  );
 
   // ---- Render --------------------------------------------------------------
   if (loadState === "loading") {
     return (
       <View style={styles.fullScreen}>
         <View style={styles.center}>
-          <ActivityIndicator size="large" />
+          <ActivityIndicator size="large" color={Color.accent} />
           <Text style={styles.muted}>Loading recipe…</Text>
         </View>
       </View>
@@ -391,9 +340,7 @@ export default function CookModeScreen() {
           <Text style={styles.muted}>
             {errorMessage ?? "Could not load this recipe."}
           </Text>
-          <Pressable style={styles.button} onPress={loadRecipe}>
-            <Text style={styles.buttonText}>Retry</Text>
-          </Pressable>
+          <Button title="Retry" onPress={loadRecipe} style={styles.retryBtn} />
         </View>
       </View>
     );
@@ -401,12 +348,10 @@ export default function CookModeScreen() {
 
   if (steps.length === 0) {
     return (
-      <View
-        style={[styles.fullScreen, { paddingTop: insets.top + 16 }]}
-      >
+      <View style={[styles.fullScreen, { paddingTop: insets.top + Space.md }]}>
         <View style={styles.headerRow}>
-          <Pressable onPress={() => router.back()} hitSlop={12}>
-            <Text style={styles.closeText}>Close</Text>
+          <Pressable onPress={() => router.back()} hitSlop={Space.md}>
+            <Text style={styles.closeGlyph}>✕</Text>
           </Pressable>
         </View>
         <View style={styles.center}>
@@ -418,93 +363,128 @@ export default function CookModeScreen() {
     );
   }
 
-  // ---- Feedback / done phases ----
+  // ---- Feedback / submitting / done phases ----
   if (phase === "feedback" || phase === "submitting" || phase === "done") {
+    const submitting = phase === "submitting";
     return (
       <View
         style={[
           styles.fullScreen,
-          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 },
+          {
+            paddingTop: insets.top + Space.md,
+            paddingBottom: insets.bottom + Space.md,
+          },
         ]}
       >
         <View style={styles.feedbackWrap}>
           <Text style={styles.feedbackTitle}>You cooked it!</Text>
-          <Text style={styles.summaryTotal}>
-            {summary.total_actual_minutes} min
-            {summary.cleanup_minutes != null
-              ? ` · cleanup ${summary.cleanup_minutes}`
-              : ""}
-          </Text>
+
+          <View style={styles.feedbackStatsRow}>
+            <View
+              style={[
+                styles.totalPill,
+                { backgroundColor: Color.accentSoft },
+              ]}
+            >
+              <Text style={[styles.totalPillValue, { color: Color.accent }]}>
+                {fmtMinutes(summary.total_actual_minutes)}
+              </Text>
+              <Text style={styles.totalPillLabel}>total cooked</Text>
+            </View>
+            {summary.cleanup_minutes != null ? (
+              <View
+                style={[
+                  styles.totalPill,
+                  { backgroundColor: Color.surfaceSoft },
+                ]}
+              >
+                <Text
+                  style={[styles.totalPillValue, { color: Color.inkSecondary }]}
+                >
+                  {fmtMinutes(summary.cleanup_minutes)}
+                </Text>
+                <Text style={styles.totalPillLabel}>cleanup</Text>
+              </View>
+            ) : null}
+          </View>
+
           {cleanupEstimate != null ? (
             <Text style={styles.cleanupEstimate}>
               Cleanup estimate: ~{Math.round(cleanupEstimate)} min
             </Text>
           ) : null}
-          <Text style={styles.muted}>How did it feel vs. the estimate?</Text>
 
           {phase !== "done" ? (
-            <View style={styles.feedbackButtons}>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.feedbackBtn,
-                  styles.fasterBtn,
-                  pressed && styles.feedbackBtnPressed,
-                ]}
-                disabled={phase === "submitting"}
-                onPress={() => handleSubmit("faster")}
-              >
-                <Text style={styles.feedbackBtnText}>Faster</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.feedbackBtn,
-                  styles.expectedBtn,
-                  pressed && styles.feedbackBtnPressed,
-                ]}
-                disabled={phase === "submitting"}
-                onPress={() => handleSubmit("as_expected")}
-              >
-                <Text style={styles.feedbackBtnText}>As expected</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.feedbackBtn,
-                  styles.slowerBtn,
-                  pressed && styles.feedbackBtnPressed,
-                ]}
-                disabled={phase === "submitting"}
-                onPress={() => handleSubmit("slower")}
-              >
-                <Text style={styles.feedbackBtnText}>Slower</Text>
-              </Pressable>
-            </View>
+            <>
+              <Text style={styles.feedbackPrompt}>
+                How did it feel vs. the estimate?
+              </Text>
+              <View style={styles.feedbackButtons}>
+                <Card
+                  onPress={submitting ? undefined : () => handleSubmit("faster")}
+                  padding={Space.lg}
+                  style={[
+                    styles.feedbackCard,
+                    { backgroundColor: Color.successSoft },
+                  ]}
+                >
+                  <Text style={[styles.feedbackCardText, { color: Color.success }]}>
+                    Faster
+                  </Text>
+                </Card>
+                <Card
+                  onPress={
+                    submitting ? undefined : () => handleSubmit("as_expected")
+                  }
+                  padding={Space.lg}
+                  style={[
+                    styles.feedbackCard,
+                    { backgroundColor: Color.amberSoft },
+                  ]}
+                >
+                  <Text style={[styles.feedbackCardText, { color: "#8A5A12" }]}>
+                    As expected
+                  </Text>
+                </Card>
+                <Card
+                  onPress={submitting ? undefined : () => handleSubmit("slower")}
+                  padding={Space.lg}
+                  style={[
+                    styles.feedbackCard,
+                    { backgroundColor: Color.dangerSoft },
+                  ]}
+                >
+                  <Text style={[styles.feedbackCardText, { color: Color.danger }]}>
+                    Slower
+                  </Text>
+                </Card>
+              </View>
+            </>
           ) : (
             <View style={styles.doneWrap}>
               {submitMsg ? (
-                <Text style={styles.savedMsg}>{submitMsg}</Text>
+                <Text
+                  style={[
+                    styles.savedMsg,
+                    submitMsg.startsWith("Could not")
+                      ? { color: Color.danger }
+                      : { color: Color.success },
+                  ]}
+                >
+                  {submitMsg}
+                </Text>
               ) : null}
-              <Pressable
-                style={({ pressed }) => [
-                  styles.doneBtn,
-                  pressed && styles.doneBtnPressed,
-                ]}
-                onPress={finish}
-              >
-                <Text style={styles.doneBtnText}>Done</Text>
-              </Pressable>
+              <Button title="Done" onPress={finish} fullWidth size="lg" />
             </View>
           )}
 
-          {phase !== "done" ? (
-            <Pressable
-              style={styles.skipBtn}
-              disabled={phase === "submitting"}
-              onPress={() => handleSubmit(null)}
-            >
-              <Text style={styles.skipText}>
-                {phase === "submitting" ? "Saving…" : "Skip"}
-              </Text>
-            </Pressable>
+          {submitting ? (
+            <View style={styles.submittingRow}>
+              <ActivityIndicator color={Color.accent} size="small" />
+              <Text style={styles.muted}>Saving…</Text>
+            </View>
+          ) : phase !== "done" ? (
+            <Button title="Skip" variant="ghost" onPress={() => handleSubmit(null)} />
           ) : null}
         </View>
       </View>
@@ -513,64 +493,134 @@ export default function CookModeScreen() {
 
   // ---- Cooking phase ----
   const step = steps[currentIndex];
-  const progressText = `Step ${currentIndex + 1} of ${steps.length}`;
+  const tState = timerState[currentIndex] ?? "idle";
+  const acc = elapsedMs[currentIndex] ?? 0;
+  const live =
+    tState === "running" ? acc + (now - stepStartRef.current) : acc;
+
+  const timerColor =
+    tState === "running"
+      ? Color.ink
+      : tState === "done"
+        ? Color.success
+        : Color.inkSecondary;
+
+  const statusHint =
+    tState === "idle"
+      ? "Press Start when you begin this step"
+      : tState === "running"
+        ? "Timing…"
+        : tState === "paused"
+          ? "Paused"
+          : "Step complete";
 
   return (
-    <View
-      style={[
-        styles.fullScreen,
-        { paddingTop: insets.top, paddingBottom: insets.bottom },
-      ]}
-    >
+    <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
+      {/* Header */}
       <View style={styles.headerRow}>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Text style={styles.closeText}>Close</Text>
+        <Pressable onPress={() => router.back()} hitSlop={Space.md}>
+          <Text style={styles.closeGlyph}>✕</Text>
         </Pressable>
-        <Text style={styles.progressText}>{progressText}</Text>
-        <View style={{ width: 48 }} />
+        <Text style={styles.overline}>
+          {`STEP ${currentIndex + 1} / ${steps.length}`}
+        </Text>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {recipe.title}
+        </Text>
       </View>
 
-      <FlatList
-        ref={listRef}
-        data={steps}
-        keyExtractor={(item) => String(item.id)}
-        renderItem={renderItem}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        scrollEnabled
-        getItemLayout={getItemLayout}
-        onMomentumScrollEnd={onMomentumScrollEnd}
-        onScrollToIndexFailed={({ index }) => {
-          // Fallback if layout isn't ready yet.
-          listRef.current?.scrollToIndex({ index, animated: false });
-        }}
-        contentContainerStyle={styles.listContent}
-      />
+      {/* Step dots */}
+      <View style={styles.dotsRow}>
+        <StepDots
+          count={steps.length}
+          current={currentIndex}
+          done={timerState.map((t) => t === "done")}
+          onJump={onJump}
+        />
+      </View>
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.pauseBtn,
-            pressed && styles.pauseBtnPressed,
-          ]}
-          onPress={togglePause}
-        >
-          <Text style={styles.pauseBtnText}>
-            {running ? "Pause" : "Resume"}
-          </Text>
-        </Pressable>
-        <Pressable
-          style={({ pressed }) => [
-            styles.doneStepBtn,
-            pressed && styles.doneStepBtnPressed,
-          ]}
-          onPress={completeStep}
-        >
-          <Text style={styles.doneStepBtnText}>
-            {currentIndex >= steps.length - 1 ? "Finish" : "Done"}
-          </Text>
-        </Pressable>
+      {/* Single-step body (remounts on index change) */}
+      <View key={currentIndex} style={styles.stepBody}>
+        <View style={styles.stepMetaRow}>
+          <Badge
+            label={(step.step_type || "active").toUpperCase()}
+            stepType={step.step_type}
+          />
+          <Chip
+            tone="amber"
+            label={`~${fmtMinutes(step.community_minutes ?? 0)} est`}
+            size="sm"
+          />
+        </View>
+
+        <Text style={[styles.timer, { color: timerColor }]}>
+          {formatMSS(live)}
+        </Text>
+        <Text style={styles.statusHint}>{statusHint}</Text>
+
+        <Card style={styles.descCard} padding={Space.xl} shadow="card">
+          <Text style={styles.stepDescription}>{step.description}</Text>
+        </Card>
+      </View>
+
+      {/* Footer: timer control + navigation row */}
+      <View
+        style={[
+          styles.footer,
+          {
+            paddingBottom: insets.bottom + Space.sm,
+            paddingHorizontal: Space.lg,
+          },
+        ]}
+      >
+        {tState === "idle" ? (
+          <Button
+            title="Start timer"
+            variant="primary"
+            size="lg"
+            fullWidth
+            onPress={() => startTimer(currentIndex)}
+          />
+        ) : tState === "running" ? (
+          <Button
+            title="Pause"
+            variant="secondary"
+            size="lg"
+            fullWidth
+            onPress={() => pauseTimer(currentIndex)}
+          />
+        ) : tState === "paused" ? (
+          <Button
+            title="Resume"
+            variant="primary"
+            size="lg"
+            fullWidth
+            onPress={() => resumeTimer(currentIndex)}
+          />
+        ) : (
+          <Button title="Done ✓" variant="ghost" size="lg" fullWidth disabled />
+        )}
+
+        <View style={styles.navRow}>
+          <Button
+            title="Previous"
+            variant="ghost"
+            size="md"
+            disabled={currentIndex === 0}
+            onPress={prevStep}
+          />
+          {/* flex on the wrapper View (never on the Pressable itself) so the
+              button stretches without the Android paint-collapse quirk. */}
+          <View style={styles.navNextBtn}>
+            <Button
+              title={currentIndex === steps.length - 1 ? "Finish" : "Next"}
+              variant="primary"
+              size="lg"
+              fullWidth
+              onPress={nextStep}
+            />
+          </View>
+        </View>
       </View>
     </View>
   );
@@ -579,234 +629,188 @@ export default function CookModeScreen() {
 const styles = StyleSheet.create({
   fullScreen: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: Color.canvas,
   },
   center: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    paddingHorizontal: 24,
+    gap: Space.sm,
+    paddingHorizontal: Space.xxl,
   },
   muted: {
-    color: "#6B7280",
-    fontSize: 14,
+    ...Type.bodySm,
+    color: Color.inkSecondary,
     textAlign: "center",
   },
   errorTitle: {
-    color: "#B91C1C",
-    fontSize: 16,
-    fontWeight: "600",
+    ...Type.h3,
+    color: Color.danger,
+    marginBottom: Space.xs,
   },
-  button: {
-    marginTop: 8,
-    backgroundColor: "#2563EB",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 10,
+  retryBtn: {
+    marginTop: Space.md,
   },
-  buttonText: {
-    color: "#FFFFFF",
-    fontWeight: "600",
-  },
-  closeText: {
-    color: "#2563EB",
-    fontSize: 15,
-    fontWeight: "600",
-  },
+  // Header
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: Space.lg,
+    paddingVertical: Space.md,
+    gap: Space.md,
   },
-  progressText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#374151",
+  closeGlyph: {
+    ...Type.title,
+    fontSize: 18,
+    color: Color.inkSecondary,
   },
-  listContent: {
-    flexGrow: 1,
+  overline: {
+    ...Type.overline,
+    color: Color.inkSecondary,
+    textTransform: "uppercase",
   },
-  page: {
-    width: SCREEN_WIDTH,
-    flexGrow: 1,
+  headerTitle: {
+    ...Type.bodySm,
+    color: Color.inkFaint,
+    maxWidth: 120,
+    textAlign: "right",
+    flexShrink: 1,
+  },
+  // Dots
+  dotsRow: {
+    paddingHorizontal: Space.lg,
+    paddingBottom: Space.sm,
+  },
+  // Step body
+  stepBody: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 8,
+    paddingHorizontal: Space.xl,
+    paddingVertical: Space.lg,
+    gap: Space.lg,
   },
-  stepCard: {
-    width: "100%",
-    backgroundColor: "#F9FAFB",
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-    borderRadius: 20,
-    padding: 24,
-    alignItems: "center",
-    gap: 16,
-  },
-  stepMeta: {
+  stepMetaRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    width: "100%",
-  },
-  badge: {
-    borderRadius: 999,
-    paddingVertical: 2,
-    paddingHorizontal: 8,
-  },
-  badgeText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#374151",
-  },
-  estimate: {
-    marginLeft: "auto",
-    fontSize: 13,
-    color: "#2563EB",
-    fontWeight: "600",
+    justifyContent: "center",
+    gap: Space.sm,
   },
   timer: {
-    fontSize: 64,
-    fontWeight: "800",
-    color: "#111827",
-    fontVariant: ["tabular-nums"],
-    letterSpacing: 1,
+    ...Type.timer,
   },
-  stepDescription: {
-    fontSize: 18,
-    color: "#111827",
-    lineHeight: 26,
+  statusHint: {
+    ...Type.caption,
+    color: Color.inkSecondary,
     textAlign: "center",
   },
+  descCard: {
+    width: "100%",
+  },
+  stepDescription: {
+    ...Type.body,
+    fontSize: 17,
+    lineHeight: 24,
+    color: Color.ink,
+    textAlign: "left",
+  },
+  // Footer
   footer: {
-    flexDirection: "row",
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    backgroundColor: Color.surface,
     borderTopWidth: 1,
-    borderTopColor: "#F3F4F6",
-    backgroundColor: "#FFFFFF",
+    borderTopColor: Color.hairline,
+    paddingTop: Space.lg,
+    gap: Space.sm,
+    ...Shadow.floating,
   },
-  pauseBtn: {
+  navRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Space.sm,
+  },
+  navNextBtn: {
     flex: 1,
-    backgroundColor: "#F3F4F6",
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: "center",
-  },
-  pauseBtnPressed: {
-    backgroundColor: "#E5E7EB",
-  },
-  pauseBtnText: {
-    color: "#111827",
-    fontWeight: "700",
-    fontSize: 16,
-  },
-  doneStepBtn: {
-    flex: 2,
-    backgroundColor: "#2563EB",
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: "center",
-  },
-  doneStepBtnPressed: {
-    backgroundColor: "#1D4ED8",
-  },
-  doneStepBtnText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 18,
+    flexDirection: "column",
   },
   // Feedback phase
   feedbackWrap: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 24,
-    gap: 12,
+    paddingHorizontal: Space.xxl,
+    gap: Space.md,
   },
   feedbackTitle: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#111827",
+    ...Type.h1,
+    color: Color.ink,
+    textAlign: "center",
   },
-  summaryTotal: {
-    fontSize: 20,
-    color: "#2563EB",
-    fontWeight: "700",
+  feedbackStatsRow: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    justifyContent: "center",
+    gap: Space.sm,
+    marginTop: Space.xs,
+  },
+  totalPill: {
+    borderRadius: Radius.lg,
+    paddingVertical: Space.md,
+    paddingHorizontal: Space.xl,
+    alignItems: "center",
+    minWidth: 120,
+  },
+  totalPillValue: {
+    ...Type.h2,
+    fontWeight: "800",
+  },
+  totalPillLabel: {
+    ...Type.caption,
+    color: Color.inkFaint,
+    marginTop: Space.xs,
+    textTransform: "uppercase",
   },
   cleanupEstimate: {
-    fontSize: 13,
-    color: "#6B7280",
+    ...Type.caption,
+    color: Color.inkSecondary,
     fontWeight: "500",
+  },
+  feedbackPrompt: {
+    ...Type.body,
+    color: Color.inkSecondary,
+    textAlign: "center",
+    marginTop: Space.sm,
   },
   feedbackButtons: {
     width: "100%",
-    gap: 12,
-    marginTop: 16,
+    gap: Space.sm,
+    marginTop: Space.sm,
   },
-  feedbackBtn: {
-    borderRadius: 14,
-    paddingVertical: 18,
+  feedbackCard: {
+    width: "100%",
     alignItems: "center",
   },
-  feedbackBtnPressed: {
-    opacity: 0.85,
-  },
-  fasterBtn: {
-    backgroundColor: "#DCFCE7",
-  },
-  expectedBtn: {
-    backgroundColor: "#FEF3C7",
-  },
-  slowerBtn: {
-    backgroundColor: "#FFE4E6",
-  },
-  feedbackBtnText: {
-    color: "#111827",
+  feedbackCardText: {
+    ...Type.h3,
     fontWeight: "700",
-    fontSize: 18,
   },
-  skipBtn: {
-    marginTop: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-  },
-  skipText: {
-    color: "#6B7280",
-    fontSize: 15,
-    fontWeight: "600",
+  submittingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Space.sm,
+    marginTop: Space.sm,
   },
   // Done
   doneWrap: {
     width: "100%",
     alignItems: "center",
-    gap: 16,
-    marginTop: 16,
+    gap: Space.lg,
+    marginTop: Space.md,
   },
   savedMsg: {
-    color: "#16A34A",
-    fontSize: 15,
+    ...Type.body,
     fontWeight: "600",
     textAlign: "center",
-  },
-  doneBtn: {
-    width: "100%",
-    backgroundColor: "#2563EB",
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: "center",
-  },
-  doneBtnPressed: {
-    backgroundColor: "#1D4ED8",
-  },
-  doneBtnText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 18,
   },
 });
