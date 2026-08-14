@@ -35,9 +35,9 @@ const THEME_OPTIONS: { pref: ThemePref; label: string }[] = [
 ];
 
 /**
- * The Settings tab: theme preference, cooking-nudge notifications, account
- * sign-in / sign-out, offline library re-sync, and about info. All sections
- * are theme-aware (light + warm dark) via useThemeColors().
+ * The Settings tab: theme preference, cooking-nudge notifications, offline
+ * library re-sync, account sign-in / sign-out, and a compact about row. All
+ * sections are theme-aware (light + warm dark) via useThemeColors().
  */
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -97,9 +97,14 @@ export default function SettingsScreen() {
           ...Type.caption,
           color: colors.success,
         },
-        appName: {
-          ...Type.h2,
-          color: colors.ink,
+        signedInCaption: {
+          ...Type.caption,
+          color: colors.inkSecondary,
+        },
+        aboutText: {
+          ...Type.caption,
+          color: colors.inkFaint,
+          textAlign: "center",
         },
       }),
     [colors],
@@ -222,24 +227,9 @@ export default function SettingsScreen() {
         ) : null}
       </Card>
 
-      {/* Account */}
+      {/* Data & storage */}
       <Card style={styles.section}>
-        <SectionHeader title="Account" />
-        {authed === false ? (
-          <Button title="Sign in" onPress={() => router.push("/login")} />
-        ) : (
-          <Button
-            title="Sign out"
-            variant="ghost"
-            onPress={handleSignOut}
-            disabled={authed === null}
-          />
-        )}
-      </Card>
-
-      {/* Data */}
-      <Card style={styles.section}>
-        <SectionHeader title="Data" />
+        <SectionHeader title="Data & storage" />
         <Text style={styles.rowLabel}>Offline library</Text>
         <Button
           title={syncing ? "Syncing…" : "Re-sync recipe library"}
@@ -252,12 +242,29 @@ export default function SettingsScreen() {
         ) : null}
       </Card>
 
-      {/* About */}
+      {/* Account */}
       <Card style={styles.section}>
-        <SectionHeader title="About" />
-        <Text style={styles.appName}>RecipeReal</Text>
-        <Text style={styles.rowCaption}>Version {version}</Text>
-        <Text style={styles.rowCaption}>Backend: recipe-real.softland.tech</Text>
+        <SectionHeader title="Account" />
+        {authed === false ? (
+          <Button title="Sign in" onPress={() => router.push("/login")} />
+        ) : (
+          <>
+            {authed === true ? (
+              <Text style={styles.signedInCaption}>Signed in</Text>
+            ) : null}
+            <Button
+              title="Sign out"
+              variant="ghost"
+              onPress={handleSignOut}
+              disabled={authed === null}
+            />
+          </>
+        )}
+      </Card>
+
+      {/* About — one compact centered row. */}
+      <Card padding={Space.md}>
+        <Text style={styles.aboutText}>RecipeReal v{version}</Text>
       </Card>
     </ScrollView>
   );

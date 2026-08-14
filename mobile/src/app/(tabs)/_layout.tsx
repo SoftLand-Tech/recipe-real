@@ -4,10 +4,12 @@ import { Tabs } from "expo-router";
 import { useThemeColors } from "@/theme";
 
 /**
- * Bottom-tab navigation for the four top-level destinations. Route URLs are
- * unchanged by the group: "/", "/pace", "/upgrade", "/settings" — so existing
- * router.push("/pace") / router.push("/upgrade") calls keep working.
- * Colors are resolved per scheme via useThemeColors().
+ * Bottom-tab navigation for the five top-level destinations. Route URLs are
+ * unchanged by the group: "/", "/browse", "/pace", "/favorites", "/settings" —
+ * so existing router.push(...) calls keep working. "/upgrade" is NOT a tab
+ * anymore: it lives in the root stack (src/app/upgrade.tsx), so pushes to
+ * "/upgrade" from pace.tsx / recipe/[id].tsx still resolve. Colors are
+ * resolved per scheme via useThemeColors().
  */
 export default function TabsLayout() {
   const colors = useThemeColors();
@@ -23,14 +25,25 @@ export default function TabsLayout() {
         },
       }}
     >
-      {/* Renders its own header (title + search bar) with a manual top inset. */}
+      {/* Home: curated rails; renders its own header with a manual top inset. */}
       <Tabs.Screen
         name="index"
         options={{
-          title: "Recipes",
+          title: "Home",
           headerShown: false,
           tabBarIcon: ({ color }) => (
             <Text style={{ color, fontSize: 18 }}>🍳</Text>
+          ),
+        }}
+      />
+      {/* Browse: the full recipe list; renders its own header (title + search). */}
+      <Tabs.Screen
+        name="browse"
+        options={{
+          title: "Browse",
+          headerShown: false,
+          tabBarIcon: ({ color }) => (
+            <Text style={{ color, fontSize: 18 }}>⌕</Text>
           ),
         }}
       />
@@ -48,15 +61,15 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="upgrade"
+        name="favorites"
         options={{
-          title: "Premium",
+          title: "Favorites",
           headerShown: true,
           headerStyle: { backgroundColor: colors.canvas },
           headerTintColor: colors.ink,
           headerTitleStyle: { fontWeight: "600" },
           tabBarIcon: ({ color }) => (
-            <Text style={{ color, fontSize: 18 }}>✦</Text>
+            <Text style={{ color, fontSize: 18 }}>♥</Text>
           ),
         }}
       />

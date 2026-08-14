@@ -80,13 +80,28 @@ function NavigationFrame() {
         <StatusBar style={scheme === "dark" ? "light" : "dark"} />
         <Stack screenOptions={{ headerShown: true }}>
           {/*
-            The (tabs) group provides bottom-tab navigation for the three
-            top-level destinations. Its own screens manage headers: index
-            renders its own header (title + search bar) with a manual
-            status-bar inset, so the Stack header is hidden for the whole
+            The (tabs) group provides bottom-tab navigation for the five
+            top-level destinations. Its own screens manage headers: home and
+            browse render their own headers (title / title + search bar) with a
+            manual status-bar inset, so the Stack header is hidden for the whole
             group to avoid a double-counted gap.
           */}
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          {/*
+            Premium upsell. Formerly a tab; now a plain stack screen at
+            /upgrade (src/app/upgrade.tsx) so pushes from pace.tsx and
+            recipe/[id].tsx keep resolving.
+          */}
+          <Stack.Screen
+            name="upgrade"
+            options={{
+              title: "Premium",
+              headerShown: true,
+              headerStyle: { backgroundColor: colors.canvas },
+              headerTintColor: colors.ink,
+              headerTitleStyle: { fontWeight: "600" },
+            }}
+          />
           <Stack.Screen
             name="login"
             options={{
