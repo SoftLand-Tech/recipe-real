@@ -9,8 +9,12 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
-import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
+
+import {
+  isNotificationsAvailable,
+  requestNotificationsPermission,
+} from "@/utils/notifications";
 
 import { hasToken, logout } from "@/api/client";
 import { seedCacheFirstPage, seedCacheRemainingPages } from "@/db/database";
@@ -43,6 +47,7 @@ export default function SettingsScreen() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [nudgeOn, setNudgeOn] = useState(true);
   const [nudgeBlocked, setNudgeBlocked] = useState(false);
+  const [nudgeUnavailable, setNudgeUnavailable] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncDone, setSyncDone] = useState(false);
 
@@ -133,16 +138,17 @@ export default function SettingsScreen() {
   const handleNudgeToggle = useCallback(async (value: boolean) => {
     setNudgeOn(value);
     setNudgeBlocked(false);
+    setNudgeUnavailable(false);
     await setNudgePref(value ? "on" : "off");
     if (!value) return;
-    // Best-effort permission request when nudges are turned on. If the system
-    // denies / has blocked notifications, surface a hint instead of failing.
-    try {
-      const result = await Notifications.requestPermissionsAsync();
-      setNudgeBlocked(result.status !== "granted");
-    } catch {
-      // Non-fatal: nudges stay enabled; the system prompts again if needed.
+    // expo-notifications cannot load in Expo Go on Android — surface that
+    // instead of failing silently. Otherwise best-effort permission request;
+    // if the system denies/blocks, hint at the system setting instead.
+    if (!(await isNotificationsAvailable())) {
+      setNudgeUnavailable(true);
+      return;
     }
+    setNudgeBlocked(!(await requestNotificationsPermission()));
   }, []);
 
   const handleResync = useCallback(async () => {
@@ -206,6 +212,12 @@ export default function SettingsScreen() {
           <Text style={styles.blockedCaption}>
             Notifications are blocked for this app — enable them in system
             settings.
+          </Text>
+        ) : null}
+        {nudgeUnavailable ? (
+          <Text style={styles.blockedCaption}>
+            Nudges need the full app build — notifications aren't available in
+            Expo Go.
           </Text>
         ) : null}
       </Card>

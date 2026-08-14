@@ -8,8 +8,14 @@ import {
   View,
 } from "react-native";
 import { useKeepAwake } from "expo-keep-awake";
-import * as Notifications from "expo-notifications";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import {
+  cancelNotification,
+  requestNotificationsPermission,
+  scheduleMinuteNotification,
+  setupNotificationHandler,
+} from "@/utils/notifications";
 
 import { getRecipe, submitCookSession } from "@/api/client";
 import { track } from "@/analytics";
@@ -70,19 +76,12 @@ function makeId(): string {
 // ---- Passive-step nudges (local notifications) ------------------------------
 
 /**
- * Lazily ensure notification permission: check the current status, then
- * request if not already granted. Returns whether notifications may be shown.
- * Never throws — nudges are strictly optional and must never block cooking.
+ * Lazily ensure notification permission. Returns whether notifications may be
+ * shown. Never throws — nudges are strictly optional and must never block
+ * cooking. Also false in Expo Go, where expo-notifications cannot load.
  */
 async function ensureNotifPermission(): Promise<boolean> {
-  try {
-    const current = await Notifications.getPermissionsAsync();
-    if (current.granted) return true;
-    const requested = await Notifications.requestPermissionsAsync();
-    return requested.granted;
-  } catch {
-    return false;
-  }
+  return requestNotificationsPermission();
 }
 
 /** Friendly nudge copy: community estimate + a short step snippet. */
@@ -405,19 +404,15 @@ export default function CookModeScreen() {
   const cancelNudge = useCallback(async () => {
     const nudgeId = nudgeIdRef.current;
     nudgeIdRef.current = null;
-    if (!nudgeId) return;
-    try {
-      await Notifications.cancelScheduledNotificationAsync(nudgeId);
-    } catch {
-      // Never throw from cancel.
-    }
+    await cancelNotification(nudgeId);
   }, []);
 
   /**
    * Replace any pending nudge with one for the given passive step, scheduled
    * for its community estimate. Best-effort: silently skips when the estimate
-   * is missing, nudges are turned off, permission is denied, or scheduling
-   * fails — never blocks the cooking flow.
+   * is missing, nudges are turned off, permission is denied, or the
+   * notifications API is unavailable (Expo Go) — never blocks the cooking
+   * flow.
    */
   const scheduleNudge = useCallback(
     async (step: RecipeStep, recipeId: number) => {
@@ -427,17 +422,12 @@ export default function CookModeScreen() {
       try {
         if ((await getNudgePref()) !== "on") return;
         if (!(await ensureNotifPermission())) return;
-        const nudgeId = await Notifications.scheduleNotificationAsync({
-          content: {
-            title: "RecipeReal",
-            body: nudgeBody(minutes, step.description),
-          },
-          trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-            seconds: Math.round(minutes * 60),
-            repeats: false,
-          },
-        });
+        const nudgeId = await scheduleMinuteNotification(
+          "RecipeReal",
+          nudgeBody(minutes, step.description),
+          minutes,
+        );
+        if (!nudgeId) return;
         nudgeIdRef.current = nudgeId;
         track("nudge_scheduled", {
           recipe_id: recipeId,
@@ -463,16 +453,10 @@ export default function CookModeScreen() {
   );
 
   // Configure foreground presentation once on mount; the cleanup clears any
-  // pending nudge when Cook Mode unmounts.
+  // pending nudge when Cook Mode unmounts. setupNotificationHandler is a
+  // no-op when expo-notifications can't load (Expo Go).
   useEffect(() => {
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowBanner: true,
-        shouldShowList: true,
-        shouldPlaySound: false,
-        shouldSetBadge: false,
-      }),
-    });
+    setupNotificationHandler();
     return () => {
       cancelNudge();
     };
