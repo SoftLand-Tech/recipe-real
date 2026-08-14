@@ -19,11 +19,15 @@ other `*.softland.tech` apps on this box (e.g. seraty).
 | Landing page | `GET /` (the marketing page) |
 | Env | `/var/www/recipe-real/backend/.env` (VPS-local, not in git) |
 
-> Stripe keys (`STRIPE_SECRET`/`KEY`/`WEBHOOK_SECRET`/prices) are intentionally
-> empty: the free tier + Cook Mode work fully; `/api/billing/checkout` returns
-> 503 "Billing not configured" until you create Stripe products and add the keys
-> to `.env`, then run `./deploy.sh`. **The webhook is signature-protected only
-> once `STRIPE_WEBHOOK_SECRET` is set.**
+> **Billing decision (2026-08-15): Stripe will NOT be used** (no bank account).
+> Monetization, when the MVP has real users, will move to **Gumroad** (external
+> checkout + license-key verification). Until then all Stripe/Cashier env keys
+> stay empty and billing endpoints keep returning 503 — this is safe: the
+> webhook is inert without keys, and **no Stripe keys should ever be added**
+> (doing so without `STRIPE_WEBHOOK_SECRET` would expose an unsigned webhook).
+> When switching to Gumroad: add a license-key verification endpoint, replace
+> `isPremium()`'s Cashier check with license state, and remove the Cashier
+> dependency + billing routes.
 
 ## Deploy / update (one command)
 From your local machine:
