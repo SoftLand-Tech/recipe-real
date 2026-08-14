@@ -343,10 +343,7 @@ export default function RecipeDetailScreen() {
       {state === "ready" && recipe && (
         <View style={[styles.cookFooter, { paddingBottom: insets.bottom + 10 }]}>
           <Pressable
-            style={({ pressed }) => [
-              styles.cookButton,
-              pressed && styles.cookButtonPressed,
-            ]}
+            style={styles.cookButton}
             onPress={() => router.push(`/cook/${id}`)}
           >
             <Text style={styles.cookButtonText}>Start Cook Mode</Text>
@@ -517,12 +514,9 @@ const styles = StyleSheet.create({
     color: "#374151",
   },
   cookButton: {
-    width: "100%",
-    maxWidth: 720,
-    alignSelf: "center",
     backgroundColor: "#2563EB",
     borderRadius: 12,
-    paddingVertical: 14,
+    paddingVertical: 16,
     alignItems: "center",
   },
   cookButtonPressed: {
