@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -49,8 +49,15 @@ export default function PaceScreen() {
   const [calibrations, setCalibrations] = useState<PaceCalibration[]>([]);
   const [cookCount, setCookCount] = useState<number | null>(null);
 
+  // Only show the loading spinner on the very first load. Refocuses (tab
+  // switches, returning from /login) refresh silently while the previous
+  // content stays visible — stale-while-revalidate.
+  const firstLoadRef = useRef(true);
+
   const load = useCallback(async () => {
-    setState("loading");
+    if (firstLoadRef.current) {
+      setState("loading");
+    }
     try {
       const authed = await hasToken();
       setAuthenticated(authed);
@@ -76,7 +83,8 @@ export default function PaceScreen() {
       setCookCount(sessions?.meta?.total ?? sessions?.data?.length ?? 0);
       setState("ready");
       // Fire-and-forget analytics: pace dashboard rendered with multipliers.
-      if (paceResult.length > 0) {
+      // Only on the first load — silent refocus refreshes don't re-count.
+      if (paceResult.length > 0 && firstLoadRef.current) {
         track("pace_viewed");
       }
     } catch (error) {
@@ -87,6 +95,8 @@ export default function PaceScreen() {
       }
       console.warn("[RecipeReal] pace screen load failed:", error);
       setState("error");
+    } finally {
+      firstLoadRef.current = false;
     }
   }, []);
 
