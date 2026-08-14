@@ -169,10 +169,17 @@ class AuthController extends Controller
             $request->only('email')
         );
 
-        return response()->json([
-            'message' => trans($status),
+        // Always return the same generic response so the endpoint cannot be
+        // used to enumerate which emails have accounts. The real status is
+        // logged server-side so debugging stays possible.
+        logger()->info('Password reset link requested.', [
+            'email' => $request->string('email')->toString(),
             'status' => $status,
-        ], $status === Password::RESET_LINK_SENT ? 200 : 422);
+        ]);
+
+        return response()->json([
+            'message' => 'If an account exists for this email, a password reset link has been sent.',
+        ]);
     }
 
     public function resetPassword(ResetPasswordRequest $request): JsonResponse
@@ -185,6 +192,10 @@ class AuthController extends Controller
                 ])->setRememberToken(str()->random(60));
 
                 $user->save();
+
+                // Revoke all tokens so a password reset evicts every
+                // session/device that was signed in with the old password.
+                $user->tokens()->delete();
             }
         );
 

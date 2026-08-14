@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/videos/v3-crowd-vs-blogger", "src/shared"]
+}

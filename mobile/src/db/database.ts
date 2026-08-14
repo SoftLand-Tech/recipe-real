@@ -1,9 +1,11 @@
+import axios from "axios";
 import * as SQLite from "expo-sqlite";
 
 import {
   fetchRecipePage,
   fetchSeedPage,
   getPaceCalibrations,
+  isOfflineError,
   postCookSessionRaw,
 } from "@/api/http";
 import type {
@@ -655,8 +657,12 @@ export async function getPendingCookSessionCount(): Promise<number> {
 
 /**
  * Attempt to upload every queued cook session. Walks rows oldest-first; on
- * success deletes the row, on network failure stops (later rows likely fail
- * too). Returns the number of rows successfully flushed.
+ * success deletes the row. On a network failure (no server reply — still
+ * offline) it stops, since later rows would fail too. A row the SERVER
+ * rejects (4xx/5xx — including 401 from an expired token, which would keep
+ * failing without re-auth) is DEAD-LETTERED: deleted with a warning so one
+ * bad row can't block every session behind it, and the flush continues with
+ * the next row. Returns the number of rows successfully flushed.
  *
  * Uses `postCookSessionRaw` directly (which throws on any failure) rather than
  * `submitCookSession`, so a failure here doesn't re-enqueue and loop.
@@ -683,8 +689,27 @@ export async function flushPendingCookSessions(): Promise<number> {
     try {
       await postCookSessionRaw(payload);
     } catch (error) {
-      // Stop on the first failure: assume still offline.
-      return flushed;
+      if (isOfflineError(error)) {
+        // No server reply: still offline — stop here, later rows would fail
+        // too. They retry on the next flush.
+        return flushed;
+      }
+
+      // The server answered and rejected this row (a non-axios throw, e.g.
+      // a SecureStore failure, lands here too). Dead-letter it: delete the
+      // row so one bad row can't block the sessions behind it, then keep
+      // flushing the rest.
+      const status =
+        axios.isAxiosError(error) && error.response != null
+          ? error.response.status
+          : "n/a";
+      console.warn(
+        `[RecipeReal] Dead-lettering cook session ${payload.idempotency_key}: server rejected it (status ${status}); removing it from the pending queue.`,
+      );
+      await db.runAsync(`DELETE FROM pending_cook_sessions WHERE id = ?;`, [
+        row.id,
+      ]);
+      continue;
     }
 
     await db.runAsync(`DELETE FROM pending_cook_sessions WHERE id = ?;`, [

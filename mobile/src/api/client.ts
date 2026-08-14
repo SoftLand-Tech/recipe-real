@@ -5,6 +5,7 @@ import { AUTH_TOKEN_KEY } from "@/config";
 import { enqueuePendingCookSession } from "@/db/database";
 import {
   http,
+  isOfflineError,
   postCookSessionRaw,
   seedRecipes,
   getPaceCalibrations,
@@ -151,10 +152,12 @@ function normalizeCookSession(s: any): CookSessionSummary {
  */
 
 /**
- * Submit a completed cook session. On a network error (offline — no response
- * from the server), fall back to the local pending queue and resolve
- * successfully so the user is never blocked. On a real server error
- * (has `.response`), rethrow.
+ * Submit a completed cook session. Only a GENUINE network failure (axios
+ * error with no response — the server never replied) falls back to the local
+ * pending queue and resolves successfully so the user is never blocked while
+ * offline. A server 4xx/5xx answer (has `.response`) or a non-axios throw
+ * (e.g. a SecureStore failure in the request interceptor) can never succeed
+ * on retry, so it is rethrown for the caller to surface.
  */
 export async function submitCookSession(
   payload: CookSessionPayload,
@@ -163,9 +166,7 @@ export async function submitCookSession(
     await postCookSessionRaw(payload);
   } catch (error) {
     // Offline = axios error with no response (e.g. timeout, no network).
-    const isOffline =
-      !axios.isAxiosError(error) || typeof error.response === "undefined";
-    if (isOffline) {
+    if (isOfflineError(error)) {
       await enqueuePendingCookSession(payload);
       return;
     }
@@ -173,12 +174,84 @@ export async function submitCookSession(
   }
 }
 
-/** Fetch the user's cook-session history. */
-export async function getCookSessions(): Promise<Paginated<CookSessionSummary>> {
+/** Page size when fetching the cook-session history. */
+const COOK_SESSIONS_PER_PAGE = 100;
+/** Safety cap for the history loop: 5 pages x 100 = 500 sessions max. */
+const COOK_SESSIONS_MAX_PAGES = 5;
+
+/** One page of the cook-session history. */
+async function fetchCookSessionsPage(
+  page: number,
+): Promise<Paginated<CookSessionSummary>> {
   const { data } = await api.get<Paginated<CookSessionSummary>>(
     "/api/cook-sessions",
+    { params: { page, per_page: COOK_SESSIONS_PER_PAGE } },
   );
-  return { ...data, data: data.data.map(normalizeCookSession) };
+  return data;
+}
+
+/**
+ * Fetch the user's FULL cook-session history for Pace stats.
+ *
+ * The endpoint paginates (Laravel default 15/page), so a single request
+ * silently truncated history — undercounting Pace streaks for active users.
+ * Walk every page (`per_page=100`, capped at COOK_SESSIONS_MAX_PAGES pages)
+ * and merge the `data` arrays; `meta` (including `total`) is kept from the
+ * FIRST response so the returned shape stays exactly
+ * `Paginated<CookSessionSummary>`.
+ *
+ * A failure on a LATER page returns what was fetched so far rather than
+ * throwing; a failure on page 1 still throws (matching the old behavior —
+ * callers already handle a total failure). A missing `meta` (unpaginated
+ * legacy response) is treated as a single page, mirroring the defensive
+ * handling in `@/api/http`.
+ */
+export async function getCookSessions(): Promise<Paginated<CookSessionSummary>> {
+  const merged: CookSessionSummary[] = [];
+  let meta: Paginated<CookSessionSummary>["meta"] | undefined;
+
+  for (let page = 1; page <= COOK_SESSIONS_MAX_PAGES; page++) {
+    let body: Paginated<CookSessionSummary>;
+    try {
+      body = await fetchCookSessionsPage(page);
+    } catch (error) {
+      if (page === 1) throw error; // Nothing fetched yet: surface it.
+      break; // Partial fetch: return what we already have.
+    }
+
+    const rows = Array.isArray(body?.data) ? body.data : [];
+    merged.push(...rows.map(normalizeCookSession));
+
+    if (meta == null) {
+      // Keep the first response's meta (incl. total) for the merged result.
+      meta = body?.meta ?? {
+        current_page: 1,
+        last_page: 1,
+        per_page: COOK_SESSIONS_PER_PAGE,
+        total: merged.length,
+      };
+    }
+
+    const currentPage = Number(body?.meta?.current_page) || page;
+    const lastPage = Number(body?.meta?.last_page) || currentPage;
+    // Done when the paginator says we're on the last page, or when a short
+    // page comes back (covers empty pages and backends with a missing/odd
+    // meta, mirroring the heuristic in `@/api/http`).
+    if (currentPage >= lastPage || rows.length < COOK_SESSIONS_PER_PAGE) {
+      break;
+    }
+  }
+
+  return {
+    data: merged,
+    meta:
+      meta ?? {
+        current_page: 1,
+        last_page: 1,
+        per_page: COOK_SESSIONS_PER_PAGE,
+        total: merged.length,
+      },
+  };
 }
 
 // ---- Pace calibration ------------------------------------------------------

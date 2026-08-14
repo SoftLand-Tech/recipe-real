@@ -54,6 +54,20 @@ http.interceptors.response.use(
 );
 
 /**
+ * Whether an error is a GENUINE network-level failure (offline, timeout,
+ * DNS): an axios error with NO response attached, meaning the server never
+ * replied. Anything else — a server 4xx/5xx answer (has `.response`) or a
+ * non-axios throw (e.g. a SecureStore failure inside the request
+ * interceptor) — cannot succeed by retrying later, so callers use this to
+ * decide between queueing for a retry (offline) and surfacing / dropping the
+ * submission. Lives here (not `@/api/client`) so the db layer can share it
+ * without a circular import.
+ */
+export function isOfflineError(error: unknown): boolean {
+  return axios.isAxiosError(error) && error.response === undefined;
+}
+
+/**
  * Raw POST to `/api/cook-sessions`. Throws on ANY failure (network or server).
  * Shared between `submitCookSession` (in the client) and
  * `flushPendingCookSessions` (in the db layer) so the flush doesn't re-trigger

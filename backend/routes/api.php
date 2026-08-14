@@ -11,14 +11,18 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebhookController;
 use Illuminate\Support\Facades\Route;
 
-// Public auth + recipe-browsing routes (mobile-first; recipes are public in MVP).
-Route::middleware('throttle:60,1')->group(function (): void {
+// Public auth routes: credential-taking endpoints sit behind the dedicated
+// 'auth' limiter (5/min per email+IP, see AppServiceProvider::boot).
+Route::middleware('throttle:auth')->group(function (): void {
     Route::post('/auth/register', [AuthController::class, 'register']);
     Route::post('/auth/login', [AuthController::class, 'login']);
     Route::post('/auth/google', [AuthController::class, 'google']);
     Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/auth/reset-password', [AuthController::class, 'resetPassword']);
+});
 
+// Public recipe-browsing routes (mobile-first; recipes are public in MVP).
+Route::middleware('throttle:60,1')->group(function (): void {
     Route::get('/recipes', [RecipeController::class, 'index']);
     // /seed MUST come before /{recipe} to avoid route shadowing.
     Route::get('/recipes/seed', [RecipeController::class, 'seed']);
