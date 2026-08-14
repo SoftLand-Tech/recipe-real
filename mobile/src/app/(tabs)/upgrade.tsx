@@ -139,6 +139,7 @@ export default function UpgradeScreen() {
           </Card>
         ) : (
           <View style={styles.plans}>
+            <Chip label="Subscriptions coming soon" tone="amber" />
             {PLANS.map(({ plan, price, cadence, note }) => {
               const busy = pendingPlan === plan;
               return (
@@ -161,7 +162,7 @@ export default function UpgradeScreen() {
                     size="lg"
                     fullWidth
                     loading={busy}
-                    disabled={pendingPlan != null}
+                    disabled
                     onPress={() => handleSubscribe(plan)}
                   />
                 </Card>
