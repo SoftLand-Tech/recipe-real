@@ -46,6 +46,14 @@ function resolveGoogleClientId(): string | null {
  */
 function resolveProxyRedirectUri(): string | null {
   try {
+    // Prefer the explicit owner/slug from app.json — getRedirectUrl() depends
+    // on the runtime manifest exposing `originalFullName`, which Expo Go can
+    // omit (e.g. when the dev server predates a config change), leaving the
+    // Google button permanently "not ready".
+    const cfg = Constants.expoConfig;
+    if (cfg?.owner && cfg?.slug) {
+      return `https://auth.expo.io/@${cfg.owner}/${cfg.slug}`;
+    }
     return getRedirectUrl();
   } catch {
     return null;
