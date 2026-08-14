@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AnalyticsEvent;
+use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,7 +23,19 @@ class AnalyticsController extends Controller
             // underscores and dots (e.g. cook_completed, app_open,
             // recipe.favorited).
             'name' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9_\.]+$/'],
-            'properties' => ['nullable', 'array'],
+            // Payload cap: at most 20 properties, each a scalar (string,
+            // number, boolean — what the mobile client sends) whose string
+            // form is at most 256 chars. max:256 measures mb_strlen for
+            // non-array values, so numbers like recipe_id: 12 pass; the
+            // closure rejects arrays/objects, which max would otherwise
+            // size by count().
+            'properties' => ['nullable', 'array', 'max:20'],
+            'properties.*' => [
+                fn (string $attribute, mixed $value, Closure $fail) => is_array($value)
+                    ? $fail("The {$attribute} must be a string, number or boolean.")
+                    : null,
+                'max:256',
+            ],
         ]);
 
         $user = $request->user('sanctum');

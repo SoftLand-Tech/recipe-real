@@ -1,15 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StyleSheet, Text, View } from "react-native";
 import { router, Stack } from "expo-router";
 import axios from "axios";
 import Constants from "expo-constants";
@@ -21,11 +11,10 @@ import {
 } from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
 
-import { login, loginWithGoogle, register } from "@/api/client";
+import { loginWithGoogle } from "@/api/client";
 import { track } from "@/analytics";
 import {
   MaxContentWidth,
-  Radius,
   Space,
   Type,
   useThemeColors,
@@ -66,91 +55,17 @@ function resolveProxyRedirectUri(): string | null {
   }
 }
 
-/** Map a failed API call to a friendly, inline-safe message. */
+/** Map a failed Google sign-in API call to a friendly, inline-safe message. */
 function friendlyError(e: unknown): string {
   if (axios.isAxiosError(e)) {
-    const status = e.response?.status;
-    if (status === 401) return "Incorrect email or password.";
-    if (status === 422) return "Please check your details and try again.";
     if (e.response) return "Something went wrong. Please try again.";
     return "Couldn't reach the server. Check your connection and try again.";
   }
   return "Something went wrong. Please try again.";
 }
 
-interface FieldProps {
-  label: string;
-  value: string;
-  onChangeText: (text: string) => void;
-  placeholder?: string;
-  secure?: boolean;
-  autoCapitalize?: "none" | "sentences";
-  keyboardType?: "default" | "email-address";
-  autoComplete?: "email" | "name" | "password" | "off";
-}
-
-/** Warm pill-styled labeled text input (surfaceSoft bg, hairline border). */
-function Field({
-  label,
-  value,
-  onChangeText,
-  placeholder,
-  secure = false,
-  autoCapitalize = "none",
-  keyboardType = "default",
-  autoComplete = "off",
-}: FieldProps) {
-  const colors = useThemeColors();
-  const styles = useMemo(
-    () =>
-      StyleSheet.create({
-        field: {
-          gap: Space.xs,
-        },
-        fieldLabel: {
-          ...Type.caption,
-          color: colors.inkSecondary,
-        },
-        input: {
-          backgroundColor: colors.surfaceSoft,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: colors.hairline,
-          borderRadius: Radius.md,
-          paddingHorizontal: Space.md,
-          paddingVertical: Space.md,
-          fontSize: Type.body.fontSize,
-          color: colors.ink,
-        },
-      }),
-    [colors],
-  );
-  return (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput
-        style={styles.input}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={colors.inkFaint}
-        secureTextEntry={secure || undefined}
-        autoCapitalize={autoCapitalize}
-        autoCorrect={false}
-        keyboardType={keyboardType}
-        autoComplete={autoComplete}
-      />
-    </View>
-  );
-}
-
 export default function LoginScreen() {
-  const insets = useSafeAreaInsets();
   const colors = useThemeColors();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [submitting, setSubmitting] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -164,55 +79,41 @@ export default function LoginScreen() {
           flex: 1,
           backgroundColor: colors.canvas,
         },
-        flex: {
+        body: {
           flex: 1,
-        },
-        content: {
-          paddingHorizontal: Space.lg,
-          paddingTop: Space.xl,
+          justifyContent: "center",
+          paddingHorizontal: Space.xl,
         },
         column: {
           width: "100%",
           maxWidth: MaxContentWidth,
           alignSelf: "center",
-          gap: Space.lg,
+          gap: Space.mega,
+        },
+        heading: {
+          gap: Space.md,
         },
         headline: {
           ...Type.h1,
           color: colors.ink,
+          textAlign: "center",
         },
         subtext: {
           ...Type.body,
           color: colors.inkSecondary,
+          textAlign: "center",
+        },
+        actions: {
+          gap: Space.md,
+        },
+        caption: {
+          ...Type.caption,
+          color: colors.inkFaint,
+          textAlign: "center",
         },
         errorText: {
           ...Type.bodySm,
           color: colors.danger,
-          textAlign: "center",
-        },
-        dividerRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.md,
-        },
-        dividerLine: {
-          flex: 1,
-          height: StyleSheet.hairlineWidth,
-          backgroundColor: colors.hairline,
-        },
-        dividerText: {
-          ...Type.caption,
-          color: colors.inkFaint,
-        },
-        toggle: {
-          alignSelf: "center",
-          paddingVertical: Space.sm,
-          paddingHorizontal: Space.md,
-        },
-        toggleText: {
-          ...Type.bodySm,
-          color: colors.accent,
-          fontWeight: "600",
           textAlign: "center",
         },
       }),
@@ -243,7 +144,7 @@ export default function LoginScreen() {
   }
 
   async function handleGoogle() {
-    if (submitting || googleBusy) return;
+    if (googleBusy) return;
     setError(null);
 
     if (!googleClientId) {
@@ -292,51 +193,12 @@ export default function LoginScreen() {
       await loginWithGoogle(idToken);
       track("signed_in", { method: "google" });
       navigateAfterAuth();
-    } catch {
-      setError("Google sign-in failed. Please try again.");
+    } catch (e) {
+      setError(friendlyError(e));
     } finally {
       setGoogleBusy(false);
     }
   }
-
-  async function handleSubmit() {
-    if (submitting || googleBusy) return;
-    setError(null);
-
-    const trimmedName = name.trim();
-    const trimmedEmail = email.trim();
-
-    if (mode === "signup" && !trimmedName) {
-      setError("Please enter your name.");
-      return;
-    }
-    if (!trimmedEmail || !password) {
-      setError("Please enter your email and password.");
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      if (mode === "signup") {
-        await register(trimmedName, trimmedEmail, password);
-      } else {
-        await login(trimmedEmail, password);
-      }
-      track("signed_in", { method: "password" });
-      navigateAfterAuth();
-    } catch (e) {
-      setError(friendlyError(e));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  function toggleMode() {
-    setError(null);
-    setMode((current) => (current === "signin" ? "signup" : "signin"));
-  }
-
-  const busy = submitting || googleBusy;
 
   return (
     <View style={styles.container}>
@@ -347,28 +209,16 @@ export default function LoginScreen() {
           headerTintColor: colors.ink,
         }}
       />
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <ScrollView
-          style={styles.flex}
-          contentContainerStyle={[
-            styles.content,
-            { paddingBottom: insets.bottom + 32 },
-          ]}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={styles.column}>
-            <Text style={styles.headline}>
-              {mode === "signin" ? "Welcome back" : "Create your account"}
-            </Text>
+      <View style={styles.body}>
+        <View style={styles.column}>
+          <View style={styles.heading}>
+            <Text style={styles.headline}>Welcome back</Text>
             <Text style={styles.subtext}>
-              {mode === "signin"
-                ? "Sign in to track your pace and sync your cook sessions."
-                : "Sign up to track your pace and sync your cook sessions."}
+              Sign in to track your pace and sync your cook sessions.
             </Text>
+          </View>
 
+          <View style={styles.actions}>
             <Button
               title="Continue with Google"
               variant="primary"
@@ -377,69 +227,14 @@ export default function LoginScreen() {
               leftIcon={<GoogleGlyph />}
               onPress={handleGoogle}
               loading={googleBusy}
-              disabled={submitting}
             />
-
+            <Text style={styles.caption}>
+              Sign in with Google — no password needed.
+            </Text>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-            <View style={styles.dividerRow}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            {mode === "signup" ? (
-              <Field
-                label="Name"
-                value={name}
-                onChangeText={setName}
-                placeholder="Your name"
-                autoCapitalize="sentences"
-                autoComplete="name"
-              />
-            ) : null}
-            <Field
-              label="Email"
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
-              keyboardType="email-address"
-              autoComplete="email"
-            />
-            <Field
-              label="Password"
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Your password"
-              secure
-              autoComplete="password"
-            />
-
-            <Button
-              title={mode === "signin" ? "Sign in" : "Create account"}
-              variant="primary"
-              size="lg"
-              fullWidth
-              onPress={handleSubmit}
-              loading={submitting}
-              disabled={googleBusy}
-            />
-
-            <Pressable
-              onPress={busy ? undefined : toggleMode}
-              disabled={busy}
-              accessibilityRole="button"
-              style={styles.toggle}
-            >
-              <Text style={styles.toggleText}>
-                {mode === "signin"
-                  ? "New here? Create an account"
-                  : "Already have an account? Sign in"}
-              </Text>
-            </Pressable>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </View>
+      </View>
     </View>
   );
 }

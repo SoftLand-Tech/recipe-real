@@ -16,9 +16,9 @@ you must create**: a Google OAuth **Web Client ID**.
    https://auth.expo.io/@mamounhisham1/recipereal
    ```
    (the Expo auth proxy used when running in Expo Go). When you later ship a
-   standalone/dev-client build, also add your app scheme, e.g.
-   `recipereal://`/`https://recipe-real.softland.tech` and switch the mobile
-   redirect accordingly.
+   standalone/dev-client build, also add the app redirect `recipereal://auth`
+   (the URL scheme is already renamed to `recipereal` in `mobile/app.json`) and
+   switch the mobile redirect accordingly.
 5. Copy the **Client ID** (`...apps.googleusercontent.com`).
 
 ## 2. Configure
@@ -45,5 +45,5 @@ Mobile runs the Google flow via the Expo auth proxy (works in Expo Go with
 just the Web Client ID) and sends the `id_token` to `POST /api/auth/google`.
 The backend verifies the token against Google's JWKS (signature, expiry,
 audience, issuer), finds/creates the user (linking by `google_sub` or verified
-email), and returns a Sanctum token — identical shape to password login.
-Email/password auth works regardless of Google configuration.
+email), and returns a Sanctum token. Google is the only auth method —
+email/password auth has been removed.

@@ -37,40 +37,10 @@ import type {
 
 // ---- Auth ------------------------------------------------------------------
 
-export async function login(
-  email: string,
-  password: string,
-): Promise<AuthResponse> {
-  const { data } = await api.post<AuthResponse>("/api/auth/login", {
-    email,
-    password,
-  });
-  if (data?.token) {
-    await SecureStore.setItemAsync(AUTH_TOKEN_KEY, data.token);
-  }
-  return data;
-}
-
-export async function register(
-  name: string,
-  email: string,
-  password: string,
-): Promise<AuthResponse> {
-  const { data } = await api.post<AuthResponse>("/api/auth/register", {
-    name,
-    email,
-    password,
-  });
-  if (data?.token) {
-    await SecureStore.setItemAsync(AUTH_TOKEN_KEY, data.token);
-  }
-  return data;
-}
-
 /**
  * Sign in (or register) with a Google ID token: POST /api/auth/google with
- * `{ id_token }`. Mirrors `login` — same response shape, same SecureStore
- * persistence — so callers can treat it exactly like an email/password sign-in.
+ * `{ id_token }`. Google is the only auth method; the response token is
+ * persisted to SecureStore for subsequent authenticated calls.
  */
 export async function loginWithGoogle(idToken: string): Promise<AuthResponse> {
   const { data } = await api.post<AuthResponse>("/api/auth/google", {
