@@ -39,7 +39,10 @@ export function HeroImage({
         container: {
           width: "100%",
           overflow: "hidden",
-          backgroundColor: colors.accentSoft,
+          // Loading tint: expo-image's placeholder prop only accepts an image
+          // source (no plain color object), so the container background serves
+          // as the themed placeholder while the bitmap decodes.
+          backgroundColor: colors.surfaceSoft,
         },
         fallback: {
           ...StyleSheet.absoluteFill,
@@ -70,9 +73,13 @@ export function HeroImage({
           source={{ uri: uri as string }}
           style={StyleSheet.absoluteFill}
           contentFit="cover"
-          transition={300}
+          // transition 300 cross-faded from a blank placeholder, making loads
+          // feel delayed; 0 shows the decoded bitmap the moment it's ready.
+          transition={0}
           cachePolicy="memory-disk"
           placeholder={null}
+          // Keeps recycled cells (FlatList rails) from reloading the image.
+          recyclingKey={uri as string}
         />
       ) : (
         <View style={[styles.fallback, { backgroundColor: colors.accentSoft }]}>

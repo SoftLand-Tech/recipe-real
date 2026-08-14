@@ -35,6 +35,49 @@ type LoadState = "loading" | "ready" | "error" | "locked";
 /** History rows visible before the "Show all" toggle expands the list. */
 const HISTORY_PREVIEW_COUNT = 10;
 
+// ---- Remount cache + identity fingerprints ----------------------------------
+//
+// Tab screens unmount/remount as the user navigates; without a cache the pace
+// tab would flash its first-visit spinner on every remount. The last payloads
+// live at module level so a remount renders instantly from the cache and the
+// focus load refreshes silently (stale-while-revalidate across unmounts).
+// The fingerprints let refocus refreshes skip the setState entirely when the
+// server returns identical data — fresh array identities would re-render the
+// whole list (and reset in-flight interactions) for nothing.
+let lastCalibrations: PaceCalibration[] | null = null;
+let lastCookCount: number | null = null;
+let lastSessions: CookSessionSummary[] | null = null;
+let lastCalibrationsFp = "";
+let lastSessionsFp = "";
+
+/**
+ * Clear the module-level remount cache (previous account's pace data).
+ * Called on sign-out — from this screen AND from Settings (imported there) —
+ * so the next signed-in user never sees the previous user's calibrations or
+ * cook history flash on remount.
+ */
+export function clearPaceCache(): void {
+  lastCalibrations = null;
+  lastCookCount = null;
+  lastSessions = null;
+  lastCalibrationsFp = "";
+  lastSessionsFp = "";
+}
+
+/** Cheap change fingerprint for the pace calibration list. */
+function calibrationsFingerprint(items: PaceCalibration[]): string {
+  return items
+    .map((c) => `${c.step_type}:${c.multiplier}:${c.confidence}`)
+    .join("|");
+}
+
+/** Cheap change fingerprint for the cook-session list. */
+function sessionsFingerprint(items: CookSessionSummary[]): string {
+  return items
+    .map((s) => `${s.id}:${s.created_at}:${s.total_actual_minutes}`)
+    .join("|");
+}
+
 /** Capitalize the first letter of a step_type for display. */
 function capitalize(value: string): string {
   if (!value) return value;
@@ -69,20 +112,29 @@ function deltaChip(
 
 export default function PaceScreen() {
   const colors = useThemeColors();
-  const [state, setState] = useState<LoadState>("loading");
+  const [state, setState] = useState<LoadState>(() =>
+    lastCalibrations != null || lastSessions != null ? "ready" : "loading",
+  );
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
-  const [calibrations, setCalibrations] = useState<PaceCalibration[]>([]);
-  const [cookCount, setCookCount] = useState<number | null>(null);
-  const [cookSessions, setCookSessions] = useState<CookSessionSummary[]>([]);
+  const [calibrations, setCalibrations] = useState<PaceCalibration[]>(
+    () => lastCalibrations ?? [],
+  );
+  const [cookCount, setCookCount] = useState<number | null>(
+    () => lastCookCount,
+  );
+  const [cookSessions, setCookSessions] = useState<CookSessionSummary[]>(
+    () => lastSessions ?? [],
+  );
   const [showAllHistory, setShowAllHistory] = useState(false);
 
   // Only show the loading spinner on the very first load. Refocuses (tab
   // switches, returning from /login) refresh silently while the previous
-  // content stays visible — stale-while-revalidate.
+  // content stays visible — stale-while-revalidate. A remount with cached
+  // payloads also skips the spinner and renders the cache immediately.
   const firstLoadRef = useRef(true);
 
   const load = useCallback(async () => {
-    if (firstLoadRef.current) {
+    if (firstLoadRef.current && lastCalibrations == null && lastSessions == null) {
       setState("loading");
     }
     try {
@@ -106,9 +158,30 @@ export default function PaceScreen() {
         refreshPaceCalibrations(),
         getCookSessions().catch(() => null),
       ]);
-      setCalibrations(paceResult);
+      const nextSessions = sessions?.data ?? [];
+
+      // Identity guards: only hand React a new array when the payload actually
+      // changed (compare fingerprints), so refocus refreshes don't re-render
+      // the calibration cards / history rows mid-interaction.
+      const calibFp = calibrationsFingerprint(paceResult);
+      if (calibFp !== lastCalibrationsFp) {
+        lastCalibrationsFp = calibFp;
+        setCalibrations(paceResult);
+      }
+      const sessionsFp = sessionsFingerprint(nextSessions);
+      if (sessionsFp !== lastSessionsFp) {
+        lastSessionsFp = sessionsFp;
+        setCookSessions(nextSessions);
+      }
       setCookCount(sessions?.meta?.total ?? sessions?.data?.length ?? 0);
-      setCookSessions(sessions?.data ?? []);
+
+      // Refresh the remount cache (skip caching a failed sessions fetch — an
+      // empty list from a network error shouldn't blank the next remount).
+      lastCalibrations = paceResult;
+      if (sessions) {
+        lastSessions = nextSessions;
+        lastCookCount = sessions.meta?.total ?? sessions.data.length ?? 0;
+      }
       setState("ready");
       // Fire-and-forget analytics: pace dashboard rendered with multipliers.
       // Only on the first load — silent refocus refreshes don't re-count.
@@ -142,6 +215,7 @@ export default function PaceScreen() {
     } catch {
       // logout() clears the stored token in its finally block; ignore errors.
     }
+    clearPaceCache();
     setAuthenticated(false);
     setCalibrations([]);
     setCookCount(null);

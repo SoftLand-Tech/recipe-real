@@ -40,7 +40,9 @@ export function Card({
   );
   // Static style only (no Pressable style function): function styles on
   // Pressables mis-resolved and collapsed painting on some Android devices
-  // (see commit c0be039). Pressed feedback uses state + android_ripple.
+  // (see commit c0be039). Pressed feedback is the state-driven bg + opacity
+  // dim; android_ripple is intentionally omitted — on some devices it draws a
+  // rectangular overlay that ignores borderRadius, revealing square edges.
   const baseStyle: StyleProp<ViewStyle> = [
     styles.base,
     { padding, borderRadius: Radius.lg },
@@ -56,7 +58,6 @@ export function Card({
         onPress={onPress}
         onPressIn={() => setPressed(true)}
         onPressOut={() => setPressed(false)}
-        android_ripple={{ color: "rgba(0,0,0,0.08)", borderless: false }}
         style={baseStyle}
       >
         {children}

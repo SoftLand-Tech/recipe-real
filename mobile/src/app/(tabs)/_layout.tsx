@@ -1,4 +1,4 @@
-import { Text } from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { Tabs } from "expo-router";
 
 import { useThemeColors } from "@/theme";
@@ -32,7 +32,7 @@ export default function TabsLayout() {
           title: "Home",
           headerShown: false,
           tabBarIcon: ({ color }) => (
-            <Text style={{ color, fontSize: 18 }}>🍳</Text>
+            <Ionicons name="home" size={22} color={color} />
           ),
         }}
       />
@@ -43,7 +43,7 @@ export default function TabsLayout() {
           title: "Browse",
           headerShown: false,
           tabBarIcon: ({ color }) => (
-            <Text style={{ color, fontSize: 18 }}>⌕</Text>
+            <Ionicons name="search" size={22} color={color} />
           ),
         }}
       />
@@ -56,7 +56,7 @@ export default function TabsLayout() {
           headerTintColor: colors.ink,
           headerTitleStyle: { fontWeight: "600" },
           tabBarIcon: ({ color }) => (
-            <Text style={{ color, fontSize: 18 }}>⏱</Text>
+            <Ionicons name="speedometer" size={22} color={color} />
           ),
         }}
       />
@@ -69,7 +69,7 @@ export default function TabsLayout() {
           headerTintColor: colors.ink,
           headerTitleStyle: { fontWeight: "600" },
           tabBarIcon: ({ color }) => (
-            <Text style={{ color, fontSize: 18 }}>♥</Text>
+            <Ionicons name="heart" size={22} color={color} />
           ),
         }}
       />
@@ -82,7 +82,7 @@ export default function TabsLayout() {
           headerTintColor: colors.ink,
           headerTitleStyle: { fontWeight: "600" },
           tabBarIcon: ({ color }) => (
-            <Text style={{ color, fontSize: 18 }}>⚙</Text>
+            <Ionicons name="settings" size={22} color={color} />
           ),
         }}
       />

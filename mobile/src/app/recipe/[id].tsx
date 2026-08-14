@@ -1,3 +1,4 @@
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useLocalSearchParams, router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -189,12 +190,6 @@ export default function RecipeDetailScreen() {
           alignItems: "center",
           justifyContent: "center",
           zIndex: 10,
-        },
-        favGlyph: {
-          color: "#FFFFFF",
-          fontSize: 20,
-          fontWeight: "600",
-          lineHeight: 22,
         },
         contentCard: {
           backgroundColor: colors.surface,
@@ -728,7 +723,11 @@ export default function RecipeDetailScreen() {
                 onPress={onToggleFavorite}
                 hitSlop={Space.sm}
               >
-                <Text style={styles.favGlyph}>{favorited ? "♥" : "♡"}</Text>
+                <Ionicons
+                  name={favorited ? "heart" : "heart-outline"}
+                  size={20}
+                  color={favorited ? "#E8384F" : "#FFFFFF"}
+                />
               </IconPressable>
 
               {/* RISING CONTENT CARD overlapping the hero. */}

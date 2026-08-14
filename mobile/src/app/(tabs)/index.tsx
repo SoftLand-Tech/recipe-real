@@ -56,6 +56,20 @@ function passiveScore(recipe: Recipe): number {
   return (recipe.community_avg_minutes ?? 0) * 0.4;
 }
 
+/**
+ * Cheap content fingerprint of a recipe list. Background reloads from the
+ * cache return fresh object identities even when nothing changed; comparing
+ * fingerprints lets us keep the previous array (and its render identities).
+ */
+function recipesFingerprint(list: Recipe[]): string {
+  return list
+    .map(
+    (r) =>
+      `${r.id}:${r.title}:${r.community_avg_minutes}:${r.cleanup_avg_minutes}:${r.image_url}`,
+  )
+    .join("|");
+}
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
@@ -182,30 +196,41 @@ export default function HomeScreen() {
 
   // ---- Cache load: same progressive skeleton as the Browse tab -------------
 
+  // Identity-guarded setRecipes: when the reloaded list is content-identical
+  // to what's on screen, return the previous array so React bails out — new
+  // object identities would re-render every rail + card and re-fade images.
+  const setRecipesIfChanged = useCallback((next: Recipe[]) => {
+    setRecipes((prev) =>
+      recipesFingerprint(prev) === recipesFingerprint(next) ? prev : next,
+    );
+  }, []);
+
   // Background continuation after a cold first-page seed: stream the remaining
   // seed pages into the cache, then reload. Non-blocking on purpose.
   const continueSeedInBackground = useCallback(async () => {
     try {
       await seedCacheRemainingPages();
-      setRecipes(await getCachedRecipes());
+      setRecipesIfChanged(await getCachedRecipes());
     } catch (error) {
       console.warn("[RecipeReal] home background seed continuation failed:", error);
     }
-  }, []);
+  }, [setRecipesIfChanged]);
 
   // Background refresh: light upsert (no step re-download) + reload from cache.
   const refreshInBackground = useCallback(async () => {
     try {
       await refreshCacheLight();
-      setRecipes(await getCachedRecipes());
+      setRecipesIfChanged(await getCachedRecipes());
     } catch (error) {
       // Background refresh failures are non-fatal.
       console.warn("[RecipeReal] home background refresh failed:", error);
     }
-  }, []);
+  }, [setRecipesIfChanged]);
 
   const loadFromCache = useCallback(async (): Promise<boolean> => {
-    setState("loading");
+    // Stale-while-revalidate: keep the current rails on screen during a
+    // reload; skeletons are only for a true cold start (nothing to show).
+    if (recipes.length === 0) setState("loading");
     setErrorMessage(null);
     try {
       const count = await countCachedRecipes();
@@ -218,7 +243,7 @@ export default function HomeScreen() {
         continueSeedInBackground();
         return false;
       }
-      setRecipes(await getCachedRecipes());
+      setRecipesIfChanged(await getCachedRecipes());
       setState("ready");
       return true;
     } catch (error) {
@@ -229,7 +254,7 @@ export default function HomeScreen() {
       setState("error");
       return false;
     }
-  }, [continueSeedInBackground]);
+  }, [continueSeedInBackground, recipes, setRecipesIfChanged]);
 
   useEffect(() => {
     track("home_viewed");
@@ -244,7 +269,7 @@ export default function HomeScreen() {
         repairCachedStepsIfNeeded()
           .then(async (repaired) => {
             if (repaired) {
-              setRecipes(await getCachedRecipes());
+              setRecipesIfChanged(await getCachedRecipes());
             } else {
               await refreshInBackground();
             }
@@ -268,11 +293,11 @@ export default function HomeScreen() {
     setRefreshing(false);
   }, [refreshInBackground]);
 
-  // v1: category chips navigate to Browse without preselecting its filter
-  // (Browse's filter state is local to that screen) — acceptable for now.
+  // Category chips land in Browse ALREADY FILTERED: the `filter` param carries
+  // the category id (e.g. "pasta", "quick") which Browse reads on mount.
   const handleCategoryPress = useCallback((id: string, label: string) => {
     track("home_category_tapped", { category: id, label });
-    router.push("/browse");
+    router.push({ pathname: "/browse", params: { filter: id } });
   }, []);
 
   const showSkeletons = state === "loading" && recipes.length === 0;

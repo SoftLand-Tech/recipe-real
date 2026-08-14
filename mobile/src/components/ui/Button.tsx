@@ -102,14 +102,15 @@ export function Button({
   // Static style only (no Pressable style function, no width: "100%"): both
   // percentage width and function styles inside footers have mis-resolved and
   // collapsed button painting on some Android devices (see commit c0be039).
-  // Pressed feedback comes from state + the native android_ripple instead.
+  // Pressed feedback is the opacity dim from state; android_ripple is
+  // intentionally omitted — on some devices it draws a rectangular overlay
+  // that ignores borderRadius, revealing square edges.
   return (
     <Pressable
       onPress={disabled || loading ? undefined : onPress}
       disabled={disabled || loading}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
-      android_ripple={{ color: "rgba(0,0,0,0.12)", borderless: false }}
       style={[
         styles.base,
         { backgroundColor: tone.bg },

@@ -18,6 +18,7 @@ import {
 import { hasToken, logout } from "@/api/client";
 import { seedCacheFirstPage, seedCacheRemainingPages } from "@/db/database";
 import { getNudgePref, setNudgePref } from "@/utils/prefs";
+import { clearPaceCache } from "./pace";
 import {
   Space,
   Type,
@@ -136,6 +137,9 @@ export default function SettingsScreen() {
     } catch {
       // logout() clears the stored token in its finally block; ignore errors.
     }
+    // Also clear the Pace tab's remount cache so the next signed-in user
+    // never sees the previous account's pace data flash on remount.
+    clearPaceCache();
     await refreshAuth();
   }, [refreshAuth]);
 

@@ -1,4 +1,5 @@
-import { StyleSheet, Text } from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { StyleSheet } from "react-native";
 
 import { Radius, Space } from "@/theme";
 
@@ -15,12 +16,12 @@ const DIMENSIONS = { sm: 30, lg: 38 } as const;
 
 /**
  * The heart overlay used on recipe cards and the detail hero. Sits over
- * photos, so it's always a dark translucent circle with a white glyph
- * regardless of theme. Pressed feedback: instant opacity dim (IconPressable).
+ * photos, so it's always a dark translucent circle: white outline heart when
+ * unfavored, red filled heart when favored. Pressed feedback: instant opacity
+ * dim (IconPressable).
  */
 export function HeartButton({ favorited, onPress, size = "sm" }: HeartButtonProps) {
   const dim = DIMENSIONS[size];
-  const glyphSize = size === "lg" ? 20 : 16;
   return (
     <IconPressable
       onPress={onPress}
@@ -34,7 +35,11 @@ export function HeartButton({ favorited, onPress, size = "sm" }: HeartButtonProp
         },
       ]}
     >
-      <Text style={[styles.glyph, { fontSize: glyphSize }]}>{favorited ? "♥" : "♡"}</Text>
+      <Ionicons
+        name={favorited ? "heart" : "heart-outline"}
+        size={size === "lg" ? 20 : 17}
+        color={favorited ? "#E8384F" : "#FFFFFF"}
+      />
     </IconPressable>
   );
 }
@@ -47,9 +52,5 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.35)",
     alignItems: "center",
     justifyContent: "center",
-  },
-  glyph: {
-    color: "#FFFFFF",
-    fontWeight: "600",
   },
 });
