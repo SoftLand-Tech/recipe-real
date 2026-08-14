@@ -32,6 +32,8 @@ import {
   Card,
   Chip,
   HeroImage,
+  HeartButton,
+  IconPressable,
   SectionHeader,
   SkeletonCard,
   TimeChip,
@@ -129,24 +131,6 @@ export default function BrowseScreen() {
           flexDirection: "row",
           flexWrap: "wrap",
           gap: Space.xs,
-        },
-        // Heart overlay sits on top of recipe photos: keep the black scrim
-        // + white glyph in both schemes (it must darken photos, not tint).
-        heartButton: {
-          position: "absolute",
-          top: Space.sm,
-          right: Space.sm,
-          width: 30,
-          height: 30,
-          borderRadius: 15,
-          backgroundColor: "rgba(0,0,0,0.35)",
-          alignItems: "center",
-          justifyContent: "center",
-        },
-        heartGlyph: {
-          fontSize: 16,
-          lineHeight: 18,
-          color: "#FFFFFF",
         },
         favoritesSection: {
           marginBottom: Space.md,
@@ -394,14 +378,10 @@ export default function BrowseScreen() {
         >
           <View>
             <HeroImage uri={item.image_url} height={150} rounded={Radius.lg} />
-            {/* Static style only (no width:"100%" / flex) — see Android paint rules. */}
-            <Pressable
+            <HeartButton
+              favorited={favorited}
               onPress={() => handleToggleFavorite(item.id)}
-              hitSlop={8}
-              style={styles.heartButton}
-            >
-              <Text style={styles.heartGlyph}>{favorited ? "♥" : "♡"}</Text>
-            </Pressable>
+            />
           </View>
           <View style={styles.cardBody}>
             <Text style={styles.cardTitle} numberOfLines={2}>
@@ -494,11 +474,11 @@ export default function BrowseScreen() {
           style={styles.filterRow}
           contentContainerStyle={styles.filterContent}
         >
-          <Pressable onPress={() => handleSelectFilter("all")}>
+          <IconPressable onPress={() => handleSelectFilter("all")}>
             <Chip label="All" tone={filter === "all" ? "accent" : "neutral"} />
-          </Pressable>
+          </IconPressable>
           {CATEGORIES.map((category) => (
-            <Pressable
+            <IconPressable
               key={category.id}
               onPress={() => handleSelectFilter(category.id)}
             >
@@ -506,14 +486,14 @@ export default function BrowseScreen() {
                 label={category.label}
                 tone={filter === category.id ? "accent" : "neutral"}
               />
-            </Pressable>
+            </IconPressable>
           ))}
-          <Pressable onPress={() => handleSelectFilter("quick")}>
+          <IconPressable onPress={() => handleSelectFilter("quick")}>
             <Chip
               label="Under 30 min"
               tone={filter === "quick" ? "accent" : "neutral"}
             />
-          </Pressable>
+          </IconPressable>
         </ScrollView>
       )}
 

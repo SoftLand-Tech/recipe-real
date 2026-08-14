@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -20,6 +19,7 @@ import {
   Card,
   Chip,
   HeroImage,
+  HeartButton,
   SkeletonCard,
   TimeChip,
 } from "@/components/ui";
@@ -100,24 +100,6 @@ export default function FavoritesScreen() {
           flexDirection: "row",
           flexWrap: "wrap",
           gap: Space.xs,
-        },
-        // Heart overlay sits on top of recipe photos: keep the black scrim
-        // + white glyph in both schemes (it must darken photos, not tint).
-        heartButton: {
-          position: "absolute",
-          top: Space.sm,
-          right: Space.sm,
-          width: 30,
-          height: 30,
-          borderRadius: 15,
-          backgroundColor: "rgba(0,0,0,0.35)",
-          alignItems: "center",
-          justifyContent: "center",
-        },
-        heartGlyph: {
-          fontSize: 16,
-          lineHeight: 18,
-          color: "#FFFFFF",
         },
         center: {
           flex: 1,
@@ -248,14 +230,10 @@ export default function FavoritesScreen() {
         >
           <View>
             <HeroImage uri={item.image_url} height={150} rounded={Radius.lg} />
-            {/* Static style only (no width:"100%" / flex) — Android paint rules. */}
-            <Pressable
+            <HeartButton
+              favorited={favorited}
               onPress={() => handleToggleFavorite(item.id)}
-              hitSlop={8}
-              style={styles.heartButton}
-            >
-              <Text style={styles.heartGlyph}>{favorited ? "♥" : "♡"}</Text>
-            </Pressable>
+            />
           </View>
           <View style={styles.cardBody}>
             <Text style={styles.cardTitle} numberOfLines={2}>

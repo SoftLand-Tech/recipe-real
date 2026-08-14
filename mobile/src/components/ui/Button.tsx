@@ -81,6 +81,14 @@ export function Button({
         disabled: {
           opacity: 0.5,
         },
+        // Opacity is the pressed workhorse: it's GPU-composited, so unlike a
+        // background-color swap (which some Android devices fail to repaint,
+        // and android_ripple which may not render at all) it ALWAYS visibly
+        // acknowledges the tap, instantly — even when the onPress handler is
+        // slow (async navigation etc.).
+        pressed: {
+          opacity: 0.75,
+        },
         label: {
           fontWeight: "600",
           textAlign: "center",
@@ -108,7 +116,7 @@ export function Button({
         large ? styles.sizeLg : styles.sizeMd,
         fullWidth ? styles.fullWidth : null,
         disabled ? styles.disabled : null,
-        pressed && !disabled ? { backgroundColor: tone.pressedBg } : null,
+        pressed && !disabled ? [styles.pressed, { backgroundColor: tone.pressedBg }] : null,
         style,
       ]}
     >

@@ -2,7 +2,6 @@ import { useLocalSearchParams, router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Pressable,
   StyleSheet,
   Text,
   View,
@@ -25,7 +24,7 @@ import {
   getPendingCookSessionCount,
   upsertRecipes,
 } from "@/db/database";
-import { Button, Badge, Chip, Card, StepDots, fmtMinutes } from "@/components/ui";
+import { Button, Badge, Chip, Card, IconPressable, StepDots, fmtMinutes } from "@/components/ui";
 import { Radius, Shadow, Space, Type, useThemeColors } from "@/theme";
 import { getNudgePref } from "@/utils/prefs";
 import type {
@@ -660,9 +659,9 @@ export default function CookModeScreen() {
     return (
       <View style={[styles.fullScreen, { paddingTop: insets.top + Space.md }]}>
         <View style={styles.headerRow}>
-          <Pressable onPress={() => router.back()} hitSlop={Space.md}>
+          <IconPressable onPress={() => router.back()} hitSlop={Space.md}>
             <Text style={styles.closeGlyph}>✕</Text>
-          </Pressable>
+          </IconPressable>
         </View>
         <View style={styles.center}>
           <Text style={styles.muted}>
@@ -834,9 +833,9 @@ export default function CookModeScreen() {
     <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.headerRow}>
-        <Pressable onPress={() => router.back()} hitSlop={Space.md}>
+        <IconPressable onPress={() => router.back()} hitSlop={Space.md}>
           <Text style={styles.closeGlyph}>✕</Text>
-        </Pressable>
+        </IconPressable>
         <Text style={styles.overline}>
           {`STEP ${currentIndex + 1} / ${steps.length}`}
         </Text>

@@ -27,3 +27,9 @@ export type { StepDotsProps } from "./StepDots";
 
 export { SkeletonCard } from "./SkeletonCard";
 export type { SkeletonCardProps } from "./SkeletonCard";
+
+export { IconPressable } from "./IconPressable";
+export type { IconPressableProps } from "./IconPressable";
+
+export { HeartButton } from "./HeartButton";
+export type { HeartButtonProps } from "./HeartButton";

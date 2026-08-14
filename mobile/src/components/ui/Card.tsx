@@ -31,6 +31,9 @@ export function Card({
         },
         pressed: {
           backgroundColor: colors.surfaceSoft,
+          // Opacity always repaints (GPU-composited) — the reliable pressed
+          // acknowledgment on devices that skip ripple/bg-swap repaints.
+          opacity: 0.85,
         },
       }),
     [colors],

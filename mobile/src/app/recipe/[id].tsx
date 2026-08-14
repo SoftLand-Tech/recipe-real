@@ -2,7 +2,6 @@ import { useLocalSearchParams, router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -42,6 +41,7 @@ import {
   Card,
   Chip,
   HeroImage,
+  IconPressable,
   SectionHeader,
   StatPill,
   TimeChip,
@@ -654,9 +654,9 @@ export default function RecipeDetailScreen() {
               <Text style={styles.muted}>
                 {errorMessage ?? "Could not load this recipe."}
               </Text>
-              <Pressable style={styles.retry} onPress={loadRecipe}>
+              <IconPressable style={styles.retry} onPress={loadRecipe}>
                 <Text style={styles.retryText}>Retry</Text>
-              </Pressable>
+              </IconPressable>
             </View>
           )}
 
@@ -667,12 +667,12 @@ export default function RecipeDetailScreen() {
                 You've reached the free limit (5 recipes/month). Upgrade for
                 unlimited recipes.
               </Text>
-              <Pressable
+              <IconPressable
                 style={styles.retry}
                 onPress={() => router.push("/upgrade")}
               >
                 <Text style={styles.retryText}>Upgrade</Text>
-              </Pressable>
+              </IconPressable>
             </View>
           )}
 
@@ -708,34 +708,28 @@ export default function RecipeDetailScreen() {
               </View>
 
               {/* Floating back button over the hero. */}
-              <Pressable
+              <IconPressable
                 style={[
                   styles.backButton,
                   { top: insets.top + Space.sm },
                 ]}
                 onPress={() => router.back()}
-                accessibilityLabel="Go back"
-                accessibilityRole="button"
                 hitSlop={Space.sm}
               >
                 <Text style={styles.backGlyph}>‹</Text>
-              </Pressable>
+              </IconPressable>
 
               {/* Floating favorite toggle over the hero (mirrors the back button). */}
-              <Pressable
+              <IconPressable
                 style={[
                   styles.favButton,
                   { top: insets.top + Space.sm },
                 ]}
                 onPress={onToggleFavorite}
-                accessibilityLabel={
-                  favorited ? "Remove from favorites" : "Add to favorites"
-                }
-                accessibilityRole="button"
                 hitSlop={Space.sm}
               >
                 <Text style={styles.favGlyph}>{favorited ? "♥" : "♡"}</Text>
-              </Pressable>
+              </IconPressable>
 
               {/* RISING CONTENT CARD overlapping the hero. */}
               <View style={styles.contentCard}>

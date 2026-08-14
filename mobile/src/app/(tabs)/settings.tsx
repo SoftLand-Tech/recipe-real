@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
 import {
-  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -26,7 +25,7 @@ import {
   useThemePrefs,
   type ThemePref,
 } from "@/theme";
-import { Button, Card, Chip, SectionHeader } from "@/components/ui";
+import { Button, Card, Chip, IconPressable, SectionHeader } from "@/components/ui";
 
 const THEME_OPTIONS: { pref: ThemePref; label: string }[] = [
   { pref: "system", label: "System" },
@@ -186,12 +185,12 @@ export default function SettingsScreen() {
         <Text style={styles.rowLabel}>Theme</Text>
         <View style={styles.themeRow}>
           {THEME_OPTIONS.map(({ pref: option, label }) => (
-            <Pressable key={option} onPress={() => setThemePref(option)}>
+            <IconPressable key={option} onPress={() => setThemePref(option)}>
               <Chip
                 label={label}
                 tone={themePref === option ? "accent" : "neutral"}
               />
-            </Pressable>
+            </IconPressable>
           ))}
         </View>
       </Card>
