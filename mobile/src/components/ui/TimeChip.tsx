@@ -1,6 +1,7 @@
+import { useMemo } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 
-import { Color, Radius, Space, Type } from "@/theme";
+import { Radius, Space, Type, useThemeColors } from "@/theme";
 
 export interface TimeChipProps {
   minutes: number | null;
@@ -17,12 +18,37 @@ export function fmtMinutes(m: number): string {
 }
 
 export function TimeChip({ minutes, label }: TimeChipProps) {
+  const colors = useThemeColors();
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        base: {
+          flexDirection: "row",
+          alignItems: "center",
+          backgroundColor: colors.surfaceSoft,
+          borderRadius: Radius.pill,
+          paddingVertical: Space.xs,
+          paddingHorizontal: Space.sm,
+          alignSelf: "flex-start",
+        },
+        text: {
+          ...Type.caption,
+          color: colors.inkSecondary,
+          fontWeight: "600",
+        },
+        faint: {
+          color: colors.inkFaint,
+        },
+      }),
+    [colors],
+  );
+
   const hasTime = minutes != null && Number.isFinite(minutes);
   const text = hasTime ? fmtMinutes(minutes as number) : "—";
 
   return (
     <View style={styles.base}>
-      <Glyph />
+      <Glyph tintColor={colors.inkSecondary} />
       <Text style={[styles.text, !hasTime && styles.faint]} numberOfLines={1}>
         {label ? `${label} ` : ""}
         {text}
@@ -32,7 +58,8 @@ export function TimeChip({ minutes, label }: TimeChipProps) {
 }
 
 /** Small clock glyph; expo-symbols on native, a unicode fallback on web. */
-function Glyph() {
+function Glyph({ tintColor }: { tintColor: string }) {
+  const glyphStyle = { marginRight: Space.xs };
   if (Platform.OS === "ios" || Platform.OS === "android") {
     try {
       const { SymbolView } = require("expo-symbols");
@@ -41,41 +68,15 @@ function Glyph() {
           name={{ ios: "clock", android: "schedule", web: "schedule" }}
           size={13}
           weight="semibold"
-          tintColor={Color.inkSecondary}
-          style={styles.glyph}
+          tintColor={tintColor}
+          style={glyphStyle}
         />
       );
     } catch {
       // Fall through to unicode fallback if the native module isn't present.
     }
   }
-  return <Text style={styles.glyphFallback}>◷</Text>;
+  return (
+    <Text style={[glyphStyle, { fontSize: 12, color: tintColor }]}>◷</Text>
+  );
 }
-
-const styles = StyleSheet.create({
-  base: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Color.surfaceSoft,
-    borderRadius: Radius.pill,
-    paddingVertical: Space.xs,
-    paddingHorizontal: Space.sm,
-    alignSelf: "flex-start",
-  },
-  glyph: {
-    marginRight: Space.xs,
-  },
-  glyphFallback: {
-    marginRight: Space.xs,
-    fontSize: 12,
-    color: Color.inkSecondary,
-  },
-  text: {
-    ...Type.caption,
-    color: Color.inkSecondary,
-    fontWeight: "600",
-  },
-  faint: {
-    color: Color.inkFaint,
-  },
-});

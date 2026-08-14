@@ -1,7 +1,7 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
-import { Color, Space, Type } from "@/theme";
+import { Space, Type, useThemeColors } from "@/theme";
 
 export interface SectionHeaderProps {
   title: string;
@@ -10,6 +10,35 @@ export interface SectionHeaderProps {
 }
 
 export function SectionHeader({ title, subtitle, action }: SectionHeaderProps) {
+  const colors = useThemeColors();
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        row: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: Space.sm,
+        },
+        text: {
+          flex: 1,
+          marginRight: Space.md,
+        },
+        title: {
+          ...Type.h3,
+          color: colors.ink,
+        },
+        subtitle: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+          marginTop: 2,
+        },
+        action: {
+          alignSelf: "flex-start",
+        },
+      }),
+    [colors],
+  );
   return (
     <View style={styles.row}>
       <View style={styles.text}>
@@ -26,28 +55,3 @@ export function SectionHeader({ title, subtitle, action }: SectionHeaderProps) {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: Space.sm,
-  },
-  text: {
-    flex: 1,
-    marginRight: Space.md,
-  },
-  title: {
-    ...Type.h3,
-    color: Color.ink,
-  },
-  subtitle: {
-    ...Type.bodySm,
-    color: Color.inkSecondary,
-    marginTop: 2,
-  },
-  action: {
-    alignSelf: "flex-start",
-  },
-});

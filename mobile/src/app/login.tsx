@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -23,7 +23,13 @@ import * as WebBrowser from "expo-web-browser";
 
 import { login, loginWithGoogle, register } from "@/api/client";
 import { track } from "@/analytics";
-import { Color, MaxContentWidth, Radius, Space, Type } from "@/theme";
+import {
+  MaxContentWidth,
+  Radius,
+  Space,
+  Type,
+  useThemeColors,
+} from "@/theme";
 import { Button } from "@/components/ui";
 
 const GOOGLE_CLIENT_ID_PLACEHOLDER = "REPLACE_WITH_GOOGLE_WEB_CLIENT_ID";
@@ -94,6 +100,30 @@ function Field({
   keyboardType = "default",
   autoComplete = "off",
 }: FieldProps) {
+  const colors = useThemeColors();
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        field: {
+          gap: Space.xs,
+        },
+        fieldLabel: {
+          ...Type.caption,
+          color: colors.inkSecondary,
+        },
+        input: {
+          backgroundColor: colors.surfaceSoft,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.hairline,
+          borderRadius: Radius.md,
+          paddingHorizontal: Space.md,
+          paddingVertical: Space.md,
+          fontSize: Type.body.fontSize,
+          color: colors.ink,
+        },
+      }),
+    [colors],
+  );
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -102,7 +132,7 @@ function Field({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={Color.inkFaint}
+        placeholderTextColor={colors.inkFaint}
         secureTextEntry={secure || undefined}
         autoCapitalize={autoCapitalize}
         autoCorrect={false}
@@ -115,6 +145,7 @@ function Field({
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -125,6 +156,68 @@ export default function LoginScreen() {
 
   const googleClientId = resolveGoogleClientId();
   const proxyRedirectUri = resolveProxyRedirectUri();
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          flex: 1,
+          backgroundColor: colors.canvas,
+        },
+        flex: {
+          flex: 1,
+        },
+        content: {
+          paddingHorizontal: Space.lg,
+          paddingTop: Space.xl,
+        },
+        column: {
+          width: "100%",
+          maxWidth: MaxContentWidth,
+          alignSelf: "center",
+          gap: Space.lg,
+        },
+        headline: {
+          ...Type.h1,
+          color: colors.ink,
+        },
+        subtext: {
+          ...Type.body,
+          color: colors.inkSecondary,
+        },
+        errorText: {
+          ...Type.bodySm,
+          color: colors.danger,
+          textAlign: "center",
+        },
+        dividerRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.md,
+        },
+        dividerLine: {
+          flex: 1,
+          height: StyleSheet.hairlineWidth,
+          backgroundColor: colors.hairline,
+        },
+        dividerText: {
+          ...Type.caption,
+          color: colors.inkFaint,
+        },
+        toggle: {
+          alignSelf: "center",
+          paddingVertical: Space.sm,
+          paddingHorizontal: Space.md,
+        },
+        toggleText: {
+          ...Type.bodySm,
+          color: colors.accent,
+          fontWeight: "600",
+          textAlign: "center",
+        },
+      }),
+    [colors],
+  );
 
   // Google auth request (id-token implicit flow against the Web client). The
   // redirect goes through the Expo proxy so this works in Expo Go / dev
@@ -250,8 +343,8 @@ export default function LoginScreen() {
       <Stack.Screen
         options={{
           title: "Sign in",
-          headerStyle: { backgroundColor: Color.canvas },
-          headerTintColor: Color.ink,
+          headerStyle: { backgroundColor: colors.canvas },
+          headerTintColor: colors.ink,
         }}
       />
       <KeyboardAvoidingView
@@ -353,98 +446,30 @@ export default function LoginScreen() {
 
 /** Small circular "G" badge for the Google button. */
 function GoogleGlyph() {
+  const colors = useThemeColors();
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        badge: {
+          width: 22,
+          height: 22,
+          borderRadius: 11,
+          backgroundColor: colors.surface,
+          alignItems: "center",
+          justifyContent: "center",
+          marginRight: Space.sm,
+        },
+        badgeText: {
+          fontSize: 13,
+          fontWeight: "700",
+          color: colors.ink,
+        },
+      }),
+    [colors],
+  );
   return (
-    <View style={styles.googleBadge}>
-      <Text style={styles.googleBadgeText}>G</Text>
+    <View style={styles.badge}>
+      <Text style={styles.badgeText}>G</Text>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Color.canvas,
-  },
-  flex: {
-    flex: 1,
-  },
-  content: {
-    paddingHorizontal: Space.lg,
-    paddingTop: Space.xl,
-  },
-  column: {
-    width: "100%",
-    maxWidth: MaxContentWidth,
-    alignSelf: "center",
-    gap: Space.lg,
-  },
-  headline: {
-    ...Type.h1,
-    color: Color.ink,
-  },
-  subtext: {
-    ...Type.body,
-    color: Color.inkSecondary,
-  },
-  errorText: {
-    ...Type.bodySm,
-    color: Color.danger,
-    textAlign: "center",
-  },
-  dividerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Space.md,
-  },
-  dividerLine: {
-    flex: 1,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: Color.hairline,
-  },
-  dividerText: {
-    ...Type.caption,
-    color: Color.inkFaint,
-  },
-  field: {
-    gap: Space.xs,
-  },
-  fieldLabel: {
-    ...Type.caption,
-    color: Color.inkSecondary,
-  },
-  input: {
-    backgroundColor: Color.surfaceSoft,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Color.hairline,
-    borderRadius: Radius.md,
-    paddingHorizontal: Space.md,
-    paddingVertical: Space.md,
-    fontSize: Type.body.fontSize,
-    color: Color.ink,
-  },
-  toggle: {
-    alignSelf: "center",
-    paddingVertical: Space.sm,
-    paddingHorizontal: Space.md,
-  },
-  toggleText: {
-    ...Type.bodySm,
-    color: Color.accent,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  googleBadge: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: Color.surface,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: Space.sm,
-  },
-  googleBadgeText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: Color.ink,
-  },
-});

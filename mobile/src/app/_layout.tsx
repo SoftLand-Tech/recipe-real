@@ -4,8 +4,8 @@ import {
   DarkTheme,
   DefaultTheme,
   ThemeProvider,
+  type Theme,
 } from "expo-router";
-import { useColorScheme } from "react-native";
 import {
   SafeAreaProvider,
   initialWindowMetrics,
@@ -15,15 +15,20 @@ import { StatusBar } from "expo-status-bar";
 import "@/global.css";
 import { track } from "@/analytics";
 import { initDatabase } from "@/db/database";
-import { Color } from "@/theme";
+import {
+  DarkColors,
+  LightColors,
+  ThemePrefProvider,
+  useThemePrefs,
+} from "@/theme";
 
 /**
  * Root layout. Initializes the offline SQLite cache on mount and provides the
- * SafeAreaProvider + theme for the whole app.
+ * SafeAreaProvider + theme for the whole app. Theme wrapping is split in two:
+ * ThemePrefProvider (our persisted light/dark/system preference) sits above
+ * the navigation ThemeProvider, which is derived from the resolved scheme.
  */
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-
   useEffect(() => {
     initDatabase().catch((error) => {
       // Cache failures are non-fatal: screens fall back to the network.
@@ -34,9 +39,45 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
+    <ThemePrefProvider>
+      <NavigationFrame />
+    </ThemePrefProvider>
+  );
+}
+
+/** Maps the resolved scheme onto warm navigation themes + the Stack. */
+function NavigationFrame() {
+  const { scheme, colors } = useThemePrefs();
+
+  const navigationTheme: Theme =
+    scheme === "dark"
+      ? {
+          ...DarkTheme,
+          colors: {
+            ...DarkTheme.colors,
+            background: DarkColors.canvas,
+            card: DarkColors.surface,
+            primary: DarkColors.accent,
+            text: DarkColors.ink,
+            border: DarkColors.hairline,
+          },
+        }
+      : {
+          ...DefaultTheme,
+          colors: {
+            ...DefaultTheme.colors,
+            background: LightColors.canvas,
+            card: LightColors.surface,
+            primary: LightColors.accent,
+            text: LightColors.ink,
+            border: LightColors.hairline,
+          },
+        };
+
+  return (
+    <ThemeProvider value={navigationTheme}>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-        <StatusBar style="auto" />
+        <StatusBar style={scheme === "dark" ? "light" : "dark"} />
         <Stack screenOptions={{ headerShown: true }}>
           {/*
             The (tabs) group provides bottom-tab navigation for the three
@@ -51,8 +92,8 @@ export default function RootLayout() {
             options={{
               title: "Sign in",
               headerShown: true,
-              headerStyle: { backgroundColor: Color.canvas },
-              headerTintColor: Color.ink,
+              headerStyle: { backgroundColor: colors.canvas },
+              headerTintColor: colors.ink,
             }}
           />
           <Stack.Screen

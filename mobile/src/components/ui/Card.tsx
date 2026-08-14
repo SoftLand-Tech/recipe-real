@@ -1,8 +1,8 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import { Pressable, StyleSheet, View } from "react-native";
 
-import { Color, Radius, Shadow, Space } from "@/theme";
+import { Radius, Shadow, Space, useThemeColors } from "@/theme";
 
 export interface CardProps {
   children: ReactNode;
@@ -19,7 +19,22 @@ export function Card({
   padding = Space.lg,
   shadow = "card",
 }: CardProps) {
+  const colors = useThemeColors();
   const [pressed, setPressed] = useState(false);
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        base: {
+          backgroundColor: colors.surface,
+          borderRadius: Radius.lg,
+          overflow: "hidden",
+        },
+        pressed: {
+          backgroundColor: colors.surfaceSoft,
+        },
+      }),
+    [colors],
+  );
   // Static style only (no Pressable style function): function styles on
   // Pressables mis-resolved and collapsed painting on some Android devices
   // (see commit c0be039). Pressed feedback uses state + android_ripple.
@@ -48,14 +63,3 @@ export function Card({
 
   return <View style={baseStyle}>{children}</View>;
 }
-
-const styles = StyleSheet.create({
-  base: {
-    backgroundColor: Color.surface,
-    borderRadius: Radius.lg,
-    overflow: "hidden",
-  },
-  pressed: {
-    backgroundColor: Color.surfaceSoft,
-  },
-});

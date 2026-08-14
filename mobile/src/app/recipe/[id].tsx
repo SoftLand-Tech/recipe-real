@@ -1,11 +1,12 @@
 import { useLocalSearchParams, router } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -14,8 +15,10 @@ import { getRecipe, hasToken, isPaywallError } from "@/api/client";
 import { track } from "@/analytics";
 import {
   getCachedRecipe,
+  getNote,
   isFavorite,
   refreshPaceCalibrations,
+  saveNote,
   toggleFavorite,
   upsertRecipes,
 } from "@/db/database";
@@ -25,7 +28,14 @@ import type {
   Recipe,
   RecipeStep,
 } from "@/types";
-import { Color, MaxContentWidth, Radius, Shadow, Space, Type } from "@/theme";
+import {
+  MaxContentWidth,
+  Radius,
+  Shadow,
+  Space,
+  Type,
+  useThemeColors,
+} from "@/theme";
 import {
   Badge,
   Button,
@@ -87,17 +97,329 @@ function cleanupChips(factors: CleanupFactors | undefined): string[] {
 export default function RecipeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
 
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [calibrations, setCalibrations] = useState<PaceCalibration[]>([]);
   const [favorited, setFavorited] = useState(false);
+  // Personal note (local-only): the current editor text, the last saved
+  // baseline (to detect changes), and a short-lived "Saved ✓" flag.
+  const [note, setNote] = useState("");
+  const [savedNote, setSavedNote] = useState("");
+  const [noteJustSaved, setNoteJustSaved] = useState(false);
 
   // Mirror of `recipe` for use inside `loadRecipe`'s catch block without
   // forcing `recipe` into the callback's dependency array (which would
   // re-fire the load effect on every successful fetch -> infinite loop).
   const recipeRef = useRef<Recipe | null>(null);
+
+  // Hides the "Saved ✓" confirmation a few seconds after a successful save.
+  const noteSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (noteSavedTimerRef.current) clearTimeout(noteSavedTimerRef.current);
+    };
+  }, []);
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        screen: {
+          flex: 1,
+          position: "relative",
+          backgroundColor: colors.canvas,
+        },
+        scroll: {
+          flex: 1,
+        },
+        content: {
+          paddingHorizontal: 0,
+        },
+        columnWrap: {
+          width: "100%",
+          maxWidth: MaxContentWidth,
+          alignSelf: "center",
+        },
+        heroWrap: {
+          width: "100%",
+        },
+        heroOverlay: {
+          paddingHorizontal: Space.lg,
+        },
+        heroTitle: {
+          ...Type.h1,
+          // Over a photo scrim — always white, never the theme surface color.
+          color: "#FFFFFF",
+          textShadowColor: "rgba(0,0,0,0.55)",
+          textShadowOffset: { width: 0, height: 1 },
+          textShadowRadius: 6,
+        },
+        heroSource: {
+          ...Type.caption,
+          color: "rgba(255,255,255,0.85)",
+          marginTop: Space.xs,
+        },
+        backButton: {
+          position: "absolute",
+          left: Space.lg,
+          width: 38,
+          height: 38,
+          borderRadius: Radius.pill,
+          backgroundColor: "rgba(0,0,0,0.35)",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 10,
+        },
+        backGlyph: {
+          color: "#FFFFFF",
+          fontSize: 26,
+          fontWeight: "600",
+          lineHeight: 28,
+          marginTop: -2,
+        },
+        favButton: {
+          position: "absolute",
+          right: Space.lg,
+          width: 38,
+          height: 38,
+          borderRadius: Radius.pill,
+          backgroundColor: "rgba(0,0,0,0.35)",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 10,
+        },
+        favGlyph: {
+          color: "#FFFFFF",
+          fontSize: 20,
+          fontWeight: "600",
+          lineHeight: 22,
+        },
+        contentCard: {
+          backgroundColor: colors.surface,
+          borderTopLeftRadius: Radius.xl,
+          borderTopRightRadius: Radius.xl,
+          marginTop: -Space.huge,
+          paddingHorizontal: Space.lg,
+          paddingTop: Space.xl,
+          paddingBottom: Space.huge,
+        },
+        statGrid: {
+          flexDirection: "row",
+          flexWrap: "wrap",
+          marginHorizontal: -Space.sm,
+          marginTop: -Space.sm,
+        },
+        statCell: {
+          width: "50%",
+          paddingHorizontal: Space.sm,
+          paddingTop: Space.sm,
+        },
+        paceRow: {
+          flexDirection: "row",
+          marginTop: Space.lg,
+        },
+        chipRow: {
+          flexDirection: "row",
+          flexWrap: "wrap",
+          gap: Space.xs,
+          marginTop: Space.lg,
+        },
+        timelineHeadline: {
+          ...Type.title,
+          color: colors.ink,
+        },
+        timelineCleanupNote: {
+          ...Type.caption,
+          color: colors.inkSecondary,
+          marginTop: Space.xs,
+        },
+        timelineStats: {
+          flexDirection: "row",
+          gap: Space.xl,
+          marginTop: Space.md,
+        },
+        timelineList: {
+          gap: Space.xs,
+          marginTop: Space.md,
+        },
+        timelineRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+          paddingHorizontal: Space.sm,
+          paddingVertical: 6,
+          borderRadius: Radius.md,
+        },
+        timelineRowPassive: {
+          backgroundColor: colors.successSoft,
+        },
+        timelineClock: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+          fontVariant: ["tabular-nums"] as ("tabular-nums")[],
+          fontWeight: "600",
+          width: 64,
+        },
+        timelineDot: {
+          width: 8,
+          height: 8,
+          borderRadius: Radius.pill,
+          backgroundColor: colors.accent,
+        },
+        timelineDotPassive: {
+          backgroundColor: colors.success,
+        },
+        timelineInfo: {
+          flex: 1,
+        },
+        timelineCaptionRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.xs,
+        },
+        timelineStepCaption: {
+          ...Type.caption,
+          color: colors.inkFaint,
+          fontWeight: "600",
+        },
+        timelineChipWrap: {
+          marginTop: -2,
+        },
+        timelineDesc: {
+          ...Type.bodySm,
+          color: colors.ink,
+          marginTop: 1,
+        },
+        timelineDuration: {
+          ...Type.caption,
+          color: colors.inkSecondary,
+          fontWeight: "600",
+        },
+        section: {
+          marginTop: Space.xxl,
+        },
+        bulletList: {
+          gap: Space.xs,
+        },
+        bulletRow: {
+          flexDirection: "row",
+          gap: Space.sm,
+          alignItems: "flex-start",
+        },
+        bullet: {
+          fontSize: Type.body.fontSize,
+          color: colors.accent,
+          lineHeight: 22,
+          fontWeight: "700",
+        },
+        bulletText: {
+          flex: 1,
+          ...Type.body,
+          color: colors.ink,
+        },
+        stepList: {
+          gap: Space.md,
+        },
+        stepHeader: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+          marginBottom: Space.sm,
+        },
+        stepNumber: {
+          width: 26,
+          height: 26,
+          borderRadius: Radius.pill,
+          backgroundColor: colors.accentSoft,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        stepNumberText: {
+          color: colors.accent,
+          fontSize: 13,
+          fontWeight: "700",
+        },
+        stepTime: {
+          marginLeft: "auto",
+        },
+        stepAdjustedRow: {
+          marginBottom: Space.sm,
+        },
+        stepDescription: {
+          ...Type.body,
+          color: colors.ink,
+        },
+        noteInput: {
+          ...Type.body,
+          color: colors.ink,
+          backgroundColor: colors.surfaceSoft,
+          borderWidth: 1,
+          borderColor: colors.hairline,
+          borderRadius: Radius.md,
+          padding: Space.md,
+          minHeight: 90,
+          textAlignVertical: "top",
+        },
+        noteActions: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.md,
+          marginTop: Space.sm,
+        },
+        noteSaved: {
+          ...Type.caption,
+          color: colors.success,
+          fontWeight: "600",
+        },
+        cookFooter: {
+          position: "absolute",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          backgroundColor: colors.surface,
+          borderTopWidth: 1,
+          borderTopColor: colors.hairline,
+          paddingHorizontal: Space.lg,
+          paddingTop: Space.sm,
+          ...Shadow.floating,
+        },
+        center: {
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          gap: Space.sm,
+          paddingVertical: Space.mega,
+          paddingHorizontal: Space.xxl,
+        },
+        muted: {
+          ...Type.body,
+          color: colors.inkSecondary,
+          textAlign: "center",
+        },
+        errorTitle: {
+          ...Type.h3,
+          color: colors.danger,
+        },
+        paywallTitle: {
+          ...Type.h3,
+          color: colors.accent,
+        },
+        retry: {
+          marginTop: Space.sm,
+          paddingHorizontal: Space.xl,
+          paddingVertical: Space.md,
+          borderRadius: Radius.pill,
+          backgroundColor: colors.accent,
+        },
+        retryText: {
+          color: colors.surface,
+          fontWeight: "700",
+        },
+      }),
+    [colors],
+  );
 
   const loadRecipe = useCallback(async () => {
     setState("loading");
@@ -182,6 +504,22 @@ export default function RecipeDetailScreen() {
     }
   }, [id]);
 
+  /** Saves the personal note locally, then flashes a "Saved ✓" confirmation. */
+  const onSaveNote = useCallback(async () => {
+    try {
+      await saveNote(Number(id), note);
+      setSavedNote(note);
+      track("note_saved", { recipe_id: Number(id) });
+      setNoteJustSaved(true);
+      if (noteSavedTimerRef.current) clearTimeout(noteSavedTimerRef.current);
+      noteSavedTimerRef.current = setTimeout(() => {
+        setNoteJustSaved(false);
+      }, 3000);
+    } catch {
+      // Notes are best-effort; never crash the detail screen.
+    }
+  }, [id, note]);
+
   const publisher = roundMin(recipe?.publisher_time_minutes);
   const community = roundMin(recipe?.community_avg_minutes);
   const cleanupAvg = roundMin(recipe?.cleanup_avg_minutes);
@@ -264,6 +602,10 @@ export default function RecipeDetailScreen() {
 
   const ready = state === "ready" && recipe;
 
+  // The note text differs from the last saved baseline -> the Save button is
+  // enabled and styled as primary; otherwise ghost + disabled.
+  const noteDirty = note !== savedNote;
+
   // Fire the timeline analytics event once, when the section first renders.
   const timelineTrackedRef = useRef(false);
   useEffect(() => {
@@ -272,6 +614,24 @@ export default function RecipeDetailScreen() {
     timelineTrackedRef.current = true;
     track("timeline_viewed", { recipe_id: Number(id) });
   }, [ready, steps.length, id]);
+
+  // Best-effort: load the personal note once the recipe is ready (local-only).
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    getNote(Number(id))
+      .then((stored) => {
+        if (cancelled) return;
+        setSavedNote(stored ?? "");
+        setNote(stored ?? "");
+      })
+      .catch(() => {
+        // Notes are best-effort; never block the detail screen.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, id]);
 
   return (
     <View style={styles.screen}>
@@ -283,7 +643,7 @@ export default function RecipeDetailScreen() {
         <View style={styles.columnWrap}>
           {state === "loading" && (
             <View style={styles.center}>
-              <ActivityIndicator size="large" color={Color.accent} />
+              <ActivityIndicator size="large" color={colors.accent} />
               <Text style={styles.muted}>Loading recipe…</Text>
             </View>
           )}
@@ -530,7 +890,34 @@ export default function RecipeDetailScreen() {
                   )}
                 </View>
 
-                {/* 6. STEPS */}
+                {/* 6. YOUR NOTES — personal tweaks, kept on this device. */}
+                <View style={styles.section}>
+                  <SectionHeader
+                    title="Your notes"
+                    subtitle="Tweaks for next time — kept on this device."
+                  />
+                  <TextInput
+                    style={styles.noteInput}
+                    value={note}
+                    onChangeText={setNote}
+                    placeholder="e.g. a bit less salt, 5 more minutes in the oven…"
+                    placeholderTextColor={colors.inkFaint}
+                    multiline
+                  />
+                  <View style={styles.noteActions}>
+                    <Button
+                      variant={noteDirty ? "primary" : "ghost"}
+                      disabled={!noteDirty}
+                      title="Save note"
+                      onPress={onSaveNote}
+                    />
+                    {noteJustSaved ? (
+                      <Text style={styles.noteSaved}>Saved ✓</Text>
+                    ) : null}
+                  </View>
+                </View>
+
+                {/* 7. STEPS */}
                 <View style={styles.section}>
                   <SectionHeader title="Steps" />
                   {steps.length > 0 ? (
@@ -612,274 +999,3 @@ export default function RecipeDetailScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    position: "relative",
-    backgroundColor: Color.canvas,
-  },
-  scroll: {
-    flex: 1,
-  },
-  content: {
-    paddingHorizontal: 0,
-  },
-  columnWrap: {
-    width: "100%",
-    maxWidth: MaxContentWidth,
-    alignSelf: "center",
-  },
-  heroWrap: {
-    width: "100%",
-  },
-  heroOverlay: {
-    paddingHorizontal: Space.lg,
-  },
-  heroTitle: {
-    ...Type.h1,
-    color: Color.surface,
-    textShadowColor: "rgba(0,0,0,0.55)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 6,
-  },
-  heroSource: {
-    ...Type.caption,
-    color: "rgba(255,255,255,0.85)",
-    marginTop: Space.xs,
-  },
-  backButton: {
-    position: "absolute",
-    left: Space.lg,
-    width: 38,
-    height: 38,
-    borderRadius: Radius.pill,
-    backgroundColor: "rgba(0,0,0,0.35)",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 10,
-  },
-  backGlyph: {
-    color: Color.surface,
-    fontSize: 26,
-    fontWeight: "600",
-    lineHeight: 28,
-    marginTop: -2,
-  },
-  favButton: {
-    position: "absolute",
-    right: Space.lg,
-    width: 38,
-    height: 38,
-    borderRadius: Radius.pill,
-    backgroundColor: "rgba(0,0,0,0.35)",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 10,
-  },
-  favGlyph: {
-    color: Color.surface,
-    fontSize: 20,
-    fontWeight: "600",
-    lineHeight: 22,
-  },
-  contentCard: {
-    backgroundColor: Color.surface,
-    borderTopLeftRadius: Radius.xl,
-    borderTopRightRadius: Radius.xl,
-    marginTop: -Space.huge,
-    paddingHorizontal: Space.lg,
-    paddingTop: Space.xl,
-    paddingBottom: Space.huge,
-  },
-  statGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginHorizontal: -Space.sm,
-    marginTop: -Space.sm,
-  },
-  statCell: {
-    width: "50%",
-    paddingHorizontal: Space.sm,
-    paddingTop: Space.sm,
-  },
-  paceRow: {
-    flexDirection: "row",
-    marginTop: Space.lg,
-  },
-  chipRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Space.xs,
-    marginTop: Space.lg,
-  },
-  timelineHeadline: {
-    ...Type.title,
-    color: Color.ink,
-  },
-  timelineCleanupNote: {
-    ...Type.caption,
-    color: Color.inkSecondary,
-    marginTop: Space.xs,
-  },
-  timelineStats: {
-    flexDirection: "row",
-    gap: Space.xl,
-    marginTop: Space.md,
-  },
-  timelineList: {
-    gap: Space.xs,
-    marginTop: Space.md,
-  },
-  timelineRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Space.sm,
-    paddingHorizontal: Space.sm,
-    paddingVertical: 6,
-    borderRadius: Radius.md,
-  },
-  timelineRowPassive: {
-    backgroundColor: Color.successSoft,
-  },
-  timelineClock: {
-    ...Type.bodySm,
-    color: Color.inkSecondary,
-    fontVariant: ["tabular-nums"] as ("tabular-nums")[],
-    fontWeight: "600",
-    width: 64,
-  },
-  timelineDot: {
-    width: 8,
-    height: 8,
-    borderRadius: Radius.pill,
-    backgroundColor: Color.accent,
-  },
-  timelineDotPassive: {
-    backgroundColor: Color.success,
-  },
-  timelineInfo: {
-    flex: 1,
-  },
-  timelineCaptionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Space.xs,
-  },
-  timelineStepCaption: {
-    ...Type.caption,
-    color: Color.inkFaint,
-    fontWeight: "600",
-  },
-  timelineChipWrap: {
-    marginTop: -2,
-  },
-  timelineDesc: {
-    ...Type.bodySm,
-    color: Color.ink,
-    marginTop: 1,
-  },
-  timelineDuration: {
-    ...Type.caption,
-    color: Color.inkSecondary,
-    fontWeight: "600",
-  },
-  section: {
-    marginTop: Space.xxl,
-  },
-  bulletList: {
-    gap: Space.xs,
-  },
-  bulletRow: {
-    flexDirection: "row",
-    gap: Space.sm,
-    alignItems: "flex-start",
-  },
-  bullet: {
-    fontSize: Type.body.fontSize,
-    color: Color.accent,
-    lineHeight: 22,
-    fontWeight: "700",
-  },
-  bulletText: {
-    flex: 1,
-    ...Type.body,
-    color: Color.ink,
-  },
-  stepList: {
-    gap: Space.md,
-  },
-  stepHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Space.sm,
-    marginBottom: Space.sm,
-  },
-  stepNumber: {
-    width: 26,
-    height: 26,
-    borderRadius: Radius.pill,
-    backgroundColor: Color.accentSoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stepNumberText: {
-    color: Color.accent,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  stepTime: {
-    marginLeft: "auto",
-  },
-  stepAdjustedRow: {
-    marginBottom: Space.sm,
-  },
-  stepDescription: {
-    ...Type.body,
-    color: Color.ink,
-  },
-  cookFooter: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: Color.surface,
-    borderTopWidth: 1,
-    borderTopColor: Color.hairline,
-    paddingHorizontal: Space.lg,
-    paddingTop: Space.sm,
-    ...Shadow.floating,
-  },
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Space.sm,
-    paddingVertical: Space.mega,
-    paddingHorizontal: Space.xxl,
-  },
-  muted: {
-    ...Type.body,
-    color: Color.inkSecondary,
-    textAlign: "center",
-  },
-  errorTitle: {
-    ...Type.h3,
-    color: Color.danger,
-  },
-  paywallTitle: {
-    ...Type.h3,
-    color: Color.accent,
-  },
-  retry: {
-    marginTop: Space.sm,
-    paddingHorizontal: Space.xl,
-    paddingVertical: Space.md,
-    borderRadius: Radius.pill,
-    backgroundColor: Color.accent,
-  },
-  retryText: {
-    color: Color.surface,
-    fontWeight: "700",
-  },
-});

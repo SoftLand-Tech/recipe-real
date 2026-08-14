@@ -1,8 +1,8 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import { ActivityIndicator, Pressable, StyleSheet, Text } from "react-native";
 
-import { Color, Space, Type } from "@/theme";
+import { Space, Type, useThemeColors, type ThemeColors } from "@/theme";
 
 export interface ButtonProps {
   title?: string;
@@ -17,18 +17,26 @@ export interface ButtonProps {
   style?: StyleProp<ViewStyle>;
 }
 
-const VARIANT_CONTENT: Record<
+function variantContent(
+  colors: ThemeColors,
+): Record<
   NonNullable<ButtonProps["variant"]>,
   { bg: string; fg: string; pressedBg: string }
-> = {
-  primary: { bg: Color.accent, fg: Color.surface, pressedBg: Color.accentPress },
-  secondary: {
-    bg: Color.surfaceSoft,
-    fg: Color.ink,
-    pressedBg: Color.hairlineStrong,
-  },
-  ghost: { bg: "transparent", fg: Color.ink, pressedBg: Color.surfaceSoft },
-};
+> {
+  return {
+    primary: {
+      bg: colors.accent,
+      fg: colors.surface,
+      pressedBg: colors.accentPress,
+    },
+    secondary: {
+      bg: colors.surfaceSoft,
+      fg: colors.ink,
+      pressedBg: colors.hairlineStrong,
+    },
+    ghost: { bg: "transparent", fg: colors.ink, pressedBg: colors.surfaceSoft },
+  };
+}
 
 export function Button({
   title,
@@ -42,9 +50,46 @@ export function Button({
   leftIcon,
   style,
 }: ButtonProps) {
-  const tone = VARIANT_CONTENT[variant];
+  const colors = useThemeColors();
+  const tone = variantContent(colors)[variant];
   const large = size === "lg";
   const [pressed, setPressed] = useState(false);
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        base: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: 999,
+        },
+        sizeMd: {
+          paddingVertical: Space.md,
+          paddingHorizontal: Space.xl,
+        },
+        sizeLg: {
+          paddingVertical: Space.lg,
+          paddingHorizontal: Space.xxl,
+        },
+        // alignSelf stretch (not width: "100%") — percentage widths on Pressables
+        // collapsed painting on some Android devices; stretch is resolved by the
+        // parent's cross-axis and paints reliably.
+        fullWidth: {
+          alignSelf: "stretch",
+        },
+        disabled: {
+          opacity: 0.5,
+        },
+        label: {
+          fontWeight: "600",
+          textAlign: "center",
+        },
+        labelMd: { fontSize: Type.body.fontSize },
+        labelLg: { fontSize: Type.title.fontSize },
+      }),
+    [],
+  );
 
   // Static style only (no Pressable style function, no width: "100%"): both
   // percentage width and function styles inside footers have mis-resolved and
@@ -69,7 +114,7 @@ export function Button({
     >
       {loading ? (
         <ActivityIndicator
-          color={variant === "primary" ? Color.surface : Color.accent}
+          color={variant === "primary" ? colors.surface : colors.accent}
           size="small"
         />
       ) : (
@@ -90,35 +135,3 @@ export function Button({
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-  base: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 999,
-  },
-  sizeMd: {
-    paddingVertical: Space.md,
-    paddingHorizontal: Space.xl,
-  },
-  sizeLg: {
-    paddingVertical: Space.lg,
-    paddingHorizontal: Space.xxl,
-  },
-  // alignSelf stretch (not width: "100%") — percentage widths on Pressables
-  // collapsed painting on some Android devices; stretch is resolved by the
-  // parent's cross-axis and paints reliably.
-  fullWidth: {
-    alignSelf: "stretch",
-  },
-  disabled: {
-    opacity: 0.5,
-  },
-  label: {
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  labelMd: { fontSize: Type.body.fontSize },
-  labelLg: { fontSize: Type.title.fontSize },
-});

@@ -100,6 +100,15 @@ const FAVORITES_DDL = `
   );
 `;
 
+/** Personal recipe notes (offline): one row per recipe, replaced on save. */
+const NOTES_DDL = `
+  CREATE TABLE IF NOT EXISTS notes (
+    recipe_id INTEGER PRIMARY KEY REFERENCES recipes(id) ON DELETE CASCADE,
+    note TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+`;
+
 const PENDING_COOK_SESSIONS_DDL = `
   CREATE TABLE IF NOT EXISTS pending_cook_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -125,11 +134,12 @@ const PACE_CALIBRATIONS_DDL = `
  * concurrent callers never trigger a second open.
  *
  * Schema bumps drop + recreate the recipe cache tables (the app re-seeds them
- * on the next seed call). The pending-cook-session, pace-calibration, and
- * favorites tables are left untouched on a bump (their data is not trivially
- * re-derivable); the recipes-table drop cascade-deletes favorite rows for
- * wiped recipes, which is fine — the deterministic re-seed restores the same
- * ids, so re-favoriting works against stable rows.
+ * on the next seed call). The pending-cook-session, pace-calibration,
+ * favorites, and notes tables are left untouched on a bump (their data is not
+ * trivially re-derivable); the recipes-table drop cascade-deletes favorite and
+ * note rows for wiped recipes, which is fine — the deterministic re-seed
+ * restores the same ids, so re-favoriting / re-noting works against stable
+ * rows.
  *
  * Each statement runs in its own `execAsync` call — concatenating multiple
  * statements into one string can fail silently on some drivers.
@@ -164,6 +174,7 @@ async function ensureSchema(db: SQLite.SQLiteDatabase): Promise<void> {
     await db.execAsync(RECIPE_STEPS_DDL);
     await db.execAsync(RECIPE_STEPS_INDEX_DDL);
     await db.execAsync(FAVORITES_DDL);
+    await db.execAsync(NOTES_DDL);
     await db.runAsync(
       `INSERT INTO meta (key, value) VALUES ('schema_version', ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value;`,
@@ -175,6 +186,7 @@ async function ensureSchema(db: SQLite.SQLiteDatabase): Promise<void> {
     await db.execAsync(RECIPE_STEPS_DDL);
     await db.execAsync(RECIPE_STEPS_INDEX_DDL);
     await db.execAsync(FAVORITES_DDL);
+    await db.execAsync(NOTES_DDL);
   }
 }
 
@@ -577,6 +589,37 @@ export async function getFavoriteRecipes(): Promise<Recipe[]> {
      ORDER BY favorites.created_at DESC, favorites.recipe_id DESC;`,
   );
   return rows.map(parseRecipe);
+}
+
+// ---- Personal recipe notes (local) -----------------------------------------
+
+/** The saved note for a recipe, or null when the recipe has no note. */
+export async function getNote(recipeId: number): Promise<string | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ note: string }>(
+    `SELECT note FROM notes WHERE recipe_id = ?;`,
+    recipeId,
+  );
+  return row?.note ?? null;
+}
+
+/**
+ * Save (or clear) the personal note for a recipe. An empty/whitespace-only
+ * note deletes the row, so `getNote` returns null again. Uses ON CONFLICT DO
+ * UPDATE (not INSERT OR REPLACE) to match the upsert style used elsewhere.
+ */
+export async function saveNote(recipeId: number, note: string): Promise<void> {
+  const db = await getDb();
+  if (!note.trim()) {
+    await db.runAsync(`DELETE FROM notes WHERE recipe_id = ?;`, [recipeId]);
+    return;
+  }
+  await db.runAsync(
+    `INSERT INTO notes (recipe_id, note, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(recipe_id) DO UPDATE SET
+       note = excluded.note, updated_at = excluded.updated_at;`,
+    [recipeId, note, Date.now()],
+  );
 }
 
 // ---- Pending cook sessions (offline queue) ---------------------------------

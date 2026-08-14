@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -17,7 +17,12 @@ import {
 } from "@/api/client";
 import { track } from "@/analytics";
 import type { BillingPlan } from "@/types";
-import { Color, MaxContentWidth, Space, Type } from "@/theme";
+import {
+  MaxContentWidth,
+  Space,
+  Type,
+  useThemeColors,
+} from "@/theme";
 import { Button, Card, Chip } from "@/components/ui";
 
 const PLANS: {
@@ -41,11 +46,83 @@ const PLANS: {
 
 export default function UpgradeScreen() {
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
 
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [pendingPlan, setPendingPlan] = useState<BillingPlan | null>(null);
   const [portalPending, setPortalPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          flex: 1,
+          backgroundColor: colors.canvas,
+        },
+        content: {
+          paddingHorizontal: Space.lg,
+        },
+        columnWrap: {
+          width: "100%",
+          maxWidth: MaxContentWidth,
+          alignSelf: "center",
+          gap: Space.lg,
+        },
+        title: {
+          ...Type.h1,
+          color: colors.ink,
+        },
+        subtitle: {
+          ...Type.body,
+          color: colors.inkSecondary,
+        },
+        plans: {
+          gap: Space.md,
+        },
+        planCard: {
+          gap: Space.md,
+        },
+        planHeader: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: Space.sm,
+        },
+        planName: {
+          ...Type.h3,
+          color: colors.ink,
+        },
+        planPrice: {
+          ...Type.h2,
+          color: colors.ink,
+        },
+        planCadence: {
+          ...Type.body,
+          fontWeight: "500",
+          color: colors.inkSecondary,
+        },
+        loginCard: {
+          gap: Space.md,
+        },
+        loginText: {
+          ...Type.body,
+          color: colors.ink,
+          fontWeight: "500",
+        },
+        errorText: {
+          ...Type.bodySm,
+          color: colors.danger,
+          textAlign: "center",
+        },
+        center: {
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+      }),
+    [colors],
+  );
 
   // Re-check auth whenever the screen gains focus, so this refreshes after
   // returning from /login.
@@ -106,7 +183,7 @@ export default function UpgradeScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={Color.accent} />
+          <ActivityIndicator size="large" color={colors.accent} />
         </View>
       </View>
     );
@@ -184,70 +261,3 @@ export default function UpgradeScreen() {
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Color.canvas,
-  },
-  content: {
-    paddingHorizontal: Space.lg,
-  },
-  columnWrap: {
-    width: "100%",
-    maxWidth: MaxContentWidth,
-    alignSelf: "center",
-    gap: Space.lg,
-  },
-  title: {
-    ...Type.h1,
-    color: Color.ink,
-  },
-  subtitle: {
-    ...Type.body,
-    color: Color.inkSecondary,
-  },
-  plans: {
-    gap: Space.md,
-  },
-  planCard: {
-    gap: Space.md,
-  },
-  planHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: Space.sm,
-  },
-  planName: {
-    ...Type.h3,
-    color: Color.ink,
-  },
-  planPrice: {
-    ...Type.h2,
-    color: Color.ink,
-  },
-  planCadence: {
-    ...Type.body,
-    fontWeight: "500",
-    color: Color.inkSecondary,
-  },
-  loginCard: {
-    gap: Space.md,
-  },
-  loginText: {
-    ...Type.body,
-    color: Color.ink,
-    fontWeight: "500",
-  },
-  errorText: {
-    ...Type.bodySm,
-    color: Color.danger,
-    textAlign: "center",
-  },
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});

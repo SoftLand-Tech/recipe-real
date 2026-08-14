@@ -1,9 +1,9 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import { Image } from "expo-image";
 import { Platform, StyleSheet, Text, View } from "react-native";
 
-import { Color, Radius, Space } from "@/theme";
+import { Radius, Space, useThemeColors } from "@/theme";
 
 export interface HeroImageProps {
   uri?: string | null;
@@ -32,6 +32,29 @@ export function HeroImage({
   style,
   children,
 }: HeroImageProps) {
+  const colors = useThemeColors();
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          width: "100%",
+          overflow: "hidden",
+          backgroundColor: colors.accentSoft,
+        },
+        fallback: {
+          ...StyleSheet.absoluteFill,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        children: {
+          ...StyleSheet.absoluteFill,
+          justifyContent: "flex-end",
+          padding: Space.lg,
+        },
+      }),
+    [colors],
+  );
+
   const hasUri = typeof uri === "string" && uri.trim().length > 0;
 
   return (
@@ -52,8 +75,8 @@ export function HeroImage({
           placeholder={null}
         />
       ) : (
-        <View style={[styles.fallback, { backgroundColor: Color.accentSoft }]}>
-          <FallbackGlyph />
+        <View style={[styles.fallback, { backgroundColor: colors.accentSoft }]}>
+          <FallbackGlyph tintColor={colors.accent} />
         </View>
       )}
 
@@ -71,13 +94,20 @@ export function HeroImage({
 /**
  * Dependency-free fake gradient: 5 stacked full-width bars of increasing
  * opacity, anchored to the bottom ~55% of the hero. Renders as a smooth-ish
- * dark-to-transparent legibility layer behind overlaid text.
+ * dark-to-transparent legibility layer behind overlaid text. Black-based in
+ * both schemes on purpose — it overlays photos, so it must darken, not tint.
  */
 function Scrim({ height }: { height: number }) {
   const opacities = [0.06, 0.14, 0.24, 0.36, 0.5];
   const barHeight = Math.max(1, (height * 0.55) / opacities.length);
   return (
-    <View style={styles.scrimContainer} pointerEvents="none">
+    <View
+      style={{
+        ...StyleSheet.absoluteFill,
+        justifyContent: "flex-end",
+      }}
+      pointerEvents="none"
+    >
       {opacities.map((o, i) => (
         <View
           key={i}
@@ -92,7 +122,8 @@ function Scrim({ height }: { height: number }) {
 }
 
 /** Utensil glyph on native (expo-symbols), emoji fallback elsewhere. */
-function FallbackGlyph() {
+function FallbackGlyph({ tintColor }: { tintColor: string }) {
+  const glyphStyle = {};
   if (Platform.OS === "ios" || Platform.OS === "android") {
     try {
       const { SymbolView } = require("expo-symbols");
@@ -105,39 +136,13 @@ function FallbackGlyph() {
           }}
           size={48}
           weight="semibold"
-          tintColor={Color.accent}
-          style={styles.glyph}
+          tintColor={tintColor}
+          style={glyphStyle}
         />
       );
     } catch {
       // Fall through to the emoji fallback below.
     }
   }
-  return <Text style={styles.glyphFallback}>🍳</Text>;
+  return <Text style={[glyphStyle, { fontSize: 44 }]}>🍳</Text>;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    width: "100%",
-    overflow: "hidden",
-    backgroundColor: Color.accentSoft,
-  },
-  fallback: {
-    ...StyleSheet.absoluteFill,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  glyph: {},
-  glyphFallback: {
-    fontSize: 44,
-  },
-  scrimContainer: {
-    ...StyleSheet.absoluteFill,
-    justifyContent: "flex-end",
-  },
-  children: {
-    ...StyleSheet.absoluteFill,
-    justifyContent: "flex-end",
-    padding: Space.lg,
-  },
-});

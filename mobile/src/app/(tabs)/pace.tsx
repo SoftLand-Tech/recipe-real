@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -17,11 +17,23 @@ import {
 } from "@/api/client";
 import { track } from "@/analytics";
 import { refreshPaceCalibrations } from "@/db/database";
-import type { PaceCalibration } from "@/types";
-import { Color, Space, Type } from "@/theme";
-import { Button, Card, Chip, StatPill } from "@/components/ui";
+import type { CookSessionSummary, PaceCalibration } from "@/types";
+import { Space, Type, useThemeColors } from "@/theme";
+import {
+  Button,
+  Card,
+  Chip,
+  SectionHeader,
+  StatPill,
+  fmtMinutes,
+  type ChipProps,
+} from "@/components/ui";
+import { computeStreak, summarizeHistory } from "@/utils/streaks";
 
 type LoadState = "loading" | "ready" | "error" | "locked";
+
+/** History rows visible before the "Show all" toggle expands the list. */
+const HISTORY_PREVIEW_COUNT = 10;
 
 /** Capitalize the first letter of a step_type for display. */
 function capitalize(value: string): string {
@@ -43,11 +55,26 @@ function paceTone(multiplier: number): "accent" | "neutral" | "amber" | "danger"
   return "amber";
 }
 
+/** Map a history delta (%) to a Chip label + tone for the history list. */
+function deltaChip(
+  delta: number | null,
+): { label: string; tone: ChipProps["tone"] } {
+  if (delta == null) return { label: "—", tone: "neutral" };
+  if (delta <= -10) {
+    return { label: `${Math.abs(delta)}% faster`, tone: "success" };
+  }
+  if (delta >= 10) return { label: `+${delta}% slower`, tone: "danger" };
+  return { label: "on pace", tone: "neutral" };
+}
+
 export default function PaceScreen() {
+  const colors = useThemeColors();
   const [state, setState] = useState<LoadState>("loading");
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [calibrations, setCalibrations] = useState<PaceCalibration[]>([]);
   const [cookCount, setCookCount] = useState<number | null>(null);
+  const [cookSessions, setCookSessions] = useState<CookSessionSummary[]>([]);
+  const [showAllHistory, setShowAllHistory] = useState(false);
 
   // Only show the loading spinner on the very first load. Refocuses (tab
   // switches, returning from /login) refresh silently while the previous
@@ -81,6 +108,7 @@ export default function PaceScreen() {
       ]);
       setCalibrations(paceResult);
       setCookCount(sessions?.meta?.total ?? sessions?.data?.length ?? 0);
+      setCookSessions(sessions?.data ?? []);
       setState("ready");
       // Fire-and-forget analytics: pace dashboard rendered with multipliers.
       // Only on the first load — silent refocus refreshes don't re-count.
@@ -117,8 +145,154 @@ export default function PaceScreen() {
     setAuthenticated(false);
     setCalibrations([]);
     setCookCount(null);
+    setCookSessions([]);
     setState("ready");
   }, []);
+
+  // Streak + history are derived from the cook-session data the load already
+  // fetches; recomputed only when the session list changes.
+  const streak = useMemo(() => computeStreak(cookSessions), [cookSessions]);
+  const history = useMemo(() => summarizeHistory(cookSessions), [cookSessions]);
+  const visibleHistory = showAllHistory
+    ? history
+    : history.slice(0, HISTORY_PREVIEW_COUNT);
+
+  // Fire-and-forget analytics: cook history section rendered with data.
+  // Tracked once per screen mount, not on silent refocus refreshes.
+  const historyViewedRef = useRef(false);
+  useEffect(() => {
+    if (history.length > 0 && !historyViewedRef.current) {
+      historyViewedRef.current = true;
+      track("history_viewed");
+    }
+  }, [history.length]);
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          flex: 1,
+          backgroundColor: colors.canvas,
+        },
+        content: {
+          padding: Space.lg,
+          paddingBottom: 40,
+        },
+        headerCard: {
+          gap: Space.xs,
+          marginBottom: Space.lg,
+        },
+        heading: {
+          ...Type.h1,
+          color: colors.ink,
+        },
+        subheading: {
+          ...Type.body,
+          color: colors.inkSecondary,
+        },
+        list: {
+          gap: Space.md,
+        },
+        card: {
+          gap: Space.sm,
+        },
+        cardHeader: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: Space.sm,
+        },
+        cardTitle: {
+          ...Type.h3,
+          color: colors.ink,
+        },
+        multiplier: {
+          ...Type.body,
+          color: colors.ink,
+          fontWeight: "500",
+        },
+        historySection: {
+          marginTop: Space.lg,
+          gap: Space.lg,
+        },
+        streakRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: Space.md,
+        },
+        historyRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: Space.md,
+        },
+        historyMain: {
+          flex: 1,
+          gap: 2,
+        },
+        historyTitle: {
+          ...Type.body,
+          fontWeight: "600",
+          color: colors.ink,
+        },
+        historyDate: {
+          ...Type.caption,
+          color: colors.inkFaint,
+        },
+        historyRight: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+        },
+        historyMinutes: {
+          ...Type.bodySm,
+          fontWeight: "600",
+          color: colors.inkSecondary,
+        },
+        showAllButton: {
+          alignSelf: "flex-start",
+          marginTop: Space.xs,
+        },
+        center: {
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          gap: Space.sm,
+          paddingVertical: 64,
+          paddingHorizontal: Space.xxl,
+        },
+        muted: {
+          ...Type.body,
+          color: colors.inkSecondary,
+          textAlign: "center",
+        },
+        errorTitle: {
+          ...Type.title,
+          color: colors.danger,
+        },
+        signInTitle: {
+          ...Type.h2,
+          color: colors.ink,
+          textAlign: "center",
+        },
+        lockedTitle: {
+          ...Type.title,
+          color: colors.accent,
+          fontWeight: "700",
+        },
+        cta: {
+          marginTop: Space.sm,
+        },
+        secondaryCta: {
+          marginTop: Space.xs,
+        },
+        listSignOut: {
+          marginTop: Space.xl,
+        },
+      }),
+    [colors],
+  );
 
   // Not authenticated: friendly sign-in prompt.
   if (state === "ready" && authenticated === false) {
@@ -144,7 +318,7 @@ export default function PaceScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={Color.accent} />
+          <ActivityIndicator size="large" color={colors.accent} />
           <Text style={styles.muted}>Loading your pace…</Text>
         </View>
       </View>
@@ -233,6 +407,61 @@ export default function PaceScreen() {
         </View>
       )}
 
+      {cookSessions.length > 0 ? (
+        <View style={styles.historySection}>
+          {/* Streak banner */}
+          <Card>
+            <View style={styles.streakRow}>
+              <StatPill
+                label="Day streak"
+                value={`${streak.currentStreak}`}
+                tone="accent"
+              />
+              <StatPill label="This week" value={`${streak.weekCount}`} />
+              <StatPill label="Best" value={`${streak.bestStreak}`} />
+            </View>
+          </Card>
+
+          {/* Cook history */}
+          <View>
+            <SectionHeader title="Cook history" />
+            <View style={styles.list}>
+              {visibleHistory.map((entry) => {
+                const chip = deltaChip(entry.deltaPercent);
+                return (
+                  <Card key={entry.id} padding={Space.md}>
+                    <View style={styles.historyRow}>
+                      <View style={styles.historyMain}>
+                        <Text style={styles.historyTitle} numberOfLines={1}>
+                          {entry.title}
+                        </Text>
+                        <Text style={styles.historyDate}>{entry.date}</Text>
+                      </View>
+                      <View style={styles.historyRight}>
+                        <Text style={styles.historyMinutes} numberOfLines={1}>
+                          {entry.actualMinutes != null
+                            ? fmtMinutes(entry.actualMinutes)
+                            : "—"}
+                        </Text>
+                        <Chip label={chip.label} tone={chip.tone} size="sm" />
+                      </View>
+                    </View>
+                  </Card>
+                );
+              })}
+            </View>
+            {history.length > HISTORY_PREVIEW_COUNT ? (
+              <Button
+                title={showAllHistory ? "Show less" : "Show all"}
+                variant="ghost"
+                onPress={() => setShowAllHistory((v) => !v)}
+                style={styles.showAllButton}
+              />
+            ) : null}
+          </View>
+        </View>
+      ) : null}
+
       <Button
         title="Sign out"
         variant="ghost"
@@ -242,83 +471,3 @@ export default function PaceScreen() {
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Color.canvas,
-  },
-  content: {
-    padding: Space.lg,
-    paddingBottom: 40,
-  },
-  headerCard: {
-    gap: Space.xs,
-    marginBottom: Space.lg,
-  },
-  heading: {
-    ...Type.h1,
-    color: Color.ink,
-  },
-  subheading: {
-    ...Type.body,
-    color: Color.inkSecondary,
-  },
-  list: {
-    gap: Space.md,
-  },
-  card: {
-    gap: Space.sm,
-  },
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: Space.sm,
-  },
-  cardTitle: {
-    ...Type.h3,
-    color: Color.ink,
-  },
-  multiplier: {
-    ...Type.body,
-    color: Color.ink,
-    fontWeight: "500",
-  },
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Space.sm,
-    paddingVertical: 64,
-    paddingHorizontal: Space.xxl,
-  },
-  muted: {
-    ...Type.body,
-    color: Color.inkSecondary,
-    textAlign: "center",
-  },
-  errorTitle: {
-    ...Type.title,
-    color: Color.danger,
-  },
-  signInTitle: {
-    ...Type.h2,
-    color: Color.ink,
-    textAlign: "center",
-  },
-  lockedTitle: {
-    ...Type.title,
-    color: Color.accent,
-    fontWeight: "700",
-  },
-  cta: {
-    marginTop: Space.sm,
-  },
-  secondaryCta: {
-    marginTop: Space.xs,
-  },
-  listSignOut: {
-    marginTop: Space.xl,
-  },
-});

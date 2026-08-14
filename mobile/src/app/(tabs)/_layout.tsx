@@ -1,22 +1,25 @@
 import { Text } from "react-native";
 import { Tabs } from "expo-router";
 
-import { Color } from "@/theme";
+import { useThemeColors } from "@/theme";
 
 /**
- * Bottom-tab navigation for the three top-level destinations. Route URLs are
- * unchanged by the group: "/", "/pace", "/upgrade" — so existing
+ * Bottom-tab navigation for the four top-level destinations. Route URLs are
+ * unchanged by the group: "/", "/pace", "/upgrade", "/settings" — so existing
  * router.push("/pace") / router.push("/upgrade") calls keep working.
+ * Colors are resolved per scheme via useThemeColors().
  */
 export default function TabsLayout() {
+  const colors = useThemeColors();
+
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Color.accent,
-        tabBarInactiveTintColor: Color.inkFaint,
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.inkFaint,
         tabBarStyle: {
-          backgroundColor: Color.surface,
-          borderTopColor: Color.hairline,
+          backgroundColor: colors.surface,
+          borderTopColor: colors.hairline,
         },
       }}
     >
@@ -36,8 +39,8 @@ export default function TabsLayout() {
         options={{
           title: "Your Pace",
           headerShown: true,
-          headerStyle: { backgroundColor: Color.canvas },
-          headerTintColor: Color.ink,
+          headerStyle: { backgroundColor: colors.canvas },
+          headerTintColor: colors.ink,
           headerTitleStyle: { fontWeight: "600" },
           tabBarIcon: ({ color }) => (
             <Text style={{ color, fontSize: 18 }}>⏱</Text>
@@ -49,11 +52,24 @@ export default function TabsLayout() {
         options={{
           title: "Premium",
           headerShown: true,
-          headerStyle: { backgroundColor: Color.canvas },
-          headerTintColor: Color.ink,
+          headerStyle: { backgroundColor: colors.canvas },
+          headerTintColor: colors.ink,
           headerTitleStyle: { fontWeight: "600" },
           tabBarIcon: ({ color }) => (
             <Text style={{ color, fontSize: 18 }}>✦</Text>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: "Settings",
+          headerShown: true,
+          headerStyle: { backgroundColor: colors.canvas },
+          headerTintColor: colors.ink,
+          headerTitleStyle: { fontWeight: "600" },
+          tabBarIcon: ({ color }) => (
+            <Text style={{ color, fontSize: 18 }}>⚙</Text>
           ),
         }}
       />

@@ -27,7 +27,7 @@ import {
   toggleFavorite,
 } from "@/db/database";
 import type { Recipe } from "@/types";
-import { Color, Radius, Space, Type } from "@/theme";
+import { Radius, Space, Type, useThemeColors } from "@/theme";
 import {
   Card,
   Chip,
@@ -50,6 +50,7 @@ type ListFilter = "all" | CategoryId | "quick";
 export default function RecipeListScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const colors = useThemeColors();
 
   // Tablet (width >= 768): two columns. Phones: one column.
   const numColumns = width >= 768 ? 2 : 1;
@@ -63,6 +64,159 @@ export default function RecipeListScreen() {
   const [filter, setFilter] = useState<ListFilter>("all");
   const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
   const [favoriteRecipes, setFavoriteRecipes] = useState<Recipe[]>([]);
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          flex: 1,
+          backgroundColor: colors.canvas,
+        },
+        header: {
+          paddingHorizontal: Space.lg,
+          paddingVertical: Space.md,
+          gap: Space.sm,
+        },
+        titleRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: Space.md,
+        },
+        heading: {
+          ...Type.h1,
+          color: colors.ink,
+        },
+        searchWrap: {
+          flexDirection: "row",
+          alignItems: "center",
+          backgroundColor: colors.surfaceSoft,
+          borderWidth: 1,
+          borderColor: colors.hairline,
+          borderRadius: Radius.pill,
+          paddingHorizontal: Space.md,
+        },
+        searchGlyph: {
+          fontSize: 16,
+          color: colors.inkFaint,
+          marginRight: Space.xs,
+        },
+        searchInput: {
+          flex: 1,
+          paddingVertical: Space.md,
+          fontSize: Type.body.fontSize,
+          color: colors.ink,
+        },
+        listContent: {
+          paddingHorizontal: Space.lg,
+          paddingBottom: Space.xxl,
+        },
+        card: {
+          marginBottom: 0,
+        },
+        cardColumn: {
+          flex: 1,
+        },
+        cardBody: {
+          padding: Space.lg,
+          gap: Space.sm,
+        },
+        cardTitle: {
+          ...Type.title,
+          color: colors.ink,
+        },
+        cardChips: {
+          flexDirection: "row",
+          flexWrap: "wrap",
+          gap: Space.xs,
+        },
+        // Heart overlay sits on top of recipe photos: keep the black scrim
+        // + white glyph in both schemes (it must darken photos, not tint).
+        heartButton: {
+          position: "absolute",
+          top: Space.sm,
+          right: Space.sm,
+          width: 30,
+          height: 30,
+          borderRadius: 15,
+          backgroundColor: "rgba(0,0,0,0.35)",
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        heartGlyph: {
+          fontSize: 16,
+          lineHeight: 18,
+          color: "#FFFFFF",
+        },
+        favoritesSection: {
+          marginBottom: Space.md,
+        },
+        sectionHeaderPad: {
+          paddingHorizontal: Space.lg,
+        },
+        favoritesContent: {
+          paddingHorizontal: Space.lg,
+          gap: Space.md,
+        },
+        favoriteCard: {
+          width: 150,
+        },
+        favoriteBody: {
+          padding: Space.sm,
+          gap: Space.xs,
+        },
+        favoriteTitle: {
+          ...Type.bodySm,
+          fontWeight: "600",
+          color: colors.ink,
+        },
+        filterRow: {
+          flexShrink: 0,
+          marginBottom: Space.sm,
+        },
+        filterContent: {
+          paddingHorizontal: Space.lg,
+          gap: Space.sm,
+          alignItems: "center",
+        },
+        emptyCount: {
+          ...Type.caption,
+          color: colors.inkFaint,
+        },
+        center: {
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          paddingHorizontal: Space.xxl,
+          gap: Space.sm,
+        },
+        emptyGlyph: {
+          fontSize: 40,
+          marginBottom: Space.xs,
+        },
+        muted: {
+          ...Type.body,
+          color: colors.inkSecondary,
+          textAlign: "center",
+        },
+        errorTitle: {
+          ...Type.h3,
+          color: colors.danger,
+        },
+        retry: {
+          marginTop: Space.sm,
+          paddingHorizontal: Space.xl,
+          paddingVertical: Space.md,
+          borderRadius: Radius.pill,
+          backgroundColor: colors.accent,
+        },
+        retryText: {
+          color: colors.surface,
+          fontWeight: "700",
+        },
+      }),
+    [colors],
+  );
 
   // Background continuation after a cold first-page seed: stream the remaining
   // seed pages into the cache, then reload the list. Non-blocking on purpose —
@@ -256,7 +410,7 @@ export default function RecipeListScreen() {
         </Card>
       );
     },
-    [numColumns, favoriteIds, handleToggleFavorite],
+    [numColumns, favoriteIds, handleToggleFavorite, styles],
   );
 
   const renderFavoriteItem: ListRenderItem<Recipe> = useCallback(
@@ -276,7 +430,7 @@ export default function RecipeListScreen() {
         </View>
       </Card>
     ),
-    [],
+    [styles],
   );
 
   const showSkeletons = state === "loading" && recipes.length === 0;
@@ -297,7 +451,7 @@ export default function RecipeListScreen() {
           <TextInput
             style={styles.searchInput}
             placeholder="Search recipes"
-            placeholderTextColor={Color.inkFaint}
+            placeholderTextColor={colors.inkFaint}
             value={search}
             onChangeText={setSearch}
             autoCapitalize="none"
@@ -432,150 +586,3 @@ export default function RecipeListScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Color.canvas,
-  },
-  header: {
-    paddingHorizontal: Space.lg,
-    paddingVertical: Space.md,
-    gap: Space.sm,
-  },
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: Space.md,
-  },
-  heading: {
-    ...Type.h1,
-    color: Color.ink,
-  },
-  searchWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Color.surfaceSoft,
-    borderWidth: 1,
-    borderColor: Color.hairline,
-    borderRadius: Radius.pill,
-    paddingHorizontal: Space.md,
-  },
-  searchGlyph: {
-    fontSize: 16,
-    color: Color.inkFaint,
-    marginRight: Space.xs,
-  },
-  searchInput: {
-    flex: 1,
-    paddingVertical: Space.md,
-    fontSize: Type.body.fontSize,
-    color: Color.ink,
-  },
-  listContent: {
-    paddingHorizontal: Space.lg,
-    paddingBottom: Space.xxl,
-  },
-  card: {
-    marginBottom: 0,
-  },
-  cardColumn: {
-    flex: 1,
-  },
-  cardBody: {
-    padding: Space.lg,
-    gap: Space.sm,
-  },
-  cardTitle: {
-    ...Type.title,
-    color: Color.ink,
-  },
-  cardChips: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Space.xs,
-  },
-  heartButton: {
-    position: "absolute",
-    top: Space.sm,
-    right: Space.sm,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "rgba(0,0,0,0.35)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  heartGlyph: {
-    fontSize: 16,
-    lineHeight: 18,
-    color: Color.surface,
-  },
-  favoritesSection: {
-    marginBottom: Space.md,
-  },
-  sectionHeaderPad: {
-    paddingHorizontal: Space.lg,
-  },
-  favoritesContent: {
-    paddingHorizontal: Space.lg,
-    gap: Space.md,
-  },
-  favoriteCard: {
-    width: 150,
-  },
-  favoriteBody: {
-    padding: Space.sm,
-    gap: Space.xs,
-  },
-  favoriteTitle: {
-    ...Type.bodySm,
-    fontWeight: "600",
-    color: Color.ink,
-  },
-  filterRow: {
-    flexShrink: 0,
-    marginBottom: Space.sm,
-  },
-  filterContent: {
-    paddingHorizontal: Space.lg,
-    gap: Space.sm,
-    alignItems: "center",
-  },
-  emptyCount: {
-    ...Type.caption,
-    color: Color.inkFaint,
-  },
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: Space.xxl,
-    gap: Space.sm,
-  },
-  emptyGlyph: {
-    fontSize: 40,
-    marginBottom: Space.xs,
-  },
-  muted: {
-    ...Type.body,
-    color: Color.inkSecondary,
-    textAlign: "center",
-  },
-  errorTitle: {
-    ...Type.h3,
-    color: Color.danger,
-  },
-  retry: {
-    marginTop: Space.sm,
-    paddingHorizontal: Space.xl,
-    paddingVertical: Space.md,
-    borderRadius: Radius.pill,
-    backgroundColor: Color.accent,
-  },
-  retryText: {
-    color: Color.surface,
-    fontWeight: "700",
-  },
-});

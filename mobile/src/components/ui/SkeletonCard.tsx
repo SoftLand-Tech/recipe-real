@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 
-import { Color, Radius, Space } from "@/theme";
+import { Radius, Space, useThemeColors } from "@/theme";
 
 export interface SkeletonCardProps {
   hasImage?: boolean;
@@ -12,7 +12,39 @@ export interface SkeletonCardProps {
  * Uses a subtle opacity pulse driven by a setInterval timer (700ms).
  */
 export function SkeletonCard({ hasImage = true }: SkeletonCardProps) {
+  const colors = useThemeColors();
   const [opacity, setOpacity] = useState(0.5);
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        card: {
+          backgroundColor: colors.surface,
+          borderRadius: Radius.lg,
+          padding: Space.lg,
+          overflow: "hidden",
+        },
+        image: {
+          height: 150,
+          backgroundColor: colors.surfaceSoft,
+          borderRadius: Radius.lg,
+          marginBottom: Space.md,
+        },
+        line: {
+          backgroundColor: colors.surfaceSoft,
+          borderRadius: Radius.sm,
+          height: 14,
+        },
+        lineTitle: {
+          width: "70%",
+          marginBottom: Space.sm,
+        },
+        lineShort: {
+          width: "40%",
+        },
+      }),
+    [colors],
+  );
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -29,30 +61,3 @@ export function SkeletonCard({ hasImage = true }: SkeletonCardProps) {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: Color.surface,
-    borderRadius: Radius.lg,
-    padding: Space.lg,
-    overflow: "hidden",
-  },
-  image: {
-    height: 150,
-    backgroundColor: Color.surfaceSoft,
-    borderRadius: Radius.lg,
-    marginBottom: Space.md,
-  },
-  line: {
-    backgroundColor: Color.surfaceSoft,
-    borderRadius: Radius.sm,
-    height: 14,
-  },
-  lineTitle: {
-    width: "70%",
-    marginBottom: Space.sm,
-  },
-  lineShort: {
-    width: "40%",
-  },
-});

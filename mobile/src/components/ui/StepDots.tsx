@@ -1,6 +1,7 @@
+import { useMemo } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
-import { Color, Space } from "@/theme";
+import { Space, useThemeColors } from "@/theme";
 
 export interface StepDotsProps {
   count: number;
@@ -10,6 +11,50 @@ export interface StepDotsProps {
 }
 
 export function StepDots({ count, current, done, onJump }: StepDotsProps) {
+  const colors = useThemeColors();
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        row: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+        },
+        hit: {
+          padding: Space.xs,
+        },
+        dot: {
+          width: 8,
+          height: 8,
+          borderRadius: 999,
+          backgroundColor: colors.surface,
+          borderWidth: 1,
+          borderColor: colors.hairlineStrong,
+        },
+        dotDone: {
+          backgroundColor: colors.accent,
+          borderColor: colors.accent,
+        },
+        dotCurrent: {
+          width: 12,
+          height: 12,
+          backgroundColor: colors.accent,
+          borderColor: colors.accent,
+          // The slightly larger bordered wrapper = the "ring".
+          margin: -2,
+          shadowColor: colors.accent,
+          shadowOpacity: 0.35,
+          shadowRadius: 4,
+          shadowOffset: { width: 0, height: 0 },
+          elevation: 2,
+        },
+        dotUpcoming: {
+          backgroundColor: "transparent",
+        },
+      }),
+    [colors],
+  );
+
   const dots = Array.from({ length: Math.max(0, count) }, (_, i) => i);
 
   return (
@@ -46,42 +91,3 @@ export function StepDots({ count, current, done, onJump }: StepDotsProps) {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Space.sm,
-  },
-  hit: {
-    padding: Space.xs,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-    backgroundColor: Color.surface,
-    borderWidth: 1,
-    borderColor: Color.hairlineStrong,
-  },
-  dotDone: {
-    backgroundColor: Color.accent,
-    borderColor: Color.accent,
-  },
-  dotCurrent: {
-    width: 12,
-    height: 12,
-    backgroundColor: Color.accent,
-    borderColor: Color.accent,
-    // The slightly larger bordered wrapper = the "ring".
-    margin: -2,
-    shadowColor: Color.accent,
-    shadowOpacity: 0.35,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 2,
-  },
-  dotUpcoming: {
-    backgroundColor: "transparent",
-  },
-});

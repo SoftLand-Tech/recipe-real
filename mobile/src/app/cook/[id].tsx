@@ -8,6 +8,7 @@ import {
   View,
 } from "react-native";
 import { useKeepAwake } from "expo-keep-awake";
+import * as Notifications from "expo-notifications";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getRecipe, submitCookSession } from "@/api/client";
@@ -19,7 +20,8 @@ import {
   upsertRecipes,
 } from "@/db/database";
 import { Button, Badge, Chip, Card, StepDots, fmtMinutes } from "@/components/ui";
-import { Color, Radius, Shadow, Space, Type } from "@/theme";
+import { Radius, Shadow, Space, Type, useThemeColors } from "@/theme";
+import { getNudgePref } from "@/utils/prefs";
 import type {
   CookSessionPayload,
   Feedback,
@@ -65,12 +67,232 @@ function makeId(): string {
   }${rnd().slice(1)}-${rnd()}${rnd()}${rnd()}`;
 }
 
+// ---- Passive-step nudges (local notifications) ------------------------------
+
+/**
+ * Lazily ensure notification permission: check the current status, then
+ * request if not already granted. Returns whether notifications may be shown.
+ * Never throws — nudges are strictly optional and must never block cooking.
+ */
+async function ensureNotifPermission(): Promise<boolean> {
+  try {
+    const current = await Notifications.getPermissionsAsync();
+    if (current.granted) return true;
+    const requested = await Notifications.requestPermissionsAsync();
+    return requested.granted;
+  } catch {
+    return false;
+  }
+}
+
+/** Friendly nudge copy: community estimate + a short step snippet. */
+function nudgeBody(minutes: number, description: string): string {
+  const snippet =
+    description.length > 30 ? `${description.slice(0, 30)}…` : description;
+  return `~${minutes} min passed — '${snippet}' is usually ready. Check on it.`;
+}
+
 export default function CookModeScreen() {
   // Keep the screen on for the entire cook.
   useKeepAwake();
 
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
+
+  // Theme-aware styles: rebuilt only when the resolved palette changes.
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        fullScreen: {
+          flex: 1,
+          backgroundColor: colors.canvas,
+        },
+        center: {
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          gap: Space.sm,
+          paddingHorizontal: Space.xxl,
+        },
+        muted: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+          textAlign: "center",
+        },
+        errorTitle: {
+          ...Type.h3,
+          color: colors.danger,
+          marginBottom: Space.xs,
+        },
+        retryBtn: {
+          marginTop: Space.md,
+        },
+        // Header
+        headerRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: Space.lg,
+          paddingVertical: Space.md,
+          gap: Space.md,
+        },
+        closeGlyph: {
+          ...Type.title,
+          fontSize: 18,
+          color: colors.inkSecondary,
+        },
+        overline: {
+          ...Type.overline,
+          color: colors.inkSecondary,
+          textTransform: "uppercase",
+        },
+        headerTitle: {
+          ...Type.bodySm,
+          color: colors.inkFaint,
+          maxWidth: 120,
+          textAlign: "right",
+          flexShrink: 1,
+        },
+        // Dots
+        dotsRow: {
+          paddingHorizontal: Space.lg,
+          paddingBottom: Space.sm,
+        },
+        // Step body
+        stepBody: {
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          paddingHorizontal: Space.xl,
+          paddingVertical: Space.lg,
+          gap: Space.lg,
+        },
+        stepMetaRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: Space.sm,
+        },
+        timer: {
+          ...Type.timer,
+        },
+        statusHint: {
+          ...Type.caption,
+          color: colors.inkSecondary,
+          textAlign: "center",
+        },
+        descCard: {
+          width: "100%",
+        },
+        stepDescription: {
+          ...Type.body,
+          fontSize: 17,
+          lineHeight: 24,
+          color: colors.ink,
+          textAlign: "left",
+        },
+        // Footer
+        footer: {
+          backgroundColor: colors.surface,
+          borderTopWidth: 1,
+          borderTopColor: colors.hairline,
+          paddingTop: Space.lg,
+          gap: Space.sm,
+          ...Shadow.floating,
+        },
+        navRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+        },
+        navNextBtn: {
+          flex: 1,
+          flexDirection: "column",
+        },
+        // Feedback phase
+        feedbackWrap: {
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          paddingHorizontal: Space.xxl,
+          gap: Space.md,
+        },
+        feedbackTitle: {
+          ...Type.h1,
+          color: colors.ink,
+          textAlign: "center",
+        },
+        feedbackStatsRow: {
+          flexDirection: "row",
+          alignItems: "stretch",
+          justifyContent: "center",
+          gap: Space.sm,
+          marginTop: Space.xs,
+        },
+        totalPill: {
+          borderRadius: Radius.lg,
+          paddingVertical: Space.md,
+          paddingHorizontal: Space.xl,
+          alignItems: "center",
+          minWidth: 120,
+        },
+        totalPillValue: {
+          ...Type.h2,
+          fontWeight: "800",
+        },
+        totalPillLabel: {
+          ...Type.caption,
+          color: colors.inkFaint,
+          marginTop: Space.xs,
+          textTransform: "uppercase",
+        },
+        cleanupEstimate: {
+          ...Type.caption,
+          color: colors.inkSecondary,
+          fontWeight: "500",
+        },
+        feedbackPrompt: {
+          ...Type.body,
+          color: colors.inkSecondary,
+          textAlign: "center",
+          marginTop: Space.sm,
+        },
+        feedbackButtons: {
+          width: "100%",
+          gap: Space.sm,
+          marginTop: Space.sm,
+        },
+        feedbackCard: {
+          width: "100%",
+          alignItems: "center",
+        },
+        feedbackCardText: {
+          ...Type.h3,
+          fontWeight: "700",
+        },
+        submittingRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: Space.sm,
+          marginTop: Space.sm,
+        },
+        // Done
+        doneWrap: {
+          width: "100%",
+          alignItems: "center",
+          gap: Space.lg,
+          marginTop: Space.md,
+        },
+        savedMsg: {
+          ...Type.body,
+          fontWeight: "600",
+          textAlign: "center",
+        },
+      }),
+    [colors],
+  );
 
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
@@ -175,21 +397,106 @@ export default function CookModeScreen() {
     });
   }, [currentIndex]);
 
+  // ---- Passive-step nudges ---------------------------------------------------
+  /** Id of the currently scheduled nudge, if any (ref: no re-renders). */
+  const nudgeIdRef = useRef<string | null>(null);
+
+  /** Cancel the pending nudge, if any. Idempotent; never throws. */
+  const cancelNudge = useCallback(async () => {
+    const nudgeId = nudgeIdRef.current;
+    nudgeIdRef.current = null;
+    if (!nudgeId) return;
+    try {
+      await Notifications.cancelScheduledNotificationAsync(nudgeId);
+    } catch {
+      // Never throw from cancel.
+    }
+  }, []);
+
+  /**
+   * Replace any pending nudge with one for the given passive step, scheduled
+   * for its community estimate. Best-effort: silently skips when the estimate
+   * is missing, nudges are turned off, permission is denied, or scheduling
+   * fails — never blocks the cooking flow.
+   */
+  const scheduleNudge = useCallback(
+    async (step: RecipeStep, recipeId: number) => {
+      await cancelNudge();
+      const minutes = step.community_minutes;
+      if (typeof minutes !== "number" || minutes <= 0) return;
+      try {
+        if ((await getNudgePref()) !== "on") return;
+        if (!(await ensureNotifPermission())) return;
+        const nudgeId = await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "RecipeReal",
+            body: nudgeBody(minutes, step.description),
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+            seconds: Math.round(minutes * 60),
+            repeats: false,
+          },
+        });
+        nudgeIdRef.current = nudgeId;
+        track("nudge_scheduled", {
+          recipe_id: recipeId,
+          step_number: step.step_number,
+          minutes,
+        });
+      } catch {
+        // Scheduling is best-effort; never block the cook.
+      }
+    },
+    [cancelNudge],
+  );
+
+  /** Arm a nudge for step `i` if it's a passive step with a community time. */
+  const maybeNudge = useCallback(
+    (i: number) => {
+      const step = steps[i];
+      if (step?.step_type === "passive" && recipe?.id != null) {
+        scheduleNudge(step, recipe.id);
+      }
+    },
+    [steps, recipe, scheduleNudge],
+  );
+
+  // Configure foreground presentation once on mount; the cleanup clears any
+  // pending nudge when Cook Mode unmounts.
+  useEffect(() => {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+      }),
+    });
+    return () => {
+      cancelNudge();
+    };
+  }, [cancelNudge]);
+
   const startTimer = useCallback(
     (i: number) => {
       stepStartRef.current = Date.now();
       setNow(Date.now());
       setTimerState((s) => s.map((t, idx) => (idx === i ? "running" : t)));
+      // Fire-and-forget passive-step nudge (skips itself when N/A).
+      maybeNudge(i);
     },
-    [],
+    [maybeNudge],
   );
 
   const pauseTimer = useCallback(
     (i: number) => {
       if (currentIndex === i) commitLiveSegment();
       setTimerState((s) => s.map((t, idx) => (idx === i ? "paused" : t)));
+      // A paused step shouldn't nudge.
+      cancelNudge();
     },
-    [commitLiveSegment, currentIndex],
+    [commitLiveSegment, currentIndex, cancelNudge],
   );
 
   const resumeTimer = useCallback(
@@ -197,8 +504,10 @@ export default function CookModeScreen() {
       stepStartRef.current = Date.now();
       setNow(Date.now());
       setTimerState((s) => s.map((t, idx) => (idx === i ? "running" : t)));
+      // Re-arm the nudge for the resumed passive step.
+      maybeNudge(i);
     },
-    [],
+    [maybeNudge],
   );
 
   /** "Next" = mark current step done + advance. The cook is in control. */
@@ -207,12 +516,14 @@ export default function CookModeScreen() {
     setTimerState((s) =>
       s.map((t, idx) => (idx === currentIndex ? "done" : t)),
     );
+    // Step completed — drop its pending nudge.
+    cancelNudge();
     if (currentIndex < steps.length - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
       setPhase("feedback");
     }
-  }, [commitLiveSegment, currentIndex, steps.length, timerState]);
+  }, [commitLiveSegment, currentIndex, steps.length, timerState, cancelNudge]);
 
   const prevStep = useCallback(() => {
     if (timerState[currentIndex] === "running") {
@@ -223,8 +534,10 @@ export default function CookModeScreen() {
         s.map((t, idx) => (idx === currentIndex ? "paused" : t)),
       );
     }
+    // Step changed — drop the pending nudge.
+    cancelNudge();
     setCurrentIndex(Math.max(0, currentIndex - 1));
-  }, [commitLiveSegment, currentIndex, timerState]);
+  }, [commitLiveSegment, currentIndex, timerState, cancelNudge]);
 
   const onJump = useCallback(
     (i: number) => {
@@ -236,9 +549,11 @@ export default function CookModeScreen() {
           s.map((t, idx) => (idx === currentIndex ? "paused" : t)),
         );
       }
+      // Step changed — drop the pending nudge.
+      cancelNudge();
       setCurrentIndex(i);
     },
-    [commitLiveSegment, currentIndex, timerState],
+    [commitLiveSegment, currentIndex, timerState, cancelNudge],
   );
 
   // ---- Submission summary --------------------------------------------------
@@ -336,7 +651,7 @@ export default function CookModeScreen() {
     return (
       <View style={styles.fullScreen}>
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={Color.accent} />
+          <ActivityIndicator size="large" color={colors.accent} />
           <Text style={styles.muted}>Loading recipe…</Text>
         </View>
       </View>
@@ -394,10 +709,10 @@ export default function CookModeScreen() {
             <View
               style={[
                 styles.totalPill,
-                { backgroundColor: Color.accentSoft },
+                { backgroundColor: colors.accentSoft },
               ]}
             >
-              <Text style={[styles.totalPillValue, { color: Color.accent }]}>
+              <Text style={[styles.totalPillValue, { color: colors.accent }]}>
                 {fmtMinutes(summary.total_actual_minutes)}
               </Text>
               <Text style={styles.totalPillLabel}>total cooked</Text>
@@ -406,11 +721,11 @@ export default function CookModeScreen() {
               <View
                 style={[
                   styles.totalPill,
-                  { backgroundColor: Color.surfaceSoft },
+                  { backgroundColor: colors.surfaceSoft },
                 ]}
               >
                 <Text
-                  style={[styles.totalPillValue, { color: Color.inkSecondary }]}
+                  style={[styles.totalPillValue, { color: colors.inkSecondary }]}
                 >
                   {fmtMinutes(summary.cleanup_minutes)}
                 </Text>
@@ -436,10 +751,10 @@ export default function CookModeScreen() {
                   padding={Space.lg}
                   style={[
                     styles.feedbackCard,
-                    { backgroundColor: Color.successSoft },
+                    { backgroundColor: colors.successSoft },
                   ]}
                 >
-                  <Text style={[styles.feedbackCardText, { color: Color.success }]}>
+                  <Text style={[styles.feedbackCardText, { color: colors.success }]}>
                     Faster
                   </Text>
                 </Card>
@@ -450,10 +765,16 @@ export default function CookModeScreen() {
                   padding={Space.lg}
                   style={[
                     styles.feedbackCard,
-                    { backgroundColor: Color.amberSoft },
+                    { backgroundColor: colors.amberSoft },
                   ]}
                 >
-                  <Text style={[styles.feedbackCardText, { color: "#8A5A12" }]}>
+                  <Text
+                    style={[
+                      styles.feedbackCardText,
+                      // Step-tone amber fg: #8A5A12 on light, warm on dark.
+                      { color: colors.stepTones.active.fg },
+                    ]}
+                  >
                     As expected
                   </Text>
                 </Card>
@@ -462,10 +783,10 @@ export default function CookModeScreen() {
                   padding={Space.lg}
                   style={[
                     styles.feedbackCard,
-                    { backgroundColor: Color.dangerSoft },
+                    { backgroundColor: colors.dangerSoft },
                   ]}
                 >
-                  <Text style={[styles.feedbackCardText, { color: Color.danger }]}>
+                  <Text style={[styles.feedbackCardText, { color: colors.danger }]}>
                     Slower
                   </Text>
                 </Card>
@@ -478,8 +799,8 @@ export default function CookModeScreen() {
                   style={[
                     styles.savedMsg,
                     submitMsg.startsWith("Could not")
-                      ? { color: Color.danger }
-                      : { color: Color.success },
+                      ? { color: colors.danger }
+                      : { color: colors.success },
                   ]}
                 >
                   {submitMsg}
@@ -491,7 +812,7 @@ export default function CookModeScreen() {
 
           {submitting ? (
             <View style={styles.submittingRow}>
-              <ActivityIndicator color={Color.accent} size="small" />
+              <ActivityIndicator color={colors.accent} size="small" />
               <Text style={styles.muted}>Saving…</Text>
             </View>
           ) : phase !== "done" ? (
@@ -511,10 +832,10 @@ export default function CookModeScreen() {
 
   const timerColor =
     tState === "running"
-      ? Color.ink
+      ? colors.ink
       : tState === "done"
-        ? Color.success
-        : Color.inkSecondary;
+        ? colors.success
+        : colors.inkSecondary;
 
   const statusHint =
     tState === "idle"
@@ -637,191 +958,3 @@ export default function CookModeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  fullScreen: {
-    flex: 1,
-    backgroundColor: Color.canvas,
-  },
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Space.sm,
-    paddingHorizontal: Space.xxl,
-  },
-  muted: {
-    ...Type.bodySm,
-    color: Color.inkSecondary,
-    textAlign: "center",
-  },
-  errorTitle: {
-    ...Type.h3,
-    color: Color.danger,
-    marginBottom: Space.xs,
-  },
-  retryBtn: {
-    marginTop: Space.md,
-  },
-  // Header
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: Space.lg,
-    paddingVertical: Space.md,
-    gap: Space.md,
-  },
-  closeGlyph: {
-    ...Type.title,
-    fontSize: 18,
-    color: Color.inkSecondary,
-  },
-  overline: {
-    ...Type.overline,
-    color: Color.inkSecondary,
-    textTransform: "uppercase",
-  },
-  headerTitle: {
-    ...Type.bodySm,
-    color: Color.inkFaint,
-    maxWidth: 120,
-    textAlign: "right",
-    flexShrink: 1,
-  },
-  // Dots
-  dotsRow: {
-    paddingHorizontal: Space.lg,
-    paddingBottom: Space.sm,
-  },
-  // Step body
-  stepBody: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: Space.xl,
-    paddingVertical: Space.lg,
-    gap: Space.lg,
-  },
-  stepMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Space.sm,
-  },
-  timer: {
-    ...Type.timer,
-  },
-  statusHint: {
-    ...Type.caption,
-    color: Color.inkSecondary,
-    textAlign: "center",
-  },
-  descCard: {
-    width: "100%",
-  },
-  stepDescription: {
-    ...Type.body,
-    fontSize: 17,
-    lineHeight: 24,
-    color: Color.ink,
-    textAlign: "left",
-  },
-  // Footer
-  footer: {
-    backgroundColor: Color.surface,
-    borderTopWidth: 1,
-    borderTopColor: Color.hairline,
-    paddingTop: Space.lg,
-    gap: Space.sm,
-    ...Shadow.floating,
-  },
-  navRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Space.sm,
-  },
-  navNextBtn: {
-    flex: 1,
-    flexDirection: "column",
-  },
-  // Feedback phase
-  feedbackWrap: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: Space.xxl,
-    gap: Space.md,
-  },
-  feedbackTitle: {
-    ...Type.h1,
-    color: Color.ink,
-    textAlign: "center",
-  },
-  feedbackStatsRow: {
-    flexDirection: "row",
-    alignItems: "stretch",
-    justifyContent: "center",
-    gap: Space.sm,
-    marginTop: Space.xs,
-  },
-  totalPill: {
-    borderRadius: Radius.lg,
-    paddingVertical: Space.md,
-    paddingHorizontal: Space.xl,
-    alignItems: "center",
-    minWidth: 120,
-  },
-  totalPillValue: {
-    ...Type.h2,
-    fontWeight: "800",
-  },
-  totalPillLabel: {
-    ...Type.caption,
-    color: Color.inkFaint,
-    marginTop: Space.xs,
-    textTransform: "uppercase",
-  },
-  cleanupEstimate: {
-    ...Type.caption,
-    color: Color.inkSecondary,
-    fontWeight: "500",
-  },
-  feedbackPrompt: {
-    ...Type.body,
-    color: Color.inkSecondary,
-    textAlign: "center",
-    marginTop: Space.sm,
-  },
-  feedbackButtons: {
-    width: "100%",
-    gap: Space.sm,
-    marginTop: Space.sm,
-  },
-  feedbackCard: {
-    width: "100%",
-    alignItems: "center",
-  },
-  feedbackCardText: {
-    ...Type.h3,
-    fontWeight: "700",
-  },
-  submittingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Space.sm,
-    marginTop: Space.sm,
-  },
-  // Done
-  doneWrap: {
-    width: "100%",
-    alignItems: "center",
-    gap: Space.lg,
-    marginTop: Space.md,
-  },
-  savedMsg: {
-    ...Type.body,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-});

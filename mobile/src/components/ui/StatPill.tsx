@@ -1,6 +1,7 @@
+import { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
-import { Color, Space, Type } from "@/theme";
+import { Space, Type, useThemeColors } from "@/theme";
 
 export interface StatPillProps {
   label: string;
@@ -9,6 +10,31 @@ export interface StatPillProps {
 }
 
 export function StatPill({ label, value, tone = "neutral" }: StatPillProps) {
+  const colors = useThemeColors();
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          flexDirection: "column",
+        },
+        label: {
+          color: colors.inkSecondary,
+          fontWeight: "700",
+          letterSpacing: 0.5,
+          textTransform: "uppercase",
+          fontSize: 11,
+          marginBottom: Space.xs,
+        },
+        value: {
+          ...Type.title,
+          color: colors.ink,
+        },
+        valueAccent: {
+          color: colors.accent,
+        },
+      }),
+    [colors],
+  );
   return (
     <View style={styles.container}>
       <Text style={styles.label} numberOfLines={1}>
@@ -23,24 +49,3 @@ export function StatPill({ label, value, tone = "neutral" }: StatPillProps) {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: "column",
-  },
-  label: {
-    color: Color.inkSecondary,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-    fontSize: 11,
-    marginBottom: Space.xs,
-  },
-  value: {
-    ...Type.title,
-    color: Color.ink,
-  },
-  valueAccent: {
-    color: Color.accent,
-  },
-});
