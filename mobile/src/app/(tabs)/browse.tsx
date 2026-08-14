@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
+  LayoutAnimation,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  UIManager,
   View,
   useWindowDimensions,
   type ListRenderItem,
@@ -32,7 +35,13 @@ import {
   toggleFavorite,
 } from "@/db/database";
 import type { Recipe } from "@/types";
-import { Radius, Space, Type, useThemeColors } from "@/theme";
+import {
+  Radius,
+  Space,
+  Type,
+  useThemeColors,
+  type ThemeColors,
+} from "@/theme";
 import {
   Button,
   Card,
@@ -50,6 +59,11 @@ import {
   categorizeTitle,
   type CategoryId,
 } from "@/utils/categorize";
+
+// LayoutAnimation needs an explicit opt-in on Android (no-op elsewhere).
+if (Platform.OS === "android") {
+  UIManager.setLayoutAnimationEnabledExperimental?.(true);
+}
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -152,6 +166,485 @@ function computeVisibleRecipes(
   return out;
 }
 
+/** Number of steps attached to a recipe (joined rows, else embedded). */
+function stepCount(item: Recipe): number {
+  return item.recipe_steps?.length ?? item.steps?.length ?? 0;
+}
+
+/**
+ * Theme-scoped styles for the browse screen and its subcomponents. Created
+ * once per palette (useMemo in the screen), so passing the same object as a
+ * prop keeps the memoized children stable across unrelated re-renders.
+ */
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.canvas,
+    },
+    searchSection: {
+      paddingHorizontal: Space.lg,
+      paddingBottom: Space.md,
+    },
+    searchRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Space.sm,
+    },
+    // Square-ish pill button beside the search field; matches the search
+    // wrap's surface (static style, fixed size — Android paint rules).
+    filterToggle: {
+      width: 44,
+      height: 44,
+      borderRadius: Radius.pill,
+      backgroundColor: colors.surfaceSoft,
+      borderWidth: 1,
+      borderColor: colors.hairline,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    searchWrap: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.surfaceSoft,
+      borderWidth: 1,
+      borderColor: colors.hairline,
+      borderRadius: Radius.pill,
+      paddingHorizontal: Space.md,
+    },
+    searchGlyph: {
+      fontSize: 16,
+      color: colors.inkFaint,
+      marginRight: Space.xs,
+    },
+    searchInput: {
+      flex: 1,
+      paddingVertical: Space.md,
+      fontSize: Type.body.fontSize,
+      color: colors.ink,
+    },
+    listContent: {
+      paddingHorizontal: Space.lg,
+      paddingBottom: Space.xxl,
+    },
+    card: {
+      marginBottom: 0,
+    },
+    cardColumn: {
+      flex: 1,
+    },
+    cardBody: {
+      padding: Space.lg,
+      gap: Space.sm,
+    },
+    cardTitle: {
+      ...Type.title,
+      color: colors.ink,
+    },
+    cardChips: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: Space.xs,
+    },
+    favoritesSection: {
+      marginBottom: Space.md,
+    },
+    sectionHeaderPad: {
+      paddingHorizontal: Space.lg,
+    },
+    favoritesContent: {
+      paddingHorizontal: Space.lg,
+      gap: Space.md,
+    },
+    favoriteCard: {
+      width: 150,
+    },
+    favoriteBody: {
+      padding: Space.sm,
+      gap: Space.xs,
+    },
+    favoriteTitle: {
+      ...Type.bodySm,
+      fontWeight: "600",
+      color: colors.ink,
+    },
+    filterRow: {
+      flexShrink: 0,
+      marginBottom: Space.sm,
+    },
+    filterContent: {
+      paddingHorizontal: Space.lg,
+      gap: Space.sm,
+      alignItems: "center",
+    },
+    filterPanel: {
+      marginHorizontal: Space.lg,
+      marginBottom: Space.sm,
+      padding: Space.md,
+      gap: Space.md,
+    },
+    panelGroup: {
+      gap: Space.xs,
+    },
+    panelLabel: {
+      ...Type.bodySm,
+      fontWeight: "700",
+      color: colors.inkSecondary,
+    },
+    panelChips: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: Space.xs,
+    },
+    clearAll: {
+      alignSelf: "flex-start",
+    },
+    emptyCount: {
+      ...Type.caption,
+      color: colors.inkFaint,
+    },
+    center: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: Space.xxl,
+      gap: Space.sm,
+    },
+    emptyGlyph: {
+      fontSize: 40,
+      marginBottom: Space.xs,
+    },
+    muted: {
+      ...Type.body,
+      color: colors.inkSecondary,
+      textAlign: "center",
+    },
+    errorTitle: {
+      ...Type.h3,
+      color: colors.danger,
+    },
+    retry: {
+      marginTop: Space.sm,
+      paddingHorizontal: Space.xl,
+      paddingVertical: Space.md,
+      borderRadius: Radius.pill,
+      backgroundColor: colors.accent,
+    },
+    retryText: {
+      color: colors.surface,
+      fontWeight: "700",
+    },
+  });
+}
+
+type BrowseStyles = ReturnType<typeof createStyles>;
+
+/**
+ * Search input + filter toggle. Memoized so it re-renders only when the
+ * search text or the toggle/active-filter state changes — the rest of the
+ * screen (chips, favorites, list) is skipped while typing or toggling.
+ */
+interface SearchBarProps {
+  search: string;
+  onChangeSearch: (text: string) => void;
+  showFilters: boolean;
+  onToggleFilters: () => void;
+  hasAdvancedFilters: boolean;
+  colors: ThemeColors;
+  styles: BrowseStyles;
+}
+
+const SearchBar = memo(function SearchBar({
+  search,
+  onChangeSearch,
+  showFilters,
+  onToggleFilters,
+  hasAdvancedFilters,
+  colors,
+  styles,
+}: SearchBarProps) {
+  return (
+    <View style={styles.searchSection}>
+      <View style={styles.searchRow}>
+        <View style={styles.searchWrap}>
+          <Text style={styles.searchGlyph}>⌕</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search recipes"
+            placeholderTextColor={colors.inkFaint}
+            value={search}
+            onChangeText={onChangeSearch}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+          />
+        </View>
+        {/* Filter toggle beside the search bar — the common pattern. */}
+        <IconPressable
+          onPress={onToggleFilters}
+          accessibilityLabel="Toggle filters"
+          style={styles.filterToggle}
+        >
+          <Ionicons
+            name="options"
+            size={20}
+            color={
+              showFilters || hasAdvancedFilters
+                ? colors.accent
+                : colors.inkSecondary
+            }
+          />
+        </IconPressable>
+      </View>
+    </View>
+  );
+});
+
+/**
+ * "Cook again" horizontal favorites rail. Memoized: `favoriteRecipes` keeps a
+ * stable identity between unrelated state changes (it is only replaced by
+ * reloadFavorites), so the rail is skipped while e.g. the filter panel
+ * toggles.
+ */
+interface FavoritesRailProps {
+  favoriteRecipes: Recipe[];
+  onOpen: (id: number) => void;
+  styles: BrowseStyles;
+}
+
+const FavoritesRail = memo(function FavoritesRail({
+  favoriteRecipes,
+  onOpen,
+  styles,
+}: FavoritesRailProps) {
+  const renderItem: ListRenderItem<Recipe> = useCallback(
+    ({ item }) => (
+      <Card
+        onPress={() => onOpen(item.id)}
+        padding={0}
+        shadow="card"
+        style={styles.favoriteCard}
+      >
+        <HeroImage uri={item.image_url} height={100} rounded={Radius.lg} />
+        <View style={styles.favoriteBody}>
+          <Text style={styles.favoriteTitle} numberOfLines={1}>
+            {item.title}
+          </Text>
+          <TimeChip minutes={item.community_avg_minutes} label="Focused" />
+        </View>
+      </Card>
+    ),
+    [onOpen, styles],
+  );
+
+  return (
+    <View style={styles.favoritesSection}>
+      <View style={styles.sectionHeaderPad}>
+        <SectionHeader title="Cook again" />
+      </View>
+      <FlatList
+        horizontal
+        data={favoriteRecipes}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={renderItem}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.favoritesContent}
+      />
+    </View>
+  );
+});
+
+/**
+ * Horizontal category/quick-filter chip row. Memoized: it re-renders only
+ * when `filter` changes, which is exactly when the chip tones must update.
+ */
+interface ChipRowProps {
+  filter: ListFilter;
+  onSelect: (filter: ListFilter) => void;
+  styles: BrowseStyles;
+}
+
+const ChipRow = memo(function ChipRow({
+  filter,
+  onSelect,
+  styles,
+}: ChipRowProps) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.filterRow}
+      contentContainerStyle={styles.filterContent}
+    >
+      <IconPressable onPress={() => onSelect("all")}>
+        <Chip label="All" tone={filter === "all" ? "accent" : "neutral"} />
+      </IconPressable>
+      {CATEGORIES.map((category) => (
+        <IconPressable
+          key={category.id}
+          onPress={() => onSelect(category.id)}
+        >
+          <Chip
+            label={category.label}
+            tone={filter === category.id ? "accent" : "neutral"}
+          />
+        </IconPressable>
+      ))}
+      <IconPressable onPress={() => onSelect("quick")}>
+        <Chip
+          label="Under 30 min"
+          tone={filter === "quick" ? "accent" : "neutral"}
+        />
+      </IconPressable>
+    </ScrollView>
+  );
+});
+
+/**
+ * The advanced-filters card (total time / cleanup / sort + clear all).
+ * Memoized: the setters are stable state setters, so it re-renders only when
+ * its own filter values change — never for list churn or panel toggling.
+ */
+interface FilterPanelProps {
+  timeMax: number | null;
+  onTimeMaxChange: (max: number | null) => void;
+  cleanupMax: number | null;
+  onCleanupMaxChange: (max: number | null) => void;
+  sortMode: SortMode;
+  onSortModeChange: (mode: SortMode) => void;
+  onClearAll: () => void;
+  styles: BrowseStyles;
+}
+
+const FilterPanel = memo(function FilterPanel({
+  timeMax,
+  onTimeMaxChange,
+  cleanupMax,
+  onCleanupMaxChange,
+  sortMode,
+  onSortModeChange,
+  onClearAll,
+  styles,
+}: FilterPanelProps) {
+  return (
+    <Card style={styles.filterPanel}>
+      <View style={styles.panelGroup}>
+        <Text style={styles.panelLabel}>Total time</Text>
+        <View style={styles.panelChips}>
+          {TIME_FILTERS.map((option) => (
+            <IconPressable
+              key={option.label}
+              onPress={() => onTimeMaxChange(option.max)}
+            >
+              <Chip
+                label={option.label}
+                size="sm"
+                tone={timeMax === option.max ? "accent" : "neutral"}
+              />
+            </IconPressable>
+          ))}
+        </View>
+      </View>
+      <View style={styles.panelGroup}>
+        <Text style={styles.panelLabel}>Cleanup</Text>
+        <View style={styles.panelChips}>
+          {CLEANUP_FILTERS.map((option) => (
+            <IconPressable
+              key={option.label}
+              onPress={() => onCleanupMaxChange(option.max)}
+            >
+              <Chip
+                label={option.label}
+                size="sm"
+                tone={cleanupMax === option.max ? "accent" : "neutral"}
+              />
+            </IconPressable>
+          ))}
+        </View>
+      </View>
+      <View style={styles.panelGroup}>
+        <Text style={styles.panelLabel}>Sort</Text>
+        <View style={styles.panelChips}>
+          {SORT_MODES.map((option) => (
+            <IconPressable
+              key={option.mode}
+              onPress={() => onSortModeChange(option.mode)}
+            >
+              <Chip
+                label={option.label}
+                size="sm"
+                tone={sortMode === option.mode ? "accent" : "neutral"}
+              />
+            </IconPressable>
+          ))}
+        </View>
+      </View>
+      <Button
+        title="Clear all"
+        variant="ghost"
+        onPress={onClearAll}
+        style={styles.clearAll}
+      />
+    </Card>
+  );
+});
+
+/**
+ * The main list card. Memoized so that when VirtualizedList re-renders its
+ * cells (e.g. the panel toggle re-rendering the screen), each card bails out
+ * on shallow-equal props: stable `item`, boolean heart state, and stable
+ * callbacks.
+ */
+interface RecipeCardProps {
+  item: Recipe;
+  favorited: boolean;
+  onOpen: (id: number) => void;
+  onToggleFavorite: (id: number) => void;
+  numColumns: number;
+  styles: BrowseStyles;
+}
+
+const RecipeCard = memo(function RecipeCard({
+  item,
+  favorited,
+  onOpen,
+  onToggleFavorite,
+  numColumns,
+  styles,
+}: RecipeCardProps) {
+  return (
+    <Card
+      onPress={() => onOpen(item.id)}
+      padding={0}
+      shadow="card"
+      style={numColumns > 1 ? styles.cardColumn : styles.card}
+    >
+      <View>
+        <HeroImage uri={item.image_url} height={150} rounded={Radius.lg} />
+        <HeartButton
+          favorited={favorited}
+          onPress={() => onToggleFavorite(item.id)}
+        />
+      </View>
+      <View style={styles.cardBody}>
+        <Text style={styles.cardTitle} numberOfLines={2}>
+          {item.title}
+        </Text>
+        <View style={styles.cardChips}>
+          <TimeChip minutes={item.community_avg_minutes} label="Focused" />
+          <TimeChip minutes={item.cleanup_avg_minutes} label="Cleanup" />
+          <Chip
+            tone="amber"
+            label={`${stepCount(item)} steps`}
+            size="sm"
+          />
+        </View>
+      </View>
+    </Card>
+  );
+});
+
 export default function BrowseScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -185,169 +678,7 @@ export default function BrowseScreen() {
   // skeleton shows instead of a one-frame "No recipes available yet" flash.
   const [applying, setApplying] = useState(true);
 
-  const styles = useMemo(
-    () =>
-      StyleSheet.create({
-        container: {
-          flex: 1,
-          backgroundColor: colors.canvas,
-        },
-        searchSection: {
-          paddingHorizontal: Space.lg,
-          paddingBottom: Space.md,
-        },
-        searchRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.sm,
-        },
-        // Square-ish pill button beside the search field; matches the search
-        // wrap's surface (static style, fixed size — Android paint rules).
-        filterToggle: {
-          width: 44,
-          height: 44,
-          borderRadius: Radius.pill,
-          backgroundColor: colors.surfaceSoft,
-          borderWidth: 1,
-          borderColor: colors.hairline,
-          alignItems: "center",
-          justifyContent: "center",
-        },
-        searchWrap: {
-          flex: 1,
-          flexDirection: "row",
-          alignItems: "center",
-          backgroundColor: colors.surfaceSoft,
-          borderWidth: 1,
-          borderColor: colors.hairline,
-          borderRadius: Radius.pill,
-          paddingHorizontal: Space.md,
-        },
-        searchGlyph: {
-          fontSize: 16,
-          color: colors.inkFaint,
-          marginRight: Space.xs,
-        },
-        searchInput: {
-          flex: 1,
-          paddingVertical: Space.md,
-          fontSize: Type.body.fontSize,
-          color: colors.ink,
-        },
-        listContent: {
-          paddingHorizontal: Space.lg,
-          paddingBottom: Space.xxl,
-        },
-        card: {
-          marginBottom: 0,
-        },
-        cardColumn: {
-          flex: 1,
-        },
-        cardBody: {
-          padding: Space.lg,
-          gap: Space.sm,
-        },
-        cardTitle: {
-          ...Type.title,
-          color: colors.ink,
-        },
-        cardChips: {
-          flexDirection: "row",
-          flexWrap: "wrap",
-          gap: Space.xs,
-        },
-        favoritesSection: {
-          marginBottom: Space.md,
-        },
-        sectionHeaderPad: {
-          paddingHorizontal: Space.lg,
-        },
-        favoritesContent: {
-          paddingHorizontal: Space.lg,
-          gap: Space.md,
-        },
-        favoriteCard: {
-          width: 150,
-        },
-        favoriteBody: {
-          padding: Space.sm,
-          gap: Space.xs,
-        },
-        favoriteTitle: {
-          ...Type.bodySm,
-          fontWeight: "600",
-          color: colors.ink,
-        },
-        filterRow: {
-          flexShrink: 0,
-          marginBottom: Space.sm,
-        },
-        filterContent: {
-          paddingHorizontal: Space.lg,
-          gap: Space.sm,
-          alignItems: "center",
-        },
-        filterPanel: {
-          marginHorizontal: Space.lg,
-          marginBottom: Space.sm,
-          padding: Space.md,
-          gap: Space.md,
-        },
-        panelGroup: {
-          gap: Space.xs,
-        },
-        panelLabel: {
-          ...Type.bodySm,
-          fontWeight: "700",
-          color: colors.inkSecondary,
-        },
-        panelChips: {
-          flexDirection: "row",
-          flexWrap: "wrap",
-          gap: Space.xs,
-        },
-        clearAll: {
-          alignSelf: "flex-start",
-        },
-        emptyCount: {
-          ...Type.caption,
-          color: colors.inkFaint,
-        },
-        center: {
-          flex: 1,
-          alignItems: "center",
-          justifyContent: "center",
-          paddingHorizontal: Space.xxl,
-          gap: Space.sm,
-        },
-        emptyGlyph: {
-          fontSize: 40,
-          marginBottom: Space.xs,
-        },
-        muted: {
-          ...Type.body,
-          color: colors.inkSecondary,
-          textAlign: "center",
-        },
-        errorTitle: {
-          ...Type.h3,
-          color: colors.danger,
-        },
-        retry: {
-          marginTop: Space.sm,
-          paddingHorizontal: Space.xl,
-          paddingVertical: Space.md,
-          borderRadius: Radius.pill,
-          backgroundColor: colors.accent,
-        },
-        retryText: {
-          color: colors.surface,
-          fontWeight: "700",
-        },
-      }),
-    [colors],
-  );
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   // Hoisted so both FlatLists see a stable component type: an inline arrow in
   // ItemSeparatorComponent creates a NEW component type every render, which
@@ -472,6 +803,17 @@ applyRecipes(await getCachedRecipes());
     setSortMode("default");
   }, []);
 
+  // Animated open/close: LayoutAnimation animates the panel's mount/unmount
+  // and the surrounding layout shift natively instead of a hard jump.
+  const toggleFilters = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setShowFilters((v) => !v);
+  }, []);
+
+  const handleOpenRecipe = useCallback((id: number) => {
+    router.push(`/recipe/${id}`);
+  }, []);
+
   /**
    * Load recipes from the cache, seeding progressively on a cold cache.
    * Returns true when previously cached data was shown (so the caller can
@@ -591,64 +933,18 @@ applyRecipes(await getCachedRecipes());
     timeMax != null ||
     cleanupMax != null;
 
-  const stepCount = (item: Recipe) =>
-    item.recipe_steps?.length ?? item.steps?.length ?? 0;
-
   const renderItem: ListRenderItem<Recipe> = useCallback(
-    ({ item }) => {
-      const favorited = favoriteIds.has(item.id);
-      return (
-        <Card
-          onPress={() => router.push(`/recipe/${item.id}`)}
-          padding={0}
-          shadow="card"
-          style={numColumns > 1 ? styles.cardColumn : styles.card}
-        >
-          <View>
-            <HeroImage uri={item.image_url} height={150} rounded={Radius.lg} />
-            <HeartButton
-              favorited={favorited}
-              onPress={() => handleToggleFavorite(item.id)}
-            />
-          </View>
-          <View style={styles.cardBody}>
-            <Text style={styles.cardTitle} numberOfLines={2}>
-              {item.title}
-            </Text>
-            <View style={styles.cardChips}>
-              <TimeChip minutes={item.community_avg_minutes} label="Focused" />
-              <TimeChip minutes={item.cleanup_avg_minutes} label="Cleanup" />
-              <Chip
-                tone="amber"
-                label={`${stepCount(item)} steps`}
-                size="sm"
-              />
-            </View>
-          </View>
-        </Card>
-      );
-    },
-    [numColumns, favoriteIds, handleToggleFavorite, styles],
-  );
-
-  const renderFavoriteItem: ListRenderItem<Recipe> = useCallback(
     ({ item }) => (
-      <Card
-        onPress={() => router.push(`/recipe/${item.id}`)}
-        padding={0}
-        shadow="card"
-        style={styles.favoriteCard}
-      >
-        <HeroImage uri={item.image_url} height={100} rounded={Radius.lg} />
-        <View style={styles.favoriteBody}>
-          <Text style={styles.favoriteTitle} numberOfLines={1}>
-            {item.title}
-          </Text>
-          <TimeChip minutes={item.community_avg_minutes} label="Focused" />
-        </View>
-      </Card>
+      <RecipeCard
+        item={item}
+        favorited={favoriteIds.has(item.id)}
+        onOpen={handleOpenRecipe}
+        onToggleFavorite={handleToggleFavorite}
+        numColumns={numColumns}
+        styles={styles}
+      />
     ),
-    [styles],
+    [numColumns, favoriteIds, handleOpenRecipe, handleToggleFavorite, styles],
   );
 
   const showSkeletons =
@@ -658,146 +954,39 @@ applyRecipes(await getCachedRecipes());
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       <ScreenHeader title="Browse" />
-      <View style={styles.searchSection}>
-        <View style={styles.searchRow}>
-          <View style={styles.searchWrap}>
-            <Text style={styles.searchGlyph}>⌕</Text>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search recipes"
-              placeholderTextColor={colors.inkFaint}
-              value={search}
-              onChangeText={setSearch}
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="search"
-            />
-          </View>
-          {/* Filter toggle beside the search bar — the common pattern. */}
-          <IconPressable
-            onPress={() => setShowFilters((v) => !v)}
-            accessibilityLabel="Toggle filters"
-            style={styles.filterToggle}
-          >
-            <Ionicons
-              name="options"
-              size={20}
-              color={
-                showFilters || hasAdvancedFilters
-                  ? colors.accent
-                  : colors.inkSecondary
-              }
-            />
-          </IconPressable>
-        </View>
-      </View>
+      <SearchBar
+        search={search}
+        onChangeSearch={setSearch}
+        showFilters={showFilters}
+        onToggleFilters={toggleFilters}
+        hasAdvancedFilters={hasAdvancedFilters}
+        colors={colors}
+        styles={styles}
+      />
 
       {state === "ready" && favoriteRecipes.length > 0 && (
-        <View style={styles.favoritesSection}>
-          <View style={styles.sectionHeaderPad}>
-            <SectionHeader title="Cook again" />
-          </View>
-          <FlatList
-            horizontal
-            data={favoriteRecipes}
-            keyExtractor={(item) => String(item.id)}
-            renderItem={renderFavoriteItem}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.favoritesContent}
-          />
-        </View>
+        <FavoritesRail
+          favoriteRecipes={favoriteRecipes}
+          onOpen={handleOpenRecipe}
+          styles={styles}
+        />
       )}
 
       {state === "ready" && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.filterRow}
-          contentContainerStyle={styles.filterContent}
-        >
-          <IconPressable onPress={() => handleSelectFilter("all")}>
-            <Chip label="All" tone={filter === "all" ? "accent" : "neutral"} />
-          </IconPressable>
-          {CATEGORIES.map((category) => (
-            <IconPressable
-              key={category.id}
-              onPress={() => handleSelectFilter(category.id)}
-            >
-              <Chip
-                label={category.label}
-                tone={filter === category.id ? "accent" : "neutral"}
-              />
-            </IconPressable>
-          ))}
-          <IconPressable onPress={() => handleSelectFilter("quick")}>
-            <Chip
-              label="Under 30 min"
-              tone={filter === "quick" ? "accent" : "neutral"}
-            />
-          </IconPressable>
-        </ScrollView>
+        <ChipRow filter={filter} onSelect={handleSelectFilter} styles={styles} />
       )}
 
       {state === "ready" && showFilters && (
-        <Card style={styles.filterPanel}>
-          <View style={styles.panelGroup}>
-            <Text style={styles.panelLabel}>Total time</Text>
-            <View style={styles.panelChips}>
-              {TIME_FILTERS.map((option) => (
-                <IconPressable
-                  key={option.label}
-                  onPress={() => setTimeMax(option.max)}
-                >
-                  <Chip
-                    label={option.label}
-                    size="sm"
-                    tone={timeMax === option.max ? "accent" : "neutral"}
-                  />
-                </IconPressable>
-              ))}
-            </View>
-          </View>
-          <View style={styles.panelGroup}>
-            <Text style={styles.panelLabel}>Cleanup</Text>
-            <View style={styles.panelChips}>
-              {CLEANUP_FILTERS.map((option) => (
-                <IconPressable
-                  key={option.label}
-                  onPress={() => setCleanupMax(option.max)}
-                >
-                  <Chip
-                    label={option.label}
-                    size="sm"
-                    tone={cleanupMax === option.max ? "accent" : "neutral"}
-                  />
-                </IconPressable>
-              ))}
-            </View>
-          </View>
-          <View style={styles.panelGroup}>
-            <Text style={styles.panelLabel}>Sort</Text>
-            <View style={styles.panelChips}>
-              {SORT_MODES.map((option) => (
-                <IconPressable
-                  key={option.mode}
-                  onPress={() => setSortMode(option.mode)}
-                >
-                  <Chip
-                    label={option.label}
-                    size="sm"
-                    tone={sortMode === option.mode ? "accent" : "neutral"}
-                  />
-                </IconPressable>
-              ))}
-            </View>
-          </View>
-          <Button
-            title="Clear all"
-            variant="ghost"
-            onPress={handleClearAdvanced}
-            style={styles.clearAll}
-          />
-        </Card>
+        <FilterPanel
+          timeMax={timeMax}
+          onTimeMaxChange={setTimeMax}
+          cleanupMax={cleanupMax}
+          onCleanupMaxChange={setCleanupMax}
+          sortMode={sortMode}
+          onSortModeChange={setSortMode}
+          onClearAll={handleClearAdvanced}
+          styles={styles}
+        />
       )}
 
       {showSkeletons && (
