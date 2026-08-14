@@ -16,7 +16,9 @@ import {
   countCachedRecipes,
   flushPendingCookSessions,
   getCachedRecipes,
-  seedAndCacheRecipes,
+  refreshCacheLight,
+  seedCacheFirstPage,
+  seedCacheRemainingPages,
 } from "@/db/database";
 import type { Recipe } from "@/types";
 import { Color, Radius, Space, Type } from "@/theme";
@@ -44,43 +46,69 @@ export default function RecipeListScreen() {
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
 
-  // Load recipes from the cache, seeding first if the cache is empty.
-  const loadFromCache = useCallback(async () => {
-    setState("loading");
-    setErrorMessage(null);
+  // Background continuation after a cold first-page seed: stream the remaining
+  // seed pages into the cache, then reload the list. Non-blocking on purpose —
+  // if it fails mid-way we keep showing whatever already loaded.
+  const continueSeedInBackground = useCallback(async () => {
     try {
-      const count = await countCachedRecipes();
-      if (count === 0) {
-        await seedAndCacheRecipes();
-      }
-      const cached = await getCachedRecipes();
-      setRecipes(cached);
-      setState("ready");
+      await seedCacheRemainingPages();
+      setRecipes(await getCachedRecipes());
     } catch (error) {
-      console.warn("[RecipeReal] loadFromCache failed:", error);
-      setErrorMessage(
-        error instanceof Error ? error.message : "Failed to load recipes.",
-      );
-      setState("error");
+      console.warn("[RecipeReal] background seed continuation failed:", error);
     }
   }, []);
 
-  // Background refresh: re-seed and update the list without blocking UI.
+  // Background refresh: light upsert (no step re-download) + reload from cache.
   const refreshInBackground = useCallback(async () => {
     try {
-      await seedAndCacheRecipes();
-      const cached = await getCachedRecipes({ search });
-      setRecipes(cached);
+      await refreshCacheLight();
+      setRecipes(await getCachedRecipes({ search }));
     } catch (error) {
       // Background refresh failures are non-fatal.
       console.warn("[RecipeReal] background refresh failed:", error);
     }
   }, [search]);
 
+  /**
+   * Load recipes from the cache, seeding progressively on a cold cache.
+   * Returns true when previously cached data was shown (so the caller can
+   * decide whether a light background refresh is worthwhile).
+   */
+  const loadFromCache = useCallback(async (): Promise<boolean> => {
+    setState("loading");
+    setErrorMessage(null);
+    try {
+      const count = await countCachedRecipes();
+      if (count === 0) {
+        // Cold cache: seed just the first page (a fraction of the dataset) so
+        // the list renders quickly; the remaining pages arrive in background.
+        const first = await seedCacheFirstPage();
+        setRecipes(first);
+        setState("ready");
+        continueSeedInBackground();
+        return false;
+      }
+      setRecipes(await getCachedRecipes());
+      setState("ready");
+      return true;
+    } catch (error) {
+      console.warn("[RecipeReal] loadFromCache failed:", error);
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to load recipes.",
+      );
+      setState("error");
+      return false;
+    }
+  }, [continueSeedInBackground]);
+
   useEffect(() => {
-    loadFromCache().then(() => {
-      // After showing cached data, refresh in the background once.
-      refreshInBackground();
+    loadFromCache().then((hadCachedData) => {
+      // Only light-refresh when we showed previously cached data; a cold
+      // cache was just (progressively) seeded, so refreshing would re-download
+      // what the seed continuation is already fetching.
+      if (hadCachedData) {
+        refreshInBackground();
+      }
       // Best-effort: upload any cook sessions queued while offline.
       flushPendingCookSessions().catch((error) => {
         console.warn("[RecipeReal] background flush failed:", error);
@@ -146,14 +174,6 @@ export default function RecipeListScreen() {
       <View style={styles.header}>
         <View style={styles.titleRow}>
           <Text style={styles.heading}>Recipes</Text>
-          <View style={styles.headerActions}>
-            <Pressable onPress={() => router.push("/upgrade")}>
-              <Chip tone="accent" label="Premium" size="sm" />
-            </Pressable>
-            <Pressable onPress={() => router.push("/pace")}>
-              <Chip tone="neutral" label="Your pace" size="sm" />
-            </Pressable>
-          </View>
         </View>
         <View style={styles.searchWrap}>
           <Text style={styles.searchGlyph}>⌕</Text>
@@ -262,11 +282,6 @@ const styles = StyleSheet.create({
   heading: {
     ...Type.h1,
     color: Color.ink,
-  },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Space.sm,
   },
   searchWrap: {
     flexDirection: "row",

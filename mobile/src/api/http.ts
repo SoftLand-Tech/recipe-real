@@ -128,6 +128,85 @@ export async function seedRecipes(): Promise<Recipe[]> {
   return data.data.map(normalizeRecipe);
 }
 
+/** One page of LIGHT recipe rows (no steps) from a paginated endpoint. */
+export interface RecipePage {
+  recipes: Recipe[];
+  currentPage: number;
+  lastPage: number;
+  total: number;
+}
+
+/**
+ * Laravel paginator envelope. `meta` may be missing/odd (e.g. a backend that
+ * doesn't paginate yet), so every field is read defensively.
+ */
+interface PagedRecipesResponse {
+  data?: unknown[];
+  meta?: {
+    current_page?: unknown;
+    last_page?: unknown;
+    total?: unknown;
+  };
+}
+
+/** Coerce an unknown paginator field to a positive integer, else null. */
+function toPositiveInt(v: unknown): number | null {
+  const n = toNum(v);
+  return n != null && Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+}
+
+/**
+ * Normalize a paginator payload into a RecipePage. When `meta` is missing
+ * (legacy endpoints that return everything in one shot), estimate: a short
+ * page means we're on the last one; a full-or-larger page estimates the page
+ * count from the returned length so callers terminate on repeated full dumps.
+ */
+function normalizePage(
+  payload: PagedRecipesResponse | undefined,
+  page: number,
+  perPage: number,
+): RecipePage {
+  const recipes = Array.isArray(payload?.data)
+    ? payload.data.map((r) => normalizeRecipe(r))
+    : [];
+  const meta = payload?.meta;
+  const metaLast = toPositiveInt(meta?.last_page);
+  const metaTotal = toNum(meta?.total);
+
+  return {
+    recipes,
+    currentPage: toPositiveInt(meta?.current_page) ?? page,
+    lastPage:
+      metaLast ??
+      (recipes.length < perPage
+        ? page
+        : Math.ceil(recipes.length / perPage)),
+    total: metaTotal != null && metaTotal >= 0 ? metaTotal : recipes.length,
+  };
+}
+
+/** One page of LIGHT recipe rows (no steps) from the paginated index endpoint. */
+export async function fetchRecipePage(
+  page: number,
+  perPage = 100,
+): Promise<RecipePage> {
+  const { data } = await http.get<PagedRecipesResponse>("/api/recipes", {
+    params: { page, per_page: perPage },
+  });
+  return normalizePage(data, page, perPage);
+}
+
+/** One page of FULL recipes (with recipe_steps) from the paged seed endpoint. */
+export async function fetchSeedPage(
+  page: number,
+  perPage = 50,
+): Promise<RecipePage> {
+  const { data } = await http.get<PagedRecipesResponse>("/api/recipes/seed", {
+    params: { page, per_page: perPage },
+  });
+  return normalizePage(data, page, perPage);
+}
+
 /**
  * Fetch the authenticated user's per-step-type pace calibrations. Auth is
  * handled by the existing request interceptor. On a 401 (e.g. token cleared),

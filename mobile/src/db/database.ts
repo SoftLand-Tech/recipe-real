@@ -1,6 +1,11 @@
 import * as SQLite from "expo-sqlite";
 
-import { getPaceCalibrations, postCookSessionRaw, seedRecipes } from "@/api/http";
+import {
+  fetchRecipePage,
+  fetchSeedPage,
+  getPaceCalibrations,
+  postCookSessionRaw,
+} from "@/api/http";
 import type {
   CookSessionPayload,
   PaceCalibration,
@@ -112,7 +117,7 @@ const PACE_CALIBRATIONS_DDL = `
  * concurrent callers never trigger a second open.
  *
  * Schema bumps drop + recreate the recipe cache tables (the app re-seeds them
- * on the next `seedAndCacheRecipes` call). The pending-cook-session and
+ * on the next seed call). The pending-cook-session and
  * pace-calibration tables are left untouched on a bump (their data is not
  * trivially re-derivable).
  *
@@ -252,27 +257,48 @@ function parseStep(row: RecipeStepRow): RecipeStep {
 }
 
 /**
- * Download the full seed dataset and bulk-replace it into the local cache.
- * Runs within a single transaction for atomicity.
+ * Max rows per multi-row INSERT statement. 40 rows x 13 columns = 520 bound
+ * parameters — safely under SQLite's per-statement variable limit even for
+ * builds compiled with the conservative legacy default of 999.
  */
-export async function seedAndCacheRecipes(): Promise<Recipe[]> {
-  const recipes = await seedRecipes();
+const INSERT_CHUNK_SIZE = 40;
+
+function chunked<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
+/**
+ * Upsert recipes into the local cache using chunked multi-row
+ * INSERT OR REPLACE statements, all within a single transaction.
+ *
+ * - `withSteps: true` (and a recipe carrying `recipe_steps`): also replaces
+ *   that recipe's cached steps. Stale rows are DELETEd per chunk first —
+ *   INSERT OR REPLACE only resolves id conflicts, it can't remove steps the
+ *   publisher has deleted since the last seed.
+ * - `withSteps: false` (light refresh): the recipe_steps table is left
+ *   completely untouched, preserving the offline step library.
+ */
+export async function upsertRecipes(
+  recipes: Recipe[],
+  opts: { withSteps?: boolean } = {},
+): Promise<void> {
+  if (recipes.length === 0) return;
   const db = await getDb();
 
   await db.withTransactionAsync(async () => {
-    // Clear existing cache before re-seeding (full replace).
-    await db.execAsync("DELETE FROM recipe_steps;");
-    await db.execAsync("DELETE FROM recipes;");
-
-    for (const recipe of recipes) {
-      const factors = recipe.cleanup_factors;
-      await db.runAsync(
-        `INSERT OR REPLACE INTO recipes
-          (id, title, source_url, image_url, ingredients, steps,
-           publisher_time_minutes, community_avg_minutes, cleanup_avg_minutes,
-           cleanup_estimate_minutes, dish_count, grease_level, dishwasher_safe)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
-        [
+    // -- Recipe rows: chunked multi-row INSERT OR REPLACE --------------------
+    for (const batch of chunked(recipes, INSERT_CHUNK_SIZE)) {
+      const placeholders = batch
+        .map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .join(", ");
+      const params: (string | number | null)[] = [];
+      for (const recipe of batch) {
+        const factors = recipe.cleanup_factors;
+        params.push(
           recipe.id,
           recipe.title,
           recipe.source_url ?? null,
@@ -286,31 +312,122 @@ export async function seedAndCacheRecipes(): Promise<Recipe[]> {
           factors?.dish_count ?? null,
           factors?.grease_level ?? null,
           factors?.dishwasher_safe == null ? null : factors.dishwasher_safe ? 1 : 0,
-        ],
-      );
-
-      const steps = recipe.recipe_steps ?? [];
-      for (const step of steps) {
-        await db.runAsync(
-          `INSERT OR REPLACE INTO recipe_steps
-            (id, recipe_id, step_number, description, step_type,
-             publisher_minutes, community_minutes)
-           VALUES (?, ?, ?, ?, ?, ?, ?);`,
-          [
-            step.id,
-            recipe.id,
-            step.step_number,
-            step.description,
-            step.step_type ?? null,
-            step.publisher_minutes ?? null,
-            step.community_minutes ?? null,
-          ],
         );
       }
+      // ON CONFLICT DO UPDATE (not INSERT OR REPLACE): REPLACE deletes the
+      // row first, and recipe_steps has ON DELETE CASCADE + foreign_keys=ON,
+      // which would wipe all cached steps on every light refresh.
+      await db.runAsync(
+        `INSERT INTO recipes
+          (id, title, source_url, image_url, ingredients, steps,
+           publisher_time_minutes, community_avg_minutes, cleanup_avg_minutes,
+           cleanup_estimate_minutes, dish_count, grease_level, dishwasher_safe)
+         VALUES ${placeholders}
+         ON CONFLICT(id) DO UPDATE SET
+           title=excluded.title, source_url=excluded.source_url,
+           image_url=excluded.image_url, ingredients=excluded.ingredients,
+           steps=excluded.steps,
+           publisher_time_minutes=excluded.publisher_time_minutes,
+           community_avg_minutes=excluded.community_avg_minutes,
+           cleanup_avg_minutes=excluded.cleanup_avg_minutes,
+           cleanup_estimate_minutes=excluded.cleanup_estimate_minutes,
+           dish_count=excluded.dish_count, grease_level=excluded.grease_level,
+           dishwasher_safe=excluded.dishwasher_safe;`,
+        params,
+      );
+    }
+
+    if (!opts.withSteps) return; // Light refresh: never touch cached steps.
+
+    // Only recipes that actually carry steps participate in the step refresh;
+    // the rest keep whatever steps are already cached.
+    const withSteps = recipes.filter((r) => Array.isArray(r.recipe_steps));
+
+    // Clear existing steps for these recipes first (chunked IN lists) so
+    // steps removed upstream don't linger.
+    for (const batch of chunked(withSteps, INSERT_CHUNK_SIZE)) {
+      const ids = batch.map((r) => r.id);
+      const inList = ids.map(() => "?").join(", ");
+      await db.runAsync(
+        `DELETE FROM recipe_steps WHERE recipe_id IN (${inList});`,
+        ids,
+      );
+    }
+
+    // -- Step rows: chunked multi-row INSERT OR REPLACE ----------------------
+    const stepRows: { step: RecipeStep; recipeId: number }[] = [];
+    for (const recipe of withSteps) {
+      for (const step of recipe.recipe_steps ?? []) {
+        stepRows.push({ step, recipeId: recipe.id });
+      }
+    }
+    for (const batch of chunked(stepRows, INSERT_CHUNK_SIZE)) {
+      const placeholders = batch.map(() => "(?, ?, ?, ?, ?, ?, ?)").join(", ");
+      const params: (string | number | null)[] = [];
+      for (const { step, recipeId } of batch) {
+        params.push(
+          step.id,
+          recipeId,
+          step.step_number,
+          step.description,
+          step.step_type ?? null,
+          step.publisher_minutes ?? null,
+          step.community_minutes ?? null,
+        );
+      }
+      await db.runAsync(
+        `INSERT OR REPLACE INTO recipe_steps
+          (id, recipe_id, step_number, description, step_type,
+           publisher_minutes, community_minutes)
+         VALUES ${placeholders};`,
+        params,
+      );
     }
   });
+}
 
-  return recipes;
+/** Page size for the progressive first-launch seed. */
+const SEED_PAGE_SIZE = 50;
+/** Hard safety cap for the background seed continuation (pages 2..N). */
+const SEED_MAX_PAGES = 20;
+/** Hard safety cap for the light background refresh. */
+const REFRESH_MAX_PAGES = 10;
+
+/**
+ * Cold-cache seed, first page only: fetches one seed page (with steps) and
+ * upserts it, returning the inserted recipes so the UI can render after ~¼
+ * of the dataset instead of waiting for the whole multi-MB download.
+ */
+export async function seedCacheFirstPage(): Promise<Recipe[]> {
+  const page = await fetchSeedPage(1, SEED_PAGE_SIZE);
+  await upsertRecipes(page.recipes, { withSteps: true });
+  return page.recipes;
+}
+
+/**
+ * Seed continuation: fetch + upsert the remaining seed pages (with steps),
+ * starting at page 2. Stops at the last page, an empty page, or the safety cap.
+ */
+export async function seedCacheRemainingPages(): Promise<void> {
+  for (let page = 2; page <= SEED_MAX_PAGES; page++) {
+    const result = await fetchSeedPage(page, SEED_PAGE_SIZE);
+    if (result.recipes.length === 0) break;
+    await upsertRecipes(result.recipes, { withSteps: true });
+    if (result.currentPage >= result.lastPage) break;
+  }
+}
+
+/**
+ * Light background refresh: fetch all recipe pages WITHOUT steps (small
+ * payloads) and upsert them, leaving the cached step library untouched.
+ */
+export async function refreshCacheLight(): Promise<void> {
+  for (let page = 1; page <= REFRESH_MAX_PAGES; page++) {
+    const result = await fetchRecipePage(page, 100);
+    if (result.recipes.length === 0) break;
+    await upsertRecipes(result.recipes, { withSteps: false });
+    if (result.currentPage >= result.lastPage) break;
+  }
 }
 
 /**

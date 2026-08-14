@@ -17,10 +17,12 @@ class RecipeController extends Controller
      */
     public const FREE_MONTHLY_LIMIT = 5;
     /**
-     * Paginated, filterable list of recipes (15/page).
+     * Paginated, filterable list of recipes (per_page clamped to 1..100, default 15).
      */
     public function index(Request $request): AnonymousResourceCollection
     {
+        $perPage = max(1, min(100, $request->integer('per_page', 15)));
+
         $query = Recipe::query();
 
         if ($request->filled('search')) {
@@ -32,16 +34,28 @@ class RecipeController extends Controller
         }
 
         return RecipeResource::collection(
-            $query->orderBy('id')->paginate(15)
+            $query->orderBy('id')->paginate($perPage)
         );
     }
 
     /**
-     * Bulk offline-download endpoint: all recipes with their steps, no pagination.
+     * Bulk offline-download endpoint: recipes with their steps.
+     *
+     * Mobile uses paged mode (?page=N&per_page=M, per_page clamped to
+     * 1..100, default 50) for progressive first-load; without a page param
+     * all recipes are returned unpaginated for backward compatibility.
      */
-    public function seed(): AnonymousResourceCollection
+    public function seed(Request $request): AnonymousResourceCollection
     {
-        $recipes = Recipe::with('recipeSteps')->orderBy('id')->get();
+        if ($request->filled('page')) {
+            $perPage = max(1, min(100, $request->integer('per_page', 50)));
+
+            $recipes = Recipe::with('recipeSteps')
+                ->orderBy('id')
+                ->paginate($perPage);
+        } else {
+            $recipes = Recipe::with('recipeSteps')->orderBy('id')->get();
+        }
 
         return RecipeResource::collection($recipes);
     }

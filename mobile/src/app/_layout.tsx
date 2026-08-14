@@ -38,21 +38,17 @@ export default function RootLayout() {
         <StatusBar style="auto" />
         <Stack screenOptions={{ headerShown: true }}>
           {/*
-            The index screen renders its own header (title + search bar) and
-            applies the status-bar inset manually via `paddingTop: insets.top`.
-            Hiding the Stack header here makes that manual padding the sole
-            source of the top safe-area, avoiding a double-counted gap.
+            The (tabs) group provides bottom-tab navigation for the three
+            top-level destinations. Its own screens manage headers: index
+            renders its own header (title + search bar) with a manual
+            status-bar inset, so the Stack header is hidden for the whole
+            group to avoid a double-counted gap.
           */}
-          <Stack.Screen
-            name="index"
-            options={{ headerShown: false, title: "Recipes" }}
-          />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen
             name="recipe/[id]"
             options={{ title: "Recipe", headerShown: false }}
           />
-          <Stack.Screen name="pace" options={{ title: "Your Pace" }} />
-          <Stack.Screen name="upgrade" options={{ title: "Upgrade" }} />
           <Stack.Screen
             name="cook/[id]"
             options={{ title: "Cook Mode", headerShown: false }}
