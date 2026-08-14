@@ -11,6 +11,7 @@ import {
   type ListRenderItem,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import {
   router,
   useFocusEffect,
@@ -195,7 +196,25 @@ export default function BrowseScreen() {
           paddingHorizontal: Space.lg,
           paddingBottom: Space.md,
         },
+        searchRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+        },
+        // Square-ish pill button beside the search field; matches the search
+        // wrap's surface (static style, fixed size — Android paint rules).
+        filterToggle: {
+          width: 44,
+          height: 44,
+          borderRadius: Radius.pill,
+          backgroundColor: colors.surfaceSoft,
+          borderWidth: 1,
+          borderColor: colors.hairline,
+          alignItems: "center",
+          justifyContent: "center",
+        },
         searchWrap: {
+          flex: 1,
           flexDirection: "row",
           alignItems: "center",
           backgroundColor: colors.surfaceSoft,
@@ -640,18 +659,36 @@ applyRecipes(await getCachedRecipes());
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       <ScreenHeader title="Browse" />
       <View style={styles.searchSection}>
-        <View style={styles.searchWrap}>
-          <Text style={styles.searchGlyph}>⌕</Text>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search recipes"
-            placeholderTextColor={colors.inkFaint}
-            value={search}
-            onChangeText={setSearch}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-          />
+        <View style={styles.searchRow}>
+          <View style={styles.searchWrap}>
+            <Text style={styles.searchGlyph}>⌕</Text>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search recipes"
+              placeholderTextColor={colors.inkFaint}
+              value={search}
+              onChangeText={setSearch}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+          </View>
+          {/* Filter toggle beside the search bar — the common pattern. */}
+          <IconPressable
+            onPress={() => setShowFilters((v) => !v)}
+            accessibilityLabel="Toggle filters"
+            style={styles.filterToggle}
+          >
+            <Ionicons
+              name="options"
+              size={20}
+              color={
+                showFilters || hasAdvancedFilters
+                  ? colors.accent
+                  : colors.inkSecondary
+              }
+            />
+          </IconPressable>
         </View>
       </View>
 
@@ -696,12 +733,6 @@ applyRecipes(await getCachedRecipes());
             <Chip
               label="Under 30 min"
               tone={filter === "quick" ? "accent" : "neutral"}
-            />
-          </IconPressable>
-          <IconPressable onPress={() => setShowFilters((v) => !v)}>
-            <Chip
-              label="Filters"
-              tone={hasAdvancedFilters ? "accent" : "neutral"}
             />
           </IconPressable>
         </ScrollView>

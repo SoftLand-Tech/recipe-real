@@ -6,6 +6,8 @@ export interface IconPressableProps {
   children: ReactNode;
   onPress?: () => void;
   disabled?: boolean;
+  accessibilityLabel?: string;
+  accessibilityRole?: "button" | "image" | "text";
   hitSlop?: number | { top: number; bottom: number; left: number; right: number };
   style?: StyleProp<ViewStyle>;
 }
@@ -25,6 +27,8 @@ export function IconPressable({
   children,
   onPress,
   disabled = false,
+  accessibilityLabel,
+  accessibilityRole = "button",
   hitSlop,
   style,
 }: IconPressableProps) {
@@ -33,6 +37,8 @@ export function IconPressable({
     <Pressable
       onPress={disabled ? undefined : onPress}
       disabled={disabled}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole={accessibilityRole}
       hitSlop={hitSlop}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
