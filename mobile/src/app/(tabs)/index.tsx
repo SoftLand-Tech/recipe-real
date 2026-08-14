@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -12,14 +13,18 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 
+import { track } from "@/analytics";
 import {
   countCachedRecipes,
   flushPendingCookSessions,
   getCachedRecipes,
+  getFavoriteIds,
+  getFavoriteRecipes,
   refreshCacheLight,
   repairCachedStepsIfNeeded,
   seedCacheFirstPage,
   seedCacheRemainingPages,
+  toggleFavorite,
 } from "@/db/database";
 import type { Recipe } from "@/types";
 import { Color, Radius, Space, Type } from "@/theme";
@@ -27,11 +32,20 @@ import {
   Card,
   Chip,
   HeroImage,
+  SectionHeader,
   SkeletonCard,
   TimeChip,
 } from "@/components/ui";
+import {
+  CATEGORIES,
+  categorizeTitle,
+  type CategoryId,
+} from "@/utils/categorize";
 
 type LoadState = "loading" | "ready" | "error";
+
+/** Active list filter: a category, the "quick" time filter, or none. */
+type ListFilter = "all" | CategoryId | "quick";
 
 export default function RecipeListScreen() {
   const insets = useSafeAreaInsets();
@@ -46,6 +60,9 @@ export default function RecipeListScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState<ListFilter>("all");
+  const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
+  const [favoriteRecipes, setFavoriteRecipes] = useState<Recipe[]>([]);
 
   // Background continuation after a cold first-page seed: stream the remaining
   // seed pages into the cache, then reload the list. Non-blocking on purpose —
@@ -69,6 +86,42 @@ export default function RecipeListScreen() {
       console.warn("[RecipeReal] background refresh failed:", error);
     }
   }, [search]);
+
+  // Reload the favorite id set + the favorites carousel data from SQLite.
+  // Purely local, so this works offline. Best-effort: a failure keeps the
+  // previous state rather than blanking the hearts.
+  const reloadFavorites = useCallback(async () => {
+    try {
+      const [ids, favs] = await Promise.all([
+        getFavoriteIds(),
+        getFavoriteRecipes(),
+      ]);
+      setFavoriteIds(new Set(ids));
+      setFavoriteRecipes(favs);
+    } catch (error) {
+      console.warn("[RecipeReal] loading favorites failed:", error);
+    }
+  }, []);
+
+  const handleToggleFavorite = useCallback(
+    async (id: number) => {
+      try {
+        const favorited = await toggleFavorite(id);
+        track("favorite_toggled", { recipe_id: id, favorited });
+        await reloadFavorites();
+      } catch (error) {
+        console.warn("[RecipeReal] toggle favorite failed:", error);
+      }
+    },
+    [reloadFavorites],
+  );
+
+  const handleSelectFilter = useCallback((next: ListFilter) => {
+    setFilter(next);
+    if (next !== "all") {
+      track("filter_used", { filter: next });
+    }
+  }, []);
 
   /**
    * Load recipes from the cache, seeding progressively on a cold cache.
@@ -103,6 +156,8 @@ export default function RecipeListScreen() {
   }, [continueSeedInBackground]);
 
   useEffect(() => {
+    // Favorites are independent of the cache load: pull them in parallel.
+    reloadFavorites();
     loadFromCache().then((hadCachedData) => {
       // Only light-refresh when we showed previously cached data; a cold
       // cache was just (progressively) seeded, so refreshing would re-download
@@ -138,42 +193,90 @@ export default function RecipeListScreen() {
     setRefreshing(false);
   }, [refreshInBackground]);
 
-  // Client-side title search over the cached recipes.
+  // Client-side filtering over the cached recipes: search ∘ category ∘ quick.
   const visibleRecipes = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return recipes;
-    return recipes.filter((r) => r.title.toLowerCase().includes(q));
-  }, [recipes, search]);
+    let out = recipes;
+    if (q) {
+      out = out.filter((r) => r.title.toLowerCase().includes(q));
+    }
+    if (filter !== "all") {
+      out =
+        filter === "quick"
+          ? out.filter(
+              (r) =>
+                r.community_avg_minutes != null &&
+                r.community_avg_minutes <= 30,
+            )
+          : out.filter((r) => categorizeTitle(r.title) === filter);
+    }
+    return out;
+  }, [recipes, search, filter]);
+
+  const hasActiveFilters = search.trim().length > 0 || filter !== "all";
 
   const stepCount = (item: Recipe) =>
     item.recipe_steps?.length ?? item.steps?.length ?? 0;
 
   const renderItem: ListRenderItem<Recipe> = useCallback(
+    ({ item }) => {
+      const favorited = favoriteIds.has(item.id);
+      return (
+        <Card
+          onPress={() => router.push(`/recipe/${item.id}`)}
+          padding={0}
+          shadow="card"
+          style={numColumns > 1 ? styles.cardColumn : styles.card}
+        >
+          <View>
+            <HeroImage uri={item.image_url} height={150} rounded={Radius.lg} />
+            {/* Static style only (no width:"100%" / flex) — see Android paint rules. */}
+            <Pressable
+              onPress={() => handleToggleFavorite(item.id)}
+              hitSlop={8}
+              style={styles.heartButton}
+            >
+              <Text style={styles.heartGlyph}>{favorited ? "♥" : "♡"}</Text>
+            </Pressable>
+          </View>
+          <View style={styles.cardBody}>
+            <Text style={styles.cardTitle} numberOfLines={2}>
+              {item.title}
+            </Text>
+            <View style={styles.cardChips}>
+              <TimeChip minutes={item.community_avg_minutes} label="Focused" />
+              <TimeChip minutes={item.cleanup_avg_minutes} label="Cleanup" />
+              <Chip
+                tone="amber"
+                label={`${stepCount(item)} steps`}
+                size="sm"
+              />
+            </View>
+          </View>
+        </Card>
+      );
+    },
+    [numColumns, favoriteIds, handleToggleFavorite],
+  );
+
+  const renderFavoriteItem: ListRenderItem<Recipe> = useCallback(
     ({ item }) => (
       <Card
         onPress={() => router.push(`/recipe/${item.id}`)}
         padding={0}
         shadow="card"
-        style={numColumns > 1 ? styles.cardColumn : styles.card}
+        style={styles.favoriteCard}
       >
-        <HeroImage uri={item.image_url} height={150} rounded={Radius.lg} />
-        <View style={styles.cardBody}>
-          <Text style={styles.cardTitle} numberOfLines={2}>
+        <HeroImage uri={item.image_url} height={100} rounded={Radius.lg} />
+        <View style={styles.favoriteBody}>
+          <Text style={styles.favoriteTitle} numberOfLines={1}>
             {item.title}
           </Text>
-          <View style={styles.cardChips}>
-            <TimeChip minutes={item.community_avg_minutes} label="Focused" />
-            <TimeChip minutes={item.cleanup_avg_minutes} label="Cleanup" />
-            <Chip
-              tone="amber"
-              label={`${stepCount(item)} steps`}
-              size="sm"
-            />
-          </View>
+          <TimeChip minutes={item.community_avg_minutes} label="Focused" />
         </View>
       </Card>
     ),
-    [numColumns],
+    [],
   );
 
   const showSkeletons = state === "loading" && recipes.length === 0;
@@ -203,6 +306,52 @@ export default function RecipeListScreen() {
           />
         </View>
       </View>
+
+      {state === "ready" && favoriteRecipes.length > 0 && (
+        <View style={styles.favoritesSection}>
+          <View style={styles.sectionHeaderPad}>
+            <SectionHeader title="Cook again" />
+          </View>
+          <FlatList
+            horizontal
+            data={favoriteRecipes}
+            keyExtractor={(item) => String(item.id)}
+            renderItem={renderFavoriteItem}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.favoritesContent}
+          />
+        </View>
+      )}
+
+      {state === "ready" && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterRow}
+          contentContainerStyle={styles.filterContent}
+        >
+          <Pressable onPress={() => handleSelectFilter("all")}>
+            <Chip label="All" tone={filter === "all" ? "accent" : "neutral"} />
+          </Pressable>
+          {CATEGORIES.map((category) => (
+            <Pressable
+              key={category.id}
+              onPress={() => handleSelectFilter(category.id)}
+            >
+              <Chip
+                label={category.label}
+                tone={filter === category.id ? "accent" : "neutral"}
+              />
+            </Pressable>
+          ))}
+          <Pressable onPress={() => handleSelectFilter("quick")}>
+            <Chip
+              label="Under 30 min"
+              tone={filter === "quick" ? "accent" : "neutral"}
+            />
+          </Pressable>
+        </ScrollView>
+      )}
 
       {showSkeletons && (
         <FlatList
@@ -264,11 +413,18 @@ export default function RecipeListScreen() {
           ListEmptyComponent={
             <View style={styles.center}>
               <Text style={styles.emptyGlyph}>🍳</Text>
-              <Text style={styles.muted}>
-                {search
-                  ? "No recipes match your search."
-                  : "No recipes available yet."}
-              </Text>
+              {hasActiveFilters ? (
+                <>
+                  <Text style={styles.muted}>
+                    No recipes match — try another filter.
+                  </Text>
+                  <Text style={styles.emptyCount}>
+                    {visibleRecipes.length} of {recipes.length} recipes
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.muted}>No recipes available yet.</Text>
+              )}
             </View>
           }
         />
@@ -339,6 +495,57 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: Space.xs,
+  },
+  heartButton: {
+    position: "absolute",
+    top: Space.sm,
+    right: Space.sm,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heartGlyph: {
+    fontSize: 16,
+    lineHeight: 18,
+    color: Color.surface,
+  },
+  favoritesSection: {
+    marginBottom: Space.md,
+  },
+  sectionHeaderPad: {
+    paddingHorizontal: Space.lg,
+  },
+  favoritesContent: {
+    paddingHorizontal: Space.lg,
+    gap: Space.md,
+  },
+  favoriteCard: {
+    width: 150,
+  },
+  favoriteBody: {
+    padding: Space.sm,
+    gap: Space.xs,
+  },
+  favoriteTitle: {
+    ...Type.bodySm,
+    fontWeight: "600",
+    color: Color.ink,
+  },
+  filterRow: {
+    flexShrink: 0,
+    marginBottom: Space.sm,
+  },
+  filterContent: {
+    paddingHorizontal: Space.lg,
+    gap: Space.sm,
+    alignItems: "center",
+  },
+  emptyCount: {
+    ...Type.caption,
+    color: Color.inkFaint,
   },
   center: {
     flex: 1,

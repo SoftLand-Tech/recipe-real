@@ -14,7 +14,9 @@ import { getRecipe, hasToken, isPaywallError } from "@/api/client";
 import { track } from "@/analytics";
 import {
   getCachedRecipe,
+  isFavorite,
   refreshPaceCalibrations,
+  toggleFavorite,
   upsertRecipes,
 } from "@/db/database";
 import type {
@@ -50,6 +52,19 @@ function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+/** Formats a Date as a short local clock string, e.g. "7:04 PM". */
+function formatClock(date: Date): string {
+  try {
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  } catch {
+    // Intl unavailable: manual 12-hour fallback so the clock never crashes.
+    const hours = date.getHours();
+    const h = hours % 12 || 12;
+    const m = String(date.getMinutes()).padStart(2, "0");
+    return `${h}:${m} ${hours < 12 ? "AM" : "PM"}`;
+  }
+}
+
 /**
  * Build the cleanup-burden chip labels from the factors object. Each entry is
  * only included when its underlying value is non-null.
@@ -77,6 +92,7 @@ export default function RecipeDetailScreen() {
   const [state, setState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [calibrations, setCalibrations] = useState<PaceCalibration[]>([]);
+  const [favorited, setFavorited] = useState(false);
 
   // Mirror of `recipe` for use inside `loadRecipe`'s catch block without
   // forcing `recipe` into the callback's dependency array (which would
@@ -110,6 +126,10 @@ export default function RecipeDetailScreen() {
       setState("ready");
       // Fire-and-forget analytics once the recipe is successfully loaded.
       track("recipe_viewed", { recipe_id: result.id });
+      // Best-effort: seed the favorite state from local storage (never blocks).
+      isFavorite(numericId)
+        .then(setFavorited)
+        .catch(() => {});
     } catch (error) {
       console.warn("[RecipeReal] loadRecipe failed:", error);
       // A 402 means the free-tier recipe limit is reached. Only surface the
@@ -147,6 +167,20 @@ export default function RecipeDetailScreen() {
       cancelled = true;
     };
   }, []);
+
+  /** Toggles the favorite state; storage failures are silently ignored. */
+  const onToggleFavorite = useCallback(async () => {
+    try {
+      const now = await toggleFavorite(Number(id));
+      setFavorited(now);
+      track("favorite_toggled", {
+        recipe_id: Number(id),
+        favorited: now,
+      });
+    } catch {
+      // Favorites are best-effort; never crash the detail screen.
+    }
+  }, [id]);
 
   const publisher = roundMin(recipe?.publisher_time_minutes);
   const community = roundMin(recipe?.community_avg_minutes);
@@ -199,7 +233,45 @@ export default function RecipeDetailScreen() {
     return Math.round(step.community_minutes * mult);
   }
 
+  /**
+   * Effective minutes used by the "When's dinner ready?" timeline: the
+   * pace-adjusted value when a calibration applies, else the community or
+   * publisher figure, else a quiet 3-minute default.
+   */
+  function minutesForStep(step: RecipeStep): number {
+    return (
+      adjustedForStep(step) ?? step.community_minutes ?? step.publisher_minutes ?? 3
+    );
+  }
+
+  // Timeline: cooking steps only — cleanup is quoted separately (you eat first).
+  const timelineSteps = steps.filter((s) => s.step_type !== "cleanup");
+  let focusedTotal = 0;
+  let handsOffTotal = 0;
+  let cookTotal = 0;
+  const timelineRows: { step: RecipeStep; at: Date; minutes: number }[] = [];
+  let cursor = Date.now();
+  for (const step of timelineSteps) {
+    const minutes = minutesForStep(step);
+    timelineRows.push({ step, at: new Date(cursor), minutes });
+    cursor += minutes * 60000;
+    cookTotal += minutes;
+    if (step.step_type === "passive") handsOffTotal += minutes;
+    else focusedTotal += minutes;
+  }
+  // "Start now" eat time — cleanup is intentionally excluded from the walk.
+  const eatAt = new Date(cursor);
+
   const ready = state === "ready" && recipe;
+
+  // Fire the timeline analytics event once, when the section first renders.
+  const timelineTrackedRef = useRef(false);
+  useEffect(() => {
+    if (!ready || timelineTrackedRef.current) return;
+    if (steps.length === 0) return;
+    timelineTrackedRef.current = true;
+    track("timeline_viewed", { recipe_id: Number(id) });
+  }, [ready, steps.length, id]);
 
   return (
     <View style={styles.screen}>
@@ -289,6 +361,22 @@ export default function RecipeDetailScreen() {
                 <Text style={styles.backGlyph}>‹</Text>
               </Pressable>
 
+              {/* Floating favorite toggle over the hero (mirrors the back button). */}
+              <Pressable
+                style={[
+                  styles.favButton,
+                  { top: insets.top + Space.sm },
+                ]}
+                onPress={onToggleFavorite}
+                accessibilityLabel={
+                  favorited ? "Remove from favorites" : "Add to favorites"
+                }
+                accessibilityRole="button"
+                hitSlop={Space.sm}
+              >
+                <Text style={styles.favGlyph}>{favorited ? "♥" : "♡"}</Text>
+              </Pressable>
+
               {/* RISING CONTENT CARD overlapping the hero. */}
               <View style={styles.contentCard}>
                 {/* 1. STAT GRID */}
@@ -339,7 +427,93 @@ export default function RecipeDetailScreen() {
                   </View>
                 ) : null}
 
-                {/* 4. INGREDIENTS */}
+                {/* 4. WHEN'S DINNER READY? — start-now timeline. */}
+                {steps.length > 0 ? (
+                  <View style={styles.section}>
+                    <SectionHeader title="When's dinner ready?" />
+                    <Text style={styles.timelineHeadline} numberOfLines={1}>
+                      Start now → eating at ~{formatClock(eatAt)}
+                    </Text>
+                    {cleanup != null && cleanup > 0 ? (
+                      <Text style={styles.timelineCleanupNote}>
+                        {`+ ~${fmtMinutes(cleanup)} cleanup after`}
+                      </Text>
+                    ) : null}
+                    <View style={styles.timelineStats}>
+                      <StatPill
+                        label="Focused"
+                        value={`~${fmtMinutes(focusedTotal)}`}
+                      />
+                      <StatPill
+                        label="Hands-off"
+                        value={`~${fmtMinutes(handsOffTotal)}`}
+                      />
+                      <StatPill
+                        label="Cleanup"
+                        value={`~${fmtMinutes(cleanup ?? 0)}`}
+                      />
+                    </View>
+                    <View style={styles.timelineList}>
+                      {timelineRows.map(({ step, at, minutes }) => {
+                        const passive = step.step_type === "passive";
+                        const hasMinutes =
+                          step.community_minutes != null ||
+                          step.publisher_minutes != null;
+                        return (
+                          <View
+                            key={`tl-${step.id}`}
+                            style={[
+                              styles.timelineRow,
+                              passive && styles.timelineRowPassive,
+                            ]}
+                          >
+                            <Text style={styles.timelineClock}>
+                              {formatClock(at)}
+                            </Text>
+                            <View
+                              style={[
+                                styles.timelineDot,
+                                passive && styles.timelineDotPassive,
+                              ]}
+                            />
+                            <View style={styles.timelineInfo}>
+                              <View style={styles.timelineCaptionRow}>
+                                <Text style={styles.timelineStepCaption}>
+                                  {`Step ${step.step_number}${passive ? "" : " · active"}`}
+                                </Text>
+                                {passive ? (
+                                  <View style={styles.timelineChipWrap}>
+                                    <Chip
+                                      label="hands-off"
+                                      tone="success"
+                                      size="sm"
+                                    />
+                                  </View>
+                                ) : null}
+                              </View>
+                              <Text
+                                style={styles.timelineDesc}
+                                numberOfLines={1}
+                              >
+                                {step.description}
+                              </Text>
+                            </View>
+                            {hasMinutes ? (
+                              <Text
+                                style={styles.timelineDuration}
+                                numberOfLines={1}
+                              >
+                                {`~${fmtMinutes(minutes)}`}
+                              </Text>
+                            ) : null}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ) : null}
+
+                {/* 5. INGREDIENTS */}
                 <View style={styles.section}>
                   <SectionHeader title="Ingredients" />
                   {recipe.ingredients.length > 0 ? (
@@ -356,7 +530,7 @@ export default function RecipeDetailScreen() {
                   )}
                 </View>
 
-                {/* 5. STEPS */}
+                {/* 6. STEPS */}
                 <View style={styles.section}>
                   <SectionHeader title="Steps" />
                   {steps.length > 0 ? (
@@ -492,6 +666,23 @@ const styles = StyleSheet.create({
     lineHeight: 28,
     marginTop: -2,
   },
+  favButton: {
+    position: "absolute",
+    right: Space.lg,
+    width: 38,
+    height: 38,
+    borderRadius: Radius.pill,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 10,
+  },
+  favGlyph: {
+    color: Color.surface,
+    fontSize: 20,
+    fontWeight: "600",
+    lineHeight: 22,
+  },
   contentCard: {
     backgroundColor: Color.surface,
     borderTopLeftRadius: Radius.xl,
@@ -521,6 +712,77 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: Space.xs,
     marginTop: Space.lg,
+  },
+  timelineHeadline: {
+    ...Type.title,
+    color: Color.ink,
+  },
+  timelineCleanupNote: {
+    ...Type.caption,
+    color: Color.inkSecondary,
+    marginTop: Space.xs,
+  },
+  timelineStats: {
+    flexDirection: "row",
+    gap: Space.xl,
+    marginTop: Space.md,
+  },
+  timelineList: {
+    gap: Space.xs,
+    marginTop: Space.md,
+  },
+  timelineRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Space.sm,
+    paddingHorizontal: Space.sm,
+    paddingVertical: 6,
+    borderRadius: Radius.md,
+  },
+  timelineRowPassive: {
+    backgroundColor: Color.successSoft,
+  },
+  timelineClock: {
+    ...Type.bodySm,
+    color: Color.inkSecondary,
+    fontVariant: ["tabular-nums"] as ("tabular-nums")[],
+    fontWeight: "600",
+    width: 64,
+  },
+  timelineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: Radius.pill,
+    backgroundColor: Color.accent,
+  },
+  timelineDotPassive: {
+    backgroundColor: Color.success,
+  },
+  timelineInfo: {
+    flex: 1,
+  },
+  timelineCaptionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Space.xs,
+  },
+  timelineStepCaption: {
+    ...Type.caption,
+    color: Color.inkFaint,
+    fontWeight: "600",
+  },
+  timelineChipWrap: {
+    marginTop: -2,
+  },
+  timelineDesc: {
+    ...Type.bodySm,
+    color: Color.ink,
+    marginTop: 1,
+  },
+  timelineDuration: {
+    ...Type.caption,
+    color: Color.inkSecondary,
+    fontWeight: "600",
   },
   section: {
     marginTop: Space.xxl,

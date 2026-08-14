@@ -16,7 +16,7 @@ import type {
 const DB_NAME = "recipereal.db";
 
 /** Current version of the local cache schema. Bump when columns/tables change. */
-const CACHE_SCHEMA_VERSION = 3;
+const CACHE_SCHEMA_VERSION = 4;
 
 /**
  * Memoized ready-promise for the single DB connection.
@@ -92,6 +92,14 @@ const RECIPE_STEPS_INDEX_DDL = `
     ON recipe_steps(recipe_id);
 `;
 
+/** Local favorites (offline): one row per favorited recipe, newest first. */
+const FAVORITES_DDL = `
+  CREATE TABLE IF NOT EXISTS favorites (
+    recipe_id INTEGER PRIMARY KEY REFERENCES recipes(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL
+  );
+`;
+
 const PENDING_COOK_SESSIONS_DDL = `
   CREATE TABLE IF NOT EXISTS pending_cook_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -117,9 +125,11 @@ const PACE_CALIBRATIONS_DDL = `
  * concurrent callers never trigger a second open.
  *
  * Schema bumps drop + recreate the recipe cache tables (the app re-seeds them
- * on the next seed call). The pending-cook-session and
- * pace-calibration tables are left untouched on a bump (their data is not
- * trivially re-derivable).
+ * on the next seed call). The pending-cook-session, pace-calibration, and
+ * favorites tables are left untouched on a bump (their data is not trivially
+ * re-derivable); the recipes-table drop cascade-deletes favorite rows for
+ * wiped recipes, which is fine — the deterministic re-seed restores the same
+ * ids, so re-favoriting works against stable rows.
  *
  * Each statement runs in its own `execAsync` call — concatenating multiple
  * statements into one string can fail silently on some drivers.
@@ -145,11 +155,15 @@ async function ensureSchema(db: SQLite.SQLiteDatabase): Promise<void> {
 
   if (needsBump) {
     // Drop the recipe cache tables so they get recreated at the current shape.
+    // Favorites are intentionally NOT dropped (IF NOT EXISTS below): rows for
+    // wiped recipes are cascade-deleted by the drop above, and the re-seed
+    // restores the same deterministic ids.
     await db.execAsync("DROP TABLE IF EXISTS recipe_steps;");
     await db.execAsync("DROP TABLE IF EXISTS recipes;");
     await db.execAsync(RECIPES_DDL);
     await db.execAsync(RECIPE_STEPS_DDL);
     await db.execAsync(RECIPE_STEPS_INDEX_DDL);
+    await db.execAsync(FAVORITES_DDL);
     await db.runAsync(
       `INSERT INTO meta (key, value) VALUES ('schema_version', ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value;`,
@@ -160,6 +174,7 @@ async function ensureSchema(db: SQLite.SQLiteDatabase): Promise<void> {
     await db.execAsync(RECIPES_DDL);
     await db.execAsync(RECIPE_STEPS_DDL);
     await db.execAsync(RECIPE_STEPS_INDEX_DDL);
+    await db.execAsync(FAVORITES_DDL);
   }
 }
 
@@ -504,6 +519,64 @@ export async function repairCachedStepsIfNeeded(): Promise<boolean> {
   await seedCacheFirstPage();
   await seedCacheRemainingPages();
   return true;
+}
+
+// ---- Favorites (local, offline) ---------------------------------------------
+
+/** Ids of favorited recipes, newest favorite first. */
+export async function getFavoriteIds(): Promise<number[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ recipe_id: number }>(
+    `SELECT recipe_id FROM favorites
+     ORDER BY created_at DESC, recipe_id DESC;`,
+  );
+  return rows.map((row) => row.recipe_id);
+}
+
+/** Whether the given recipe is favorited. */
+export async function isFavorite(id: number): Promise<boolean> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ recipe_id: number }>(
+    `SELECT recipe_id FROM favorites WHERE recipe_id = ?;`,
+    id,
+  );
+  return row != null;
+}
+
+/**
+ * Toggle the favorite state of a recipe. Returns the NEW state (true =
+ * favorited). Toggling off deletes the row; toggling on (re-)inserts with a
+ * fresh created_at, bumping the recipe to the front of the favorites lists.
+ */
+export async function toggleFavorite(id: number): Promise<boolean> {
+  const db = await getDb();
+  const existing = await db.getFirstAsync<{ recipe_id: number }>(
+    `SELECT recipe_id FROM favorites WHERE recipe_id = ?;`,
+    id,
+  );
+  if (existing) {
+    await db.runAsync(`DELETE FROM favorites WHERE recipe_id = ?;`, [id]);
+    return false;
+  }
+  await db.runAsync(
+    `INSERT OR REPLACE INTO favorites (recipe_id, created_at) VALUES (?, ?);`,
+    [id, Date.now()],
+  );
+  return true;
+}
+
+/**
+ * Full Recipe objects for all favorites, newest favorite first. The INNER JOIN
+ * skips favorite ids whose recipe row is missing from the cache.
+ */
+export async function getFavoriteRecipes(): Promise<Recipe[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<RecipeRow>(
+    `SELECT recipes.* FROM favorites
+       INNER JOIN recipes ON recipes.id = favorites.recipe_id
+     ORDER BY favorites.created_at DESC, favorites.recipe_id DESC;`,
+  );
+  return rows.map(parseRecipe);
 }
 
 // ---- Pending cook sessions (offline queue) ---------------------------------
