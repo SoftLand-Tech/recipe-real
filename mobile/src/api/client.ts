@@ -66,6 +66,21 @@ export async function register(
   return data;
 }
 
+/**
+ * Sign in (or register) with a Google ID token: POST /api/auth/google with
+ * `{ id_token }`. Mirrors `login` — same response shape, same SecureStore
+ * persistence — so callers can treat it exactly like an email/password sign-in.
+ */
+export async function loginWithGoogle(idToken: string): Promise<AuthResponse> {
+  const { data } = await api.post<AuthResponse>("/api/auth/google", {
+    id_token: idToken,
+  });
+  if (data?.token) {
+    await SecureStore.setItemAsync(AUTH_TOKEN_KEY, data.token);
+  }
+  return data;
+}
+
 export async function logout(): Promise<void> {
   try {
     await api.post("/api/auth/logout");

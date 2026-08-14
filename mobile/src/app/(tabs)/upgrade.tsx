@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useCallback, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -7,6 +7,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { router, useFocusEffect } from "expo-router";
 import { openBrowserAsync } from "expo-web-browser";
 
 import {
@@ -46,16 +47,20 @@ export default function UpgradeScreen() {
   const [portalPending, setPortalPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const ok = await hasToken();
-      if (!cancelled) setAuthed(ok);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // Re-check auth whenever the screen gains focus, so this refreshes after
+  // returning from /login.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        const ok = await hasToken();
+        if (!cancelled) setAuthed(ok);
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
 
   // Fire-and-forget analytics: upgrade screen viewed.
   useEffect(() => {
@@ -123,8 +128,14 @@ export default function UpgradeScreen() {
         </Text>
 
         {authed === false ? (
-          <Card>
+          <Card style={styles.loginCard}>
             <Text style={styles.loginText}>Log in to subscribe.</Text>
+            <Button
+              title="Sign in"
+              size="lg"
+              fullWidth
+              onPress={() => router.push("/login")}
+            />
           </Card>
         ) : (
           <View style={styles.plans}>
@@ -219,6 +230,9 @@ const styles = StyleSheet.create({
     ...Type.body,
     fontWeight: "500",
     color: Color.inkSecondary,
+  },
+  loginCard: {
+    gap: Space.md,
   },
   loginText: {
     ...Type.body,

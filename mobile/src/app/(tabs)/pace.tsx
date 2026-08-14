@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -6,9 +6,15 @@ import {
   Text,
   View,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 
-import { getCookSessions, getUsage, hasToken, isPaywallError } from "@/api/client";
+import {
+  getCookSessions,
+  getUsage,
+  hasToken,
+  isPaywallError,
+  logout,
+} from "@/api/client";
 import { track } from "@/analytics";
 import { refreshPaceCalibrations } from "@/db/database";
 import type { PaceCalibration } from "@/types";
@@ -84,18 +90,41 @@ export default function PaceScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  // Re-run the auth check + load whenever the screen gains focus, so pace
+  // refreshes after returning from /login (sign-in / sign-out).
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
-  // Not authenticated: show a friendly message (no login screen exists yet).
+  const handleSignOut = useCallback(async () => {
+    try {
+      await logout();
+    } catch {
+      // logout() clears the stored token in its finally block; ignore errors.
+    }
+    setAuthenticated(false);
+    setCalibrations([]);
+    setCookCount(null);
+    setState("ready");
+  }, []);
+
+  // Not authenticated: friendly sign-in prompt.
   if (state === "ready" && authenticated === false) {
     return (
       <View style={styles.container}>
         <View style={styles.center}>
+          <Text style={styles.signInTitle}>Track your pace</Text>
           <Text style={styles.muted}>
-            Log in to see your personalized pace.
+            Sign in to see your personal pace calibrations.
           </Text>
+          <Button
+            title="Sign in"
+            size="lg"
+            onPress={() => router.push("/login")}
+            style={styles.cta}
+          />
         </View>
       </View>
     );
@@ -136,6 +165,12 @@ export default function PaceScreen() {
             title="Upgrade"
             onPress={() => router.push("/upgrade")}
             style={styles.cta}
+          />
+          <Button
+            title="Sign out"
+            variant="ghost"
+            onPress={handleSignOut}
+            style={styles.secondaryCta}
           />
         </View>
       </View>
@@ -187,6 +222,13 @@ export default function PaceScreen() {
           })}
         </View>
       )}
+
+      <Button
+        title="Sign out"
+        variant="ghost"
+        onPress={handleSignOut}
+        style={styles.listSignOut}
+      />
     </ScrollView>
   );
 }
@@ -250,6 +292,11 @@ const styles = StyleSheet.create({
     ...Type.title,
     color: Color.danger,
   },
+  signInTitle: {
+    ...Type.h2,
+    color: Color.ink,
+    textAlign: "center",
+  },
   lockedTitle: {
     ...Type.title,
     color: Color.accent,
@@ -257,5 +304,11 @@ const styles = StyleSheet.create({
   },
   cta: {
     marginTop: Space.sm,
+  },
+  secondaryCta: {
+    marginTop: Space.xs,
+  },
+  listSignOut: {
+    marginTop: Space.xl,
   },
 });

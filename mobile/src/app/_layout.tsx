@@ -15,6 +15,7 @@ import { StatusBar } from "expo-status-bar";
 import "@/global.css";
 import { track } from "@/analytics";
 import { initDatabase } from "@/db/database";
+import { Color } from "@/theme";
 
 /**
  * Root layout. Initializes the offline SQLite cache on mount and provides the
@@ -45,6 +46,15 @@ export default function RootLayout() {
             group to avoid a double-counted gap.
           */}
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="login"
+            options={{
+              title: "Sign in",
+              headerShown: true,
+              headerStyle: { backgroundColor: Color.canvas },
+              headerTintColor: Color.ink,
+            }}
+          />
           <Stack.Screen
             name="recipe/[id]"
             options={{ title: "Recipe", headerShown: false }}

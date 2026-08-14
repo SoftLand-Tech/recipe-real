@@ -43,6 +43,7 @@
     },
     "extra": {
       "reciperealApiBaseUrl": "https://recipe-real.softland.tech",
+      "googleWebClientId": "REPLACE_WITH_GOOGLE_WEB_CLIENT_ID",
       "router": {},
       "eas": {
         "projectId": "777a9ceb-79de-4f98-be53-0d3dafc9305b"
