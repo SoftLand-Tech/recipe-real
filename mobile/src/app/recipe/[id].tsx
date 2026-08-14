@@ -12,7 +12,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getRecipe, hasToken, isPaywallError } from "@/api/client";
 import { track } from "@/analytics";
-import { getCachedRecipe, refreshPaceCalibrations } from "@/db/database";
+import {
+  getCachedRecipe,
+  refreshPaceCalibrations,
+  upsertRecipes,
+} from "@/db/database";
 import type {
   CleanupFactors,
   PaceCalibration,
@@ -86,9 +90,20 @@ export default function RecipeDetailScreen() {
     try {
       const numericId = Number(id);
       let result = await getCachedRecipe(numericId);
-      if (!result) {
-        // Not in cache: fall back to a live fetch.
-        result = await getRecipe(id);
+      if (!result || (result.recipe_steps?.length ?? 0) === 0) {
+        // Not in cache OR cached copy lost its steps (damaged cache): fetch
+        // live and re-cache so the step library self-heals recipe by recipe.
+        try {
+          const fetched = await getRecipe(id);
+          if (fetched.recipe_steps?.length) {
+            upsertRecipes([fetched], { withSteps: true }).catch(() => {});
+          }
+          result = fetched;
+        } catch (error) {
+          // Network failed. When a cached copy exists, show it anyway;
+          // otherwise surface the original error (incl. 402 paywall).
+          if (!result) throw error;
+        }
       }
       setRecipe(result);
       recipeRef.current = result;

@@ -16,6 +16,7 @@ import {
   flushPendingCookSessions,
   getCachedRecipe,
   getPendingCookSessionCount,
+  upsertRecipes,
 } from "@/db/database";
 import { Button, Badge, Chip, Card, StepDots, fmtMinutes } from "@/components/ui";
 import { Color, Radius, Shadow, Space, Type } from "@/theme";
@@ -104,8 +105,18 @@ export default function CookModeScreen() {
     try {
       const numericId = Number(id);
       let result = await getCachedRecipe(numericId);
-      if (!result) {
-        result = await getRecipe(id);
+      if (!result || (result.recipe_steps?.length ?? 0) === 0) {
+        // Cache miss OR cached copy lost its steps (damaged cache): fetch
+        // live and re-cache so the step library self-heals recipe by recipe.
+        try {
+          const fetched = await getRecipe(id);
+          if (fetched.recipe_steps?.length) {
+            upsertRecipes([fetched], { withSteps: true }).catch(() => {});
+            result = fetched;
+          }
+        } catch {
+          // Network failed (offline / 402): fall back to whatever is cached.
+        }
       }
       setRecipe(result);
       setLoadState("ready");

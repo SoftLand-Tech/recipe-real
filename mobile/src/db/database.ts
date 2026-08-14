@@ -480,6 +480,32 @@ export async function countCachedRecipes(): Promise<number> {
   return row?.count ?? 0;
 }
 
+/** Cached step-row count — used to detect a wiped step library. */
+export async function countCachedRecipeSteps(): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ count: number }>(
+    `SELECT COUNT(*) AS count FROM recipe_steps;`,
+  );
+  return row?.count ?? 0;
+}
+
+/**
+ * Self-heal a damaged cache: recipes present but the step library empty can
+ * result from an older refresh that used INSERT OR REPLACE on recipes (the
+ * recipe_steps ON DELETE CASCADE wiped them). Re-runs the paged seed (with
+ * steps) to restore the offline step library. Returns true when a repair ran.
+ */
+export async function repairCachedStepsIfNeeded(): Promise<boolean> {
+  const [recipeCount, stepCount] = await Promise.all([
+    countCachedRecipes(),
+    countCachedRecipeSteps(),
+  ]);
+  if (recipeCount === 0 || stepCount > 0) return false;
+  await seedCacheFirstPage();
+  await seedCacheRemainingPages();
+  return true;
+}
+
 // ---- Pending cook sessions (offline queue) ---------------------------------
 
 interface PendingCookSessionRow {

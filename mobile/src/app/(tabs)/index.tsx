@@ -17,6 +17,7 @@ import {
   flushPendingCookSessions,
   getCachedRecipes,
   refreshCacheLight,
+  repairCachedStepsIfNeeded,
   seedCacheFirstPage,
   seedCacheRemainingPages,
 } from "@/db/database";
@@ -107,7 +108,20 @@ export default function RecipeListScreen() {
       // cache was just (progressively) seeded, so refreshing would re-download
       // what the seed continuation is already fetching.
       if (hadCachedData) {
-        refreshInBackground();
+        // Self-heal first: if the cached step library was wiped (legacy
+        // INSERT OR REPLACE cascade), re-seed with steps instead of doing a
+        // light refresh (which never downloads steps).
+        repairCachedStepsIfNeeded()
+          .then(async (repaired) => {
+            if (repaired) {
+              setRecipes(await getCachedRecipes());
+            } else {
+              await refreshInBackground();
+            }
+          })
+          .catch((error) => {
+            console.warn("[RecipeReal] cache repair check failed:", error);
+          });
       }
       // Best-effort: upload any cook sessions queued while offline.
       flushPendingCookSessions().catch((error) => {
