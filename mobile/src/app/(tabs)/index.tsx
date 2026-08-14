@@ -27,6 +27,7 @@ import {
   Card,
   Chip,
   HeroImage,
+  ScreenHeader,
   SectionHeader,
   SkeletonCard,
   TimeChip,
@@ -88,20 +89,6 @@ export default function HomeScreen() {
         },
         content: {
           paddingBottom: Space.xxl,
-        },
-        header: {
-          paddingHorizontal: Space.lg,
-          paddingTop: Space.md,
-          paddingBottom: Space.md,
-          gap: Space.xs,
-        },
-        heading: {
-          ...Type.h1,
-          color: colors.ink,
-        },
-        tagline: {
-          ...Type.bodySm,
-          color: colors.inkSecondary,
         },
         center: {
           flexGrow: 1,
@@ -303,12 +290,7 @@ export default function HomeScreen() {
   const showSkeletons = state === "loading" && recipes.length === 0;
 
   return (
-    <View
-      style={[
-        styles.container,
-        { paddingTop: insets.top, paddingBottom: insets.bottom },
-      ]}
-    >
+    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -320,12 +302,10 @@ export default function HomeScreen() {
           />
         }
       >
-        <View style={styles.header}>
-          <Text style={styles.heading}>RecipeReal</Text>
-          <Text style={styles.tagline}>
-            Honest cook times, verified by real cooks
-          </Text>
-        </View>
+        <ScreenHeader
+          title="RecipeReal"
+          subtitle="Honest cook times, verified by real cooks"
+        />
 
         {showSkeletons && (
           <SkeletonRail />

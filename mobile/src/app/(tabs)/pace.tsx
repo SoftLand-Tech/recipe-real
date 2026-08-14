@@ -23,6 +23,7 @@ import {
   Button,
   Card,
   Chip,
+  ScreenHeader,
   SectionHeader,
   StatPill,
   fmtMinutes,
@@ -249,20 +250,8 @@ export default function PaceScreen() {
           backgroundColor: colors.canvas,
         },
         content: {
-          padding: Space.lg,
+          paddingHorizontal: Space.lg,
           paddingBottom: 40,
-        },
-        headerCard: {
-          gap: Space.xs,
-          marginBottom: Space.lg,
-        },
-        heading: {
-          ...Type.h1,
-          color: colors.ink,
-        },
-        subheading: {
-          ...Type.body,
-          color: colors.inkSecondary,
         },
         list: {
           gap: Space.md,
@@ -372,6 +361,7 @@ export default function PaceScreen() {
   if (state === "ready" && authenticated === false) {
     return (
       <View style={styles.container}>
+        <ScreenHeader title="Your Pace" />
         <View style={styles.center}>
           <Text style={styles.signInTitle}>Track your pace</Text>
           <Text style={styles.muted}>
@@ -391,6 +381,7 @@ export default function PaceScreen() {
   if (state === "loading") {
     return (
       <View style={styles.container}>
+        <ScreenHeader title="Your Pace" />
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.accent} />
           <Text style={styles.muted}>Loading your pace…</Text>
@@ -402,6 +393,7 @@ export default function PaceScreen() {
   if (state === "error") {
     return (
       <View style={styles.container}>
+        <ScreenHeader title="Your Pace" />
         <View style={styles.center}>
           <Text style={styles.errorTitle}>Something went wrong</Text>
           <Text style={styles.muted}>Could not load your pace data.</Text>
@@ -414,6 +406,7 @@ export default function PaceScreen() {
   if (state === "locked") {
     return (
       <View style={styles.container}>
+        <ScreenHeader title="Your Pace" />
         <View style={styles.center}>
           <Text style={styles.lockedTitle}>Premium feature</Text>
           <Text style={styles.muted}>
@@ -437,14 +430,14 @@ export default function PaceScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.headerCard}>
-        <Text style={styles.heading}>Your Pace</Text>
-        <Text style={styles.subheading}>
-          {cookCount != null
+      <ScreenHeader
+        title="Your Pace"
+        subtitle={
+          cookCount != null
             ? `${cookCount} ${cookCount === 1 ? "cook" : "cooks"} logged`
-            : "Cooks logged"}
-        </Text>
-      </View>
+            : "Cooks logged"
+        }
+      />
 
       {calibrations.length === 0 ? (
         <View style={styles.center}>

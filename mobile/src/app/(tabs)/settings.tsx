@@ -26,7 +26,14 @@ import {
   useThemePrefs,
   type ThemePref,
 } from "@/theme";
-import { Button, Card, Chip, IconPressable, SectionHeader } from "@/components/ui";
+import {
+  Button,
+  Card,
+  Chip,
+  IconPressable,
+  ScreenHeader,
+  SectionHeader,
+} from "@/components/ui";
 
 const THEME_OPTIONS: { pref: ThemePref; label: string }[] = [
   { pref: "system", label: "System" },
@@ -59,7 +66,7 @@ export default function SettingsScreen() {
           backgroundColor: colors.canvas,
         },
         content: {
-          padding: Space.lg,
+          paddingHorizontal: Space.lg,
           gap: Space.lg,
         },
         section: {
@@ -183,6 +190,8 @@ export default function SettingsScreen() {
         { paddingBottom: insets.bottom + Space.xxl },
       ]}
     >
+      <ScreenHeader title="Settings" />
+
       {/* Appearance */}
       <Card style={styles.section}>
         <SectionHeader title="Appearance" />

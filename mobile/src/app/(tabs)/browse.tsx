@@ -39,6 +39,7 @@ import {
   HeroImage,
   HeartButton,
   IconPressable,
+  ScreenHeader,
   SectionHeader,
   SkeletonCard,
   TimeChip,
@@ -190,20 +191,9 @@ export default function BrowseScreen() {
           flex: 1,
           backgroundColor: colors.canvas,
         },
-        header: {
+        searchSection: {
           paddingHorizontal: Space.lg,
-          paddingVertical: Space.md,
-          gap: Space.sm,
-        },
-        titleRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: Space.md,
-        },
-        heading: {
-          ...Type.h1,
-          color: colors.ink,
+          paddingBottom: Space.md,
         },
         searchWrap: {
           flexDirection: "row",
@@ -647,16 +637,9 @@ applyRecipes(await getCachedRecipes());
     (state === "ready" && applying);
 
   return (
-    <View
-      style={[
-        styles.container,
-        { paddingTop: insets.top, paddingBottom: insets.bottom },
-      ]}
-    >
-      <View style={styles.header}>
-        <View style={styles.titleRow}>
-          <Text style={styles.heading}>Browse</Text>
-        </View>
+    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
+      <ScreenHeader title="Browse" />
+      <View style={styles.searchSection}>
         <View style={styles.searchWrap}>
           <Text style={styles.searchGlyph}>⌕</Text>
           <TextInput

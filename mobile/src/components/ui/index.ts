@@ -13,6 +13,9 @@ export type { ButtonProps } from "./Button";
 export { SectionHeader } from "./SectionHeader";
 export type { SectionHeaderProps } from "./SectionHeader";
 
+export { ScreenHeader } from "./ScreenHeader";
+export type { ScreenHeaderProps } from "./ScreenHeader";
+
 export { StatPill } from "./StatPill";
 export type { StatPillProps } from "./StatPill";
 

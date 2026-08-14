@@ -20,6 +20,7 @@ import {
   Chip,
   HeroImage,
   HeartButton,
+  ScreenHeader,
   SkeletonCard,
   TimeChip,
 } from "@/components/ui";
@@ -63,18 +64,9 @@ export default function FavoritesScreen() {
         },
         content: {
           flexGrow: 1,
-          padding: Space.lg,
+          paddingHorizontal: Space.lg,
           gap: Space.lg,
           paddingBottom: insets.bottom + Space.xxl,
-        },
-        header: {
-          gap: Space.xs,
-        },
-        // The native tab header shows the "Favorites" title, so the on-screen
-        // header is just a modest subtitle line (no big-title duplication).
-        subtitle: {
-          ...Type.bodySm,
-          color: colors.inkSecondary,
         },
         list: {
           gap: Space.lg,
@@ -268,9 +260,10 @@ export default function FavoritesScreen() {
         />
       }
     >
-      <View style={styles.header}>
-        <Text style={styles.subtitle}>Cook again — your saved recipes</Text>
-      </View>
+      <ScreenHeader
+        title="Favorites"
+        subtitle="Cook again — your saved recipes"
+      />
 
       {state === "loading" ? (
         <View

@@ -9,7 +9,8 @@ import { useThemeColors } from "@/theme";
  * so existing router.push(...) calls keep working. "/upgrade" is NOT a tab
  * anymore: it lives in the root stack (src/app/upgrade.tsx), so pushes to
  * "/upgrade" from pace.tsx / recipe/[id].tsx still resolve. Colors are
- * resolved per scheme via useThemeColors().
+ * resolved per scheme via useThemeColors(). All five tabs render the shared
+ * on-screen ScreenHeader; native headers are off across the group.
  */
 export default function TabsLayout() {
   const colors = useThemeColors();
@@ -25,7 +26,6 @@ export default function TabsLayout() {
         },
       }}
     >
-      {/* Home: curated rails; renders its own header with a manual top inset. */}
       <Tabs.Screen
         name="index"
         options={{
@@ -36,7 +36,6 @@ export default function TabsLayout() {
           ),
         }}
       />
-      {/* Browse: the full recipe list; renders its own header (title + search). */}
       <Tabs.Screen
         name="browse"
         options={{
@@ -51,10 +50,7 @@ export default function TabsLayout() {
         name="pace"
         options={{
           title: "Your Pace",
-          headerShown: true,
-          headerStyle: { backgroundColor: colors.canvas },
-          headerTintColor: colors.ink,
-          headerTitleStyle: { fontWeight: "600" },
+          headerShown: false,
           tabBarIcon: ({ color }) => (
             <Ionicons name="speedometer" size={22} color={color} />
           ),
@@ -64,10 +60,7 @@ export default function TabsLayout() {
         name="favorites"
         options={{
           title: "Favorites",
-          headerShown: true,
-          headerStyle: { backgroundColor: colors.canvas },
-          headerTintColor: colors.ink,
-          headerTitleStyle: { fontWeight: "600" },
+          headerShown: false,
           tabBarIcon: ({ color }) => (
             <Ionicons name="heart" size={22} color={color} />
           ),
@@ -77,10 +70,7 @@ export default function TabsLayout() {
         name="settings"
         options={{
           title: "Settings",
-          headerShown: true,
-          headerStyle: { backgroundColor: colors.canvas },
-          headerTintColor: colors.ink,
-          headerTitleStyle: { fontWeight: "600" },
+          headerShown: false,
           tabBarIcon: ({ color }) => (
             <Ionicons name="settings" size={22} color={color} />
           ),
