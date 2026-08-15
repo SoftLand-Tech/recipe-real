@@ -48,7 +48,7 @@ class TranslateArabic extends Command
     private const PROGRESS_EVERY = 25;
 
     /** Min seconds between API requests (~6/sec politeness cap). */
-    private const REQUEST_INTERVAL = 0.17;
+    private const REQUEST_INTERVAL = 0.5;
 
     /** @var list<string> */
     private array $emails = [];
@@ -353,8 +353,31 @@ class TranslateArabic extends Command
             }
 
             if ($response->status() === 429) {
-                $this->rotate("HTTP 429 for {$email}");
-                continue;
+                // MyMemory throttles by IP as well as by email — a 429 with
+                // little usage on this email is a rate limit, not a spent
+                // quota. Back off on the SAME email before rotating, so a
+                // burst doesn't burn through the rotation and end the run.
+                static $backoffs = [20, 45, 90];
+                foreach ($backoffs as $i => $seconds) {
+                    $this->line("  [rate] HTTP 429 for {$email} — backing off {$seconds}s (attempt ".($i + 1).'/3)');
+                    sleep($seconds);
+                    try {
+                        $response = Http::timeout(3)->get(self::API_URL, [
+                            'q' => $q,
+                            'langpair' => 'en|ar',
+                            'de' => $email,
+                        ]);
+                    } catch (Throwable $e) {
+                        continue;
+                    }
+                    if ($response->status() !== 429) {
+                        break;
+                    }
+                }
+                if ($response->status() === 429) {
+                    $this->rotate("HTTP 429 persisted for {$email} after back-offs");
+                    continue;
+                }
             }
 
             $data = (array) $response->json();
@@ -489,7 +512,7 @@ class TranslateArabic extends Command
     }
 
     /**
-     * Pace requests to ~6/sec.
+     * Pace requests to ~2/sec — MyMemory throttles aggressive IPs (429) regardless of email quota.
      */
     private function throttle(): void
     {

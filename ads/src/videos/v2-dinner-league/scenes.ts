@@ -21,7 +21,7 @@ export const SCENES: SceneSpec[] = [
   // ---------- ACT 1 — HOOK (kickoff) ----------
   {
     id: 's01',
-    vo: 'Live, from kitchen stadium!',
+    vo: 'Live from kitchen stadium!',
     speaker: 'pbp',
     sfx: 'crowd',
     visual:
@@ -37,7 +37,7 @@ export const SCENES: SceneSpec[] = [
   },
   {
     id: 's03',
-    vo: 'You, against a fifteen-minute recipe.',
+    vo: 'You against a fifteen-minute recipe.',
     speaker: 'pbp',
     sfx: 'blip',
     visual:
@@ -45,7 +45,7 @@ export const SCENES: SceneSpec[] = [
   },
   {
     id: 's04',
-    vo: 'Fifteen minutes. They promise.',
+    vo: 'Fifteen minutes. Promised.',
     speaker: 'color',
     sfx: 'scribble',
     visual:
@@ -80,7 +80,7 @@ export const SCENES: SceneSpec[] = [
   },
   {
     id: 's08',
-    vo: 'Injury news: the preheat was forgotten.',
+    vo: 'Injury news: preheat forgotten!',
     speaker: 'pbp',
     sfx: 'crowd',
     visual:
@@ -113,7 +113,7 @@ export const SCENES: SceneSpec[] = [
   },
   {
     id: 's12',
-    vo: 'Stoppage time already: plus five!',
+    vo: 'Stoppage time. Plus five.',
     speaker: 'pbp',
     sfx: 'crowd',
     visual:
@@ -121,7 +121,7 @@ export const SCENES: SceneSpec[] = [
   },
   {
     id: 's13',
-    vo: 'Half-time. Twenty-four played. Fifteen promised.',
+    vo: 'Twenty-four played at half-time.',
     speaker: 'color',
     sfx: 'whistle',
     visual:
@@ -131,7 +131,7 @@ export const SCENES: SceneSpec[] = [
   // ---------- ACT 3 — SUBSTITUTION: COOK MODE ----------
   {
     id: 's14',
-    vo: 'The manager makes the change. Cook Mode, on!',
+    vo: "The manager's change: Cook Mode, on!",
     speaker: 'pbp',
     sfx: 'horn',
     visual:
@@ -140,7 +140,7 @@ export const SCENES: SceneSpec[] = [
   },
   {
     id: 's15',
-    vo: 'Cook Mode takes the touchline.',
+    vo: 'Cook Mode on the touchline.',
     speaker: 'pbp',
     sfx: 'blip',
     visual:
@@ -148,7 +148,7 @@ export const SCENES: SceneSpec[] = [
   },
   {
     id: 's16',
-    vo: 'Real times. Ten thousand cooks.',
+    vo: 'Real times now.',
     speaker: 'color',
     sfx: 'ding',
     visual:
@@ -156,7 +156,7 @@ export const SCENES: SceneSpec[] = [
   },
   {
     id: 's17',
-    vo: 'The crowd called it: forty-three minutes.',
+    vo: 'The crowd called forty-three minutes.',
     speaker: 'pbp',
     sfx: 'crowd',
     visual:
@@ -181,7 +181,7 @@ export const SCENES: SceneSpec[] = [
   },
   {
     id: 's20',
-    vo: 'Onions in. Timer runs itself.',
+    vo: 'Onions in. Timer starts itself.',
     speaker: 'pbp',
     sfx: 'tick',
     visual:
@@ -224,7 +224,7 @@ export const SCENES: SceneSpec[] = [
   },
   {
     id: 's25',
-    vo: 'No signal? Recipes still load.',
+    vo: 'Offline, recipes still load.',
     speaker: 'pbp',
     sfx: null,
     visual:
@@ -235,14 +235,14 @@ export const SCENES: SceneSpec[] = [
   {
     id: 's26',
     vo: 'Four goals from honest clocks.',
-    speaker: 'color',
+    speaker: 'pbp',
     sfx: 'blip',
     visual:
       'Scoreboard closeup YOU 4 BLOGGERS FC 1 + chalk pitch diagram with green X marks at every landed step.',
   },
   {
     id: 's27',
-    vo: 'Cleanup. Announced up front. Plus twenty.',
+    vo: 'Cleanup: plus twenty, up front.',
     speaker: 'pbp',
     sfx: 'scribble',
     visual:
@@ -250,7 +250,7 @@ export const SCENES: SceneSpec[] = [
   },
   {
     id: 's28',
-    vo: 'Blogs hide cleanup. We print it.',
+    vo: 'Hidden there. Printed here.',
     speaker: 'color',
     sfx: 'blip',
     visual:
@@ -266,7 +266,7 @@ export const SCENES: SceneSpec[] = [
   },
   {
     id: 's30',
-    vo: 'Twenty-eight minutes, hidden.',
+    vo: 'Twenty-eight hidden minutes.',
     speaker: 'color',
     sfx: null,
     visual:
