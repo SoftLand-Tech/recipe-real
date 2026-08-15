@@ -56,6 +56,13 @@ class ImportFoodcom extends Command
         $minRating = (float) ($this->option('min-rating') ?: 0);
         $maxTime = (int) ($this->option('max-time') ?: 0);
 
+        // Long write transactions + other writers (queue worker) = sqlite
+        // "database is locked". Wait up to 60s instead of failing; stop the
+        // queue worker around big imports as well.
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            DB::statement('PRAGMA busy_timeout = 60000');
+        }
+
         if ($this->option('fresh')) {
             $count = Recipe::query()->where('source_url', 'like', self::SOURCE_PREFIX.'%')->count();
             if ($count > 0 && ! $this->confirm("Delete {$count} previously imported Food.com recipes?", true)) {
@@ -265,7 +272,11 @@ class ImportFoodcom extends Command
         if ($parts !== []) {
             if (count($quantities) === count($parts)) {
                 foreach ($parts as $i => $part) {
-                    $ingredients[] = trim(($quantities[$i] ?? '').' '.$part);
+                    $q = $quantities[$i] ?? '';
+                    if (strtoupper($q) === 'NA') {
+                        $q = '';
+                    }
+                    $ingredients[] = trim($q.' '.$part);
                 }
             } else {
                 $ingredients = $parts;
@@ -300,12 +311,14 @@ class ImportFoodcom extends Command
 
     /**
      * Parse the dataset's R-style vector strings: c("a", "b") → ["a", "b"].
-     * Plain scalar strings are returned as a single-element array.
+     * Also expands elements that are themselves nested c(...) strings, and
+     * treats R's empty markers (NULL, NA, character(0)) as empty.
      */
     private function parseRVector(string $value): array
     {
         $value = trim($value);
-        if ($value === '' || strtoupper($value) === 'NULL' || strtoupper($value) === 'NA') {
+        if ($value === '' || strtoupper($value) === 'NULL' || strtoupper($value) === 'NA'
+            || strtolower($value) === 'character(0)') {
             return [];
         }
 
@@ -313,10 +326,23 @@ class ImportFoodcom extends Command
             // Split on commas that are outside quotes.
             $items = str_getcsv($m[1]);
 
-            return array_values(array_filter(
-                array_map(fn ($s) => trim((string) $s), $items),
-                fn ($s) => $s !== ''
-            ));
+            $out = [];
+            foreach ($items as $item) {
+                $item = trim((string) $item);
+                if ($item === '' || strtoupper($item) === 'NA') {
+                    continue;
+                }
+                // Some rows carry a second level of vector-stringifying.
+                if (preg_match('/^c\(.*\)$/s', $item)) {
+                    foreach ($this->parseRVector($item) as $nested) {
+                        $out[] = $nested;
+                    }
+                } else {
+                    $out[] = $item;
+                }
+            }
+
+            return $out;
         }
 
         return [$value];
