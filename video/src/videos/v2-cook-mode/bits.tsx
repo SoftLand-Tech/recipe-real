@@ -362,7 +362,7 @@ const Flame: FC<{
   height: number;
   x: number;
 }> = ({frame, seed, color, width, height, x}) => {
-  const flick = random(seed, Math.floor(frame / 2));
+  const flick = random(`${seed}-${Math.floor(frame / 2)}`);
   return (
     <svg
       width={width}
@@ -386,8 +386,8 @@ const Flame: FC<{
 };
 
 export const PanOnFire: FC<{frame: number}> = ({frame}) => {
-  const glow = random('glow', Math.floor(frame / 2));
-  const glow2 = random('glow2', Math.floor(frame / 3));
+  const glow = random(`glow-${Math.floor(frame / 2)}`);
+  const glow2 = random(`glow2-${Math.floor(frame / 3)}`);
   return (
     <div
       style={{

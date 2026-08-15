@@ -90,7 +90,7 @@ export const TimerDial: FC<{f: number; window: Window2}> = ({f, window: w}) => {
 export const TickingClock: FC<{f: number; window: Window2}> = ({f, window: w}) => {
   const minute = interpolate(f, [w[0], w[1]], [40, 300], CLAMP);
   const hour = interpolate(f, [w[0], w[1]], [10, 55], CLAMP);
-  const extra = Array.from({length: 8}, (_, i) => (i + 1) * 30 + 15);
+  const extra = Array.from({length: REALIST_TICKS.length}, (_, i) => (i + 1) * 30 + 15);
   // "+20 MIN" lands right as the Realist finishes (line ends at 578).
   const chip = interpolate(f, [582, 594], [0, 1], {
     ...CLAMP,

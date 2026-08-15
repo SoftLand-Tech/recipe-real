@@ -17,6 +17,8 @@ export interface RecipeStep {
   id: number;
   step_number: number;
   description: string;
+  /** Arabic translation of the description; null when untranslated. */
+  description_ar?: string | null;
   step_type: StepType;
   publisher_minutes: number | null;
   community_minutes: number | null;
@@ -35,6 +37,10 @@ export interface Recipe {
   image_url?: string | null;
   ingredients: string[];
   steps: string[];
+  /** Arabic translations; null when the backend has no translation. */
+  title_ar?: string | null;
+  ingredients_ar?: string[] | null;
+  steps_ar?: string[] | null;
   publisher_time_minutes: number | null;
   community_avg_minutes: number | null;
   cleanup_avg_minutes: number | null;

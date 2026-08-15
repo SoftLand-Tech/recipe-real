@@ -35,6 +35,7 @@ import {
   toggleFavorite,
 } from "@/db/database";
 import type { Recipe } from "@/types";
+import { useLocalizedRecipe, useT } from "@/i18n";
 import {
   Radius,
   Space,
@@ -75,24 +76,24 @@ type SortMode = "default" | "fastest" | "cleanup";
 
 /** Total-time cap options (community_avg_minutes; null = Any). */
 const TIME_FILTERS = [
-  { max: null, label: "Any" },
-  { max: 15, label: "≤ 15 min" },
-  { max: 30, label: "≤ 30 min" },
-  { max: 45, label: "≤ 45 min" },
-  { max: 60, label: "≤ 60 min" },
+  { max: null, labelKey: "filter.any" },
+  { max: 15, labelKey: "filter.time15" },
+  { max: 30, labelKey: "filter.time30" },
+  { max: 45, labelKey: "filter.time45" },
+  { max: 60, labelKey: "filter.time60" },
 ] as const;
 
 /** Cleanup cap options (cleanup_avg_minutes; null = Any). */
 const CLEANUP_FILTERS = [
-  { max: null, label: "Any" },
-  { max: 15, label: "Low (≤ 15 min)" },
-  { max: 10, label: "Very low (≤ 10 min)" },
+  { max: null, labelKey: "filter.any" },
+  { max: 15, labelKey: "filter.cleanupLow" },
+  { max: 10, labelKey: "filter.cleanupVeryLow" },
 ] as const;
 
 const SORT_MODES = [
-  { mode: "default", label: "Default" },
-  { mode: "fastest", label: "Fastest" },
-  { mode: "cleanup", label: "Least cleanup" },
+  { mode: "default", labelKey: "filter.sortDefault" },
+  { mode: "fastest", labelKey: "filter.sortFastest" },
+  { mode: "cleanup", labelKey: "filter.sortLeastCleanup" },
 ] as const;
 
 /**
@@ -136,7 +137,12 @@ function computeVisibleRecipes(
   const q = search.trim().toLowerCase();
   let out = source;
   if (q) {
-    out = out.filter((r) => r.title.toLowerCase().includes(q));
+    // Match the English title OR the Arabic title (Arabic search input).
+    out = out.filter(
+      (r) =>
+        r.title.toLowerCase().includes(q) ||
+        (r.title_ar != null && r.title_ar.toLowerCase().includes(q)),
+    );
   }
   if (filter === "quick") {
     out = out.filter(
@@ -216,7 +222,8 @@ function createStyles(colors: ThemeColors) {
     searchGlyph: {
       fontSize: 16,
       color: colors.inkFaint,
-      marginRight: Space.xs,
+      // marginEnd so the gap follows the layout direction in RTL.
+      marginEnd: Space.xs,
     },
     searchInput: {
       flex: 1,
@@ -364,6 +371,7 @@ const SearchBar = memo(function SearchBar({
   colors,
   styles,
 }: SearchBarProps) {
+  const t = useT();
   return (
     <View style={styles.searchSection}>
       <View style={styles.searchRow}>
@@ -371,7 +379,7 @@ const SearchBar = memo(function SearchBar({
           <Text style={styles.searchGlyph}>⌕</Text>
           <TextInput
             style={styles.searchInput}
-            placeholder="Search recipes"
+            placeholder={t("browse.searchPlaceholder")}
             placeholderTextColor={colors.inkFaint}
             value={search}
             onChangeText={onChangeSearch}
@@ -383,7 +391,7 @@ const SearchBar = memo(function SearchBar({
         {/* Filter toggle beside the search bar — the common pattern. */}
         <IconPressable
           onPress={onToggleFilters}
-          accessibilityLabel="Toggle filters"
+          accessibilityLabel={t("browse.toggleFilters")}
           style={styles.filterToggle}
         >
           <Ionicons
@@ -418,6 +426,8 @@ const FavoritesRail = memo(function FavoritesRail({
   onOpen,
   styles,
 }: FavoritesRailProps) {
+  const t = useT();
+  const lr = useLocalizedRecipe();
   const renderItem: ListRenderItem<Recipe> = useCallback(
     ({ item }) => (
       <Card
@@ -429,19 +439,22 @@ const FavoritesRail = memo(function FavoritesRail({
         <HeroImage uri={item.image_url} height={100} rounded={Radius.lg} />
         <View style={styles.favoriteBody}>
           <Text style={styles.favoriteTitle} numberOfLines={1}>
-            {item.title}
+            {lr.title(item)}
           </Text>
-          <TimeChip minutes={item.community_avg_minutes} label="Focused" />
+          <TimeChip
+            minutes={item.community_avg_minutes}
+            label={t("common.focused")}
+          />
         </View>
       </Card>
     ),
-    [onOpen, styles],
+    [onOpen, styles, t, lr],
   );
 
   return (
     <View style={styles.favoritesSection}>
       <View style={styles.sectionHeaderPad}>
-        <SectionHeader title="Cook again" />
+        <SectionHeader title={t("browse.cookAgain")} />
       </View>
       <FlatList
         horizontal
@@ -470,6 +483,7 @@ const ChipRow = memo(function ChipRow({
   onSelect,
   styles,
 }: ChipRowProps) {
+  const t = useT();
   return (
     <ScrollView
       horizontal
@@ -478,7 +492,10 @@ const ChipRow = memo(function ChipRow({
       contentContainerStyle={styles.filterContent}
     >
       <IconPressable onPress={() => onSelect("all")}>
-        <Chip label="All" tone={filter === "all" ? "accent" : "neutral"} />
+        <Chip
+          label={t("filter.all")}
+          tone={filter === "all" ? "accent" : "neutral"}
+        />
       </IconPressable>
       {CATEGORIES.map((category) => (
         <IconPressable
@@ -486,14 +503,14 @@ const ChipRow = memo(function ChipRow({
           onPress={() => onSelect(category.id)}
         >
           <Chip
-            label={category.label}
+            label={t(`cat.${category.id}`)}
             tone={filter === category.id ? "accent" : "neutral"}
           />
         </IconPressable>
       ))}
       <IconPressable onPress={() => onSelect("quick")}>
         <Chip
-          label="Under 30 min"
+          label={t("filter.under30")}
           tone={filter === "quick" ? "accent" : "neutral"}
         />
       </IconPressable>
@@ -527,18 +544,19 @@ const FilterPanel = memo(function FilterPanel({
   onClearAll,
   styles,
 }: FilterPanelProps) {
+  const t = useT();
   return (
     <Card style={styles.filterPanel}>
       <View style={styles.panelGroup}>
-        <Text style={styles.panelLabel}>Total time</Text>
+        <Text style={styles.panelLabel}>{t("filter.totalTime")}</Text>
         <View style={styles.panelChips}>
           {TIME_FILTERS.map((option) => (
             <IconPressable
-              key={option.label}
+              key={`time-${option.max ?? "any"}`}
               onPress={() => onTimeMaxChange(option.max)}
             >
               <Chip
-                label={option.label}
+                label={t(option.labelKey)}
                 size="sm"
                 tone={timeMax === option.max ? "accent" : "neutral"}
               />
@@ -547,15 +565,15 @@ const FilterPanel = memo(function FilterPanel({
         </View>
       </View>
       <View style={styles.panelGroup}>
-        <Text style={styles.panelLabel}>Cleanup</Text>
+        <Text style={styles.panelLabel}>{t("filter.cleanup")}</Text>
         <View style={styles.panelChips}>
           {CLEANUP_FILTERS.map((option) => (
             <IconPressable
-              key={option.label}
+              key={`cleanup-${option.max ?? "any"}`}
               onPress={() => onCleanupMaxChange(option.max)}
             >
               <Chip
-                label={option.label}
+                label={t(option.labelKey)}
                 size="sm"
                 tone={cleanupMax === option.max ? "accent" : "neutral"}
               />
@@ -564,7 +582,7 @@ const FilterPanel = memo(function FilterPanel({
         </View>
       </View>
       <View style={styles.panelGroup}>
-        <Text style={styles.panelLabel}>Sort</Text>
+        <Text style={styles.panelLabel}>{t("filter.sort")}</Text>
         <View style={styles.panelChips}>
           {SORT_MODES.map((option) => (
             <IconPressable
@@ -572,7 +590,7 @@ const FilterPanel = memo(function FilterPanel({
               onPress={() => onSortModeChange(option.mode)}
             >
               <Chip
-                label={option.label}
+                label={t(option.labelKey)}
                 size="sm"
                 tone={sortMode === option.mode ? "accent" : "neutral"}
               />
@@ -581,7 +599,7 @@ const FilterPanel = memo(function FilterPanel({
         </View>
       </View>
       <Button
-        title="Clear all"
+        title={t("filter.clearAll")}
         variant="ghost"
         onPress={onClearAll}
         style={styles.clearAll}
@@ -613,6 +631,8 @@ const RecipeCard = memo(function RecipeCard({
   numColumns,
   styles,
 }: RecipeCardProps) {
+  const t = useT();
+  const lr = useLocalizedRecipe();
   return (
     <Card
       onPress={() => onOpen(item.id)}
@@ -629,14 +649,20 @@ const RecipeCard = memo(function RecipeCard({
       </View>
       <View style={styles.cardBody}>
         <Text style={styles.cardTitle} numberOfLines={2}>
-          {item.title}
+          {lr.title(item)}
         </Text>
         <View style={styles.cardChips}>
-          <TimeChip minutes={item.community_avg_minutes} label="Focused" />
-          <TimeChip minutes={item.cleanup_avg_minutes} label="Cleanup" />
+          <TimeChip
+            minutes={item.community_avg_minutes}
+            label={t("common.focused")}
+          />
+          <TimeChip
+            minutes={item.cleanup_avg_minutes}
+            label={t("common.cleanup")}
+          />
           <Chip
             tone="amber"
-            label={`${stepCount(item)} steps`}
+            label={t("common.stepCount", { n: stepCount(item) })}
             size="sm"
           />
         </View>
@@ -649,6 +675,7 @@ export default function BrowseScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const colors = useThemeColors();
+  const t = useT();
   const params = useLocalSearchParams<{ filter?: string }>();
   const paramFilter = params.filter;
 
@@ -839,12 +866,12 @@ applyRecipes(await getCachedRecipes());
     } catch (error) {
       console.warn("[RecipeReal] loadFromCache failed:", error);
       setErrorMessage(
-        error instanceof Error ? error.message : "Failed to load recipes.",
+        error instanceof Error ? error.message : t("common.loadFailedRecipes"),
       );
       setState("error");
       return false;
     }
-  }, [continueSeedInBackground, applyRecipes]);
+  }, [continueSeedInBackground, applyRecipes, t]);
 
   useEffect(() => {
     // Favorites are independent of the cache load: pull them in parallel.
@@ -953,7 +980,7 @@ applyRecipes(await getCachedRecipes());
 
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      <ScreenHeader title="Browse" />
+      <ScreenHeader title={t("tabs.browse")} />
       <SearchBar
         search={search}
         onChangeSearch={setSearch}
@@ -1020,12 +1047,12 @@ applyRecipes(await getCachedRecipes());
       {state === "error" && (
         <View style={styles.center}>
           <Text style={styles.emptyGlyph}>🍲</Text>
-          <Text style={styles.errorTitle}>Something went wrong</Text>
+          <Text style={styles.errorTitle}>{t("common.somethingWentWrong")}</Text>
           <Text style={styles.muted}>
-            {errorMessage ?? "Could not load recipes."}
+            {errorMessage ?? t("common.couldNotLoadRecipes")}
           </Text>
           <Pressable style={styles.retry} onPress={loadFromCache}>
-            <Text style={styles.retryText}>Retry</Text>
+            <Text style={styles.retryText}>{t("common.retry")}</Text>
           </Pressable>
         </View>
       )}
@@ -1051,15 +1078,16 @@ applyRecipes(await getCachedRecipes());
               <Text style={styles.emptyGlyph}>🍳</Text>
               {hasActiveFilters ? (
                 <>
-                  <Text style={styles.muted}>
-                    No recipes match — try another filter.
-                  </Text>
+                  <Text style={styles.muted}>{t("browse.noMatch")}</Text>
                   <Text style={styles.emptyCount}>
-                    {visibleRecipes.length} of {recipes.length} recipes
+                    {t("browse.countOf", {
+                      shown: visibleRecipes.length,
+                      total: recipes.length,
+                    })}
                   </Text>
                 </>
               ) : (
-                <Text style={styles.muted}>No recipes available yet.</Text>
+                <Text style={styles.muted}>{t("common.emptyRecipes")}</Text>
               )}
             </View>
           }

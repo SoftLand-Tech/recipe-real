@@ -19,6 +19,8 @@ import { hasToken, logout } from "@/api/client";
 import { seedCacheFirstPage, seedCacheRemainingPages } from "@/db/database";
 import { getNudgePref, setNudgePref } from "@/utils/prefs";
 import { clearPaceCache } from "./pace";
+import { useT } from "@/i18n";
+import type { LangPref } from "@/i18n";
 import {
   Space,
   Type,
@@ -35,10 +37,16 @@ import {
   SectionHeader,
 } from "@/components/ui";
 
-const THEME_OPTIONS: { pref: ThemePref; label: string }[] = [
-  { pref: "system", label: "System" },
-  { pref: "light", label: "Light" },
-  { pref: "dark", label: "Dark" },
+const THEME_OPTIONS: { pref: ThemePref; labelKey: string }[] = [
+  { pref: "system", labelKey: "theme.system" },
+  { pref: "light", labelKey: "theme.light" },
+  { pref: "dark", labelKey: "theme.dark" },
+];
+
+const LANG_OPTIONS: { pref: LangPref; labelKey: string }[] = [
+  { pref: "system", labelKey: "lang.system" },
+  { pref: "en", labelKey: "lang.english" },
+  { pref: "ar", labelKey: "lang.arabic" },
 ];
 
 /**
@@ -49,7 +57,9 @@ const THEME_OPTIONS: { pref: ThemePref; label: string }[] = [
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
-  const { pref: themePref, setPref: setThemePref } = useThemePrefs();
+  const t = useT();
+  const { pref: themePref, setPref: setThemePref, langPref, setLangPref } =
+    useThemePrefs();
 
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [nudgeOn, setNudgeOn] = useState(true);
@@ -190,18 +200,36 @@ export default function SettingsScreen() {
         { paddingBottom: insets.bottom + Space.xxl },
       ]}
     >
-      <ScreenHeader title="Settings" />
+      <ScreenHeader title={t("tabs.settings")} />
 
       {/* Appearance */}
       <Card style={styles.section}>
-        <SectionHeader title="Appearance" />
-        <Text style={styles.rowLabel}>Theme</Text>
+        <SectionHeader title={t("settings.appearance")} />
+        <Text style={styles.rowLabel}>{t("settings.theme")}</Text>
         <View style={styles.themeRow}>
-          {THEME_OPTIONS.map(({ pref: option, label }) => (
+          {THEME_OPTIONS.map(({ pref: option, labelKey }) => (
             <IconPressable key={option} onPress={() => setThemePref(option)}>
               <Chip
-                label={label}
+                label={t(labelKey)}
                 tone={themePref === option ? "accent" : "neutral"}
+              />
+            </IconPressable>
+          ))}
+        </View>
+      </Card>
+
+      {/* Language */}
+      <Card style={styles.section}>
+        <SectionHeader
+          title={t("settings.language")}
+          subtitle={t("settings.languageCaption")}
+        />
+        <View style={styles.themeRow}>
+          {LANG_OPTIONS.map(({ pref: option, labelKey }) => (
+            <IconPressable key={option} onPress={() => setLangPref(option)}>
+              <Chip
+                label={t(labelKey)}
+                tone={langPref === option ? "accent" : "neutral"}
               />
             </IconPressable>
           ))}
@@ -210,12 +238,12 @@ export default function SettingsScreen() {
 
       {/* Notifications */}
       <Card style={styles.section}>
-        <SectionHeader title="Notifications" />
+        <SectionHeader title={t("settings.notifications")} />
         <View style={styles.row}>
           <View style={styles.rowText}>
-            <Text style={styles.rowLabel}>Cooking nudges</Text>
+            <Text style={styles.rowLabel}>{t("settings.nudges")}</Text>
             <Text style={styles.rowCaption}>
-              Get a nudge when a hands-off step is usually done
+              {t("settings.nudgesCaption")}
             </Text>
           </View>
           <Switch
@@ -227,45 +255,48 @@ export default function SettingsScreen() {
         </View>
         {nudgeBlocked ? (
           <Text style={styles.blockedCaption}>
-            Notifications are blocked for this app — enable them in system
-            settings.
+            {t("settings.nudgesBlocked")}
           </Text>
         ) : null}
         {nudgeUnavailable ? (
           <Text style={styles.blockedCaption}>
-            Nudges need the full app build — notifications aren't available in
-            Expo Go.
+            {t("settings.nudgesUnavailable")}
           </Text>
         ) : null}
       </Card>
 
       {/* Data & storage */}
       <Card style={styles.section}>
-        <SectionHeader title="Data & storage" />
-        <Text style={styles.rowLabel}>Offline library</Text>
+        <SectionHeader title={t("settings.dataStorage")} />
+        <Text style={styles.rowLabel}>{t("settings.offlineLibrary")}</Text>
         <Button
-          title={syncing ? "Syncing…" : "Re-sync recipe library"}
+          title={syncing ? t("settings.syncing") : t("settings.resync")}
           variant="ghost"
           onPress={handleResync}
           disabled={syncing}
         />
         {syncDone ? (
-          <Text style={styles.doneCaption}>Library re-synced ✓</Text>
+          <Text style={styles.doneCaption}>{t("settings.syncDone")}</Text>
         ) : null}
       </Card>
 
       {/* Account */}
       <Card style={styles.section}>
-        <SectionHeader title="Account" />
+        <SectionHeader title={t("settings.account")} />
         {authed === false ? (
-          <Button title="Sign in" onPress={() => router.push("/login")} />
+          <Button
+            title={t("common.signIn")}
+            onPress={() => router.push("/login")}
+          />
         ) : (
           <>
             {authed === true ? (
-              <Text style={styles.signedInCaption}>Signed in</Text>
+              <Text style={styles.signedInCaption}>
+                {t("settings.signedIn")}
+              </Text>
             ) : null}
             <Button
-              title="Sign out"
+              title={t("common.signOut")}
               variant="ghost"
               onPress={handleSignOut}
               disabled={authed === null}
@@ -276,7 +307,7 @@ export default function SettingsScreen() {
 
       {/* About — one compact centered row. */}
       <Card padding={Space.md}>
-        <Text style={styles.aboutText}>RecipeReal v{version}</Text>
+        <Text style={styles.aboutText}>{t("settings.about", { version })}</Text>
       </Card>
     </ScrollView>
   );

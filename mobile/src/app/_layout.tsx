@@ -6,6 +6,7 @@ import {
   ThemeProvider,
   type Theme,
 } from "expo-router";
+import { I18nManager } from "react-native";
 import {
   SafeAreaProvider,
   initialWindowMetrics,
@@ -15,6 +16,7 @@ import { StatusBar } from "expo-status-bar";
 import "@/global.css";
 import { track } from "@/analytics";
 import { initDatabase } from "@/db/database";
+import { useLang, useT } from "@/i18n";
 import {
   DarkColors,
   LightColors,
@@ -40,14 +42,31 @@ export default function RootLayout() {
 
   return (
     <ThemePrefProvider>
+      <RtlDirection />
       <NavigationFrame />
     </ThemePrefProvider>
   );
 }
 
+/**
+ * Keeps the native RTL flags in sync with the resolved language:
+ * `allowRTL(true)` always, and `forceRTL` for Arabic layout. Direction
+ * changes only take effect after a JS reload — the language setter in the
+ * theme provider triggers that restart flow whenever the resolved dir flips.
+ */
+function RtlDirection() {
+  const { dir } = useLang();
+  useEffect(() => {
+    I18nManager.allowRTL(true);
+    I18nManager.forceRTL(dir === "rtl");
+  }, [dir]);
+  return null;
+}
+
 /** Maps the resolved scheme onto warm navigation themes + the Stack. */
 function NavigationFrame() {
   const { scheme, colors } = useThemePrefs();
+  const t = useT();
 
   const navigationTheme: Theme =
     scheme === "dark"
@@ -95,7 +114,7 @@ function NavigationFrame() {
           <Stack.Screen
             name="upgrade"
             options={{
-              title: "Premium",
+              title: t("stack.premium"),
               headerShown: true,
               headerStyle: { backgroundColor: colors.canvas },
               headerTintColor: colors.ink,
@@ -105,7 +124,7 @@ function NavigationFrame() {
           <Stack.Screen
             name="login"
             options={{
-              title: "Sign in",
+              title: t("stack.signIn"),
               headerShown: true,
               headerStyle: { backgroundColor: colors.canvas },
               headerTintColor: colors.ink,
@@ -113,11 +132,11 @@ function NavigationFrame() {
           />
           <Stack.Screen
             name="recipe/[id]"
-            options={{ title: "Recipe", headerShown: false }}
+            options={{ title: t("stack.recipe"), headerShown: false }}
           />
           <Stack.Screen
             name="cook/[id]"
-            options={{ title: "Cook Mode", headerShown: false }}
+            options={{ title: t("stack.cookMode"), headerShown: false }}
           />
         </Stack>
       </SafeAreaProvider>

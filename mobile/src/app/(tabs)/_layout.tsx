@@ -1,6 +1,7 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { Tabs } from "expo-router";
 
+import { useT } from "@/i18n";
 import { useThemeColors } from "@/theme";
 
 /**
@@ -9,11 +10,13 @@ import { useThemeColors } from "@/theme";
  * so existing router.push(...) calls keep working. "/upgrade" is NOT a tab
  * anymore: it lives in the root stack (src/app/upgrade.tsx), so pushes to
  * "/upgrade" from pace.tsx / recipe/[id].tsx still resolve. Colors are
- * resolved per scheme via useThemeColors(). All five tabs render the shared
- * on-screen ScreenHeader; native headers are off across the group.
+ * resolved per scheme via useThemeColors(); titles via useT(). All five tabs
+ * render the shared on-screen ScreenHeader; native headers are off across the
+ * group. The tab row order follows the layout direction (RTL via I18nManager).
  */
 export default function TabsLayout() {
   const colors = useThemeColors();
+  const t = useT();
 
   return (
     <Tabs
@@ -29,7 +32,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Home",
+          title: t("tabs.home"),
           headerShown: false,
           tabBarIcon: ({ color }) => (
             <Ionicons name="home" size={22} color={color} />
@@ -39,7 +42,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="browse"
         options={{
-          title: "Browse",
+          title: t("tabs.browse"),
           headerShown: false,
           tabBarIcon: ({ color }) => (
             <Ionicons name="search" size={22} color={color} />
@@ -49,7 +52,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="pace"
         options={{
-          title: "Your Pace",
+          title: t("tabs.pace"),
           headerShown: false,
           tabBarIcon: ({ color }) => (
             <Ionicons name="speedometer" size={22} color={color} />
@@ -59,7 +62,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="favorites"
         options={{
-          title: "Favorites",
+          title: t("tabs.favorites"),
           headerShown: false,
           tabBarIcon: ({ color }) => (
             <Ionicons name="heart" size={22} color={color} />
@@ -69,7 +72,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="settings"
         options={{
-          title: "Settings",
+          title: t("tabs.settings"),
           headerShown: false,
           tabBarIcon: ({ color }) => (
             <Ionicons name="settings" size={22} color={color} />

@@ -18,6 +18,7 @@ import {
 import { track } from "@/analytics";
 import { refreshPaceCalibrations } from "@/db/database";
 import type { CookSessionSummary, PaceCalibration } from "@/types";
+import { stepTypeLabel, useFmtMinutes, useT, type TranslateFn } from "@/i18n";
 import { Space, Type, useThemeColors } from "@/theme";
 import {
   Button,
@@ -26,7 +27,6 @@ import {
   ScreenHeader,
   SectionHeader,
   StatPill,
-  fmtMinutes,
   type ChipProps,
 } from "@/components/ui";
 import { computeStreak, summarizeHistory } from "@/utils/streaks";
@@ -79,17 +79,11 @@ function sessionsFingerprint(items: CookSessionSummary[]): string {
     .join("|");
 }
 
-/** Capitalize the first letter of a step_type for display. */
-function capitalize(value: string): string {
-  if (!value) return value;
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
 /** Friendly interpretation of a multiplier relative to the community average. */
-function interpretPace(multiplier: number): string {
-  if (multiplier < 0.9) return "Faster than average";
-  if (multiplier > 1.1) return "Slower than average";
-  return "About average";
+function interpretPace(t: TranslateFn, multiplier: number): string {
+  if (multiplier < 0.9) return t("pace.fasterThan");
+  if (multiplier > 1.1) return t("pace.slowerThan");
+  return t("pace.aboutAverage");
 }
 
 /** Map a pace interpretation to a Chip tone. */
@@ -101,18 +95,23 @@ function paceTone(multiplier: number): "accent" | "neutral" | "amber" | "danger"
 
 /** Map a history delta (%) to a Chip label + tone for the history list. */
 function deltaChip(
+  t: TranslateFn,
   delta: number | null,
 ): { label: string; tone: ChipProps["tone"] } {
   if (delta == null) return { label: "—", tone: "neutral" };
   if (delta <= -10) {
-    return { label: `${Math.abs(delta)}% faster`, tone: "success" };
+    return { label: t("pace.pctFaster", { n: Math.abs(delta) }), tone: "success" };
   }
-  if (delta >= 10) return { label: `+${delta}% slower`, tone: "danger" };
-  return { label: "on pace", tone: "neutral" };
+  if (delta >= 10) {
+    return { label: t("pace.pctSlower", { n: delta }), tone: "danger" };
+  }
+  return { label: t("pace.onPace"), tone: "neutral" };
 }
 
 export default function PaceScreen() {
   const colors = useThemeColors();
+  const t = useT();
+  const fmtMin = useFmtMinutes();
   const [state, setState] = useState<LoadState>(() =>
     lastCalibrations != null || lastSessions != null ? "ready" : "loading",
   );
@@ -361,14 +360,12 @@ export default function PaceScreen() {
   if (state === "ready" && authenticated === false) {
     return (
       <View style={styles.container}>
-        <ScreenHeader title="Your Pace" />
+        <ScreenHeader title={t("tabs.pace")} />
         <View style={styles.center}>
-          <Text style={styles.signInTitle}>Track your pace</Text>
-          <Text style={styles.muted}>
-            Sign in to see your personal pace calibrations.
-          </Text>
+          <Text style={styles.signInTitle}>{t("pace.trackTitle")}</Text>
+          <Text style={styles.muted}>{t("pace.signInPrompt")}</Text>
           <Button
-            title="Sign in"
+            title={t("common.signIn")}
             size="lg"
             onPress={() => router.push("/login")}
             style={styles.cta}
@@ -381,10 +378,10 @@ export default function PaceScreen() {
   if (state === "loading") {
     return (
       <View style={styles.container}>
-        <ScreenHeader title="Your Pace" />
+        <ScreenHeader title={t("tabs.pace")} />
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={styles.muted}>Loading your pace…</Text>
+          <Text style={styles.muted}>{t("pace.loading")}</Text>
         </View>
       </View>
     );
@@ -393,11 +390,11 @@ export default function PaceScreen() {
   if (state === "error") {
     return (
       <View style={styles.container}>
-        <ScreenHeader title="Your Pace" />
+        <ScreenHeader title={t("tabs.pace")} />
         <View style={styles.center}>
-          <Text style={styles.errorTitle}>Something went wrong</Text>
-          <Text style={styles.muted}>Could not load your pace data.</Text>
-          <Button title="Retry" onPress={load} style={styles.cta} />
+          <Text style={styles.errorTitle}>{t("common.somethingWentWrong")}</Text>
+          <Text style={styles.muted}>{t("pace.couldNotLoad")}</Text>
+          <Button title={t("common.retry")} onPress={load} style={styles.cta} />
         </View>
       </View>
     );
@@ -406,19 +403,17 @@ export default function PaceScreen() {
   if (state === "locked") {
     return (
       <View style={styles.container}>
-        <ScreenHeader title="Your Pace" />
+        <ScreenHeader title={t("tabs.pace")} />
         <View style={styles.center}>
-          <Text style={styles.lockedTitle}>Premium feature</Text>
-          <Text style={styles.muted}>
-            Pace calibration is a Premium feature.
-          </Text>
+          <Text style={styles.lockedTitle}>{t("pace.premiumTitle")}</Text>
+          <Text style={styles.muted}>{t("pace.premiumBody")}</Text>
           <Button
-            title="Upgrade"
+            title={t("common.upgrade")}
             onPress={() => router.push("/upgrade")}
             style={styles.cta}
           />
           <Button
-            title="Sign out"
+            title={t("common.signOut")}
             variant="ghost"
             onPress={handleSignOut}
             style={styles.secondaryCta}
@@ -431,19 +426,19 @@ export default function PaceScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <ScreenHeader
-        title="Your Pace"
+        title={t("tabs.pace")}
         subtitle={
           cookCount != null
-            ? `${cookCount} ${cookCount === 1 ? "cook" : "cooks"} logged`
-            : "Cooks logged"
+            ? cookCount === 1
+              ? t("pace.cooksOne", { n: cookCount })
+              : t("pace.cooksMany", { n: cookCount })
+            : t("pace.cooksLabel")
         }
       />
 
       {calibrations.length === 0 ? (
         <View style={styles.center}>
-          <Text style={styles.muted}>
-            Cook a few recipes to unlock your personal pace.
-          </Text>
+          <Text style={styles.muted}>{t("pace.emptyCalibrations")}</Text>
         </View>
       ) : (
         <View style={styles.list}>
@@ -454,18 +449,20 @@ export default function PaceScreen() {
             return (
               <Card key={c.step_type} style={styles.card}>
                 <View style={styles.cardHeader}>
-                  <Text style={styles.cardTitle}>{capitalize(c.step_type)}</Text>
+                  <Text style={styles.cardTitle}>
+                    {stepTypeLabel(t, c.step_type)}
+                  </Text>
                   <Chip
-                    label={interpretPace(c.multiplier)}
+                    label={interpretPace(t, c.multiplier)}
                     tone={paceTone(c.multiplier)}
                     size="sm"
                   />
                 </View>
                 <Text style={styles.multiplier}>
-                  {c.multiplier.toFixed(1)}× the community average
+                  {t("pace.multiplier", { x: c.multiplier.toFixed(1) })}
                 </Text>
                 <StatPill
-                  label="Confidence"
+                  label={t("pace.confidence")}
                   value={`${confidencePct}%`}
                 />
               </Card>
@@ -480,21 +477,27 @@ export default function PaceScreen() {
           <Card>
             <View style={styles.streakRow}>
               <StatPill
-                label="Day streak"
+                label={t("pace.dayStreak")}
                 value={`${streak.currentStreak}`}
                 tone="accent"
               />
-              <StatPill label="This week" value={`${streak.weekCount}`} />
-              <StatPill label="Best" value={`${streak.bestStreak}`} />
+              <StatPill
+                label={t("pace.thisWeek")}
+                value={`${streak.weekCount}`}
+              />
+              <StatPill
+                label={t("pace.best")}
+                value={`${streak.bestStreak}`}
+              />
             </View>
           </Card>
 
           {/* Cook history */}
           <View>
-            <SectionHeader title="Cook history" />
+            <SectionHeader title={t("pace.history")} />
             <View style={styles.list}>
               {visibleHistory.map((entry) => {
-                const chip = deltaChip(entry.deltaPercent);
+                const chip = deltaChip(t, entry.deltaPercent);
                 return (
                   <Card key={entry.id} padding={Space.md}>
                     <View style={styles.historyRow}>
@@ -507,7 +510,7 @@ export default function PaceScreen() {
                       <View style={styles.historyRight}>
                         <Text style={styles.historyMinutes} numberOfLines={1}>
                           {entry.actualMinutes != null
-                            ? fmtMinutes(entry.actualMinutes)
+                            ? fmtMin(entry.actualMinutes)
                             : "—"}
                         </Text>
                         <Chip label={chip.label} tone={chip.tone} size="sm" />
@@ -519,7 +522,7 @@ export default function PaceScreen() {
             </View>
             {history.length > HISTORY_PREVIEW_COUNT ? (
               <Button
-                title={showAllHistory ? "Show less" : "Show all"}
+                title={showAllHistory ? t("pace.showLess") : t("pace.showAll")}
                 variant="ghost"
                 onPress={() => setShowAllHistory((v) => !v)}
                 style={styles.showAllButton}
@@ -530,7 +533,7 @@ export default function PaceScreen() {
       ) : null}
 
       <Button
-        title="Sign out"
+        title={t("common.signOut")}
         variant="ghost"
         onPress={handleSignOut}
         style={styles.listSignOut}

@@ -18,7 +18,7 @@ import type {
 const DB_NAME = "recipereal.db";
 
 /** Current version of the local cache schema. Bump when columns/tables change. */
-const CACHE_SCHEMA_VERSION = 4;
+const CACHE_SCHEMA_VERSION = 5;
 
 /**
  * Memoized ready-promise for the single DB connection.
@@ -57,7 +57,7 @@ function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbReady;
 }
 
-/** Full DDL for the recipes cache table (Week 4 shape, incl. cleanup cols). */
+/** Full DDL for the recipes cache table (Week 4 shape + cleanup + ar cols). */
 const RECIPES_DDL = `
   CREATE TABLE IF NOT EXISTS recipes (
     id INTEGER PRIMARY KEY,
@@ -66,6 +66,9 @@ const RECIPES_DDL = `
     image_url TEXT,
     ingredients TEXT NOT NULL,
     steps TEXT NOT NULL,
+    title_ar TEXT,
+    ingredients_ar TEXT,
+    steps_ar TEXT,
     publisher_time_minutes INTEGER,
     community_avg_minutes REAL,
     cleanup_avg_minutes REAL,
@@ -82,6 +85,7 @@ const RECIPE_STEPS_DDL = `
     recipe_id INTEGER NOT NULL,
     step_number INTEGER NOT NULL,
     description TEXT NOT NULL,
+    description_ar TEXT,
     step_type TEXT,
     publisher_minutes REAL,
     community_minutes REAL,
@@ -209,6 +213,9 @@ interface RecipeRow {
   image_url: string | null;
   ingredients: string;
   steps: string;
+  title_ar: string | null;
+  ingredients_ar: string | null;
+  steps_ar: string | null;
   publisher_time_minutes: number | null;
   community_avg_minutes: number | null;
   cleanup_avg_minutes: number | null;
@@ -223,9 +230,24 @@ interface RecipeStepRow {
   recipe_id: number;
   step_number: number;
   description: string;
+  description_ar: string | null;
   step_type: string | null;
   publisher_minutes: number | null;
   community_minutes: number | null;
+}
+
+/** Parse a cached JSON array-of-strings column; null when absent/invalid. */
+function parseJsonStringArray(raw: string | null): string[] | null {
+  if (raw == null) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed.filter((v): v is string => typeof v === "string");
+    }
+  } catch {
+    // Unparseable ar column: fall back to the English content.
+  }
+  return null;
 }
 
 function parseRecipe(row: RecipeRow): Recipe {
@@ -252,6 +274,9 @@ function parseRecipe(row: RecipeRow): Recipe {
     image_url: row.image_url ?? null,
     ingredients,
     steps,
+    title_ar: row.title_ar ?? null,
+    ingredients_ar: parseJsonStringArray(row.ingredients_ar),
+    steps_ar: parseJsonStringArray(row.steps_ar),
     publisher_time_minutes: row.publisher_time_minutes,
     community_avg_minutes: row.community_avg_minutes,
     cleanup_avg_minutes: row.cleanup_avg_minutes,
@@ -279,6 +304,7 @@ function parseStep(row: RecipeStepRow): RecipeStep {
     id: row.id,
     step_number: row.step_number,
     description: row.description,
+    description_ar: row.description_ar ?? null,
     step_type: row.step_type ?? "active",
     publisher_minutes: row.publisher_minutes,
     community_minutes: row.community_minutes,
@@ -286,7 +312,7 @@ function parseStep(row: RecipeStepRow): RecipeStep {
 }
 
 /**
- * Max rows per multi-row INSERT statement. 40 rows x 13 columns = 520 bound
+ * Max rows per multi-row INSERT statement. 40 rows x 16 columns = 640 bound
  * parameters — safely under SQLite's per-statement variable limit even for
  * builds compiled with the conservative legacy default of 999.
  */
@@ -322,7 +348,7 @@ export async function upsertRecipes(
     // -- Recipe rows: chunked multi-row INSERT OR REPLACE --------------------
     for (const batch of chunked(recipes, INSERT_CHUNK_SIZE)) {
       const placeholders = batch
-        .map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         .join(", ");
       const params: (string | number | null)[] = [];
       for (const recipe of batch) {
@@ -334,6 +360,11 @@ export async function upsertRecipes(
           recipe.image_url ?? null,
           JSON.stringify(recipe.ingredients ?? []),
           JSON.stringify(recipe.steps ?? []),
+          recipe.title_ar ?? null,
+          recipe.ingredients_ar == null
+            ? null
+            : JSON.stringify(recipe.ingredients_ar),
+          recipe.steps_ar == null ? null : JSON.stringify(recipe.steps_ar),
           recipe.publisher_time_minutes ?? null,
           recipe.community_avg_minutes ?? null,
           recipe.cleanup_avg_minutes ?? null,
@@ -349,6 +380,7 @@ export async function upsertRecipes(
       await db.runAsync(
         `INSERT INTO recipes
           (id, title, source_url, image_url, ingredients, steps,
+           title_ar, ingredients_ar, steps_ar,
            publisher_time_minutes, community_avg_minutes, cleanup_avg_minutes,
            cleanup_estimate_minutes, dish_count, grease_level, dishwasher_safe)
          VALUES ${placeholders}
@@ -356,6 +388,8 @@ export async function upsertRecipes(
            title=excluded.title, source_url=excluded.source_url,
            image_url=excluded.image_url, ingredients=excluded.ingredients,
            steps=excluded.steps,
+           title_ar=excluded.title_ar, ingredients_ar=excluded.ingredients_ar,
+           steps_ar=excluded.steps_ar,
            publisher_time_minutes=excluded.publisher_time_minutes,
            community_avg_minutes=excluded.community_avg_minutes,
            cleanup_avg_minutes=excluded.cleanup_avg_minutes,
@@ -391,7 +425,7 @@ export async function upsertRecipes(
       }
     }
     for (const batch of chunked(stepRows, INSERT_CHUNK_SIZE)) {
-      const placeholders = batch.map(() => "(?, ?, ?, ?, ?, ?, ?)").join(", ");
+      const placeholders = batch.map(() => "(?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
       const params: (string | number | null)[] = [];
       for (const { step, recipeId } of batch) {
         params.push(
@@ -399,6 +433,7 @@ export async function upsertRecipes(
           recipeId,
           step.step_number,
           step.description,
+          step.description_ar ?? null,
           step.step_type ?? null,
           step.publisher_minutes ?? null,
           step.community_minutes ?? null,
@@ -406,7 +441,7 @@ export async function upsertRecipes(
       }
       await db.runAsync(
         `INSERT OR REPLACE INTO recipe_steps
-          (id, recipe_id, step_number, description, step_type,
+          (id, recipe_id, step_number, description, description_ar, step_type,
            publisher_minutes, community_minutes)
          VALUES ${placeholders};`,
         params,
@@ -470,7 +505,11 @@ export async function getCachedRecipes(opts: {
   const rows: RecipeRow[] = search
     ? await db.getAllAsync<RecipeRow>(
         // Recipes with a photo surface first; alphabetical within each group.
-        `SELECT * FROM recipes WHERE title LIKE ? ORDER BY image_url IS NULL, title COLLATE NOCASE ASC;`,
+        // Search matches the English title OR the Arabic title (if present).
+        `SELECT * FROM recipes
+         WHERE title LIKE ? OR title_ar LIKE ?
+         ORDER BY image_url IS NULL, title COLLATE NOCASE ASC;`,
+        `%${search}%`,
         `%${search}%`,
       )
     : await db.getAllAsync<RecipeRow>(

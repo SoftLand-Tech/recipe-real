@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/videos/v2-dinner-league", "src/shared"]
+}

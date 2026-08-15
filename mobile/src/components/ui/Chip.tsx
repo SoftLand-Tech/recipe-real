@@ -39,7 +39,8 @@ export function Chip({ label, tone = "neutral", icon, size = "md" }: ChipProps) 
           alignSelf: "flex-start",
         },
         icon: {
-          marginRight: Space.xs,
+          // marginEnd so the gap follows the layout direction in RTL.
+          marginEnd: Space.xs,
         },
         label: {
           fontWeight: "600",

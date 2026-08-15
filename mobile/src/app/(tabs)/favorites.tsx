@@ -13,6 +13,7 @@ import { router, useFocusEffect } from "expo-router";
 import { track } from "@/analytics";
 import { getFavoriteIds, getFavoriteRecipes, toggleFavorite } from "@/db/database";
 import type { Recipe } from "@/types";
+import { useLocalizedRecipe, useT } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 import {
   Button,
@@ -40,6 +41,8 @@ export default function FavoritesScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const colors = useThemeColors();
+  const t = useT();
+  const lr = useLocalizedRecipe();
 
   // Tablet (width >= 768): two columns. Phones: one column. (Matches browse.)
   const numColumns = width >= 768 ? 2 : 1;
@@ -229,14 +232,20 @@ export default function FavoritesScreen() {
           </View>
           <View style={styles.cardBody}>
             <Text style={styles.cardTitle} numberOfLines={2}>
-              {item.title}
+              {lr.title(item)}
             </Text>
             <View style={styles.cardChips}>
-              <TimeChip minutes={item.community_avg_minutes} label="Focused" />
-              <TimeChip minutes={item.cleanup_avg_minutes} label="Cleanup" />
+              <TimeChip
+                minutes={item.community_avg_minutes}
+                label={t("common.focused")}
+              />
+              <TimeChip
+                minutes={item.cleanup_avg_minutes}
+                label={t("common.cleanup")}
+              />
               <Chip
                 tone="amber"
-                label={`${stepCount(item)} steps`}
+                label={t("common.stepCount", { n: stepCount(item) })}
                 size="sm"
               />
             </View>
@@ -261,8 +270,8 @@ export default function FavoritesScreen() {
       }
     >
       <ScreenHeader
-        title="Favorites"
-        subtitle="Cook again — your saved recipes"
+        title={t("tabs.favorites")}
+        subtitle={t("favorites.subtitle")}
       />
 
       {state === "loading" ? (
@@ -285,19 +294,19 @@ export default function FavoritesScreen() {
         </View>
       ) : state === "error" ? (
         <View style={styles.center}>
-          <Text style={styles.errorTitle}>Something went wrong</Text>
-          <Text style={styles.muted}>Could not load your favorites.</Text>
-          <Button title="Retry" onPress={load} style={styles.cta} />
+          <Text style={styles.errorTitle}>{t("common.somethingWentWrong")}</Text>
+          <Text style={styles.muted}>{t("favorites.couldNotLoad")}</Text>
+          <Button title={t("common.retry")} onPress={load} style={styles.cta} />
         </View>
       ) : favorites.length === 0 ? (
         <View style={styles.center}>
           <Text style={styles.emptyGlyph}>♡</Text>
-          <Text style={styles.emptyTitle}>No favorites yet</Text>
+          <Text style={styles.emptyTitle}>{t("favorites.emptyTitle")}</Text>
           <Text style={styles.emptyCaption}>
-            Tap the heart on any recipe to save it here.
+            {t("favorites.emptyCaption")}
           </Text>
           <Button
-            title="Browse recipes"
+            title={t("favorites.browseRecipes")}
             variant="primary"
             onPress={() => router.push("/browse")}
             style={styles.cta}

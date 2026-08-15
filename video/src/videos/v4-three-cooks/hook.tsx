@@ -25,10 +25,10 @@ const HookPanel: FC<{index: number}> = ({index}) => {
     easing: Easing.bezier(0.2, 0.9, 0.3, 1),
   });
   const shakeAmp = interpolate(f, [0, 5], [0.35, 1], CLAMP);
-  const tx = (random(`hook-x-${index}`, f) - 0.5) * 16 * shakeAmp;
-  const ty = (random(`hook-y-${index}`, f) - 0.5) * 12 * shakeAmp;
-  const rot = (random(`hook-r-${index}`, f) - 0.5) * 2 * shakeAmp;
-  const bubbleRot = (random(`hook-b-${index}`, f) - 0.5) * 5 * shakeAmp;
+  const tx = (random(`hook-x-${index}-${f}`) - 0.5) * 16 * shakeAmp;
+  const ty = (random(`hook-y-${index}-${f}`) - 0.5) * 12 * shakeAmp;
+  const rot = (random(`hook-r-${index}-${f}`) - 0.5) * 2 * shakeAmp;
+  const bubbleRot = (random(`hook-b-${index}-${f}`) - 0.5) * 5 * shakeAmp;
   const bubblePop = interpolate(f, [index * 2, index * 2 + 5], [0.5, 1], {
     ...CLAMP,
     easing: Easing.bezier(0.34, 1.56, 0.64, 1),

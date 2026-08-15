@@ -22,7 +22,9 @@ export function SectionHeader({ title, subtitle, action }: SectionHeaderProps) {
         },
         text: {
           flex: 1,
-          marginRight: Space.md,
+          // marginEnd (not marginRight): the gap must sit between the text and
+          // the trailing action on BOTH sides of the layout direction.
+          marginEnd: Space.md,
         },
         title: {
           ...Type.h3,

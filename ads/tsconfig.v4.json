@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/videos/v4-no-bars", "src/shared"]
+}

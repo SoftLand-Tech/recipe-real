@@ -1,24 +1,22 @@
 import { useMemo } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 
+import { useFmtMinutes } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
+
+// The pure formatter now lives in `@/i18n` (so screens and this chip share one
+// implementation); re-exported here to keep the `@/components/ui` barrel path
+// (`export { TimeChip, fmtMinutes } from "./TimeChip"`) working.
+export { fmtMinutes } from "@/i18n";
 
 export interface TimeChipProps {
   minutes: number | null;
   label?: string;
 }
 
-/** Format a minute count into a compact human string. */
-export function fmtMinutes(m: number): string {
-  if (!Number.isFinite(m) || m <= 0) return "0m";
-  if (m < 60) return `${Math.round(m)}m`;
-  const h = Math.floor(m / 60);
-  const rem = Math.round(m % 60);
-  return rem === 0 ? `${h}h` : `${h}h ${rem}m`;
-}
-
 export function TimeChip({ minutes, label }: TimeChipProps) {
   const colors = useThemeColors();
+  const fmt = useFmtMinutes();
   const styles = useMemo(
     () =>
       StyleSheet.create({
@@ -44,7 +42,7 @@ export function TimeChip({ minutes, label }: TimeChipProps) {
   );
 
   const hasTime = minutes != null && Number.isFinite(minutes);
-  const text = hasTime ? fmtMinutes(minutes as number) : "—";
+  const text = hasTime ? fmt(minutes as number) : "—";
 
   return (
     <View style={styles.base}>
@@ -59,7 +57,8 @@ export function TimeChip({ minutes, label }: TimeChipProps) {
 
 /** Small clock glyph; expo-symbols on native, a unicode fallback on web. */
 function Glyph({ tintColor }: { tintColor: string }) {
-  const glyphStyle = { marginRight: Space.xs };
+  // marginEnd (not marginRight) so the gap follows the layout direction in RTL.
+  const glyphStyle = { marginEnd: Space.xs };
   if (Platform.OS === "ios" || Platform.OS === "android") {
     try {
       const { SymbolView } = require("expo-symbols");

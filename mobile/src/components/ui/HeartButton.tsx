@@ -1,6 +1,7 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { StyleSheet } from "react-native";
 
+import { useLang } from "@/i18n";
 import { Radius, Space } from "@/theme";
 
 import { IconPressable } from "./IconPressable";
@@ -19,8 +20,12 @@ const DIMENSIONS = { sm: 30, lg: 38 } as const;
  * photos, so it's always a dark translucent circle: white outline heart when
  * unfavored, red filled heart when favored. Pressed feedback: instant opacity
  * dim (IconPressable).
+ *
+ * Anchored to the physical top-end corner: `left`/`right` don't flip in RTL,
+ * so the side is chosen from the resolved layout direction.
  */
 export function HeartButton({ favorited, onPress, size = "sm" }: HeartButtonProps) {
+  const { dir } = useLang();
   const dim = DIMENSIONS[size];
   return (
     <IconPressable
@@ -28,6 +33,7 @@ export function HeartButton({ favorited, onPress, size = "sm" }: HeartButtonProp
       hitSlop={8}
       style={[
         styles.base,
+        dir === "rtl" ? styles.baseRtl : styles.baseLtr,
         {
           width: dim,
           height: dim,
@@ -48,9 +54,14 @@ const styles = StyleSheet.create({
   base: {
     position: "absolute",
     top: Space.sm,
-    right: Space.sm,
     backgroundColor: "rgba(0,0,0,0.35)",
     alignItems: "center",
     justifyContent: "center",
+  },
+  baseLtr: {
+    right: Space.sm,
+  },
+  baseRtl: {
+    left: Space.sm,
   },
 });

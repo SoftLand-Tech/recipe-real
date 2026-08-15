@@ -22,6 +22,7 @@ import {
   seedCacheRemainingPages,
 } from "@/db/database";
 import type { Recipe } from "@/types";
+import { useLang, useLocalizedRecipe, useT } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 import {
   Card,
@@ -74,6 +75,7 @@ function recipesFingerprint(list: Recipe[]): string {
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
+  const t = useT();
 
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [state, setState] = useState<LoadState>("loading");
@@ -236,12 +238,12 @@ export default function HomeScreen() {
     } catch (error) {
       console.warn("[RecipeReal] home loadFromCache failed:", error);
       setErrorMessage(
-        error instanceof Error ? error.message : "Failed to load recipes.",
+        error instanceof Error ? error.message : t("common.loadFailedRecipes"),
       );
       setState("error");
       return false;
     }
-  }, [continueSeedInBackground, recipes, setRecipesIfChanged]);
+  }, [continueSeedInBackground, recipes, setRecipesIfChanged, t]);
 
   useEffect(() => {
     track("home_viewed");
@@ -304,7 +306,7 @@ export default function HomeScreen() {
       >
         <ScreenHeader
           title="RecipeReal"
-          subtitle="Honest cook times, verified by real cooks"
+          subtitle={t("home.tagline")}
         />
 
         {showSkeletons && (
@@ -314,12 +316,12 @@ export default function HomeScreen() {
         {state === "error" && (
           <View style={styles.center}>
             <Text style={styles.emptyGlyph}>🍲</Text>
-            <Text style={styles.errorTitle}>Something went wrong</Text>
+            <Text style={styles.errorTitle}>{t("common.somethingWentWrong")}</Text>
             <Text style={styles.muted}>
-              {errorMessage ?? "Could not load recipes."}
+              {errorMessage ?? t("common.couldNotLoadRecipes")}
             </Text>
             <Pressable style={styles.retry} onPress={loadFromCache}>
-              <Text style={styles.retryText}>Retry</Text>
+              <Text style={styles.retryText}>{t("common.retry")}</Text>
             </Pressable>
           </View>
         )}
@@ -327,23 +329,23 @@ export default function HomeScreen() {
         {state === "ready" && recipes.length === 0 && (
           <View style={styles.center}>
             <Text style={styles.emptyGlyph}>🍳</Text>
-            <Text style={styles.muted}>No recipes available yet.</Text>
+            <Text style={styles.muted}>{t("common.emptyRecipes")}</Text>
             <Pressable style={styles.retry} onPress={loadFromCache}>
-              <Text style={styles.retryText}>Retry</Text>
+              <Text style={styles.retryText}>{t("common.retry")}</Text>
             </Pressable>
           </View>
         )}
 
         {state === "ready" && recipes.length > 0 && (
           <>
-            <HomeRail title="Top picks today" items={topPicks} />
-            <HomeRail title="Easy wins" items={easyWins} />
+            <HomeRail title={t("home.topPicks")} items={topPicks} />
+            <HomeRail title={t("home.easyWins")} items={easyWins} />
             <HomeRail
-              title="Hands-off heroes"
-              subtitle="Mostly simmering, minimal stirring"
+              title={t("home.handsOffHeroes")}
+              subtitle={t("home.handsOffSubtitle")}
               items={handsOffHeroes}
             />
-            <HomeRail title="Quick cleanup" items={quickCleanup} />
+            <HomeRail title={t("home.quickCleanup")} items={quickCleanup} />
             <CategoryRail onCategoryPress={handleCategoryPress} />
           </>
         )}
@@ -361,12 +363,18 @@ export default function HomeScreen() {
  */
 function SeeAllAction() {
   const colors = useThemeColors();
+  const { dir } = useLang();
+  const t = useT();
   const styles = useMemo(
     () =>
       StyleSheet.create({
         pressable: {
           paddingVertical: Space.xs,
-          paddingLeft: Space.sm,
+          // Extra hit area toward the section text (the reading start side):
+          // paddingLeft/paddingRight don't flip, so pick per direction.
+          ...(dir === "rtl"
+            ? { paddingRight: Space.sm }
+            : { paddingLeft: Space.sm }),
         },
         label: {
           ...Type.caption,
@@ -374,7 +382,7 @@ function SeeAllAction() {
           fontWeight: "600",
         },
       }),
-    [colors],
+    [colors, dir],
   );
   return (
     <Pressable
@@ -382,7 +390,7 @@ function SeeAllAction() {
       hitSlop={8}
       style={styles.pressable}
     >
-      <Text style={styles.label}>See all</Text>
+      <Text style={styles.label}>{t("common.seeAll")}</Text>
     </Pressable>
   );
 }
@@ -390,6 +398,8 @@ function SeeAllAction() {
 /** Compact rail card: hero image, 2-line title, community time chip. */
 function HomeCard({ item }: { item: Recipe }) {
   const colors = useThemeColors();
+  const t = useT();
+  const lr = useLocalizedRecipe();
   const styles = useMemo(
     () =>
       StyleSheet.create({
@@ -418,9 +428,9 @@ function HomeCard({ item }: { item: Recipe }) {
       <HeroImage uri={item.image_url} height={110} rounded={Radius.lg} />
       <View style={styles.body}>
         <Text style={styles.title} numberOfLines={2}>
-          {item.title}
+          {lr.title(item)}
         </Text>
-        <TimeChip minutes={item.community_avg_minutes} label="Focused" />
+        <TimeChip minutes={item.community_avg_minutes} label={t("common.focused")} />
       </View>
     </Card>
   );
@@ -476,6 +486,7 @@ function CategoryRail({
 }: {
   onCategoryPress: (id: string, label: string) => void;
 }) {
+  const t = useT();
   const styles = useMemo(
     () =>
       StyleSheet.create({
@@ -496,7 +507,7 @@ function CategoryRail({
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeaderPad}>
-        <SectionHeader title="Browse by craving" />
+        <SectionHeader title={t("home.browseByCraving")} />
       </View>
       <ScrollView
         horizontal
@@ -508,7 +519,7 @@ function CategoryRail({
             key={category.id}
             onPress={() => onCategoryPress(category.id, category.label)}
           >
-            <Chip label={category.label} />
+            <Chip label={t(`cat.${category.id}`)} />
           </Pressable>
         ))}
       </ScrollView>
@@ -518,6 +529,7 @@ function CategoryRail({
 
 /** Loading placeholder: four skeleton cards in a rail shape. */
 function SkeletonRail() {
+  const t = useT();
   const styles = useMemo(
     () =>
       StyleSheet.create({
@@ -540,7 +552,7 @@ function SkeletonRail() {
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeaderPad}>
-        <SectionHeader title="Top picks today" />
+        <SectionHeader title={t("home.topPicks")} />
       </View>
       <FlatList
         horizontal

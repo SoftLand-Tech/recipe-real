@@ -10,3 +10,7 @@ Artisan::command('inspire', function () {
 
 // Retention: analytics events are only kept for 90 days.
 Schedule::command('recipereal:prune-events')->daily();
+
+// Arabic translations: nightly after the analytics prune (MyMemory's free
+// daily quota resets overnight).
+Schedule::command('recipereal:translate-ar')->daily()->at('02:00');

@@ -24,7 +24,15 @@ import {
   getPendingCookSessionCount,
   upsertRecipes,
 } from "@/db/database";
-import { Button, Badge, Chip, Card, IconPressable, StepDots, fmtMinutes } from "@/components/ui";
+import { Button, Badge, Chip, Card, IconPressable, StepDots } from "@/components/ui";
+import {
+  useFmtMinutes,
+  useLang,
+  useLocalizedRecipe,
+  useT,
+  stepTypeLabel,
+  type TranslateFn,
+} from "@/i18n";
 import { Radius, Shadow, Space, Type, useThemeColors } from "@/theme";
 import { getNudgePref } from "@/utils/prefs";
 import type {
@@ -84,10 +92,14 @@ async function ensureNotifPermission(): Promise<boolean> {
 }
 
 /** Friendly nudge copy: community estimate + a short step snippet. */
-function nudgeBody(minutes: number, description: string): string {
+function nudgeBody(
+  t: TranslateFn,
+  minutes: number,
+  description: string,
+): string {
   const snippet =
     description.length > 30 ? `${description.slice(0, 30)}…` : description;
-  return `~${minutes} min passed — '${snippet}' is usually ready. Check on it.`;
+  return t("cook.nudgeBody", { n: minutes, snippet });
 }
 
 export default function CookModeScreen() {
@@ -97,6 +109,10 @@ export default function CookModeScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
+  const t = useT();
+  const { dir } = useLang();
+  const fmtMin = useFmtMinutes();
+  const lr = useLocalizedRecipe();
 
   // Theme-aware styles: rebuilt only when the resolved palette changes.
   const styles = useMemo(
@@ -149,7 +165,9 @@ export default function CookModeScreen() {
           ...Type.bodySm,
           color: colors.inkFaint,
           maxWidth: 120,
-          textAlign: "right",
+          // Trailing-edge alignment (right in LTR, left in RTL) — the title
+          // sits at the end of the header row in both directions.
+          textAlign: dir === "rtl" ? "left" : "right",
           flexShrink: 1,
         },
         // Dots
@@ -188,7 +206,8 @@ export default function CookModeScreen() {
           fontSize: 17,
           lineHeight: 24,
           color: colors.ink,
-          textAlign: "left",
+          // Default "auto" alignment follows the layout direction.
+          textAlign: "auto",
         },
         // Footer
         footer: {
@@ -289,7 +308,7 @@ export default function CookModeScreen() {
           textAlign: "center",
         },
       }),
-    [colors],
+    [colors, dir],
   );
 
   const [recipe, setRecipe] = useState<Recipe | null>(null);
@@ -312,6 +331,9 @@ export default function CookModeScreen() {
 
   const [phase, setPhase] = useState<Phase>("cooking");
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
+  // Whether submitMsg is an ERROR message (drives the done-screen color; the
+  // old `startsWith("Could not")` check doesn't survive translation).
+  const [submitFailed, setSubmitFailed] = useState(false);
 
   const steps: RecipeStep[] = useMemo(
     () => recipe?.recipe_steps ?? [],
@@ -343,11 +365,11 @@ export default function CookModeScreen() {
     } catch (error) {
       console.warn("[RecipeReal] cook loadRecipe failed:", error);
       setErrorMessage(
-        error instanceof Error ? error.message : "Failed to load recipe.",
+        error instanceof Error ? error.message : t("common.loadFailedRecipe"),
       );
       setLoadState("error");
     }
-  }, [id]);
+  }, [id, t]);
 
   useEffect(() => {
     loadRecipe();
@@ -423,7 +445,7 @@ export default function CookModeScreen() {
         if (!(await ensureNotifPermission())) return;
         const nudgeId = await scheduleMinuteNotification(
           "RecipeReal",
-          nudgeBody(minutes, step.description),
+          nudgeBody(t, minutes, lr.stepDescription(step)),
           minutes,
         );
         if (!nudgeId) return;
@@ -437,7 +459,7 @@ export default function CookModeScreen() {
         // Scheduling is best-effort; never block the cook.
       }
     },
-    [cancelNudge],
+    [cancelNudge, t, lr],
   );
 
   /** Arm a nudge for step `i` if it's a passive step with a community time. */
@@ -574,6 +596,7 @@ export default function CookModeScreen() {
       });
       setPhase("submitting");
       setSubmitMsg(null);
+      setSubmitFailed(false);
       // Lazily mint one idempotency key per cook session; it is stable across
       // retries (offline queue stores the whole payload as JSON, key included).
       if (!idempotencyKey.current) idempotencyKey.current = makeId();
@@ -615,14 +638,15 @@ export default function CookModeScreen() {
       }
       setSubmitMsg(
         outcome === "error"
-          ? "Could not save. Please try again later."
+          ? t("cook.saveFailed")
           : outcome === "queued"
-            ? "Saved — will sync when online."
-            : "Saved.",
+            ? t("cook.savedQueued")
+            : t("cook.saved"),
       );
+      setSubmitFailed(outcome === "error");
       setPhase("done");
     },
-    [recipe, summary],
+    [recipe, summary, t],
   );
 
   const finish = useCallback(() => {
@@ -635,7 +659,7 @@ export default function CookModeScreen() {
       <View style={styles.fullScreen}>
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={styles.muted}>Loading recipe…</Text>
+          <Text style={styles.muted}>{t("common.loadingRecipe")}</Text>
         </View>
       </View>
     );
@@ -645,11 +669,15 @@ export default function CookModeScreen() {
     return (
       <View style={styles.fullScreen}>
         <View style={styles.center}>
-          <Text style={styles.errorTitle}>Something went wrong</Text>
+          <Text style={styles.errorTitle}>{t("common.somethingWentWrong")}</Text>
           <Text style={styles.muted}>
-            {errorMessage ?? "Could not load this recipe."}
+            {errorMessage ?? t("common.couldNotLoadRecipe")}
           </Text>
-          <Button title="Retry" onPress={loadRecipe} style={styles.retryBtn} />
+          <Button
+            title={t("common.retry")}
+            onPress={loadRecipe}
+            style={styles.retryBtn}
+          />
         </View>
       </View>
     );
@@ -664,9 +692,7 @@ export default function CookModeScreen() {
           </IconPressable>
         </View>
         <View style={styles.center}>
-          <Text style={styles.muted}>
-            This recipe has no steps to cook yet.
-          </Text>
+          <Text style={styles.muted}>{t("cook.noSteps")}</Text>
         </View>
       </View>
     );
@@ -686,7 +712,7 @@ export default function CookModeScreen() {
         ]}
       >
         <View style={styles.feedbackWrap}>
-          <Text style={styles.feedbackTitle}>You cooked it!</Text>
+          <Text style={styles.feedbackTitle}>{t("cook.youCooked")}</Text>
 
           <View style={styles.feedbackStatsRow}>
             <View
@@ -696,9 +722,11 @@ export default function CookModeScreen() {
               ]}
             >
               <Text style={[styles.totalPillValue, { color: colors.accent }]}>
-                {fmtMinutes(summary.total_actual_minutes)}
+                {fmtMin(summary.total_actual_minutes)}
               </Text>
-              <Text style={styles.totalPillLabel}>total cooked</Text>
+              <Text style={styles.totalPillLabel}>
+                {t("cook.totalCooked")}
+              </Text>
             </View>
             {summary.cleanup_minutes != null ? (
               <View
@@ -710,23 +738,25 @@ export default function CookModeScreen() {
                 <Text
                   style={[styles.totalPillValue, { color: colors.inkSecondary }]}
                 >
-                  {fmtMinutes(summary.cleanup_minutes)}
+                  {fmtMin(summary.cleanup_minutes)}
                 </Text>
-                <Text style={styles.totalPillLabel}>cleanup</Text>
+                <Text style={styles.totalPillLabel}>
+                  {t("common.cleanup")}
+                </Text>
               </View>
             ) : null}
           </View>
 
           {cleanupEstimate != null ? (
             <Text style={styles.cleanupEstimate}>
-              Cleanup estimate: ~{Math.round(cleanupEstimate)} min
+              {t("cook.cleanupEstimate", { n: Math.round(cleanupEstimate) })}
             </Text>
           ) : null}
 
           {phase !== "done" ? (
             <>
               <Text style={styles.feedbackPrompt}>
-                How did it feel vs. the estimate?
+                {t("cook.feedbackPrompt")}
               </Text>
               <View style={styles.feedbackButtons}>
                 <Card
@@ -738,7 +768,7 @@ export default function CookModeScreen() {
                   ]}
                 >
                   <Text style={[styles.feedbackCardText, { color: colors.success }]}>
-                    Faster
+                    {t("cook.faster")}
                   </Text>
                 </Card>
                 <Card
@@ -758,7 +788,7 @@ export default function CookModeScreen() {
                       { color: colors.stepTones.active.fg },
                     ]}
                   >
-                    As expected
+                    {t("cook.asExpected")}
                   </Text>
                 </Card>
                 <Card
@@ -770,7 +800,7 @@ export default function CookModeScreen() {
                   ]}
                 >
                   <Text style={[styles.feedbackCardText, { color: colors.danger }]}>
-                    Slower
+                    {t("cook.slower")}
                   </Text>
                 </Card>
               </View>
@@ -781,7 +811,7 @@ export default function CookModeScreen() {
                 <Text
                   style={[
                     styles.savedMsg,
-                    submitMsg.startsWith("Could not")
+                    submitFailed
                       ? { color: colors.danger }
                       : { color: colors.success },
                   ]}
@@ -789,17 +819,26 @@ export default function CookModeScreen() {
                   {submitMsg}
                 </Text>
               ) : null}
-              <Button title="Done" onPress={finish} fullWidth size="lg" />
+              <Button
+                title={t("cook.done")}
+                onPress={finish}
+                fullWidth
+                size="lg"
+              />
             </View>
           )}
 
           {submitting ? (
             <View style={styles.submittingRow}>
               <ActivityIndicator color={colors.accent} size="small" />
-              <Text style={styles.muted}>Saving…</Text>
+              <Text style={styles.muted}>{t("cook.saving")}</Text>
             </View>
           ) : phase !== "done" ? (
-            <Button title="Skip" variant="ghost" onPress={() => handleSubmit(null)} />
+            <Button
+              title={t("cook.skip")}
+              variant="ghost"
+              onPress={() => handleSubmit(null)}
+            />
           ) : null}
         </View>
       </View>
@@ -822,12 +861,12 @@ export default function CookModeScreen() {
 
   const statusHint =
     tState === "idle"
-      ? "Press Start when you begin this step"
+      ? t("cook.hintIdle")
       : tState === "running"
-        ? "Timing…"
+        ? t("cook.hintRunning")
         : tState === "paused"
-          ? "Paused"
-          : "Step complete";
+          ? t("cook.hintPaused")
+          : t("cook.hintDone");
 
   return (
     <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
@@ -837,10 +876,13 @@ export default function CookModeScreen() {
           <Text style={styles.closeGlyph}>✕</Text>
         </IconPressable>
         <Text style={styles.overline}>
-          {`STEP ${currentIndex + 1} / ${steps.length}`}
+          {t("cook.stepOf", {
+            current: currentIndex + 1,
+            total: steps.length,
+          })}
         </Text>
         <Text style={styles.headerTitle} numberOfLines={1}>
-          {recipe.title}
+          {lr.title(recipe)}
         </Text>
       </View>
 
@@ -858,12 +900,14 @@ export default function CookModeScreen() {
       <View key={currentIndex} style={styles.stepBody}>
         <View style={styles.stepMetaRow}>
           <Badge
-            label={(step.step_type || "active").toUpperCase()}
+            label={stepTypeLabel(t, step.step_type || "active")}
             stepType={step.step_type}
           />
           <Chip
             tone="amber"
-            label={`~${fmtMinutes(step.community_minutes ?? 0)} est`}
+            label={t("cook.estChip", {
+              time: fmtMin(step.community_minutes ?? 0),
+            })}
             size="sm"
           />
         </View>
@@ -874,7 +918,9 @@ export default function CookModeScreen() {
         <Text style={styles.statusHint}>{statusHint}</Text>
 
         <Card style={styles.descCard} padding={Space.xl} shadow="card">
-          <Text style={styles.stepDescription}>{step.description}</Text>
+          <Text style={styles.stepDescription}>
+            {lr.stepDescription(step)}
+          </Text>
         </Card>
       </View>
 
@@ -890,7 +936,7 @@ export default function CookModeScreen() {
       >
         {tState === "idle" ? (
           <Button
-            title="Start timer"
+            title={t("cook.startTimer")}
             variant="primary"
             size="lg"
             fullWidth
@@ -898,7 +944,7 @@ export default function CookModeScreen() {
           />
         ) : tState === "running" ? (
           <Button
-            title="Pause"
+            title={t("cook.pause")}
             variant="secondary"
             size="lg"
             fullWidth
@@ -906,19 +952,25 @@ export default function CookModeScreen() {
           />
         ) : tState === "paused" ? (
           <Button
-            title="Resume"
+            title={t("cook.resume")}
             variant="primary"
             size="lg"
             fullWidth
             onPress={() => resumeTimer(currentIndex)}
           />
         ) : (
-          <Button title="Done ✓" variant="ghost" size="lg" fullWidth disabled />
+          <Button
+            title={t("cook.stepDone")}
+            variant="ghost"
+            size="lg"
+            fullWidth
+            disabled
+          />
         )}
 
         <View style={styles.navRow}>
           <Button
-            title="Previous"
+            title={t("cook.previous")}
             variant="ghost"
             size="md"
             disabled={currentIndex === 0}
@@ -928,7 +980,11 @@ export default function CookModeScreen() {
               button stretches without the Android paint-collapse quirk. */}
           <View style={styles.navNextBtn}>
             <Button
-              title={currentIndex === steps.length - 1 ? "Finish" : "Next"}
+              title={
+                currentIndex === steps.length - 1
+                  ? t("cook.finish")
+                  : t("cook.next")
+              }
               variant="primary"
               size="lg"
               fullWidth

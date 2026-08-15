@@ -58,7 +58,7 @@ const mouthOpenness = (f: number, speaking: Window2 | undefined, seed: string): 
     interpolate(f, [speaking[1] - 4, speaking[1]], [1, 0], CLAMP),
   );
   if (gate <= 0) return 0.1;
-  return 0.1 + 0.88 * gate * random(seed, f);
+  return 0.1 + 0.88 * gate * random(`${seed}-${f}`);
 };
 
 /** 0..1 nod amplitude across the active nod windows. */

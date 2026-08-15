@@ -27,9 +27,13 @@ class DatabaseSeeder extends Seeder
             );
         }
 
-        // The product: the hand-curated recipe catalogue.
-        $this->call([
-            RecipeSeeder::class,
-        ]);
+        // The product: the hand-curated recipe catalogue. Local only:
+        // production now runs on the Food.com import, and the 200 seeded
+        // recipes are being purged from prod separately.
+        if (app()->environment('local')) {
+            $this->call([
+                RecipeSeeder::class,
+            ]);
+        }
     }
 }

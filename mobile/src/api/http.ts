@@ -94,6 +94,7 @@ export const toNum = (v: unknown): number | null =>
 export function normalizeStep(s: any): RecipeStep {
   return {
     ...s,
+    description_ar: s?.description_ar ?? null,
     publisher_minutes: toNum(s.publisher_minutes),
     community_minutes: toNum(s.community_minutes),
   };
@@ -116,6 +117,12 @@ export function normalizeRecipe(r: any): Recipe {
       r?.image_url && String(r.image_url).trim()
         ? String(r.image_url).trim()
         : null,
+    // Arabic content columns: always present, null when untranslated. The
+    // array fields are parsed HERE (network path); the SQLite cache layer
+    // serializes/re-parses them like `ingredients`/`steps`.
+    title_ar: r?.title_ar ?? null,
+    ingredients_ar: Array.isArray(r?.ingredients_ar) ? r.ingredients_ar : null,
+    steps_ar: Array.isArray(r?.steps_ar) ? r.steps_ar : null,
     publisher_time_minutes: toNum(r.publisher_time_minutes),
     community_avg_minutes: toNum(r.community_avg_minutes),
     cleanup_avg_minutes: toNum(r.cleanup_avg_minutes),

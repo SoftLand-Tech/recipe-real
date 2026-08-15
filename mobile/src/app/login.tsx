@@ -13,6 +13,7 @@ import * as WebBrowser from "expo-web-browser";
 
 import { loginWithGoogle } from "@/api/client";
 import { track } from "@/analytics";
+import { useT, type TranslateFn } from "@/i18n";
 import {
   MaxContentWidth,
   Space,
@@ -56,16 +57,17 @@ function resolveProxyRedirectUri(): string | null {
 }
 
 /** Map a failed Google sign-in API call to a friendly, inline-safe message. */
-function friendlyError(e: unknown): string {
+function friendlyError(e: unknown, t: TranslateFn): string {
   if (axios.isAxiosError(e)) {
-    if (e.response) return "Something went wrong. Please try again.";
-    return "Couldn't reach the server. Check your connection and try again.";
+    if (e.response) return t("login.errGeneric");
+    return t("login.errOffline");
   }
-  return "Something went wrong. Please try again.";
+  return t("login.errGeneric");
 }
 
 export default function LoginScreen() {
   const colors = useThemeColors();
+  const t = useT();
   const [googleBusy, setGoogleBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -148,11 +150,11 @@ export default function LoginScreen() {
     setError(null);
 
     if (!googleClientId) {
-      setError("Google sign-in isn't configured yet (missing Web Client ID).");
+      setError(t("login.errNotConfigured"));
       return;
     }
     if (!request || !proxyRedirectUri) {
-      setError("Google sign-in isn't ready yet. Please try again in a moment.");
+      setError(t("login.errNotReady"));
       return;
     }
 
@@ -180,13 +182,13 @@ export default function LoginScreen() {
 
       const parsed = request.parseReturnUrl(result.url);
       if (parsed.type !== "success") {
-        setError("Google sign-in didn't complete. Please try again.");
+        setError(t("login.errNotComplete"));
         return;
       }
 
       const idToken = parsed.params?.id_token;
       if (!idToken) {
-        setError("Google sign-in didn't return an ID token. Please try again.");
+        setError(t("login.errNoToken"));
         return;
       }
 
@@ -194,7 +196,7 @@ export default function LoginScreen() {
       track("signed_in", { method: "google" });
       navigateAfterAuth();
     } catch (e) {
-      setError(friendlyError(e));
+      setError(friendlyError(e, t));
     } finally {
       setGoogleBusy(false);
     }
@@ -204,7 +206,7 @@ export default function LoginScreen() {
     <View style={styles.container}>
       <Stack.Screen
         options={{
-          title: "Sign in",
+          title: t("stack.signIn"),
           headerStyle: { backgroundColor: colors.canvas },
           headerTintColor: colors.ink,
         }}
@@ -212,15 +214,13 @@ export default function LoginScreen() {
       <View style={styles.body}>
         <View style={styles.column}>
           <View style={styles.heading}>
-            <Text style={styles.headline}>Welcome back</Text>
-            <Text style={styles.subtext}>
-              Sign in to track your pace and sync your cook sessions.
-            </Text>
+            <Text style={styles.headline}>{t("login.welcome")}</Text>
+            <Text style={styles.subtext}>{t("login.subtext")}</Text>
           </View>
 
           <View style={styles.actions}>
             <Button
-              title="Continue with Google"
+              title={t("login.continueGoogle")}
               variant="primary"
               size="lg"
               fullWidth
@@ -228,9 +228,7 @@ export default function LoginScreen() {
               onPress={handleGoogle}
               loading={googleBusy}
             />
-            <Text style={styles.caption}>
-              Sign in with Google — no password needed.
-            </Text>
+            <Text style={styles.caption}>{t("login.googleCaption")}</Text>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
           </View>
         </View>
@@ -252,7 +250,8 @@ function GoogleGlyph() {
           backgroundColor: colors.surface,
           alignItems: "center",
           justifyContent: "center",
-          marginRight: Space.sm,
+          // marginEnd so the gap follows the layout direction in RTL.
+          marginEnd: Space.sm,
         },
         badgeText: {
           fontSize: 13,

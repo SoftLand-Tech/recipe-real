@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/videos/v3-patch-notes", "src/shared"]
+}

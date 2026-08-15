@@ -12,3 +12,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local-only: raw Food.com dataset (1.5GB) + tool artifacts
+recipes-dataset/
+.freebuff/

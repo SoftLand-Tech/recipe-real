@@ -21,6 +21,12 @@ class RecipeResource extends JsonResource
             'title' => $this->title,
             'source_url' => $this->source_url,
             'image_url' => $this->image_url,
+            // Arabic translations, raw passthrough (null when untranslated):
+            // the client picks title_ar ?? title at render — no server-side
+            // field swapping, so offline caching stays simple.
+            'title_ar' => $this->title_ar,
+            'ingredients_ar' => $this->ingredients_ar,
+            'steps_ar' => $this->steps_ar,
             'ingredients' => $this->ingredients,
             'steps' => $this->steps,
             'publisher_time_minutes' => $this->publisher_time_minutes,

@@ -17,6 +17,7 @@ import {
 } from "@/api/client";
 import { track } from "@/analytics";
 import type { BillingPlan } from "@/types";
+import { useT } from "@/i18n";
 import {
   MaxContentWidth,
   Space,
@@ -28,25 +29,26 @@ import { Button, Card, Chip } from "@/components/ui";
 const PLANS: {
   plan: BillingPlan;
   price: string;
-  cadence: string;
-  note?: string;
+  cadenceKey: string;
+  noteKey?: string;
 }[] = [
   {
     plan: "monthly",
     price: "$5.99",
-    cadence: "/ month",
+    cadenceKey: "upgrade.perMonth",
   },
   {
     plan: "yearly",
     price: "$49.99",
-    cadence: "/ year",
-    note: "save ~30%",
+    cadenceKey: "upgrade.perYear",
+    noteKey: "upgrade.save30",
   },
 ];
 
 export default function UpgradeScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
+  const t = useT();
 
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [pendingPlan, setPendingPlan] = useState<BillingPlan | null>(null);
@@ -157,7 +159,7 @@ export default function UpgradeScreen() {
     } catch (e) {
       // 503 = billing not configured on the backend; anything else is still a
       // "can't reach checkout right now" state for the user.
-      setError("Billing isn't available yet.");
+      setError(t("upgrade.errBilling"));
     } finally {
       setPendingPlan(null);
     }
@@ -173,7 +175,7 @@ export default function UpgradeScreen() {
       }
     } catch {
       // Best-effort: don't block the user on portal failures.
-      setError("Couldn't open subscription management right now.");
+      setError(t("upgrade.errPortal"));
     } finally {
       setPortalPending(false);
     }
@@ -198,17 +200,14 @@ export default function UpgradeScreen() {
       ]}
     >
       <View style={styles.columnWrap}>
-        <Text style={styles.title}>Upgrade to Premium</Text>
-        <Text style={styles.subtitle}>
-          Unlock unlimited recipes, personalized pace calibration, and cleanup
-          estimates.
-        </Text>
+        <Text style={styles.title}>{t("upgrade.headline")}</Text>
+        <Text style={styles.subtitle}>{t("upgrade.subtitle")}</Text>
 
         {authed === false ? (
           <Card style={styles.loginCard}>
-            <Text style={styles.loginText}>Log in to subscribe.</Text>
+            <Text style={styles.loginText}>{t("upgrade.loginPrompt")}</Text>
             <Button
-              title="Sign in"
+              title={t("common.signIn")}
               size="lg"
               fullWidth
               onPress={() => router.push("/login")}
@@ -216,25 +215,27 @@ export default function UpgradeScreen() {
           </Card>
         ) : (
           <View style={styles.plans}>
-            <Chip label="Subscriptions coming soon" tone="amber" />
-            {PLANS.map(({ plan, price, cadence, note }) => {
+            <Chip label={t("upgrade.comingSoon")} tone="amber" />
+            {PLANS.map(({ plan, price, cadenceKey, noteKey }) => {
               const busy = pendingPlan === plan;
               return (
                 <Card key={plan} style={styles.planCard}>
                   <View style={styles.planHeader}>
                     <Text style={styles.planName}>
-                      {plan === "yearly" ? "Yearly" : "Monthly"}
+                      {plan === "yearly"
+                        ? t("upgrade.yearly")
+                        : t("upgrade.monthly")}
                     </Text>
-                    {note ? (
-                      <Chip label={note} tone="success" size="sm" />
+                    {noteKey ? (
+                      <Chip label={t(noteKey)} tone="success" size="sm" />
                     ) : null}
                   </View>
                   <Text style={styles.planPrice}>
                     {price}
-                    <Text style={styles.planCadence}> {cadence}</Text>
+                    <Text style={styles.planCadence}> {t(cadenceKey)}</Text>
                   </Text>
                   <Button
-                    title="Subscribe"
+                    title={t("upgrade.subscribe")}
                     variant="primary"
                     size="lg"
                     fullWidth
@@ -251,7 +252,7 @@ export default function UpgradeScreen() {
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
         <Button
-          title={portalPending ? "Loading…" : "Manage subscription"}
+          title={portalPending ? t("upgrade.loading") : t("upgrade.manage")}
           variant="ghost"
           onPress={handleManage}
           disabled={portalPending || authed === false}

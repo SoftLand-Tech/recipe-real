@@ -37,6 +37,15 @@ import {
   useThemeColors,
 } from "@/theme";
 import {
+  greaseLevelLabel,
+  stepTypeLabel,
+  useFmtMinutes,
+  useLang,
+  useLocalizedRecipe,
+  useT,
+  type TranslateFn,
+} from "@/i18n";
+import {
   Badge,
   Button,
   Card,
@@ -46,7 +55,6 @@ import {
   SectionHeader,
   StatPill,
   TimeChip,
-  fmtMinutes,
 } from "@/components/ui";
 
 type LoadState = "loading" | "ready" | "error" | "paywall";
@@ -55,12 +63,6 @@ type LoadState = "loading" | "ready" | "error" | "paywall";
 function roundMin(value: number | null | undefined): number | null {
   if (value == null) return null;
   return Math.round(value);
-}
-
-/** Capitalize the first letter (e.g. grease level "medium" -> "Medium"). */
-function capitalize(value: string): string {
-  if (!value) return value;
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 /** Formats a Date as a short local clock string, e.g. "7:04 PM". */
@@ -80,17 +82,24 @@ function formatClock(date: Date): string {
  * Build the cleanup-burden chip labels from the factors object. Each entry is
  * only included when its underlying value is non-null.
  */
-function cleanupChips(factors: CleanupFactors | undefined): string[] {
+function cleanupChips(
+  t: TranslateFn,
+  factors: CleanupFactors | undefined,
+): string[] {
   if (!factors) return [];
   const chips: string[] = [];
   if (factors.dish_count != null) {
-    chips.push(`${Math.round(factors.dish_count)} dishes`);
+    chips.push(t("detail.dishes", { n: Math.round(factors.dish_count) }));
   }
   if (factors.grease_level) {
-    chips.push(capitalize(factors.grease_level));
+    chips.push(greaseLevelLabel(t, factors.grease_level));
   }
   if (factors.dishwasher_safe != null) {
-    chips.push(factors.dishwasher_safe ? "Dishwasher-safe" : "Hand-wash");
+    chips.push(
+      factors.dishwasher_safe
+        ? t("detail.dishwasherSafe")
+        : t("detail.handWash"),
+    );
   }
   return chips;
 }
@@ -99,6 +108,10 @@ export default function RecipeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
+  const t = useT();
+  const { dir } = useLang();
+  const fmtMin = useFmtMinutes();
+  const lr = useLocalizedRecipe();
 
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [state, setState] = useState<LoadState>("loading");
@@ -164,7 +177,9 @@ export default function RecipeDetailScreen() {
         },
         backButton: {
           position: "absolute",
-          left: Space.lg,
+          // Physical left/right don't flip in RTL — pick the side per dir so
+          // back stays at the reading-start edge, favorite at the far edge.
+          ...(dir === "rtl" ? { right: Space.lg } : { left: Space.lg }),
           width: 38,
           height: 38,
           borderRadius: Radius.pill,
@@ -182,7 +197,7 @@ export default function RecipeDetailScreen() {
         },
         favButton: {
           position: "absolute",
-          right: Space.lg,
+          ...(dir === "rtl" ? { left: Space.lg } : { right: Space.lg }),
           width: 38,
           height: 38,
           borderRadius: Radius.pill,
@@ -337,7 +352,9 @@ export default function RecipeDetailScreen() {
           fontWeight: "700",
         },
         stepTime: {
-          marginLeft: "auto",
+          // Auto margin on the TRAILING physical side pushes the time chip to
+          // the end of the row in both directions.
+          ...(dir === "rtl" ? { marginRight: "auto" } : { marginLeft: "auto" }),
         },
         stepAdjustedRow: {
           marginBottom: Space.sm,
@@ -413,7 +430,7 @@ export default function RecipeDetailScreen() {
           fontWeight: "700",
         },
       }),
-    [colors],
+    [colors, dir],
   );
 
   const loadRecipe = useCallback(async () => {
@@ -457,11 +474,11 @@ export default function RecipeDetailScreen() {
         return;
       }
       setErrorMessage(
-        error instanceof Error ? error.message : "Failed to load recipe.",
+        error instanceof Error ? error.message : t("common.loadFailedRecipe"),
       );
       setState("error");
     }
-  }, [id]);
+  }, [id, t]);
 
   useEffect(() => {
     loadRecipe();
@@ -525,7 +542,7 @@ export default function RecipeDetailScreen() {
   const totalInclCleanup =
     community != null && cleanup != null ? community + cleanup : null;
 
-  const chips = recipe ? cleanupChips(recipe.cleanup_factors) : [];
+  const chips = recipe ? cleanupChips(t, recipe.cleanup_factors) : [];
 
   const steps: RecipeStep[] = recipe?.recipe_steps ?? [];
 
@@ -639,34 +656,35 @@ export default function RecipeDetailScreen() {
           {state === "loading" && (
             <View style={styles.center}>
               <ActivityIndicator size="large" color={colors.accent} />
-              <Text style={styles.muted}>Loading recipe…</Text>
+              <Text style={styles.muted}>{t("common.loadingRecipe")}</Text>
             </View>
           )}
 
           {state === "error" && (
             <View style={styles.center}>
-              <Text style={styles.errorTitle}>Something went wrong</Text>
+              <Text style={styles.errorTitle}>
+                {t("common.somethingWentWrong")}
+              </Text>
               <Text style={styles.muted}>
-                {errorMessage ?? "Could not load this recipe."}
+                {errorMessage ?? t("common.couldNotLoadRecipe")}
               </Text>
               <IconPressable style={styles.retry} onPress={loadRecipe}>
-                <Text style={styles.retryText}>Retry</Text>
+                <Text style={styles.retryText}>{t("common.retry")}</Text>
               </IconPressable>
             </View>
           )}
 
           {state === "paywall" && (
             <View style={styles.center}>
-              <Text style={styles.paywallTitle}>Free limit reached</Text>
-              <Text style={styles.muted}>
-                You've reached the free limit (5 recipes/month). Upgrade for
-                unlimited recipes.
+              <Text style={styles.paywallTitle}>
+                {t("detail.freeLimitTitle")}
               </Text>
+              <Text style={styles.muted}>{t("detail.freeLimitBody")}</Text>
               <IconPressable
                 style={styles.retry}
                 onPress={() => router.push("/upgrade")}
               >
-                <Text style={styles.retryText}>Upgrade</Text>
+                <Text style={styles.retryText}>{t("common.upgrade")}</Text>
               </IconPressable>
             </View>
           )}
@@ -691,7 +709,7 @@ export default function RecipeDetailScreen() {
                     ]}
                   >
                     <Text style={styles.heroTitle} numberOfLines={3}>
-                      {recipe.title}
+                      {lr.title(recipe)}
                     </Text>
                     {recipe.source_url ? (
                       <Text style={styles.heroSource} numberOfLines={1}>
@@ -711,7 +729,7 @@ export default function RecipeDetailScreen() {
                 onPress={() => router.back()}
                 hitSlop={Space.sm}
               >
-                <Text style={styles.backGlyph}>‹</Text>
+                <Text style={styles.backGlyph}>{dir === "rtl" ? "›" : "‹"}</Text>
               </IconPressable>
 
               {/* Floating favorite toggle over the hero (mirrors the back button). */}
@@ -736,26 +754,26 @@ export default function RecipeDetailScreen() {
                 <View style={styles.statGrid}>
                   <View style={styles.statCell}>
                     <StatPill
-                      label="Publisher"
-                      value={fmtMinutes(publisher ?? 0)}
+                      label={t("detail.statPublisher")}
+                      value={fmtMin(publisher ?? 0)}
                     />
                   </View>
                   <View style={styles.statCell}>
                     <StatPill
-                      label="Focused"
-                      value={fmtMinutes(community ?? 0)}
+                      label={t("common.focused")}
+                      value={fmtMin(community ?? 0)}
                     />
                   </View>
                   <View style={styles.statCell}>
                     <StatPill
-                      label="Cleanup"
-                      value={fmtMinutes(cleanupAvg ?? 0)}
+                      label={t("common.cleanup")}
+                      value={fmtMin(cleanupAvg ?? 0)}
                     />
                   </View>
                   <View style={styles.statCell}>
                     <StatPill
-                      label="Total incl. cleanup"
-                      value={fmtMinutes(totalInclCleanup ?? 0)}
+                      label={t("detail.statTotalInclCleanup")}
+                      value={fmtMin(totalInclCleanup ?? 0)}
                       tone="accent"
                     />
                   </View>
@@ -766,7 +784,9 @@ export default function RecipeDetailScreen() {
                   <View style={styles.paceRow}>
                     <Chip
                       tone="accent"
-                      label={`Your pace · ~${fmtMinutes(personalTotal)}`}
+                      label={t("detail.yourPace", {
+                        time: fmtMin(personalTotal),
+                      })}
                     />
                   </View>
                 ) : null}
@@ -783,27 +803,27 @@ export default function RecipeDetailScreen() {
                 {/* 4. WHEN'S DINNER READY? — start-now timeline. */}
                 {steps.length > 0 ? (
                   <View style={styles.section}>
-                    <SectionHeader title="When's dinner ready?" />
+                    <SectionHeader title={t("detail.timelineTitle")} />
                     <Text style={styles.timelineHeadline} numberOfLines={1}>
-                      Start now → eating at ~{formatClock(eatAt)}
+                      {t("detail.startNow", { time: formatClock(eatAt) })}
                     </Text>
                     {cleanup != null && cleanup > 0 ? (
                       <Text style={styles.timelineCleanupNote}>
-                        {`+ ~${fmtMinutes(cleanup)} cleanup after`}
+                        {t("detail.cleanupAfter", { time: fmtMin(cleanup) })}
                       </Text>
                     ) : null}
                     <View style={styles.timelineStats}>
                       <StatPill
-                        label="Focused"
-                        value={`~${fmtMinutes(focusedTotal)}`}
+                        label={t("common.focused")}
+                        value={`~${fmtMin(focusedTotal)}`}
                       />
                       <StatPill
-                        label="Hands-off"
-                        value={`~${fmtMinutes(handsOffTotal)}`}
+                        label={t("common.handsOff")}
+                        value={`~${fmtMin(handsOffTotal)}`}
                       />
                       <StatPill
-                        label="Cleanup"
-                        value={`~${fmtMinutes(cleanup ?? 0)}`}
+                        label={t("common.cleanup")}
+                        value={`~${fmtMin(cleanup ?? 0)}`}
                       />
                     </View>
                     <View style={styles.timelineList}>
@@ -832,12 +852,14 @@ export default function RecipeDetailScreen() {
                             <View style={styles.timelineInfo}>
                               <View style={styles.timelineCaptionRow}>
                                 <Text style={styles.timelineStepCaption}>
-                                  {`Step ${step.step_number}${passive ? "" : " · active"}`}
+                                  {t("detail.stepCaption", {
+                                    n: step.step_number,
+                                  }) + (passive ? "" : ` ${t("detail.stepActive")}`)}
                                 </Text>
                                 {passive ? (
                                   <View style={styles.timelineChipWrap}>
                                     <Chip
-                                      label="hands-off"
+                                      label={t("common.handsOff")}
                                       tone="success"
                                       size="sm"
                                     />
@@ -848,7 +870,7 @@ export default function RecipeDetailScreen() {
                                 style={styles.timelineDesc}
                                 numberOfLines={1}
                               >
-                                {step.description}
+                                {lr.stepDescription(step)}
                               </Text>
                             </View>
                             {hasMinutes ? (
@@ -856,7 +878,7 @@ export default function RecipeDetailScreen() {
                                 style={styles.timelineDuration}
                                 numberOfLines={1}
                               >
-                                {`~${fmtMinutes(minutes)}`}
+                                {`~${fmtMin(minutes)}`}
                               </Text>
                             ) : null}
                           </View>
@@ -868,10 +890,10 @@ export default function RecipeDetailScreen() {
 
                 {/* 5. INGREDIENTS */}
                 <View style={styles.section}>
-                  <SectionHeader title="Ingredients" />
+                  <SectionHeader title={t("detail.ingredients")} />
                   {recipe.ingredients.length > 0 ? (
                     <View style={styles.bulletList}>
-                      {recipe.ingredients.map((ingredient, idx) => (
+                      {lr.ingredients(recipe).map((ingredient, idx) => (
                         <View key={`ing-${idx}`} style={styles.bulletRow}>
                           <Text style={styles.bullet}>•</Text>
                           <Text style={styles.bulletText}>{ingredient}</Text>
@@ -879,21 +901,21 @@ export default function RecipeDetailScreen() {
                       ))}
                     </View>
                   ) : (
-                    <Text style={styles.muted}>No ingredients listed.</Text>
+                    <Text style={styles.muted}>{t("detail.noIngredients")}</Text>
                   )}
                 </View>
 
                 {/* 6. YOUR NOTES — personal tweaks, kept on this device. */}
                 <View style={styles.section}>
                   <SectionHeader
-                    title="Your notes"
-                    subtitle="Tweaks for next time — kept on this device."
+                    title={t("detail.yourNotes")}
+                    subtitle={t("detail.notesSubtitle")}
                   />
                   <TextInput
                     style={styles.noteInput}
                     value={note}
                     onChangeText={setNote}
-                    placeholder="e.g. a bit less salt, 5 more minutes in the oven…"
+                    placeholder={t("detail.notesPlaceholder")}
                     placeholderTextColor={colors.inkFaint}
                     multiline
                   />
@@ -901,18 +923,18 @@ export default function RecipeDetailScreen() {
                     <Button
                       variant={noteDirty ? "primary" : "ghost"}
                       disabled={!noteDirty}
-                      title="Save note"
+                      title={t("detail.saveNote")}
                       onPress={onSaveNote}
                     />
                     {noteJustSaved ? (
-                      <Text style={styles.noteSaved}>Saved ✓</Text>
+                      <Text style={styles.noteSaved}>{t("detail.saved")}</Text>
                     ) : null}
                   </View>
                 </View>
 
                 {/* 7. STEPS */}
                 <View style={styles.section}>
-                  <SectionHeader title="Steps" />
+                  <SectionHeader title={t("detail.steps")} />
                   {steps.length > 0 ? (
                     <View style={styles.stepList}>
                       {steps.map((step) => {
@@ -926,7 +948,7 @@ export default function RecipeDetailScreen() {
                                 </Text>
                               </View>
                               <Badge
-                                label={step.step_type}
+                                label={stepTypeLabel(t, step.step_type)}
                                 stepType={step.step_type}
                               />
                               <View style={styles.stepTime}>
@@ -937,13 +959,15 @@ export default function RecipeDetailScreen() {
                               <View style={styles.stepAdjustedRow}>
                                 <Chip
                                   tone="accent"
-                                  label={`~${fmtMinutes(adjusted)} you`}
+                                  label={t("detail.adjustedForYou", {
+                                    time: fmtMin(adjusted),
+                                  })}
                                   size="sm"
                                 />
                               </View>
                             ) : null}
                             <Text style={styles.stepDescription}>
-                              {step.description}
+                              {lr.stepDescription(step)}
                             </Text>
                           </Card>
                         );
@@ -951,7 +975,7 @@ export default function RecipeDetailScreen() {
                     </View>
                   ) : (
                     <View style={styles.stepList}>
-                      {recipe.steps.map((step, idx) => (
+                      {lr.steps(recipe).map((step, idx) => (
                         <Card key={`plain-step-${idx}`} padding={Space.lg}>
                           <View style={styles.bulletRow}>
                             <View style={styles.stepNumber}>
@@ -984,7 +1008,7 @@ export default function RecipeDetailScreen() {
             variant="primary"
             size="lg"
             fullWidth
-            title="Start Cook Mode"
+            title={t("detail.startCookMode")}
             onPress={() => router.push(`/cook/${id}`)}
           />
         </View>
