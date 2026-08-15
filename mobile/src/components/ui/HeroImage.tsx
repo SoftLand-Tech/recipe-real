@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import { Image } from "expo-image";
 import { Platform, StyleSheet, Text, View } from "react-native";
@@ -33,6 +33,9 @@ export function HeroImage({
   children,
 }: HeroImageProps) {
   const colors = useThemeColors();
+  // Remote food photos 404/expire over time; without this the failed URI
+  // renders as a blank tinted box instead of the placeholder glyph.
+  const [failed, setFailed] = useState(false);
   const styles = useMemo(
     () =>
       StyleSheet.create({
@@ -59,6 +62,7 @@ export function HeroImage({
   );
 
   const hasUri = typeof uri === "string" && uri.trim().length > 0;
+  const showFallback = !hasUri || failed;
 
   return (
     <View
@@ -68,7 +72,11 @@ export function HeroImage({
         style,
       ]}
     >
-      {hasUri ? (
+      {showFallback ? (
+        <View style={[styles.fallback, { backgroundColor: colors.accentSoft }]}>
+          <FallbackGlyph tintColor={colors.accent} />
+        </View>
+      ) : (
         <Image
           source={{ uri: uri as string }}
           style={StyleSheet.absoluteFill}
@@ -78,13 +86,10 @@ export function HeroImage({
           transition={0}
           cachePolicy="memory-disk"
           placeholder={null}
+          onError={() => setFailed(true)}
           // Keeps recycled cells (FlatList rails) from reloading the image.
           recyclingKey={uri as string}
         />
-      ) : (
-        <View style={[styles.fallback, { backgroundColor: colors.accentSoft }]}>
-          <FallbackGlyph tintColor={colors.accent} />
-        </View>
       )}
 
       {withScrim ? <Scrim height={height} /> : null}

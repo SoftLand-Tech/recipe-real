@@ -469,11 +469,12 @@ export async function getCachedRecipes(opts: {
   const search = opts.search?.trim();
   const rows: RecipeRow[] = search
     ? await db.getAllAsync<RecipeRow>(
-        `SELECT * FROM recipes WHERE title LIKE ? ORDER BY title COLLATE NOCASE ASC;`,
+        // Recipes with a photo surface first; alphabetical within each group.
+        `SELECT * FROM recipes WHERE title LIKE ? ORDER BY image_url IS NULL, title COLLATE NOCASE ASC;`,
         `%${search}%`,
       )
     : await db.getAllAsync<RecipeRow>(
-        `SELECT * FROM recipes ORDER BY title COLLATE NOCASE ASC;`,
+        `SELECT * FROM recipes ORDER BY image_url IS NULL, title COLLATE NOCASE ASC;`,
       );
 
   return rows.map(parseRecipe);

@@ -34,7 +34,11 @@ class RecipeController extends Controller
         }
 
         return RecipeResource::collection(
-            $query->orderBy('id')->paginate($perPage)
+            $query
+                // Recipes with an image first, then stable id order within
+                // each group (imported rows without photos sink to the end).
+                ->orderByRaw('image_url IS NOT NULL DESC, id ASC')
+                ->paginate($perPage)
         );
     }
 
@@ -51,10 +55,12 @@ class RecipeController extends Controller
             $perPage = max(1, min(100, $request->integer('per_page', 50)));
 
             $recipes = Recipe::with('recipeSteps')
-                ->orderBy('id')
+                ->orderByRaw('image_url IS NOT NULL DESC, id ASC')
                 ->paginate($perPage);
         } else {
-            $recipes = Recipe::with('recipeSteps')->orderBy('id')->get();
+            $recipes = Recipe::with('recipeSteps')
+                ->orderByRaw('image_url IS NOT NULL DESC, id ASC')
+                ->get();
         }
 
         return RecipeResource::collection($recipes);
