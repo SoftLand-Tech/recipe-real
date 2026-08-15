@@ -1,4 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "include": ["src/videos/v5-offline-cabin", "src/shared"]
-}

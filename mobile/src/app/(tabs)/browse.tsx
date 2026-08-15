@@ -458,6 +458,10 @@ const FavoritesRail = memo(function FavoritesRail({
       </View>
       <FlatList
         horizontal
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        windowSize={5}
+        removeClippedSubviews
         data={favoriteRecipes}
         keyExtractor={(item) => String(item.id)}
         renderItem={renderItem}
@@ -1070,6 +1074,14 @@ applyRecipes(await getCachedRecipes());
               ? { justifyContent: "flex-start", gap: columnGap }
               : undefined
           }
+          // Heavy image cards: render small batches so no single frame tries
+          // to mount a whole window of photos (fixes the VirtualizedList
+          // "slow to update" warning on lower-end devices).
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          updateCellsBatchingPeriod={80}
+          removeClippedSubviews
           refreshing={refreshing}
           onRefresh={handleRefresh}
           ItemSeparatorComponent={Separator}

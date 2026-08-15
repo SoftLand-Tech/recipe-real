@@ -1,4 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "include": ["src/videos/v2-cook-mode", "src/shared"]
-}

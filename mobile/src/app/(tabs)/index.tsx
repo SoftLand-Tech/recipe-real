@@ -470,6 +470,10 @@ function HomeRail({
       </View>
       <FlatList
         horizontal
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        windowSize={5}
+        removeClippedSubviews
         data={items}
         keyExtractor={(item) => String(item.id)}
         renderItem={({ item }) => <HomeCard item={item} />}
@@ -556,6 +560,10 @@ function SkeletonRail() {
       </View>
       <FlatList
         horizontal
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        windowSize={5}
+        removeClippedSubviews
         data={[0, 1, 2, 3]}
         keyExtractor={(item) => `skel-${item}`}
         renderItem={() => (

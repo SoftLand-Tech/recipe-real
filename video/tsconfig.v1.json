@@ -1,4 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "include": ["src/videos/v1-fifteen-minute-lie", "src/shared"]
-}
