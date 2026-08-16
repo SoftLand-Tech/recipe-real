@@ -86,7 +86,8 @@ class CookSessionController extends Controller
 
     /**
      * One-tap honest time contribution: record a cook session with just the
-     * total minutes it actually took (no per-step timings).
+     * total minutes it actually took (no per-step timings), plus an optional
+     * v2 breakdown — cleanup minutes, hands-on minutes and servings.
      *
      * Creates a CookSession with total_actual_minutes and no timing
      * submissions — the schema tolerates that (timing_submissions.session_id
@@ -94,16 +95,22 @@ class CookSessionController extends Controller
      * calibration job reads only timing submissions, so it is unaffected
      * and not re-dispatched. The recipe's community_avg_minutes is
      * recomputed inline (plain average of the last 100 sessions), the same
-     * aggregate full cook sessions feed.
+     * aggregate full cook sessions feed; cleanup_avg_minutes is recomputed
+     * the same way, but only when this submission included cleanup_minutes.
      */
     public function quickTime(StoreQuickTimeRequest $request, Recipe $recipe): JsonResponse
     {
-        $minutes = (float) $request->validated('minutes');
+        $data = $request->validated();
+        $minutes = (float) $data['minutes'];
 
         CookSession::create([
             'user_id' => $request->user()->id,
             'recipe_id' => $recipe->id,
             'total_actual_minutes' => $minutes,
+            'cleanup_minutes' => $data['cleanup_minutes'] ?? null,
+            'hands_on_minutes' => $data['hands_on_minutes'] ?? null,
+            'servings' => $data['servings'] ?? null,
+            'source' => 'quick',
         ]);
 
         // Cheap recompute: count+avg over this recipe's sessions only.
@@ -116,6 +123,24 @@ class CookSessionController extends Controller
 
         if ($avg !== null) {
             $recipe->community_avg_minutes = round((float) $avg, 2);
+        }
+
+        // Same inline recompute for the cleanup average — only when this
+        // submission actually contributed a cleanup figure.
+        if (($data['cleanup_minutes'] ?? null) !== null) {
+            $cleanupAvg = CookSession::query()
+                ->where('recipe_id', $recipe->id)
+                ->whereNotNull('cleanup_minutes')
+                ->latest('id')
+                ->limit(100)
+                ->avg('cleanup_minutes');
+
+            if ($cleanupAvg !== null) {
+                $recipe->cleanup_avg_minutes = round((float) $cleanupAvg, 2);
+            }
+        }
+
+        if ($recipe->isDirty()) {
             $recipe->save();
         }
 
@@ -123,7 +148,12 @@ class CookSessionController extends Controller
             'ok' => true,
             'recipe_id' => $recipe->id,
             'minutes_submitted' => $minutes,
-            'community_avg_minutes' => $recipe->community_avg_minutes,
+            'community_avg_minutes' => $recipe->community_avg_minutes !== null
+                ? (float) $recipe->community_avg_minutes
+                : null,
+            'cleanup_avg_minutes' => $recipe->cleanup_avg_minutes !== null
+                ? (float) $recipe->cleanup_avg_minutes
+                : null,
         ], 201);
     }
 

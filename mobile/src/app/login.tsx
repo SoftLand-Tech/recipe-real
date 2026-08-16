@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { router, Stack } from "expo-router";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import axios from "axios";
 import Constants from "expo-constants";
 import * as Google from "expo-auth-session/providers/google";
@@ -237,7 +238,13 @@ export default function LoginScreen() {
   );
 }
 
-/** Small circular "G" badge for the Google button. */
+/**
+ * Google mark for the sign-in button: Ionicons `logo-google` (the official
+ * monochrome single-color mark) inside the existing circular badge. The icon
+ * uses the badge's ink color — the button's own foreground (surface) would
+ * vanish against the surface-colored badge background. marginEnd keeps the
+ * gap direction-safe in RTL.
+ */
 function GoogleGlyph() {
   const colors = useThemeColors();
   const styles = useMemo(
@@ -253,17 +260,12 @@ function GoogleGlyph() {
           // marginEnd so the gap follows the layout direction in RTL.
           marginEnd: Space.sm,
         },
-        badgeText: {
-          fontSize: 13,
-          fontWeight: "700",
-          color: colors.ink,
-        },
       }),
     [colors],
   );
   return (
     <View style={styles.badge}>
-      <Text style={styles.badgeText}>G</Text>
+      <Ionicons name="logo-google" size={18} color={colors.ink} />
     </View>
   );
 }

@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import {
+  Alert,
   ScrollView,
   StyleSheet,
   Switch,
@@ -16,7 +17,11 @@ import {
 } from "@/utils/notifications";
 
 import { hasToken, logout } from "@/api/client";
-import { seedCacheFirstPage, seedCacheRemainingPages } from "@/db/database";
+import {
+  clearRecipeCache,
+  seedCacheFirstPage,
+  seedCacheRemainingPages,
+} from "@/db/database";
 import { getNudgePref, setNudgePref } from "@/utils/prefs";
 import { clearPaceCache } from "./pace";
 import { useT } from "@/i18n";
@@ -65,8 +70,13 @@ export default function SettingsScreen() {
   const [nudgeOn, setNudgeOn] = useState(true);
   const [nudgeBlocked, setNudgeBlocked] = useState(false);
   const [nudgeUnavailable, setNudgeUnavailable] = useState(false);
-  const [syncing, setSyncing] = useState(false);
+  /** Which sync option is running (null = idle) — drives its busy label. */
+  const [syncingOption, setSyncingOption] = useState<"quick" | "deep" | null>(
+    null,
+  );
   const [syncDone, setSyncDone] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [clearDone, setClearDone] = useState(false);
 
   const styles = useMemo(
     () =>
@@ -176,19 +186,56 @@ export default function SettingsScreen() {
     setNudgeBlocked(!(await requestNotificationsPermission()));
   }, []);
 
-  const handleResync = useCallback(async () => {
-    setSyncing(true);
-    setSyncDone(false);
+  /**
+   * Run a library sync capped at `maxRecipes` (counting the first page):
+   * 200 → quick sync (top 200), 1000 → deep sync (the seed cap).
+   */
+  const handleSync = useCallback(
+    async (maxRecipes: number) => {
+      if (syncingOption != null) return;
+      setSyncingOption(maxRecipes <= 200 ? "quick" : "deep");
+      setSyncDone(false);
+      try {
+        await seedCacheFirstPage();
+        await seedCacheRemainingPages({ maxRecipes });
+        setSyncDone(true);
+      } catch (error) {
+        console.warn("[RecipeReal] library sync failed:", error);
+      } finally {
+        setSyncingOption(null);
+      }
+    },
+    [syncingOption],
+  );
+
+  /** Clear the offline recipe cache (favorites/notes are preserved). */
+  const handleClearCache = useCallback(async () => {
+    if (clearing) return;
+    setClearing(true);
+    setClearDone(false);
     try {
-      await seedCacheFirstPage();
-      await seedCacheRemainingPages();
-      setSyncDone(true);
+      await clearRecipeCache();
+      setClearDone(true);
     } catch (error) {
-      console.warn("[RecipeReal] library re-sync failed:", error);
+      console.warn("[RecipeReal] clear offline library failed:", error);
     } finally {
-      setSyncing(false);
+      setClearing(false);
     }
-  }, []);
+  }, [clearing]);
+
+  /** Destructive confirm before clearing the offline library. */
+  const confirmClearCache = useCallback(() => {
+    Alert.alert(t("settings.clearCache"), t("settings.clearCacheConfirm"), [
+      { text: t("common.cancel"), style: "cancel" },
+      {
+        text: t("settings.clearCache"),
+        style: "destructive",
+        onPress: () => {
+          void handleClearCache();
+        },
+      },
+    ]);
+  }, [t, handleClearCache]);
 
   const version = Constants.expoConfig?.version ?? "1.0.0";
 
@@ -270,13 +317,36 @@ export default function SettingsScreen() {
         <SectionHeader title={t("settings.dataStorage")} />
         <Text style={styles.rowLabel}>{t("settings.offlineLibrary")}</Text>
         <Button
-          title={syncing ? t("settings.syncing") : t("settings.resync")}
+          title={
+            syncingOption === "quick"
+              ? t("settings.syncing")
+              : t("settings.syncTop200")
+          }
           variant="ghost"
-          onPress={handleResync}
-          disabled={syncing}
+          onPress={() => handleSync(200)}
+          disabled={syncingOption != null || clearing}
+        />
+        <Button
+          title={
+            syncingOption === "deep"
+              ? t("settings.syncing")
+              : t("settings.syncDeep")
+          }
+          variant="ghost"
+          onPress={() => handleSync(1000)}
+          disabled={syncingOption != null || clearing}
+        />
+        <Button
+          title={clearing ? t("settings.clearing") : t("settings.clearCache")}
+          variant="ghost"
+          onPress={confirmClearCache}
+          disabled={clearing || syncingOption != null}
         />
         {syncDone ? (
           <Text style={styles.doneCaption}>{t("settings.syncDone")}</Text>
+        ) : null}
+        {clearDone ? (
+          <Text style={styles.doneCaption}>{t("settings.clearDone")}</Text>
         ) : null}
       </Card>
 

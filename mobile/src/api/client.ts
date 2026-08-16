@@ -35,7 +35,6 @@ import type {
   GetRecipesParams,
   HomeRails,
   Paginated,
-  QuickTimeResult,
   Recipe,
   SearchParams,
   Usage,
@@ -223,26 +222,46 @@ export class QuickTimeUnauthorizedError extends Error {
   }
 }
 
+/** Honest-breakdown contribution payload for POST /api/recipes/{id}/quick-time. */
+export interface QuickTimeBreakdown {
+  /** Total time in minutes — required (1..1440). */
+  minutes: number;
+  /** Washing & cleanup in minutes (optional). */
+  cleanup_minutes?: number;
+  /** Hands-on time in minutes (optional; ≤ total enforced client-side). */
+  hands_on_minutes?: number;
+  /** Plates/servings made (optional, 1..50). */
+  servings?: number;
+}
+
+/** Server response of the quick-time endpoint; averages may serialize as strings. */
+export interface QuickTimeBreakdownResult {
+  ok: boolean;
+  community_avg_minutes: number | null;
+  cleanup_avg_minutes: number | null;
+}
+
 /**
- * One-tap honest-time contribution (POST /api/recipes/{id}/quick-time,
- * auth:sanctum). `community_avg_minutes` may serialize as a string ("24.00")
- * — it is normalized to a number here. Any failure rethrows; a 401 becomes a
- * QuickTimeUnauthorizedError so the caller can prompt sign-in.
+ * Honest-time contribution (POST /api/recipes/{id}/quick-time, auth:sanctum):
+ * the required total minutes plus optional cleanup / hands-on / servings
+ * fields. `community_avg_minutes` and `cleanup_avg_minutes` may serialize as
+ * strings ("24.00") — they are normalized to numbers here. Any failure
+ * rethrows; a 401 becomes a QuickTimeUnauthorizedError so the caller can
+ * prompt sign-in.
  */
 export async function submitQuickTime(
   recipeId: number,
-  minutes: number,
-): Promise<QuickTimeResult> {
+  breakdown: QuickTimeBreakdown,
+): Promise<QuickTimeBreakdownResult> {
   try {
     const { data } = await api.post<Record<string, unknown>>(
       `/api/recipes/${recipeId}/quick-time`,
-      { minutes },
+      breakdown,
     );
     return {
       ok: Boolean(data?.ok),
-      recipe_id: toNum(data?.recipe_id) ?? recipeId,
-      minutes_submitted: toNum(data?.minutes_submitted) ?? minutes,
       community_avg_minutes: toNum(data?.community_avg_minutes),
+      cleanup_avg_minutes: toNum(data?.cleanup_avg_minutes),
     };
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 401) {

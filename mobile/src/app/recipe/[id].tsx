@@ -61,7 +61,11 @@ import {
   SectionHeader,
   StatPill,
 } from "@/components/ui";
-import { recipeMinutes, stepMinutes } from "@/utils/recipeTime";
+import {
+  estimateStepMinutes,
+  recipeMinutes,
+  stepMinutes,
+} from "@/utils/recipeTime";
 
 type LoadState = "loading" | "ready" | "error" | "paywall";
 
@@ -69,6 +73,13 @@ type LoadState = "loading" | "ready" | "error" | "paywall";
 function roundMin(value: number | null | undefined): number | null {
   if (value == null) return null;
   return Math.round(value);
+}
+
+/** Parses a digits-only field; empty (optional) fields parse to null. */
+function parseIntOrNull(raw: string): number | null {
+  if (raw.trim() === "") return null;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? n : null;
 }
 
 /** Formats a Date as a short local clock string, e.g. "7:04 PM". */
@@ -164,21 +175,26 @@ export default function RecipeDetailScreen() {
   const [savedNote, setSavedNote] = useState("");
   const [noteJustSaved, setNoteJustSaved] = useState(false);
 
-  // Quick-time contribution: one-tap "how long did it take?" submission.
-  // Rendered for everyone; an unauthenticated submit surfaces the sign-in
-  // CTA (the 401 is mapped to QuickTimeUnauthorizedError in the client).
-  const [quickMinutes, setQuickMinutes] = useState("");
+  // Quick-time contribution: honest-breakdown form ("did you make this?"):
+  // plates made, hands-on minutes, total minutes (required) and cleanup
+  // minutes. Rendered for everyone; an unauthenticated submit surfaces the
+  // sign-in CTA (the 401 is mapped to QuickTimeUnauthorizedError in the client).
+  const [quickPlates, setQuickPlates] = useState("");
+  const [quickHandsOn, setQuickHandsOn] = useState("");
+  const [quickTotal, setQuickTotal] = useState("");
+  const [quickCleanup, setQuickCleanup] = useState("");
   const [quickSubmitting, setQuickSubmitting] = useState(false);
   const [quickDone, setQuickDone] = useState(false);
   const [quickAvg, setQuickAvg] = useState<number | null>(null);
+  const [quickCleanupAvg, setQuickCleanupAvg] = useState<number | null>(null);
   const [quickError, setQuickError] = useState<string | null>(null);
   const [quickNeedsAuth, setQuickNeedsAuth] = useState(false);
   // Fade-in for the "Thanks! …" success line (native-driven opacity).
   const quickFadeRef = useRef(new Animated.Value(0));
-  // Inline quick-time row under the stat grid: collapsed to a hint while a
+  // Inline quick-time form under the stat grid: collapsed to a hint while a
   // community average already exists, expanded by default when it doesn't.
   const [quickOpen, setQuickOpen] = useState(false);
-  // Focuses the inline minutes input as soon as it mounts.
+  // Focuses the inline total-time input as soon as it mounts.
   const quickInputRef = useRef<TextInput | null>(null);
 
   // Mirror of `recipe` for use inside `loadRecipe`'s catch block without
@@ -310,12 +326,7 @@ export default function RecipeDetailScreen() {
           marginTop: Space.md,
           gap: Space.xs,
         },
-        quickCaption: {
-          ...Type.overline,
-          color: colors.inkSecondary,
-          textTransform: "uppercase",
-        },
-        // "Cooked it? Add your time" toggle shown while the input is collapsed.
+        // "Cooked it? Add your time" toggle shown while the form is collapsed.
         quickHint: {
           marginTop: Space.sm,
           alignSelf: "flex-start",
@@ -326,17 +337,28 @@ export default function RecipeDetailScreen() {
           color: colors.accent,
           fontWeight: "600",
         },
-        quickRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.md,
+        quickFormTitle: {
+          ...Type.title,
+          color: colors.ink,
+          fontWeight: "600",
+        },
+        // One-column breakdown form: label above each numeric input.
+        quickForm: {
+          gap: Space.sm,
           marginTop: Space.sm,
         },
-        // flex on the wrapper row (never on the Button's Pressable itself —
-        // Android paint rules); the input stretches to the remaining space.
-        quickInputWrap: {
-          flexGrow: 1,
-          flexBasis: 0,
+        quickField: {
+          gap: Space.xs,
+        },
+        quickFieldLabel: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+          fontWeight: "600",
+        },
+        quickFieldOptional: {
+          ...Type.caption,
+          color: colors.inkFaint,
+          fontWeight: "500",
         },
         quickInput: {
           ...Type.body,
@@ -500,6 +522,14 @@ export default function RecipeDetailScreen() {
           color: colors.success,
           fontWeight: "600",
         },
+        // Persistent "Saved on this device ✓" caption shown above the note
+        // input whenever a saved note exists and the field is pristine.
+        noteSavedOnDevice: {
+          ...Type.caption,
+          color: colors.success,
+          fontWeight: "600",
+          marginBottom: Space.xs,
+        },
         cookFooter: {
           position: "absolute",
           bottom: 0,
@@ -553,10 +583,14 @@ export default function RecipeDetailScreen() {
     setErrorMessage(null);
     recipeRef.current = null;
     // Reset the quick-time contribution state for the (new) recipe.
-    setQuickMinutes("");
+    setQuickPlates("");
+    setQuickHandsOn("");
+    setQuickTotal("");
+    setQuickCleanup("");
     setQuickSubmitting(false);
     setQuickDone(false);
     setQuickAvg(null);
+    setQuickCleanupAvg(null);
     setQuickError(null);
     setQuickNeedsAuth(false);
     setQuickOpen(false);
@@ -657,23 +691,35 @@ export default function RecipeDetailScreen() {
   }, [id, note]);
 
   /**
-   * Submit the quick-time contribution (1..1440 minutes). Success swaps the
-   * form for a faded-in "Thanks! Community avg is now ~Xm" line using the
-   * server-recomputed average. A 401 shows the sign-in CTA instead; any
-   * other failure shows an inline error and keeps the form usable.
+   * Submit the quick-time breakdown. Total minutes are required (1..1440);
+   * plates / hands-on / cleanup are optional add-ons. Success swaps the form
+   * for a faded-in "Thanks! Cooks average ~Xm" line (plus a cleanup-average
+   * line when the server returns one) using the server-recomputed averages. A
+   * 401 shows the sign-in CTA instead; any other failure shows an inline error
+   * and keeps the form usable.
    */
   const onSubmitQuickTime = useCallback(async () => {
-    const minutes = Number.parseInt(quickMinutes, 10);
-    if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) return;
+    const minutes = parseIntOrNull(quickTotal);
+    if (minutes == null || minutes < 1 || minutes > 1440) return;
+    const handsOn = parseIntOrNull(quickHandsOn);
+    if (handsOn != null && handsOn > minutes) return; // Client-side guard.
     const recipeId = Number(id);
     if (!Number.isFinite(recipeId)) return;
+    const cleanupMinutes = parseIntOrNull(quickCleanup);
+    const plates = parseIntOrNull(quickPlates);
     setQuickSubmitting(true);
     setQuickError(null);
     setQuickNeedsAuth(false);
     try {
-      const result = await submitQuickTime(recipeId, minutes);
+      const result = await submitQuickTime(recipeId, {
+        minutes,
+        ...(handsOn != null ? { hands_on_minutes: handsOn } : {}),
+        ...(cleanupMinutes != null ? { cleanup_minutes: cleanupMinutes } : {}),
+        ...(plates != null ? { servings: plates } : {}),
+      });
       track("quick_time_submitted", { recipe_id: recipeId, minutes });
       setQuickAvg(result.community_avg_minutes);
+      setQuickCleanupAvg(result.cleanup_avg_minutes);
       setQuickDone(true);
       quickFadeRef.current.setValue(0);
       Animated.timing(quickFadeRef.current, {
@@ -692,23 +738,36 @@ export default function RecipeDetailScreen() {
     } finally {
       setQuickSubmitting(false);
     }
-  }, [quickMinutes, id, t]);
+  }, [quickTotal, quickHandsOn, quickCleanup, quickPlates, id, t]);
 
   /**
-   * Reveal the inline quick-time input under the stat grid and focus it.
-   * Focus waits one frame so the just-mounted TextInput exists first.
+   * Reveal the inline quick-time form under the stat grid and focus the
+   * required total-time input. Focus waits one frame so the just-mounted
+   * TextInput exists first.
    */
   const openQuick = useCallback(() => {
     setQuickOpen(true);
     requestAnimationFrame(() => quickInputRef.current?.focus());
   }, []);
 
-  /** Parsed quick-time minutes, valid only within 1..1440. */
-  const quickMinutesValue = Number.parseInt(quickMinutes, 10);
-  const quickMinutesValid =
-    Number.isFinite(quickMinutesValue) &&
-    quickMinutesValue >= 1 &&
-    quickMinutesValue <= 1440;
+  // ---- Quick-time field validation (client-side guards for the submit) ----
+  const quickTotalValue = parseIntOrNull(quickTotal);
+  const quickHandsOnValue = parseIntOrNull(quickHandsOn);
+  const quickPlatesValue = parseIntOrNull(quickPlates);
+  const quickCleanupValue = parseIntOrNull(quickCleanup);
+  const quickTotalValid =
+    quickTotalValue != null && quickTotalValue >= 1 && quickTotalValue <= 1440;
+  const quickHandsOnExceeds =
+    quickTotalValid && quickHandsOnValue != null && quickHandsOnValue > quickTotalValue;
+  const quickValid =
+    quickTotalValid &&
+    !quickHandsOnExceeds &&
+    (quickHandsOnValue == null ||
+      (quickHandsOnValue >= 0 && quickHandsOnValue <= 1440)) &&
+    (quickPlatesValue == null ||
+      (quickPlatesValue >= 1 && quickPlatesValue <= 50)) &&
+    (quickCleanupValue == null ||
+      (quickCleanupValue >= 0 && quickCleanupValue <= 1440));
 
   const publisher = roundMin(recipe?.publisher_time_minutes);
   const community = roundMin(recipe?.community_avg_minutes);
@@ -786,19 +845,20 @@ export default function RecipeDetailScreen() {
     return Math.round(step.community_minutes * mult);
   }
 
+  // Timeline: cooking steps only — cleanup is quoted separately (you eat first).
+  // The distribution below runs over THESE steps so the walked clock adds back
+  // up to the recipe's stated total by construction.
+  const timelineSteps = steps.filter((s) => s.step_type !== "cleanup");
+
   /**
    * Effective minutes used by the "When's dinner ready?" timeline: the
-   * pace-adjusted value when a calibration applies, else the community or
-   * publisher figure, else a quiet 3-minute default.
+   * pace-adjusted value when a calibration applies, else the step's own
+   * community/publisher figure, else its word-weighted share of the recipe
+   * total (never a flat 3-minute guess unless the recipe has no total at all).
    */
   function minutesForStep(step: RecipeStep): number {
-    return (
-      adjustedForStep(step) ?? step.community_minutes ?? step.publisher_minutes ?? 3
-    );
+    return adjustedForStep(step) ?? estimateStepMinutes(step, recipe, timelineSteps);
   }
-
-  // Timeline: cooking steps only — cleanup is quoted separately (you eat first).
-  const timelineSteps = steps.filter((s) => s.step_type !== "cleanup");
   // Anchor the clock walk once per recipe (not per render) so re-renders —
   // heart toggles, quick-time keystrokes — never shift the displayed times.
   const timelineStart = useMemo(() => Date.now(), [recipe?.id, steps.length]);
@@ -817,6 +877,39 @@ export default function RecipeDetailScreen() {
   // The note text differs from the last saved baseline -> the Save button is
   // enabled and styled as primary; otherwise ghost + disabled.
   const noteDirty = note !== savedNote;
+
+  /**
+   * Renders one labeled numeric field of the quick-time form. Called as a
+   * function (not a nested component) so React never remounts the inputs —
+   * a component defined in render would recreate the TextInput each keystroke
+   * and drop keyboard focus.
+   */
+  const quickField = (
+    label: string,
+    value: string,
+    onChange: (text: string) => void,
+    opts: { optional?: boolean; focusRef?: boolean } = {},
+  ) => (
+    <View style={styles.quickField}>
+      <Text style={styles.quickFieldLabel}>
+        {label}
+        {opts.optional ? (
+          <Text style={styles.quickFieldOptional}>
+            {` · ${t("quick.optional")}`}
+          </Text>
+        ) : null}
+      </Text>
+      <TextInput
+        {...(opts.focusRef ? { ref: quickInputRef } : {})}
+        style={styles.quickInput}
+        value={value}
+        onChangeText={(text) => onChange(text.replace(/[^0-9]/g, ""))}
+        placeholderTextColor={colors.inkFaint}
+        keyboardType="number-pad"
+        maxLength={4}
+      />
+    </View>
+  );
 
   // Fire the timeline analytics event once, when the section first renders.
   const timelineTrackedRef = useRef(false);
@@ -999,32 +1092,49 @@ export default function RecipeDetailScreen() {
                   <Animated.Text
                     style={[styles.quickSuccess, { opacity: quickFadeRef.current }]}
                   >
-                    {t("quick.thanks", {
-                      time: fmtMin(quickAvg ?? quickMinutesValue),
+                    {t("quick.thanksBreakdown", {
+                      time: fmtMin(quickAvg ?? quickTotalValue ?? 0),
                     })}
+                    {quickCleanupAvg != null
+                      ? `\n${t("quick.thanksCleanup", {
+                          cleanup: fmtMin(quickCleanupAvg),
+                        })}`
+                      : ""}
                   </Animated.Text>
                 ) : community == null || quickOpen ? (
                   <View style={styles.quickInline}>
-                    <Text style={styles.quickCaption}>{t("quick.howLong")}</Text>
-                    <View style={styles.quickRow}>
-                      <View style={styles.quickInputWrap}>
-                        <TextInput
-                          ref={quickInputRef}
-                          style={styles.quickInput}
-                          value={quickMinutes}
-                          onChangeText={(text) =>
-                            setQuickMinutes(text.replace(/[^0-9]/g, ""))
-                          }
-                          placeholder={t("quick.minutesPlaceholder")}
-                          placeholderTextColor={colors.inkFaint}
-                          keyboardType="number-pad"
-                          maxLength={4}
-                        />
-                      </View>
+                    <Text style={styles.quickFormTitle}>
+                      {t("quick.didYouMake")}
+                    </Text>
+                    <View style={styles.quickForm}>
+                      {quickField(t("quick.plates"), quickPlates, setQuickPlates, {
+                        optional: true,
+                      })}
+                      {quickField(
+                        t("quick.handsOn"),
+                        quickHandsOn,
+                        setQuickHandsOn,
+                        { optional: true },
+                      )}
+                      {quickField(t("quick.totalQ"), quickTotal, setQuickTotal, {
+                        focusRef: true,
+                      })}
+                      {quickField(
+                        t("quick.cleanupQ"),
+                        quickCleanup,
+                        setQuickCleanup,
+                        { optional: true },
+                      )}
+                      {quickHandsOnExceeds ? (
+                        <Text style={styles.quickError}>
+                          {t("quick.handsOnTooLong")}
+                        </Text>
+                      ) : null}
                       <Button
                         title={t("quick.submit")}
                         variant="primary"
-                        disabled={!quickMinutesValid}
+                        fullWidth
+                        disabled={!quickValid}
                         loading={quickSubmitting}
                         onPress={onSubmitQuickTime}
                       />
@@ -1159,9 +1269,11 @@ export default function RecipeDetailScreen() {
                       {timelineRows.map(({ step, at, minutes }) => {
                         const passive = step.step_type === "passive";
                         const adjusted = adjustedForStep(step);
+                        // Show the per-step duration whenever there is a basis
+                        // for it: the step's own figure OR a recipe total that
+                        // was distributed across the untimed steps.
                         const hasMinutes =
-                          step.community_minutes != null ||
-                          step.publisher_minutes != null;
+                          stepMinutes(step) != null || cookMinutes != null;
                         return (
                           <View
                             key={`tl-${step.id}`}
@@ -1303,6 +1415,14 @@ export default function RecipeDetailScreen() {
                     title={t("detail.yourNotes")}
                     subtitle={t("detail.notesSubtitle")}
                   />
+                  {/* A saved note + a pristine field: show the persistent
+                      "stored here" caption so returning users see their note
+                      is kept before they even read the textarea. */}
+                  {savedNote.length > 0 && !noteDirty ? (
+                    <Text style={styles.noteSavedOnDevice}>
+                      {t("detail.noteSavedOnDevice")}
+                    </Text>
+                  ) : null}
                   <TextInput
                     style={styles.noteInput}
                     value={note}
@@ -1312,8 +1432,11 @@ export default function RecipeDetailScreen() {
                     multiline
                   />
                   <View style={styles.noteActions}>
+                    {/* Always primary (ghost + disabled renders nearly
+                        invisible); disabled only dims via opacity until the
+                        note is dirty. */}
                     <Button
-                      variant={noteDirty ? "primary" : "ghost"}
+                      variant="primary"
                       disabled={!noteDirty}
                       title={t("detail.saveNote")}
                       onPress={onSaveNote}

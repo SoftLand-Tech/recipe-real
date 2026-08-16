@@ -35,7 +35,7 @@ import {
 } from "@/i18n";
 import { Radius, Shadow, Space, Type, useThemeColors } from "@/theme";
 import { getNudgePref } from "@/utils/prefs";
-import { stepMinutes } from "@/utils/recipeTime";
+import { estimateStepMinutes } from "@/utils/recipeTime";
 import type {
   CookSessionPayload,
   Feedback,
@@ -431,15 +431,16 @@ export default function CookModeScreen() {
 
   /**
    * Replace any pending nudge with one for the given passive step, scheduled
-   * for its community estimate (publisher claim as fallback). Best-effort:
-   * silently skips when no estimate exists at all, nudges are turned off,
-   * permission is denied, or the notifications API is unavailable (Expo Go)
-   * — never blocks the cooking flow.
+   * for its estimated minutes: the step's own community/publisher figure,
+   * else its word-weighted share of the recipe's total (distributed so the
+   * per-step estimates sum back to the recipe's stated time). Best-effort:
+   * silently skips when nudges are turned off, permission is denied, or the
+   * notifications API is unavailable (Expo Go) — never blocks the cooking flow.
    */
   const scheduleNudge = useCallback(
     async (step: RecipeStep, recipeId: number) => {
       await cancelNudge();
-      const minutes = stepMinutes(step);
+      const minutes = estimateStepMinutes(step, recipe, steps);
       if (typeof minutes !== "number" || minutes <= 0) return;
       try {
         if ((await getNudgePref()) !== "on") return;
@@ -460,7 +461,7 @@ export default function CookModeScreen() {
         // Scheduling is best-effort; never block the cook.
       }
     },
-    [cancelNudge, t, lr],
+    [cancelNudge, t, lr, recipe, steps],
   );
 
   /** Arm a nudge for step `i` if it's a passive step with a community time. */
@@ -907,7 +908,7 @@ export default function CookModeScreen() {
           <Chip
             tone="amber"
             label={t("cook.estChip", {
-              time: fmtMin(stepMinutes(step) ?? 0),
+              time: fmtMin(estimateStepMinutes(step, recipe, steps)),
             })}
             size="sm"
           />

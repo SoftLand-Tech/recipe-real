@@ -14,6 +14,9 @@ class CookSession extends Model
         'cleanup_minutes',
         'feedback',
         'idempotency_key',
+        'servings',
+        'hands_on_minutes',
+        'source',
     ];
 
     protected function casts(): array
@@ -21,6 +24,8 @@ class CookSession extends Model
         return [
             'total_actual_minutes' => 'decimal:2',
             'cleanup_minutes' => 'decimal:2',
+            'hands_on_minutes' => 'decimal:2',
+            'servings' => 'integer',
         ];
     }
 

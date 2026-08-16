@@ -470,14 +470,41 @@ export async function seedCacheFirstPage(): Promise<Recipe[]> {
 
 /**
  * Seed continuation: fetch + upsert the remaining seed pages (with steps),
- * starting at page 2. Stops at the last page, an empty page, or the safety cap.
+ * starting at page 2. Stops at the last page, an empty page, or the cap.
+ * `opts.maxRecipes` (counting the already-seeded first page) lowers the cap:
+ * 200 → stop after page 4 (4 × 50); without it the SEED_MAX_PAGES safety cap
+ * applies (20 pages = 1,000 recipes).
  */
-export async function seedCacheRemainingPages(): Promise<void> {
-  for (let page = 2; page <= SEED_MAX_PAGES; page++) {
+export async function seedCacheRemainingPages(
+  opts: { maxRecipes?: number } = {},
+): Promise<void> {
+  const maxPages = opts.maxRecipes
+    ? Math.max(1, Math.ceil(opts.maxRecipes / SEED_PAGE_SIZE))
+    : SEED_MAX_PAGES;
+  const cap = Math.min(maxPages, SEED_MAX_PAGES);
+  for (let page = 2; page <= cap; page++) {
     const result = await fetchSeedPage(page, SEED_PAGE_SIZE);
     if (result.recipes.length === 0) break;
     await upsertRecipes(result.recipes, { withSteps: true });
     if (result.currentPage >= result.lastPage) break;
+  }
+}
+
+/**
+ * Clear the offline recipe cache (recipe_steps + recipes rows) while KEEPING
+ * favorites, notes, and pace tables intact. Those tables reference recipes(id)
+ * with ON DELETE CASCADE, so the deletes run with foreign-key enforcement
+ * temporarily disabled on this same connection — the favorite/note rows then
+ * survive, pointing at recipe ids the next sync deterministically re-creates.
+ */
+export async function clearRecipeCache(): Promise<void> {
+  const db = await getDb();
+  await db.execAsync("PRAGMA foreign_keys = OFF;");
+  try {
+    await db.execAsync("DELETE FROM recipe_steps;");
+    await db.execAsync("DELETE FROM recipes;");
+  } finally {
+    await db.execAsync("PRAGMA foreign_keys = ON;");
   }
 }
 
