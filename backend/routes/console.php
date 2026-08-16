@@ -13,7 +13,10 @@ Schedule::command('recipereal:prune-events')->daily();
 
 // Arabic translations: nightly after the analytics prune (MyMemory's free
 // daily quota resets overnight).
-Schedule::command('recipereal:translate-ar')->daily()->at('02:00');
+// DISABLED 2026-08-16: the agy batch pipeline (recipereal-work/PROMPT-500.md)
+// now produces far better Arabic + step estimates; re-enable only if the
+// manual pipeline stops and the nightly fallback is wanted again.
+// Schedule::command('recipereal:translate-ar')->daily()->at('02:00');
 
 // Keep the FTS index fresh after any bulk writes (imports/translations).
 Schedule::command('recipereal:rebuild-search')->daily()->at('03:00');
