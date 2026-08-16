@@ -9,7 +9,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  UIManager,
   View,
   useWindowDimensions,
   type ListRenderItem,
@@ -65,17 +64,9 @@ import {
 } from "@/utils/categorize";
 import { recipeMinutes } from "@/utils/recipeTime";
 
-// LayoutAnimation needs an explicit opt-in on Android's OLD architecture.
-// On the New Architecture it's always on and the experimental call is a
-// no-op that warns on every invocation — skip it there.
-const g = globalThis as typeof globalThis & {
-  RN$NewArchEnabled?: boolean;
-  RN_newArchEnabled?: boolean;
-};
-const isNewArch = g.RN$NewArchEnabled === true || g.RN_newArchEnabled === true;
-if (Platform.OS === "android" && !isNewArch) {
-  UIManager.setLayoutAnimationEnabledExperimental?.(true);
-}
+// LayoutAnimation works out of the box on the New Architecture (Expo SDK
+// 57+); the legacy setLayoutAnimationEnabledExperimental opt-in is only
+// needed on old-arch Android and warns on new arch, so it is not called.
 
 type LoadState = "loading" | "ready" | "error";
 
