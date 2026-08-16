@@ -20,7 +20,9 @@ Route::middleware('throttle:auth')->group(function (): void {
 });
 
 // Public recipe-browsing routes (mobile-first; recipes are public in MVP).
-Route::middleware('throttle:60,1')->group(function (): void {
+// 240/min: the mobile client bursts on cold start (progressive seed +
+// light refresh + rails + debounced search); 60/min tripped 429 loops.
+Route::middleware('throttle:240,1')->group(function (): void {
     Route::get('/recipes', [RecipeController::class, 'index']);
     // Static /recipes/* sub-paths MUST come before /{recipe} to avoid route
     // shadowing (same reason /seed sits above it).

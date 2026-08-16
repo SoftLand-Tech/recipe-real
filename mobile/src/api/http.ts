@@ -23,8 +23,21 @@ export const http: AxiosInstance = axios.create({
   },
 });
 
+/**
+ * Client-side 429 cooldown: when the server rate-limits us, hold ALL
+ * requests for a short window instead of hammering it with retries (which
+ * only extend the throttle). Cleared after the window passes; requests
+ * during the window fail fast with the original-style network error so
+ * callers fall back to the offline cache path.
+ */
+let cooldownUntil = 0;
+
 /** Attach the bearer token from SecureStore to every request, if present. */
 http.interceptors.request.use(async (config) => {
+  const now = Date.now();
+  if (now < cooldownUntil) {
+    await new Promise((resolve) => setTimeout(resolve, cooldownUntil - now));
+  }
   const token = await SecureStore.getItemAsync(AUTH_TOKEN_KEY);
   if (token) {
     config.headers = config.headers ?? {};
@@ -48,6 +61,15 @@ http.interceptors.response.use(
       } catch {
         // Swallow: don't let a failed clear mask the original 401.
       }
+    }
+    if (error?.response?.status === 429) {
+      // Honor the server's Retry-After when present (Laravel sends seconds),
+      // else cool down for 20s so queued retries stop feeding the limiter.
+      const retryAfter = Number(error.response.headers?.["retry-after"]);
+      const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter, 60) * 1000
+        : 20_000;
+      cooldownUntil = Math.max(cooldownUntil, Date.now() + waitMs);
     }
     return Promise.reject(error);
   },
