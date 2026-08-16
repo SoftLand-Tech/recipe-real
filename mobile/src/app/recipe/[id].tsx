@@ -1084,88 +1084,6 @@ export default function RecipeDetailScreen() {
                   ) : null}
                 </View>
 
-                {/* 1b. QUICK-TIME CONTRIBUTION — inline under the grid.
-                    Collapsed to a hint once a community average exists,
-                    expanded by default when it doesn't. Unauthenticated
-                    submits prompt sign-in (401 → QuickTimeUnauthorizedError). */}
-                {quickDone ? (
-                  <Animated.Text
-                    style={[styles.quickSuccess, { opacity: quickFadeRef.current }]}
-                  >
-                    {t("quick.thanksBreakdown", {
-                      time: fmtMin(quickAvg ?? quickTotalValue ?? 0),
-                    })}
-                    {quickCleanupAvg != null
-                      ? `\n${t("quick.thanksCleanup", {
-                          cleanup: fmtMin(quickCleanupAvg),
-                        })}`
-                      : ""}
-                  </Animated.Text>
-                ) : community == null || quickOpen ? (
-                  <View style={styles.quickInline}>
-                    <Text style={styles.quickFormTitle}>
-                      {t("quick.didYouMake")}
-                    </Text>
-                    <View style={styles.quickForm}>
-                      {quickField(t("quick.plates"), quickPlates, setQuickPlates, {
-                        optional: true,
-                      })}
-                      {quickField(
-                        t("quick.handsOn"),
-                        quickHandsOn,
-                        setQuickHandsOn,
-                        { optional: true },
-                      )}
-                      {quickField(t("quick.totalQ"), quickTotal, setQuickTotal, {
-                        focusRef: true,
-                      })}
-                      {quickField(
-                        t("quick.cleanupQ"),
-                        quickCleanup,
-                        setQuickCleanup,
-                        { optional: true },
-                      )}
-                      {quickHandsOnExceeds ? (
-                        <Text style={styles.quickError}>
-                          {t("quick.handsOnTooLong")}
-                        </Text>
-                      ) : null}
-                      <Button
-                        title={t("quick.submit")}
-                        variant="primary"
-                        fullWidth
-                        disabled={!quickValid}
-                        loading={quickSubmitting}
-                        onPress={onSubmitQuickTime}
-                      />
-                    </View>
-                    {quickError != null ? (
-                      <Text style={styles.quickError}>{quickError}</Text>
-                    ) : null}
-                    {quickNeedsAuth ? (
-                      <Pressable
-                        onPress={() => router.push("/login")}
-                        hitSlop={Space.sm}
-                        style={styles.quickSignIn}
-                      >
-                        <Text style={styles.quickSignIn}>
-                          {t("quick.signIn")}
-                        </Text>
-                      </Pressable>
-                    ) : null}
-                  </View>
-                ) : (
-                  <Pressable
-                    onPress={openQuick}
-                    hitSlop={Space.sm}
-                    style={styles.quickHint}
-                  >
-                    <Text style={styles.quickHintText}>
-                      {t("detail.cooksAvgAddHint")}
-                    </Text>
-                  </Pressable>
-                )}
-
                 {/* 1c. RATING — compact "★ rating (N)" line when known. */}
                 {recipe.aggregated_rating != null ? (
                   <View style={styles.chipRow}>
@@ -1340,51 +1258,6 @@ export default function RecipeDetailScreen() {
                   </View>
                 ) : null}
 
-                {/* 5. INGREDIENTS — structured "½ cup | brown sugar, packed"
-                    rows when the parsed data lines up, plain bullets otherwise. */}
-                <View style={styles.section}>
-                  <SectionHeader title={t("detail.ingredients")} />
-                  {ingredientLines.length > 0 ? (
-                    <View style={styles.bulletList}>
-                      {ingredientLines.map((ingredient, idx) => {
-                        const structured = structuredAligned
-                          ? structuredIngredients[idx]
-                          : undefined;
-                        const qty =
-                          structured?.qty_display ??
-                          (structured?.qty != null
-                            ? String(structured.qty)
-                            : null);
-                        const unit = structured?.unit?.trim() || null;
-                        const itemText = [
-                          structured?.item?.trim(),
-                          structured?.prep?.trim(),
-                        ]
-                          .filter(Boolean)
-                          .join(", ");
-                        const qtyPart = [qty, unit].filter(Boolean).join(" ");
-                        const hasStructure = qtyPart !== "" && itemText !== "";
-                        return (
-                          <View key={`ing-${idx}`} style={styles.bulletRow}>
-                            <Text style={styles.bullet}>•</Text>
-                            {hasStructure ? (
-                              <Text style={styles.bulletText}>
-                                <Text style={styles.ingredientQty}>
-                                  {qtyPart}
-                                </Text>
-                                {` ${itemText}`}
-                              </Text>
-                            ) : (
-                              <Text style={styles.bulletText}>{ingredient}</Text>
-                            )}
-                          </View>
-                        );
-                      })}
-                    </View>
-                  ) : (
-                    <Text style={styles.muted}>{t("detail.noIngredients")}</Text>
-                  )}
-                </View>
 
                 {/* 6. STEPS (fallback) — only for recipes without structured
                     recipe_steps: plain numbered list. Structured recipes get
@@ -1408,6 +1281,88 @@ export default function RecipeDetailScreen() {
                     </View>
                   </View>
                 ) : null}
+
+                {/* QUICK-TIME CONTRIBUTION — at the bottom, after the
+                    content: contribute your cook times once you've read
+                    the recipe. Collapsed to a hint once a community average
+                    exists; unauthenticated submits prompt sign-in. */}
+                {quickDone ? (
+                  <Animated.Text
+                    style={[styles.quickSuccess, { opacity: quickFadeRef.current }]}
+                  >
+                    {t("quick.thanksBreakdown", {
+                      time: fmtMin(quickAvg ?? quickTotalValue ?? 0),
+                    })}
+                    {quickCleanupAvg != null
+                      ? `\n${t("quick.thanksCleanup", {
+                          cleanup: fmtMin(quickCleanupAvg),
+                        })}`
+                      : ""}
+                  </Animated.Text>
+                ) : community == null || quickOpen ? (
+                  <View style={styles.quickInline}>
+                    <Text style={styles.quickFormTitle}>
+                      {t("quick.didYouMake")}
+                    </Text>
+                    <View style={styles.quickForm}>
+                      {quickField(t("quick.plates"), quickPlates, setQuickPlates, {
+                        optional: true,
+                      })}
+                      {quickField(
+                        t("quick.handsOn"),
+                        quickHandsOn,
+                        setQuickHandsOn,
+                        { optional: true },
+                      )}
+                      {quickField(t("quick.totalQ"), quickTotal, setQuickTotal, {
+                        focusRef: true,
+                      })}
+                      {quickField(
+                        t("quick.cleanupQ"),
+                        quickCleanup,
+                        setQuickCleanup,
+                        { optional: true },
+                      )}
+                      {quickHandsOnExceeds ? (
+                        <Text style={styles.quickError}>
+                          {t("quick.handsOnTooLong")}
+                        </Text>
+                      ) : null}
+                      <Button
+                        title={t("quick.submit")}
+                        variant="primary"
+                        fullWidth
+                        disabled={!quickValid}
+                        loading={quickSubmitting}
+                        onPress={onSubmitQuickTime}
+                      />
+                    </View>
+                    {quickError != null ? (
+                      <Text style={styles.quickError}>{quickError}</Text>
+                    ) : null}
+                    {quickNeedsAuth ? (
+                      <Pressable
+                        onPress={() => router.push("/login")}
+                        hitSlop={Space.sm}
+                        style={styles.quickSignIn}
+                      >
+                        <Text style={styles.quickSignIn}>
+                          {t("quick.signIn")}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                ) : (
+                  <Pressable
+                    onPress={openQuick}
+                    hitSlop={Space.sm}
+                    style={styles.quickHint}
+                  >
+                    <Text style={styles.quickHintText}>
+                      {t("detail.cooksAvgAddHint")}
+                    </Text>
+                  </Pressable>
+                )}
 
                 {/* 7. YOUR NOTES — personal tweaks, kept on this device. */}
                 <View style={styles.section}>
