@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Recipe;
+use App\Support\RVector;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -27,7 +28,8 @@ use Illuminate\Support\Facades\DB;
  * 'active' and null minutes for the same reason.
  *
  * The dataset stores lists as R-style vectors: c("a", "b") — parsed by
- * parseRVector() below.
+ * App\Support\RVector (hardened against the escaped-quote rows the original
+ * str_getcsv-based parser missed).
  */
 class ImportFoodcom extends Command
 {
@@ -176,9 +178,12 @@ class ImportFoodcom extends Command
                 }
                 $seen[$r['source_url']] = true;
                 // Query-builder inserts bypass model casts, so json columns
-                // are encoded here.
+                // are encoded here. steps_count is denormalized here too
+                // (listing scope steps_count >= 2); recipes that already
+                // exist keep their value — recipereal:fix-steps recomputes.
                 $r['ingredients'] = json_encode($r['ingredients']);
                 $r['steps'] = json_encode($stepsBySource[$r['source_url']]);
+                $r['steps_count'] = count($stepsBySource[$r['source_url']]);
                 $new[] = $r;
             }
 
@@ -237,7 +242,7 @@ class ImportFoodcom extends Command
 
         // Instructions: prefer the list column, fall back to the prose column
         // (which may itself be an R vector, or plain text).
-        $instructions = $this->parseRVector((string) (
+        $instructions = RVector::parse((string) (
             $this->col($row, $header, 'instructionslist')
             ?? $this->col($row, $header, 'recipeinstructionslist')
             ?? ''
@@ -248,7 +253,7 @@ class ImportFoodcom extends Command
                 return null;
             }
             if (preg_match('/^c\(/i', $prose)) {
-                $instructions = $this->parseRVector($prose);
+                $instructions = RVector::parse($prose);
             } else {
                 $instructions = array_values(array_filter(
                     array_map('trim', preg_split('/\r\n|\r|\n|(?<=\.)\s+/', $prose)),
@@ -266,8 +271,8 @@ class ImportFoodcom extends Command
             return null;
         }
 
-        $parts = $this->parseRVector((string) ($this->col($row, $header, 'recipeingredientparts') ?? ''));
-        $quantities = $this->parseRVector((string) ($this->col($row, $header, 'recipeingredientquantities') ?? ''));
+        $parts = RVector::parse((string) ($this->col($row, $header, 'recipeingredientparts') ?? ''));
+        $quantities = RVector::parse((string) ($this->col($row, $header, 'recipeingredientquantities') ?? ''));
         $ingredients = [];
         if ($parts !== []) {
             if (count($quantities) === count($parts)) {
@@ -293,7 +298,7 @@ class ImportFoodcom extends Command
         }
 
         $image = null;
-        $images = $this->parseRVector((string) ($this->col($row, $header, 'images') ?? ''));
+        $images = RVector::parse((string) ($this->col($row, $header, 'images') ?? ''));
         if ($images !== []) {
             $image = substr($images[0], 0, 500);
         }
@@ -307,45 +312,6 @@ class ImportFoodcom extends Command
             'time' => $total,
             'rating' => (float) ($this->col($row, $header, 'aggregatedrating') ?: 0),
         ];
-    }
-
-    /**
-     * Parse the dataset's R-style vector strings: c("a", "b") → ["a", "b"].
-     * Also expands elements that are themselves nested c(...) strings, and
-     * treats R's empty markers (NULL, NA, character(0)) as empty.
-     */
-    private function parseRVector(string $value): array
-    {
-        $value = trim($value);
-        if ($value === '' || strtoupper($value) === 'NULL' || strtoupper($value) === 'NA'
-            || strtolower($value) === 'character(0)') {
-            return [];
-        }
-
-        if (preg_match('/^c\((.*)\)$/s', $value, $m)) {
-            // Split on commas that are outside quotes.
-            $items = str_getcsv($m[1]);
-
-            $out = [];
-            foreach ($items as $item) {
-                $item = trim((string) $item);
-                if ($item === '' || strtoupper($item) === 'NA') {
-                    continue;
-                }
-                // Some rows carry a second level of vector-stringifying.
-                if (preg_match('/^c\(.*\)$/s', $item)) {
-                    foreach ($this->parseRVector($item) as $nested) {
-                        $out[] = $nested;
-                    }
-                } else {
-                    $out[] = $item;
-                }
-            }
-
-            return $out;
-        }
-
-        return [$value];
     }
 
     /**

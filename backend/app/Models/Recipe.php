@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -16,6 +17,7 @@ class Recipe extends Model
         'publisher_time_minutes',
         'community_avg_minutes',
         'cleanup_avg_minutes',
+        'steps_count',
         'dish_count',
         'grease_level',
         'dishwasher_safe',
@@ -39,6 +41,7 @@ class Recipe extends Model
             'publisher_time_minutes' => 'integer',
             'community_avg_minutes' => 'decimal:2',
             'cleanup_avg_minutes' => 'decimal:2',
+            'steps_count' => 'integer',
             'dish_count' => 'integer',
             'dishwasher_safe' => 'boolean',
         ];
@@ -70,6 +73,21 @@ class Recipe extends Model
         $handwash = ($this->dishwasher_safe ? 0 : $dishCount * 1.0);
 
         return (int) round($base + $dishes + $grease + $handwash);
+    }
+
+    /**
+     * Recipes visible in list endpoints (index, search, home rails, paged
+     * seed): at least 2 steps. Keeps degenerate imports out of the app —
+     * e.g. recipes whose only "step" is an un-parsed raw R vector
+     * (see recipereal:fix-steps). Direct /show links keep working for any
+     * recipe regardless of this scope.
+     *
+     * The column is table-qualified so the scope also works on queries
+     * joined against recipes_fts (which has no steps_count column).
+     */
+    public function scopeListable(Builder $query): Builder
+    {
+        return $query->where('recipes.steps_count', '>=', 2);
     }
 
     public function recipeSteps(): HasMany

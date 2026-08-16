@@ -51,6 +51,10 @@ class RecipeSeeder extends Seeder
         $steps = $recipe['steps_data'];
         unset($recipe['steps_data']);
 
+        // Denormalized step count — listing endpoints filter steps_count >= 2
+        // (Recipe::scopeListable), so seeded recipes must carry it too.
+        $recipe['steps_count'] = count($steps);
+
         $recipe['image_url'] ??= self::imageUrlForTitle($recipe['title']);
 
         $model = Recipe::create($recipe);

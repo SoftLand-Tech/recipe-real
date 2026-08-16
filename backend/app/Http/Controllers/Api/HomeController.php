@@ -44,6 +44,7 @@ class HomeController extends Controller
         return [
             // Crowd favourites: well-rated by a meaningful number of reviewers.
             'top_rated' => Recipe::query()
+                ->listable()
                 ->whereNotNull('image_url')
                 ->whereNotNull('aggregated_rating')
                 ->where('review_count', '>=', 10)
@@ -57,6 +58,7 @@ class HomeController extends Controller
             // Quick wins: at most ~30 minutes door-to-door using the best
             // known time (community consensus over publisher claim).
             'easy_wins' => Recipe::query()
+                ->listable()
                 ->whereNotNull('image_url')
                 ->whereRaw('COALESCE(community_avg_minutes, publisher_time_minutes) BETWEEN 1 AND 30')
                 ->orderByRaw('COALESCE(community_avg_minutes, publisher_time_minutes) IS NULL ASC')
@@ -69,6 +71,7 @@ class HomeController extends Controller
 
             // Most reviewed = most cooked.
             'most_loved' => Recipe::query()
+                ->listable()
                 ->whereNotNull('image_url')
                 ->where('review_count', '>=', 25)
                 ->orderByDesc('review_count')
@@ -82,6 +85,7 @@ class HomeController extends Controller
             // step_type — expected. The recipe_steps.recipe_id index keeps
             // the EXISTS subquery cheap.
             'hands_off' => Recipe::query()
+                ->listable()
                 ->whereNotNull('image_url')
                 ->whereExists(function ($sub): void {
                     $sub->selectRaw('1')

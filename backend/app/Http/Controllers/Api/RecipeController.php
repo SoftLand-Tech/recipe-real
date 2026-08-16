@@ -38,7 +38,8 @@ class RecipeController extends Controller
     {
         $perPage = max(1, min(100, $request->integer('per_page', 15)));
 
-        $query = Recipe::query();
+        // Listable: hide recipes with fewer than 2 steps (degenerate imports).
+        $query = Recipe::query()->listable();
 
         if ($request->filled('search')) {
             $query->where('title', 'like', '%'.$request->string('search').'%');
@@ -84,6 +85,7 @@ class RecipeController extends Controller
         if ($match !== '') {
             try {
                 $query = Recipe::query()
+                    ->listable()
                     ->join('recipes_fts', 'recipes_fts.rowid', '=', 'recipes.id')
                     ->select('recipes.*')
                     ->whereRaw('recipes_fts MATCH ?', [$match]);
@@ -104,7 +106,8 @@ class RecipeController extends Controller
             }
         }
 
-        $query = Recipe::query();
+        // LIKE fallback (or no q): listable applies here too.
+        $query = Recipe::query()->listable();
 
         if ($q !== '') {
             $query->where('title', 'like', "%{$q}%");
@@ -218,7 +221,11 @@ class RecipeController extends Controller
         if ($request->filled('page')) {
             $perPage = max(1, min(100, $request->integer('per_page', 50)));
 
+            // Paged mode: listable (>= 2 steps) so offline clients don't
+            // sync degenerate imports. The legacy unpaged dump below keeps
+            // its original behavior.
             $recipes = Recipe::with('recipeSteps')
+                ->listable()
                 ->orderByRaw('image_url IS NOT NULL DESC, id ASC')
                 ->paginate($perPage);
         } else {
