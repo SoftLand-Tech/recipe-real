@@ -1097,7 +1097,53 @@ export default function RecipeDetailScreen() {
                   </View>
                 ) : null}
 
-                {/* 4. WHEN'S DINNER READY? — start-now timeline. */}
+                {/* 4. INGREDIENTS — structured "½ cup | brown sugar, packed"
+                    rows when the parsed data lines up, plain bullets otherwise. */}
+                <View style={styles.section}>
+                  <SectionHeader title={t("detail.ingredients")} />
+                  {ingredientLines.length > 0 ? (
+                    <View style={styles.bulletList}>
+                      {ingredientLines.map((ingredient, idx) => {
+                        const structured = structuredAligned
+                          ? structuredIngredients[idx]
+                          : undefined;
+                        const qty =
+                          structured?.qty_display ??
+                          (structured?.qty != null
+                            ? String(structured.qty)
+                            : null);
+                        const unit = structured?.unit?.trim() || null;
+                        const itemText = [
+                          structured?.item?.trim(),
+                          structured?.prep?.trim(),
+                        ]
+                          .filter(Boolean)
+                          .join(", ");
+                        const qtyPart = [qty, unit].filter(Boolean).join(" ");
+                        const hasStructure = qtyPart !== "" && itemText !== "";
+                        return (
+                          <View key={`ing-${idx}`} style={styles.bulletRow}>
+                            <Text style={styles.bullet}>•</Text>
+                            {hasStructure ? (
+                              <Text style={styles.bulletText}>
+                                <Text style={styles.ingredientQty}>
+                                  {qtyPart}
+                                </Text>
+                                {` ${itemText}`}
+                              </Text>
+                            ) : (
+                              <Text style={styles.bulletText}>{ingredient}</Text>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <Text style={styles.muted}>{t("detail.noIngredients")}</Text>
+                  )}
+                </View>
+
+                {/* 5. WHEN'S DINNER READY? — start-now timeline. */}
                 {steps.length > 0 ? (
                   <View style={styles.section}>
                     <SectionHeader title={t("detail.timelineTitle")} />
