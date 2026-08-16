@@ -36,6 +36,28 @@ const CACHE_SCHEMA_VERSION = 5;
  */
 let dbReady: Promise<SQLite.SQLiteDatabase> | null = null;
 
+/**
+ * Write-serialization chain: all MULTI-STATEMENT TRANSACTIONAL writes run
+ * through this. Two overlapping `withTransactionAsync` calls on the SAME
+ * connection race on BEGIN — the loser throws "cannot rollback - no
+ * transaction is active" (its BEGIN failed inside the other transaction, so
+ * its rollback has nothing to roll back). Screens fire several writers
+ * concurrently at startup (seed continuation + light refresh + repair
+ * check), so every transaction-taking public function wraps its work in
+ * `runSerialized`.
+ */
+let writeChain: Promise<unknown> = Promise.resolve();
+
+async function runSerialized<T>(job: () => Promise<T>): Promise<T> {
+  const run = writeChain.then(job, job);
+  // Keep the chain alive even if the job rejects.
+  writeChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 function getDb(): Promise<SQLite.SQLiteDatabase> {
   if (!dbReady) {
     dbReady = (async () => {
@@ -344,7 +366,7 @@ export async function upsertRecipes(
   if (recipes.length === 0) return;
   const db = await getDb();
 
-  await db.withTransactionAsync(async () => {
+  await runSerialized(() => db.withTransactionAsync(async () => {
     // -- Recipe rows: chunked multi-row INSERT OR REPLACE --------------------
     for (const batch of chunked(recipes, INSERT_CHUNK_SIZE)) {
       const placeholders = batch
@@ -447,7 +469,7 @@ export async function upsertRecipes(
         params,
       );
     }
-  });
+  }));
 }
 
 /** Page size for the progressive first-launch seed. */
@@ -499,13 +521,17 @@ export async function seedCacheRemainingPages(
  */
 export async function clearRecipeCache(): Promise<void> {
   const db = await getDb();
-  await db.execAsync("PRAGMA foreign_keys = OFF;");
-  try {
-    await db.execAsync("DELETE FROM recipe_steps;");
-    await db.execAsync("DELETE FROM recipes;");
-  } finally {
-    await db.execAsync("PRAGMA foreign_keys = ON;");
-  }
+  // Serialized: the FK PRAGMA toggles are connection-global and must never
+  // interleave with another writer's transaction.
+  await runSerialized(async () => {
+    await db.execAsync("PRAGMA foreign_keys = OFF;");
+    try {
+      await db.execAsync("DELETE FROM recipe_steps;");
+      await db.execAsync("DELETE FROM recipes;");
+    } finally {
+      await db.execAsync("PRAGMA foreign_keys = ON;");
+    }
+  });
 }
 
 /**
@@ -816,7 +842,7 @@ export async function cachePaceCalibrations(
   items: PaceCalibration[],
 ): Promise<void> {
   const db = await getDb();
-  await db.withTransactionAsync(async () => {
+  await runSerialized(() => db.withTransactionAsync(async () => {
     await db.execAsync("DELETE FROM pace_calibrations;");
     for (const item of items) {
       await db.runAsync(
@@ -833,7 +859,7 @@ export async function cachePaceCalibrations(
         ],
       );
     }
-  });
+  }));
 }
 
 /** Return all cached pace calibrations. */

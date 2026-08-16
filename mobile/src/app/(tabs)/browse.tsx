@@ -65,8 +65,15 @@ import {
 } from "@/utils/categorize";
 import { recipeMinutes } from "@/utils/recipeTime";
 
-// LayoutAnimation needs an explicit opt-in on Android (no-op elsewhere).
-if (Platform.OS === "android") {
+// LayoutAnimation needs an explicit opt-in on Android's OLD architecture.
+// On the New Architecture it's always on and the experimental call is a
+// no-op that warns on every invocation — skip it there.
+const g = globalThis as typeof globalThis & {
+  RN$NewArchEnabled?: boolean;
+  RN_newArchEnabled?: boolean;
+};
+const isNewArch = g.RN$NewArchEnabled === true || g.RN_newArchEnabled === true;
+if (Platform.OS === "android" && !isNewArch) {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
 }
 
@@ -1513,9 +1520,9 @@ export default function BrowseScreen() {
           // Heavy image cards: render small batches so no single frame tries
           // to mount a whole window of photos (fixes the VirtualizedList
           // "slow to update" warning on lower-end devices).
-          initialNumToRender={6}
-          maxToRenderPerBatch={6}
-          windowSize={7}
+          initialNumToRender={4}
+          maxToRenderPerBatch={4}
+          windowSize={5}
           updateCellsBatchingPeriod={80}
           removeClippedSubviews
           refreshing={refreshing}
