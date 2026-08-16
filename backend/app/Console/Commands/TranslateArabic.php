@@ -68,12 +68,17 @@ class TranslateArabic extends Command
 
     private float $lastRequestAt = 0.0;
 
+    /** Translation driver: 'google-free' (default) or 'mymemory'. */
+    private string $driver = 'google-free';
+
     public function handle(): int
     {
+        $this->driver = (string) (config('recipereal.translate_driver') ?: 'google-free');
+
         $this->emails = array_values(array_filter(array_map('trim',
             explode(',', (string) config('recipereal.translate_emails'))
         )));
-        if ($this->emails === []) {
+        if ($this->driver === 'mymemory' && $this->emails === []) {
             $this->error('No translation emails configured (recipereal.translate_emails).');
 
             return self::FAILURE;
@@ -238,7 +243,10 @@ class TranslateArabic extends Command
         return Recipe::query()
             ->whereNull('title_ar')
             ->when($exclude !== [], fn ($query) => $query->whereNotIn('id', $exclude))
+            // Priority: has image first, then the quality tier (rated + loved)
+            // — translate what users actually see before the long tail.
             ->orderByRaw('(image_url IS NULL) ASC')
+            ->orderByRaw('(aggregated_rating >= 4 AND review_count >= 5) DESC')
             ->orderBy('id')
             ->limit(max(1, $count))
             ->with('recipeSteps')
@@ -334,6 +342,10 @@ class TranslateArabic extends Command
             return null;
         }
 
+        if ($this->driver === 'google-free') {
+            return $this->translateChunkGoogle($q);
+        }
+
         $tries = count($this->emails);
         while ($tries-- > 0) {
             $email = $this->emails[$this->emailIndex];
@@ -421,6 +433,78 @@ class TranslateArabic extends Command
      * Defensive path for a "QUERY LENGTH LIMIT" response: split the chunk
      * in half (at a word boundary) and translate the halves separately.
      */
+    /**
+     * Google's keyless translate endpoint (client=gtx). Unofficial but
+     * stable for years, excellent Arabic, no quota wall from datacenter IPs
+     * (unlike MyMemory, which 429-blocks VPS IPs durably). Response is a
+     * nested array: [[["translated segment", "source segment"], ...], ...]
+     * — concatenate the first element of every segment row.
+     */
+    private function translateChunkGoogle(string $q): ?string
+    {
+        // gtx accepts ~5k chars per GET; our chunks are already small.
+        $tries = 3;
+        while ($tries-- > 0) {
+            $this->throttle();
+            $this->lastRequestAt = microtime(true);
+            try {
+                $response = Http
+                    ::timeout(8)
+                    ->withHeaders(['User-Agent' => 'Mozilla/5.0 (X11; Linux x86_64) RecipeReal/1.0'])
+                    ->get('https://translate.googleapis.com/translate_a/single', [
+                        'client' => 'gtx',
+                        'sl' => 'en',
+                        'tl' => 'ar',
+                        'dt' => 't',
+                        'q' => $q,
+                    ]);
+            } catch (Throwable $e) {
+                if ($tries === 0) {
+                    $this->line('  [net] google connection error: '.mb_substr($e->getMessage(), 0, 120));
+
+                    return null;
+                }
+                usleep(500_000);
+                continue;
+            }
+
+            if ($response->status() === 429 || $response->status() >= 500) {
+                $this->line('  [rate] google HTTP '.$response->status().' — backing off 30s');
+                sleep(30);
+                continue;
+            }
+            if ($response->status() !== 200) {
+                $this->line('  [net] google HTTP '.$response->status().' — giving up on this chunk');
+
+                return null;
+            }
+
+            $data = $response->json();
+            if (! is_array($data) || ! is_array($data[0] ?? null)) {
+                $this->line('  [net] google unexpected payload — skipping chunk');
+
+                return null;
+            }
+            $out = '';
+            foreach ($data[0] as $segment) {
+                $out .= (string) ($segment[0] ?? '');
+            }
+            $out = trim($out);
+            if ($out === '') {
+                return null;
+            }
+
+            $this->charsUsed += mb_strlen($q);
+            if ($this->budget > 0 && $this->charsUsed >= $this->budget) {
+                $this->budgetExhausted = true;
+            }
+
+            return $out;
+        }
+
+        return null;
+    }
+
     private function translateOversized(string $q): ?string
     {
         if (mb_strlen($q) < 16) {

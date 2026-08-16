@@ -15,6 +15,10 @@ return [
     */
 
     // Max source characters translated per run, across all emails.
+    // 'google-free' (default; unofficial keyless endpoint, best Arabic, no IP walls)
+    // or 'mymemory' (email-quotas — NOTE: durably 429-blocks datacenter IPs).
+    'translate_driver' => env('TRANSLATE_DRIVER', 'google-free'),
+
     'translate_daily_budget' => env('TRANSLATE_DAILY_BUDGET', 140000),
 
     // Comma-separated MyMemory contact emails (quota rotation pool).
