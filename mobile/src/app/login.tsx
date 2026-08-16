@@ -46,7 +46,8 @@ function resolveGoogleClientId(): string | null {
  */
 function resolveAuthRedirectUri(): string | null {
   const isExpoGo =
-    Constants.executionEnvironment === "StoreClient";
+    Constants.executionEnvironment ===
+    Constants.ExecutionEnvironment.StoreClient;
   if (!isExpoGo) {
     const scheme = Constants.expoConfig?.scheme;
     if (typeof scheme === "string" && scheme.length > 0) {
@@ -178,7 +179,9 @@ export default function LoginScreen() {
 
       let openUrl: string;
       let returnUrl: string;
-      const isExpoGo = Constants.executionEnvironment === "StoreClient";
+      const isExpoGo =
+        Constants.executionEnvironment ===
+        Constants.ExecutionEnvironment.StoreClient;
       if (isExpoGo) {
         // Proxy flow: auth.expo.io bounces the Google redirect (an HTTPS URL
         // registerable on the Web OAuth client) back into Expo Go.
