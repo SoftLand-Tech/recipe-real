@@ -35,6 +35,7 @@ export const ar: Record<string, string> = {
   "common.loadingRecipe": "جارٍ تحميل الوصفة…",
   "common.couldNotLoadRecipe": "تعذّر تحميل هذه الوصفة.",
   "common.loadFailedRecipe": "فشل تحميل الوصفة.",
+  "common.ratingChip": "★ {rating}",
 
   // ---- الرئيسية -----------------------------------------------------------
   "home.tagline": "أوقات طهي صادقة، موثّقة من طهاة حقيقيين",
@@ -44,6 +45,8 @@ export const ar: Record<string, string> = {
   "home.handsOffSubtitle": "معظم الوقت يغلي على مهل، وبأقل تقليب",
   "home.quickCleanup": "تنظيف سريع",
   "home.browseByCraving": "استعرض حسب رغبتك",
+  "home.railTopRated": "الأعلى تقييمًا",
+  "home.railMostLoved": "الأكثر محبة",
 
   // ---- التصنيفات ----------------------------------------------------------
   "cat.pasta": "معكرونة",
@@ -85,13 +88,18 @@ export const ar: Record<string, string> = {
   "browse.cookAgain": "اطبخها مجددًا",
   "browse.noMatch": "لا توجد وصفات مطابقة — جرّب فلترًا آخر.",
   "browse.countOf": "{shown} من {total} وصفة",
+  "browse.offlineCaption": "بدون اتصال — عرض الوصفات المحفوظة",
+  "browse.loadingMore": "جارٍ تحميل المزيد…",
 
   // ---- صفحة الوصفة -----------------------------------------------------------
   "detail.freeLimitTitle": "بلغت الحد المجاني",
   "detail.freeLimitBody":
     "وصلت إلى الحد المجاني (٥ وصفات شهريًا). قم بالترقية لوصفات بلا حدود.",
   "detail.statPublisher": "الناشر",
+  "detail.statRealAvg": "المتوسط الفعلي",
   "detail.statTotalInclCleanup": "الإجمالي مع التنظيف",
+  "detail.ratingWithCount": "★ {rating} · {n} تقييم",
+  "detail.ratingOnly": "★ {rating}",
   "detail.yourPace": "وتيرتك · ~{time}",
   "detail.dishes": "{n} أطباق",
   "detail.dishwasherSafe": "آمن لغسالة الصحون",
@@ -111,6 +119,16 @@ export const ar: Record<string, string> = {
   "detail.steps": "الخطوات",
   "detail.adjustedForYou": "~{time} لك",
   "detail.startCookMode": "ابدأ وضع الطهي",
+
+  // ---- المساهمة بوقت الطهي ----------------------------------------------------
+  "quick.cookedIt": "طبختها؟",
+  "quick.howLong": "كم استغرق الأمر؟",
+  "quick.minutesPlaceholder": "الدقائق",
+  "quick.submit": "إرسال",
+  "quick.thanks": "شكرًا! متوسط المجتمع الآن ~{time}",
+  "quick.error": "تعذّر الإرسال. حاول مجددًا.",
+  "quick.signInRequired": "سجّل الدخول للمساهمة بوقتك.",
+  "quick.signIn": "تسجيل الدخول",
 
   // ---- عوامل التنظيف وأنواع الخطوات -------------------------------------------
   "grease.low": "منخفض",

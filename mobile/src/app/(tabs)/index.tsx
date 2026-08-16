@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 
+import { fetchHomeRails } from "@/api/client";
 import { track } from "@/analytics";
 import {
   countCachedRecipes,
@@ -21,7 +22,7 @@ import {
   seedCacheFirstPage,
   seedCacheRemainingPages,
 } from "@/db/database";
-import type { Recipe } from "@/types";
+import type { HomeRails, Recipe } from "@/types";
 import { useLang, useLocalizedRecipe, useT } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 import {
@@ -34,6 +35,7 @@ import {
   TimeChip,
 } from "@/components/ui";
 import { CATEGORIES } from "@/utils/categorize";
+import { recipeMinutes } from "@/utils/recipeTime";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -42,10 +44,11 @@ const RAIL_SIZE = 10;
 
 /**
  * Rough "hands-off" score for a recipe: the summed community minutes of its
- * passive steps when steps are hydrated, else ~40% of the community average
- * (long-cooking recipes are mostly passive). `getCachedRecipes()` does not
- * hydrate recipe_steps, so in practice the fallback drives the ordering —
- * the step sum takes over automatically wherever steps are present.
+ * passive steps when steps are hydrated, else ~40% of the best-known total
+ * (community avg with publisher fallback — long-cooking recipes are mostly
+ * passive). `getCachedRecipes()` does not hydrate recipe_steps, so in
+ * practice the fallback drives the ordering — the step sum takes over
+ * automatically wherever steps are present.
  */
 function passiveScore(recipe: Recipe): number {
   if (Array.isArray(recipe.recipe_steps) && recipe.recipe_steps.length > 0) {
@@ -55,7 +58,7 @@ function passiveScore(recipe: Recipe): number {
       0,
     );
   }
-  return (recipe.community_avg_minutes ?? 0) * 0.4;
+  return (recipeMinutes(recipe) ?? 0) * 0.4;
 }
 
 /**
@@ -81,6 +84,11 @@ export default function HomeScreen() {
   const [state, setState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Server-driven rails (GET /api/home, 5-min server cache). Null = not yet
+  // available → the client-side cached rails render instead, so Home is
+  // NEVER empty while the cache has data.
+  const [serverRails, setServerRails] = useState<HomeRails | null>(null);
 
   const styles = useMemo(
     () =>
@@ -150,12 +158,11 @@ export default function HomeScreen() {
   const easyWins = useMemo(
     () =>
       recipes
-        .filter(
-          (r) => r.community_avg_minutes != null && r.community_avg_minutes <= 30,
-        )
-        .sort(
-          (a, b) => (a.community_avg_minutes ?? 0) - (b.community_avg_minutes ?? 0),
-        )
+        .filter((r) => {
+          const m = recipeMinutes(r);
+          return m != null && m <= 30;
+        })
+        .sort((a, b) => (recipeMinutes(a) ?? 0) - (recipeMinutes(b) ?? 0))
         .slice(0, RAIL_SIZE),
     [recipes],
   );
@@ -216,6 +223,34 @@ export default function HomeScreen() {
     }
   }, [setRecipesIfChanged]);
 
+  /**
+   * Load the four curated rails from the server. Any failure, or a payload
+   * with ALL rails empty (expected until server data lands), keeps the
+   * client-side cached rails on screen — Home is never empty when the cache
+   * has data. Rails that come back non-empty but sparse render as-is
+   * (HomeRail hides itself when empty).
+   */
+  const loadRails = useCallback(async () => {
+    try {
+      const rails = await fetchHomeRails();
+      const any =
+        rails.top_rated.length > 0 ||
+        rails.easy_wins.length > 0 ||
+        rails.most_loved.length > 0 ||
+        rails.hands_off.length > 0;
+      if (any) {
+        setServerRails(rails);
+        track("home_rails_loaded", { source: "server" });
+        return;
+      }
+    } catch (error) {
+      // Offline / server error: fall through to the cached rails.
+      console.warn("[RecipeReal] home rails fetch failed:", error);
+    }
+    setServerRails(null);
+    track("home_rails_loaded", { source: "cache" });
+  }, []);
+
   const loadFromCache = useCallback(async (): Promise<boolean> => {
     // Stale-while-revalidate: keep the current rails on screen during a
     // reload; skeletons are only for a true cold start (nothing to show).
@@ -247,6 +282,11 @@ export default function HomeScreen() {
 
   useEffect(() => {
     track("home_viewed");
+    // Server rails load in parallel with the cache (the cache also backs the
+    // fallback rails, favorites, and cook mode).
+    loadRails().catch((error) => {
+      console.warn("[RecipeReal] home rails load failed:", error);
+    });
     loadFromCache().then((hadCachedData) => {
       // Only light-refresh when we showed previously cached data; a cold
       // cache was just (progressively) seeded, so refreshing would re-download
@@ -278,9 +318,12 @@ export default function HomeScreen() {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await refreshInBackground();
-    setRefreshing(false);
-  }, [refreshInBackground]);
+    try {
+      await Promise.all([refreshInBackground(), loadRails()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshInBackground, loadRails]);
 
   // Category chips land in Browse ALREADY FILTERED: the `filter` param carries
   // the category id (e.g. "pasta", "quick") which Browse reads on mount.
@@ -289,7 +332,10 @@ export default function HomeScreen() {
     router.push({ pathname: "/browse", params: { filter: id } });
   }, []);
 
-  const showSkeletons = state === "loading" && recipes.length === 0;
+  // Skeletons only when NEITHER the server rails nor the cached recipes can
+  // paint anything yet (true cold start).
+  const showSkeletons =
+    serverRails == null && state === "loading" && recipes.length === 0;
 
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
@@ -313,7 +359,7 @@ export default function HomeScreen() {
           <SkeletonRail />
         )}
 
-        {state === "error" && (
+        {state === "error" && serverRails == null && (
           <View style={styles.center}>
             <Text style={styles.emptyGlyph}>🍲</Text>
             <Text style={styles.errorTitle}>{t("common.somethingWentWrong")}</Text>
@@ -326,17 +372,39 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {state === "ready" && recipes.length === 0 && (
-          <View style={styles.center}>
-            <Text style={styles.emptyGlyph}>🍳</Text>
-            <Text style={styles.muted}>{t("common.emptyRecipes")}</Text>
-            <Pressable style={styles.retry} onPress={loadFromCache}>
-              <Text style={styles.retryText}>{t("common.retry")}</Text>
-            </Pressable>
-          </View>
-        )}
+        {state === "ready" &&
+          serverRails == null &&
+          recipes.length === 0 && (
+            <View style={styles.center}>
+              <Text style={styles.emptyGlyph}>🍳</Text>
+              <Text style={styles.muted}>{t("common.emptyRecipes")}</Text>
+              <Pressable style={styles.retry} onPress={loadFromCache}>
+                <Text style={styles.retryText}>{t("common.retry")}</Text>
+              </Pressable>
+            </View>
+          )}
 
-        {state === "ready" && recipes.length > 0 && (
+        {serverRails != null ? (
+          // ---- Server-driven rails (GET /api/home) ----
+          <>
+            <HomeRail
+              title={t("home.railTopRated")}
+              items={serverRails.top_rated}
+            />
+            <HomeRail title={t("home.easyWins")} items={serverRails.easy_wins} />
+            <HomeRail
+              title={t("home.railMostLoved")}
+              items={serverRails.most_loved}
+            />
+            <HomeRail
+              title={t("home.handsOffHeroes")}
+              subtitle={t("home.handsOffSubtitle")}
+              items={serverRails.hands_off}
+            />
+            <CategoryRail onCategoryPress={handleCategoryPress} />
+          </>
+        ) : state === "ready" && recipes.length > 0 ? (
+          // ---- Fallback: rails computed over the offline cache ----
           <>
             <HomeRail title={t("home.topPicks")} items={topPicks} />
             <HomeRail title={t("home.easyWins")} items={easyWins} />
@@ -348,7 +416,7 @@ export default function HomeScreen() {
             <HomeRail title={t("home.quickCleanup")} items={quickCleanup} />
             <CategoryRail onCategoryPress={handleCategoryPress} />
           </>
-        )}
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -395,7 +463,7 @@ function SeeAllAction() {
   );
 }
 
-/** Compact rail card: hero image, 2-line title, community time chip. */
+/** Compact rail card: hero image, 2-line title, time + rating chips. */
 function HomeCard({ item }: { item: Recipe }) {
   const colors = useThemeColors();
   const t = useT();
@@ -415,6 +483,12 @@ function HomeCard({ item }: { item: Recipe }) {
           fontWeight: "600",
           color: colors.ink,
         },
+        chips: {
+          flexDirection: "row",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: Space.xs,
+        },
       }),
     [colors],
   );
@@ -430,7 +504,21 @@ function HomeCard({ item }: { item: Recipe }) {
         <Text style={styles.title} numberOfLines={2}>
           {lr.title(item)}
         </Text>
-        <TimeChip minutes={item.community_avg_minutes} label={t("common.focused")} />
+        <View style={styles.chips}>
+          <TimeChip
+            minutes={recipeMinutes(item)}
+            label={t("common.focused")}
+          />
+          {item.aggregated_rating != null ? (
+            <Chip
+              tone="amber"
+              size="sm"
+              label={t("common.ratingChip", {
+                rating: item.aggregated_rating.toFixed(1),
+              })}
+            />
+          ) : null}
+        </View>
       </View>
     </Card>
   );

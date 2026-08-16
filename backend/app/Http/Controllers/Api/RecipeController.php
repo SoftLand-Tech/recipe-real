@@ -6,9 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\RecipeResource;
 use App\Models\Recipe;
 use App\Models\RecipeView;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class RecipeController extends Controller
 {
@@ -16,6 +20,17 @@ class RecipeController extends Controller
      * Free-tier monthly distinct-recipe limit.
      */
     public const FREE_MONTHLY_LIMIT = 5;
+
+    /**
+     * Allowed /search sort orders (relevance needs a q, else it degrades).
+     */
+    private const SEARCH_SORTS = ['relevance', 'top_rated', 'fastest', 'most_loved'];
+
+    /**
+     * Top real categories served by categories(), cached for an hour.
+     */
+    private const CATEGORY_LIMIT = 15;
+
     /**
      * Paginated, filterable list of recipes (per_page clamped to 1..100, default 15).
      */
@@ -43,11 +58,160 @@ class RecipeController extends Controller
     }
 
     /**
+     * Full-text search over recipes (FTS5, see migration 000017 + the
+     * recipereal:rebuild-search command).
+     *
+     * Query params: q (optional), category (exact case-insensitive match on
+     * recipes.category), max_time (applies to COALESCE(community_avg_minutes,
+     * publisher_time_minutes)), sort (relevance|top_rated|fastest|most_loved,
+     * default relevance when q is given else top_rated), page/per_page
+     * (per_page clamped to 1..50, default 20).
+     *
+     * Falls back to a plain title LIKE when the FTS index is empty, missing
+     * or errors (e.g. unmatched MATCH syntax on a different sqlite build).
+     */
+    public function search(Request $request): AnonymousResourceCollection
+    {
+        $perPage = max(1, min(50, $request->integer('per_page', 20)));
+        $q = trim((string) $request->string('q'));
+        $match = $this->ftsMatch($q);
+
+        $sort = (string) $request->string('sort');
+        if (! in_array($sort, self::SEARCH_SORTS, true)) {
+            $sort = $match !== '' ? 'relevance' : 'top_rated';
+        }
+
+        if ($match !== '') {
+            try {
+                $query = Recipe::query()
+                    ->join('recipes_fts', 'recipes_fts.rowid', '=', 'recipes.id')
+                    ->select('recipes.*')
+                    ->whereRaw('recipes_fts MATCH ?', [$match]);
+
+                $this->applySearchFilters($query, $request);
+                $this->applySearchOrder($query, $sort, withFts: true);
+
+                $results = $query->paginate($perPage);
+
+                if ($results->total() > 0) {
+                    return RecipeResource::collection($results);
+                }
+
+                // Zero FTS hits: fall through to LIKE, which can still match
+                // terms the tokenizer would not (e.g. inside JSON punctuation).
+            } catch (QueryException) {
+                // recipes_fts missing/erroring — LIKE fallback below.
+            }
+        }
+
+        $query = Recipe::query();
+
+        if ($q !== '') {
+            $query->where('title', 'like', "%{$q}%");
+        }
+
+        $this->applySearchFilters($query, $request);
+        $this->applySearchOrder($query, $sort, withFts: false);
+
+        return RecipeResource::collection($query->paginate($perPage));
+    }
+
+    /**
+     * Top real recipe categories (by recipe count), cached for an hour.
+     */
+    public function categories(): JsonResponse
+    {
+        // Plain arrays only: this app's cache forbids unserializing classes
+        // (cache.serializable_classes = false).
+        $categories = Cache::remember('recipes:categories', now()->addHour(), function () {
+            return DB::table('recipes')
+                ->select('category', DB::raw('COUNT(*) AS count'))
+                ->whereNotNull('category')
+                ->where('category', '!=', '')
+                ->groupBy('category')
+                ->orderByDesc('count')
+                ->limit(self::CATEGORY_LIMIT)
+                ->get()
+                ->map(fn ($row) => ['category' => $row->category, 'count' => (int) $row->count])
+                ->all();
+        });
+
+        return response()->json(['data' => $categories]);
+    }
+
+    /**
+     * Sanitize free text into an FTS5 MATCH expression: each token stripped
+     * to letters/digits (quotes, colons, hyphens etc. are FTS5 syntax and
+     * break the parser), suffixed with `*` for prefix matching, joined by
+     * spaces (implicit AND). Returns '' when nothing usable remains.
+     */
+    private function ftsMatch(string $q): string
+    {
+        $tokens = preg_split('/\s+/u', $q) ?: [];
+
+        $tokens = array_map(
+            fn (string $token) => (string) preg_replace('/[^\p{L}\p{N}]/u', '', $token),
+            $tokens
+        );
+
+        $tokens = array_values(array_filter(
+            $tokens,
+            fn (string $token) => $token !== ''
+        ));
+
+        return implode(' ', array_map(
+            fn (string $token) => $token.'*',
+            $tokens
+        ));
+    }
+
+    /**
+     * Shared category / max_time filters for the FTS and fallback queries.
+     */
+    private function applySearchFilters(Builder $query, Request $request): void
+    {
+        if ($request->filled('category')) {
+            // Trimmed exact value; SQLite LIKE is case-insensitive for ASCII.
+            $query->where('recipes.category', 'like', trim((string) $request->string('category')));
+        }
+
+        if ($request->filled('max_time')) {
+            $query->whereRaw(
+                'COALESCE(recipes.community_avg_minutes, recipes.publisher_time_minutes) <= ?',
+                [$request->integer('max_time')]
+            );
+        }
+    }
+
+    /**
+     * Sort orders. `IS NULL ASC` puts nulls last on SQLite (0 sorts before 1).
+     */
+    private function applySearchOrder(Builder $query, string $sort, bool $withFts): void
+    {
+        match ($sort) {
+            'relevance' => $withFts
+                // FTS5 bm25() is negative-better, so ascending = best match
+                // first; rating breaks ties.
+                ? $query->orderByRaw('bm25(recipes_fts) ASC')
+                    ->orderByRaw('recipes.aggregated_rating IS NULL ASC, recipes.aggregated_rating DESC')
+                : $query->orderByRaw('recipes.aggregated_rating IS NULL ASC, recipes.aggregated_rating DESC, recipes.review_count DESC'),
+            'fastest' => $query
+                ->orderByRaw('COALESCE(recipes.community_avg_minutes, recipes.publisher_time_minutes) IS NULL ASC')
+                ->orderByRaw('COALESCE(recipes.community_avg_minutes, recipes.publisher_time_minutes) ASC'),
+            'most_loved' => $query->orderByDesc('recipes.review_count'),
+            default => $query
+                ->orderByRaw('recipes.aggregated_rating IS NULL ASC, recipes.aggregated_rating DESC')
+                ->orderByDesc('recipes.review_count'),
+        };
+    }
+
+    /**
      * Bulk offline-download endpoint: recipes with their steps.
      *
      * Mobile uses paged mode (?page=N&per_page=M, per_page clamped to
      * 1..100, default 50) for progressive first-load; without a page param
-     * all recipes are returned unpaginated for backward compatibility.
+     * a capped 1000-recipe dump is returned for backward compatibility (the
+     * full 520k-row unpaged dump is a footgun — use paged mode for bulk).
      */
     public function seed(Request $request): AnonymousResourceCollection
     {
@@ -60,6 +224,7 @@ class RecipeController extends Controller
         } else {
             $recipes = Recipe::with('recipeSteps')
                 ->orderByRaw('image_url IS NOT NULL DESC, id ASC')
+                ->limit(1000)
                 ->get();
         }
 

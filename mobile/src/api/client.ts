@@ -1,4 +1,5 @@
 import axios from "axios";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 
 import { AUTH_TOKEN_KEY } from "@/config";
@@ -11,6 +12,8 @@ import {
   getPaceCalibrations,
   normalizeRecipe,
   toNum,
+  fetchSearchPage,
+  type RecipePage,
 } from "@/api/http";
 
 // Re-export the shared axios instance + raw POST + the seed/pace fetchers so
@@ -18,6 +21,7 @@ import {
 // implementations live in `@/api/http` to avoid a circular import between the
 // client and `@/db/database`.
 export { http, postCookSessionRaw, seedRecipes, getPaceCalibrations };
+export type { RecipePage } from "@/api/http";
 
 // Use the shared instance for all calls below.
 const api = http;
@@ -25,11 +29,15 @@ const api = http;
 import type {
   AuthResponse,
   BillingPlan,
+  CategoryCount,
   CookSessionPayload,
   CookSessionSummary,
   GetRecipesParams,
+  HomeRails,
   Paginated,
+  QuickTimeResult,
   Recipe,
+  SearchParams,
   Usage,
 } from "@/types";
 
@@ -93,6 +101,155 @@ export async function getRecipes(
 export async function getRecipe(id: number | string): Promise<Recipe> {
   const { data } = await api.get<{ data: Recipe }>(`/api/recipes/${id}`);
   return normalizeRecipe(data.data);
+}
+
+// ---- Server-driven browse & home --------------------------------------------
+
+/** Page size for the server-driven Browse list (server clamps to 1..50). */
+const SEARCH_PER_PAGE = 20;
+
+/**
+ * One page of the public search endpoint (GET /api/recipes/search). Empty `q`
+ * is a filtered browse; the response rows are LIGHT (no recipe_steps) and
+ * defensively normalized (the local dev DB has metadata only partially).
+ */
+export async function searchRecipes(
+  params: SearchParams = {},
+): Promise<RecipePage> {
+  return fetchSearchPage({
+    q: params.q,
+    category: params.category,
+    max_time: params.maxTime,
+    sort: params.sort,
+    page: params.page,
+    per_page: params.perPage ?? SEARCH_PER_PAGE,
+  });
+}
+
+/** AsyncStorage cache key for the category chips (server data, 1h-cached server-side). */
+const CATEGORIES_CACHE_KEY = "recipereal.categories";
+/** Local staleness window for the cached category chips. */
+const CATEGORIES_TTL_MS = 60 * 60 * 1000;
+
+interface CachedCategories {
+  savedAt: number;
+  data: CategoryCount[];
+}
+
+/** Defensive CategoryCount row filter (never trust a partial dev payload). */
+function validCategoryRows(rows: unknown): CategoryCount[] {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((row) => {
+      const c = row as { category?: unknown; count?: unknown };
+      return {
+        category:
+          typeof c?.category === "string" ? c.category.trim() : "",
+        count: toNum(c?.count) ?? 0,
+      };
+    })
+    .filter((c) => c.category.length > 0);
+}
+
+/**
+ * Top real recipe categories (GET /api/recipes/categories). Served from a
+ * 1-hour server cache; the fresh payload is mirrored into AsyncStorage so an
+ * offline launch can reuse the last known chips. Any failure (or an empty
+ * response — the local dev DB may have none) falls back to the stale cache,
+ * then to an empty array so callers can use their local keyword categories.
+ */
+export async function fetchCategories(): Promise<CategoryCount[]> {
+  try {
+    const { data } = await api.get<{ data: unknown }>(
+      "/api/recipes/categories",
+    );
+    const rows = validCategoryRows(data?.data);
+    if (rows.length > 0) {
+      AsyncStorage.setItem(
+        CATEGORIES_CACHE_KEY,
+        JSON.stringify({ savedAt: Date.now(), data: rows } satisfies CachedCategories),
+      ).catch(() => {
+        // Non-fatal: caching is best-effort.
+      });
+      return rows;
+    }
+  } catch {
+    // Offline / server error: the stale cache below is the fallback.
+  }
+  try {
+    const raw = await AsyncStorage.getItem(CATEGORIES_CACHE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as CachedCategories) : null;
+    if (
+      parsed &&
+      Date.now() - (parsed.savedAt ?? 0) < CATEGORIES_TTL_MS &&
+      Array.isArray(parsed.data)
+    ) {
+      return validCategoryRows(parsed.data);
+    }
+  } catch {
+    // Non-fatal: fall through to an empty list (caller uses local chips).
+  }
+  return [];
+}
+
+/**
+ * The four curated Home rails (GET /api/home, 5-min server cache). Rows are
+ * light and some rails may legitimately be empty until server data lands —
+ * callers decide whether to fall back to their local cache rails. A network
+ * failure rethrows so the caller can degrade.
+ */
+export async function fetchHomeRails(): Promise<HomeRails> {
+  const { data } = await api.get<{ data?: Partial<HomeRails> }>("/api/home");
+  const rails = (value: unknown): Recipe[] =>
+    Array.isArray(value) ? value.map(normalizeRecipe) : [];
+  const src = data?.data ?? {};
+  return {
+    top_rated: rails(src.top_rated),
+    easy_wins: rails(src.easy_wins),
+    most_loved: rails(src.most_loved),
+    hands_off: rails(src.hands_off),
+  };
+}
+
+/**
+ * Thrown by submitQuickTime when the server answers 401 (no/expired token).
+ * Screens catch this instance to show a "Sign in to contribute" CTA instead
+ * of a generic error.
+ */
+export class QuickTimeUnauthorizedError extends Error {
+  constructor() {
+    super("Sign in to contribute");
+    this.name = "QuickTimeUnauthorizedError";
+  }
+}
+
+/**
+ * One-tap honest-time contribution (POST /api/recipes/{id}/quick-time,
+ * auth:sanctum). `community_avg_minutes` may serialize as a string ("24.00")
+ * — it is normalized to a number here. Any failure rethrows; a 401 becomes a
+ * QuickTimeUnauthorizedError so the caller can prompt sign-in.
+ */
+export async function submitQuickTime(
+  recipeId: number,
+  minutes: number,
+): Promise<QuickTimeResult> {
+  try {
+    const { data } = await api.post<Record<string, unknown>>(
+      `/api/recipes/${recipeId}/quick-time`,
+      { minutes },
+    );
+    return {
+      ok: Boolean(data?.ok),
+      recipe_id: toNum(data?.recipe_id) ?? recipeId,
+      minutes_submitted: toNum(data?.minutes_submitted) ?? minutes,
+      community_avg_minutes: toNum(data?.community_avg_minutes),
+    };
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new QuickTimeUnauthorizedError();
+    }
+    throw error;
+  }
 }
 
 // `seedRecipes` now lives in `@/api/http` and is re-exported from this module.

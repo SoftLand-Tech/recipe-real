@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BillingController;
 use App\Http\Controllers\Api\CookSessionController;
+use App\Http\Controllers\Api\HomeController;
 use App\Http\Controllers\Api\PaceCalibrationController;
 use App\Http\Controllers\Api\RecipeController;
 use App\Http\Controllers\Api\UsageController;
@@ -21,9 +22,15 @@ Route::middleware('throttle:auth')->group(function (): void {
 // Public recipe-browsing routes (mobile-first; recipes are public in MVP).
 Route::middleware('throttle:60,1')->group(function (): void {
     Route::get('/recipes', [RecipeController::class, 'index']);
-    // /seed MUST come before /{recipe} to avoid route shadowing.
+    // Static /recipes/* sub-paths MUST come before /{recipe} to avoid route
+    // shadowing (same reason /seed sits above it).
+    Route::get('/recipes/search', [RecipeController::class, 'search']);
+    Route::get('/recipes/categories', [RecipeController::class, 'categories']);
     Route::get('/recipes/seed', [RecipeController::class, 'seed']);
     Route::get('/recipes/{recipe}', [RecipeController::class, 'show']);
+
+    // Home-screen rails (curated, cached, light).
+    Route::get('/home', HomeController::class);
 
     // Self-hosted product analytics: auth-optional (anonymous app_open events
     // are allowed), with a tighter throttle to limit anonymous spam.
@@ -39,6 +46,10 @@ Route::middleware(['throttle:60,1', 'auth:sanctum'])->group(function (): void {
 
     Route::post('/cook-sessions', [CookSessionController::class, 'store']);
     Route::get('/cook-sessions', [CookSessionController::class, 'index']);
+
+    // One-tap "it actually took N minutes" contribution (no per-step
+    // timings): creates a bare cook session feeding community_avg_minutes.
+    Route::post('/recipes/{recipe}/quick-time', [CookSessionController::class, 'quickTime']);
 
     Route::get('/pace-calibrations', PaceCalibrationController::class);
 });

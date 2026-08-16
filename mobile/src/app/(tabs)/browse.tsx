@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   LayoutAnimation,
   Platform,
@@ -21,6 +22,8 @@ import {
   useLocalSearchParams,
 } from "expo-router";
 
+import { fetchCategories, searchRecipes } from "@/api/client";
+import { isOfflineError } from "@/api/http";
 import { track } from "@/analytics";
 import {
   countCachedRecipes,
@@ -34,7 +37,7 @@ import {
   seedCacheRemainingPages,
   toggleFavorite,
 } from "@/db/database";
-import type { Recipe } from "@/types";
+import type { Recipe, SearchParams } from "@/types";
 import { useLocalizedRecipe, useT } from "@/i18n";
 import {
   Radius,
@@ -58,8 +61,9 @@ import {
 import {
   CATEGORIES,
   categorizeTitle,
-  type CategoryId,
+  categoryLabel,
 } from "@/utils/categorize";
+import { recipeMinutes } from "@/utils/recipeTime";
 
 // LayoutAnimation needs an explicit opt-in on Android (no-op elsewhere).
 if (Platform.OS === "android") {
@@ -68,13 +72,21 @@ if (Platform.OS === "android") {
 
 type LoadState = "loading" | "ready" | "error";
 
-/** Active list filter: a category, the "quick" time filter, or none. */
-type ListFilter = "all" | CategoryId | "quick";
+/**
+ * Active list filter: the "quick" time filter, a category string (server
+ * category or local keyword label), or none. Category chips now come from
+ * the server (GET /api/recipes/categories), so the value is an opaque
+ * string — the local CATEGORIES labels are the offline fallback.
+ */
+type ListFilter =
+  | { kind: "all" }
+  | { kind: "quick" }
+  | { kind: "category"; id: string; label: string };
 
 /** Advanced sort options (applied after all filters). */
 type SortMode = "default" | "fastest" | "cleanup";
 
-/** Total-time cap options (community_avg_minutes; null = Any). */
+/** Total-time cap options (community avg with publisher fallback; null = Any). */
 const TIME_FILTERS = [
   { max: null, labelKey: "filter.any" },
   { max: 15, labelKey: "filter.time15" },
@@ -96,14 +108,22 @@ const SORT_MODES = [
   { mode: "cleanup", labelKey: "filter.sortLeastCleanup" },
 ] as const;
 
+/** Debounce for search/filter changes before hitting the server. */
+const SEARCH_DEBOUNCE_MS = 350;
+
 /**
  * Parse the `filter` param other screens may pass (contract with Home's
- * craving shortcuts): a CATEGORIES id or "quick". Anything else is ignored.
+ * craving shortcuts): a local CATEGORIES id or "quick". Anything else is
+ * ignored. Local ids map to their label so the SAME string is sent to the
+ * server (`category` matches case-insensitively) and to the offline filter.
  */
 function parseParamFilter(value: string | undefined): ListFilter | null {
   if (!value) return null;
-  if (value === "quick") return "quick";
-  return CATEGORIES.some((c) => c.id === value) ? (value as CategoryId) : null;
+  if (value === "quick") return { kind: "quick" };
+  const local = CATEGORIES.find((c) => c.id === value);
+  return local
+    ? { kind: "category", id: local.id, label: categoryLabel(local.id) }
+    : null;
 }
 
 /** Sort ascending with nulls last (missing timings sink instead of floating). */
@@ -122,9 +142,30 @@ function sortAscNullsLast<T>(
 }
 
 /**
- * The full filter pipeline: search → category/quick → total time → cleanup,
- * then sort. "Default" keeps the source order, which is already title-ASC
- * (getCachedRecipes orders by title COLLATE NOCASE ASC).
+ * Local (offline-fallback) category matching. When the chip is a known local
+ * keyword category, keep the regex-based categorizeTitle behavior; server
+ * category strings match the recipe's own `category` column or a title
+ * substring (cached rows don't carry the metadata column).
+ */
+function matchesCategory(
+  recipe: Recipe,
+  filter: { id: string; label: string },
+): boolean {
+  const local = CATEGORIES.find((c) => c.id === filter.id);
+  if (local && categorizeTitle(recipe.title) === local.id) return true;
+  const label = filter.label.toLowerCase();
+  if (recipe.category != null && recipe.category.toLowerCase() === label) {
+    return true;
+  }
+  return recipe.title.toLowerCase().includes(label);
+}
+
+/**
+ * The OFFLINE fallback filter pipeline (server-driven mode is handled by the
+ * search effect): search → category/quick → total time → cleanup, then sort.
+ * Time filters and the fastest sort use the community average with the
+ * publisher claim as fallback (`recipeMinutes`), so a sparse community
+ * dataset never empties the list.
  */
 function computeVisibleRecipes(
   source: Recipe[],
@@ -144,18 +185,19 @@ function computeVisibleRecipes(
         (r.title_ar != null && r.title_ar.toLowerCase().includes(q)),
     );
   }
-  if (filter === "quick") {
-    out = out.filter(
-      (r) => r.community_avg_minutes != null && r.community_avg_minutes <= 30,
-    );
-  } else if (filter !== "all") {
-    out = out.filter((r) => categorizeTitle(r.title) === filter);
+  if (filter.kind === "quick") {
+    out = out.filter((r) => {
+      const m = recipeMinutes(r);
+      return m != null && m <= 30;
+    });
+  } else if (filter.kind === "category") {
+    out = out.filter((r) => matchesCategory(r, filter));
   }
   if (timeMax != null) {
-    out = out.filter(
-      (r) =>
-        r.community_avg_minutes != null && r.community_avg_minutes <= timeMax,
-    );
+    out = out.filter((r) => {
+      const m = recipeMinutes(r);
+      return m != null && m <= timeMax;
+    });
   }
   if (cleanupMax != null) {
     out = out.filter(
@@ -164,7 +206,7 @@ function computeVisibleRecipes(
     );
   }
   if (sortMode === "fastest") {
-    return sortAscNullsLast(out, (r) => r.community_avg_minutes);
+    return sortAscNullsLast(out, recipeMinutes);
   }
   if (sortMode === "cleanup") {
     return sortAscNullsLast(out, (r) => r.cleanup_avg_minutes);
@@ -175,6 +217,11 @@ function computeVisibleRecipes(
 /** Number of steps attached to a recipe (joined rows, else embedded). */
 function stepCount(item: Recipe): number {
   return item.recipe_steps?.length ?? item.steps?.length ?? 0;
+}
+
+/** One-star rating label, e.g. "★ 4.8" (only rendered when non-null). */
+function ratingLabel(rating: number): string {
+  return `★ ${rating.toFixed(1)}`;
 }
 
 /**
@@ -306,6 +353,21 @@ function createStyles(colors: ThemeColors) {
     },
     clearAll: {
       alignSelf: "flex-start",
+    },
+    offlineBannerWrap: {
+      marginHorizontal: Space.lg,
+      marginBottom: Space.sm,
+    },
+    footerSpinner: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: Space.sm,
+      paddingVertical: Space.lg,
+    },
+    footerText: {
+      ...Type.caption,
+      color: colors.inkSecondary,
     },
     emptyCount: {
       ...Type.caption,
@@ -442,7 +504,7 @@ const FavoritesRail = memo(function FavoritesRail({
             {lr.title(item)}
           </Text>
           <TimeChip
-            minutes={item.community_avg_minutes}
+            minutes={recipeMinutes(item)}
             label={t("common.focused")}
           />
         </View>
@@ -474,15 +536,19 @@ const FavoritesRail = memo(function FavoritesRail({
 
 /**
  * Horizontal category/quick-filter chip row. Memoized: it re-renders only
- * when `filter` changes, which is exactly when the chip tones must update.
+ * when `filter` or the chip set changes (server categories land once), which
+ * is exactly when the chip tones must update. Chip presses send the category
+ * STRING to the server (`category` matches case-insensitively).
  */
 interface ChipRowProps {
+  chips: { id: string; label: string }[];
   filter: ListFilter;
   onSelect: (filter: ListFilter) => void;
   styles: BrowseStyles;
 }
 
 const ChipRow = memo(function ChipRow({
+  chips,
   filter,
   onSelect,
   styles,
@@ -495,27 +561,28 @@ const ChipRow = memo(function ChipRow({
       style={styles.filterRow}
       contentContainerStyle={styles.filterContent}
     >
-      <IconPressable onPress={() => onSelect("all")}>
+      <IconPressable onPress={() => onSelect({ kind: "all" })}>
         <Chip
           label={t("filter.all")}
-          tone={filter === "all" ? "accent" : "neutral"}
+          tone={filter.kind === "all" ? "accent" : "neutral"}
         />
       </IconPressable>
-      {CATEGORIES.map((category) => (
-        <IconPressable
-          key={category.id}
-          onPress={() => onSelect(category.id)}
-        >
+      {chips.map((chip) => (
+        <IconPressable key={chip.id} onPress={() => onSelect({ kind: "category", id: chip.id, label: chip.label })}>
           <Chip
-            label={t(`cat.${category.id}`)}
-            tone={filter === category.id ? "accent" : "neutral"}
+            label={chip.label}
+            tone={
+              filter.kind === "category" && filter.id === chip.id
+                ? "accent"
+                : "neutral"
+            }
           />
         </IconPressable>
       ))}
-      <IconPressable onPress={() => onSelect("quick")}>
+      <IconPressable onPress={() => onSelect({ kind: "quick" })}>
         <Chip
           label={t("filter.under30")}
-          tone={filter === "quick" ? "accent" : "neutral"}
+          tone={filter.kind === "quick" ? "accent" : "neutral"}
         />
       </IconPressable>
     </ScrollView>
@@ -526,6 +593,9 @@ const ChipRow = memo(function ChipRow({
  * The advanced-filters card (total time / cleanup / sort + clear all).
  * Memoized: the setters are stable state setters, so it re-renders only when
  * its own filter values change — never for list churn or panel toggling.
+ * Total time + fastest sort round-trip through the server search; the
+ * cleanup filter/sort (no server equivalent) is applied client-side over the
+ * loaded pages.
  */
 interface FilterPanelProps {
   timeMax: number | null;
@@ -616,7 +686,8 @@ const FilterPanel = memo(function FilterPanel({
  * The main list card. Memoized so that when VirtualizedList re-renders its
  * cells (e.g. the panel toggle re-rendering the screen), each card bails out
  * on shallow-equal props: stable `item`, boolean heart state, and stable
- * callbacks.
+ * callbacks. The time chip falls back to the publisher claim; the amber
+ * rating chip renders only when the server row carries a rating.
  */
 interface RecipeCardProps {
   item: Recipe;
@@ -657,13 +728,20 @@ const RecipeCard = memo(function RecipeCard({
         </Text>
         <View style={styles.cardChips}>
           <TimeChip
-            minutes={item.community_avg_minutes}
+            minutes={recipeMinutes(item)}
             label={t("common.focused")}
           />
           <TimeChip
             minutes={item.cleanup_avg_minutes}
             label={t("common.cleanup")}
           />
+          {item.aggregated_rating != null ? (
+            <Chip
+              tone="amber"
+              size="sm"
+              label={ratingLabel(item.aggregated_rating)}
+            />
+          ) : null}
           <Chip
             tone="amber"
             label={t("common.stepCount", { n: stepCount(item) })}
@@ -687,14 +765,33 @@ export default function BrowseScreen() {
   const numColumns = width >= 768 ? 2 : 1;
   const columnGap = Space.lg;
 
+  // ---- Local cache source (offline fallback + favorites) --------------------
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [state, setState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState<ListFilter>("all");
   const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
   const [favoriteRecipes, setFavoriteRecipes] = useState<Recipe[]>([]);
+
+  // ---- Server-driven list ----------------------------------------------------
+  const [serverItems, setServerItems] = useState<Recipe[]>([]);
+  const [serverMeta, setServerMeta] = useState<{
+    current: number;
+    last: number;
+  } | null>(null);
+  const [serverTotal, setServerTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Offline fallback active: the list renders the LOCAL cached pipeline and
+  // the "Offline — showing saved recipes" caption chip shows.
+  const [offline, setOffline] = useState(false);
+  // Server category chips (null until loaded → local keyword chips render).
+  const [serverChips, setServerChips] = useState<{
+    id: string;
+    label: string;
+  }[] | null>(null);
+
+  const [search, setSearch] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState<ListFilter>({ kind: "all" });
 
   // Advanced filters (the "Filters" panel).
   const [showFilters, setShowFilters] = useState(false);
@@ -702,10 +799,11 @@ export default function BrowseScreen() {
   const [cleanupMax, setCleanupMax] = useState<number | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("default");
 
-  // Deferred-apply pipeline state: chip taps update the chip + show the
-  // skeleton immediately, the recomputed list lands a tick later.
+  // Deferred-apply pipeline state (offline/local path): chip taps update the
+  // chip + show the skeleton immediately, the recomputed list lands a tick
+  // later. Also drives the skeleton for the in-flight SERVER search.
   const [visibleRecipes, setVisibleRecipes] = useState<Recipe[]>([]);
-  // Start in applying state: until the first deferred computation lands, the
+  // Start in applying state: until the first search/computation lands, the
   // skeleton shows instead of a one-frame "No recipes available yet" flash.
   const [applying, setApplying] = useState(true);
 
@@ -719,11 +817,22 @@ export default function BrowseScreen() {
     [columnGap],
   );
 
+  /** Load-more footer spinner (server pagination only); stable per state. */
+  const ListFooter = useCallback(() => {
+    if (!loadingMore) return null;
+    return (
+      <View style={styles.footerSpinner}>
+        <ActivityIndicator color={colors.accent} size="small" />
+        <Text style={styles.footerText}>{t("browse.loadingMore")}</Text>
+      </View>
+    );
+  }, [loadingMore, colors, styles, t]);
+
   /**
    * Identity-guarded recipes setter: background refreshes routinely return
    * identical rows with fresh array identities, which would re-render (and
    * re-run the filter pipeline over) the whole list for nothing. Fingerprint
-   * by id:title:community_avg and skip the setState when nothing changed.
+   * by id:title:times and skip the setState when nothing changed.
    */
   const recipesFingerprintRef = useRef("");
   const applyRecipes = useCallback((next: Recipe[]) => {
@@ -736,6 +845,14 @@ export default function BrowseScreen() {
     if (fingerprint === recipesFingerprintRef.current) return;
     recipesFingerprintRef.current = fingerprint;
     setRecipes(next);
+  }, []);
+
+  // Mirror of the server item count for stale-closure-free error handling
+  // (runSearch must not depend on the serverItems array identity).
+  const serverItemsCountRef = useRef(0);
+  const commitServerItems = useCallback((next: Recipe[]) => {
+    serverItemsCountRef.current = next.length;
+    setServerItems(next);
   }, []);
 
   // Background continuation after a cold first-page seed: stream the remaining
@@ -754,15 +871,12 @@ export default function BrowseScreen() {
   const refreshInBackground = useCallback(async () => {
     try {
       await refreshCacheLight();
-      // Reload the FULL library: search is applied client-side; a search-filtered
-// reload would truncate the list source permanently (cleared search couldn't
-// bring the rest back).
-applyRecipes(await getCachedRecipes());
+      applyRecipes(await getCachedRecipes());
     } catch (error) {
       // Background refresh failures are non-fatal.
       console.warn("[RecipeReal] background refresh failed:", error);
     }
-  }, [search, applyRecipes]);
+  }, [applyRecipes]);
 
   // Reload the favorite id set + the favorites carousel data from SQLite.
   // Purely local, so this works offline. Best-effort: a failure keeps the
@@ -803,7 +917,7 @@ applyRecipes(await getCachedRecipes());
       const parsed = parseParamFilter(paramFilter);
       if (parsed) {
         setFilter(parsed);
-        track("filter_used", { filter: parsed });
+        track("filter_used", { filter: paramFilter });
       }
     }, [paramFilter]),
   );
@@ -823,8 +937,10 @@ applyRecipes(await getCachedRecipes());
 
   const handleSelectFilter = useCallback((next: ListFilter) => {
     setFilter(next);
-    if (next !== "all") {
-      track("filter_used", { filter: next });
+    if (next.kind !== "all") {
+      track("filter_used", {
+        filter: next.kind === "category" ? next.id : next.kind,
+      });
     }
   }, []);
 
@@ -847,8 +963,10 @@ applyRecipes(await getCachedRecipes());
 
   /**
    * Load recipes from the cache, seeding progressively on a cold cache.
-   * Returns true when previously cached data was shown (so the caller can
-   * decide whether a light background refresh is worthwhile).
+   * The cached library backs the OFFLINE fallback (and favorites/cook mode);
+   * the on-screen list itself is server-driven. Returns true when previously
+   * cached data was shown (so the caller can decide whether a light
+   * background refresh is worthwhile).
    */
   const loadFromCache = useCallback(async (): Promise<boolean> => {
     setState("loading");
@@ -857,7 +975,7 @@ applyRecipes(await getCachedRecipes());
       const count = await countCachedRecipes();
       if (count === 0) {
         // Cold cache: seed just the first page (a fraction of the dataset) so
-        // the list renders quickly; the remaining pages arrive in background.
+        // the fallback library exists quickly; the rest arrives in background.
         const first = await seedCacheFirstPage();
         applyRecipes(first);
         setState("ready");
@@ -869,13 +987,182 @@ applyRecipes(await getCachedRecipes());
       return true;
     } catch (error) {
       console.warn("[RecipeReal] loadFromCache failed:", error);
-      setErrorMessage(
-        error instanceof Error ? error.message : t("common.loadFailedRecipes"),
-      );
-      setState("error");
+      // The cache only backs the fallback — never blank a working server list.
+      if (serverItemsCountRef.current === 0) {
+        setErrorMessage(
+          error instanceof Error ? error.message : t("common.loadFailedRecipes"),
+        );
+        setState("error");
+      }
       return false;
     }
   }, [continueSeedInBackground, applyRecipes, t]);
+
+  // Map the current UI state to search-endpoint params. "quick" = under 30
+  // minutes door-to-door (tightened further by a stricter panel cap); the
+  // cleanup sort has no server equivalent and stays client-side.
+  const buildSearchParams = useCallback(
+    (): SearchParams => ({
+      q: search.trim() || undefined,
+      category: filter.kind === "category" ? filter.label : undefined,
+      maxTime:
+        filter.kind === "quick"
+          ? Math.min(30, timeMax ?? 30)
+          : (timeMax ?? undefined),
+      sort: sortMode === "fastest" ? "fastest" : undefined,
+    }),
+    [search, filter, timeMax, sortMode],
+  );
+
+  // Monotonic request id: only the LATEST search/scroll request may commit
+  // state, so out-of-order responses never clobber newer results.
+  const searchRequestIdRef = useRef(0);
+
+  /**
+   * Fetch page 1 from the server search endpoint and replace the list. A
+   * GENUINE network failure falls back to the local cached pipeline (with the
+   * offline caption chip) whenever the cache has recipes; a server error
+   * keeps whatever is already on screen, or surfaces the error state when
+   * there is nothing to show. Never crashes.
+   */
+  const runSearch = useCallback(async () => {
+    const requestId = ++searchRequestIdRef.current;
+    try {
+      const result = await searchRecipes({ ...buildSearchParams(), page: 1 });
+      if (requestId !== searchRequestIdRef.current) return;
+      commitServerItems(result.recipes);
+      setServerMeta({ current: result.currentPage, last: result.lastPage });
+      setServerTotal(result.total);
+      setOffline(false);
+      setErrorMessage(null);
+      setState("ready");
+      setApplying(false);
+    } catch (error) {
+      if (requestId !== searchRequestIdRef.current) return;
+      console.warn("[RecipeReal] search failed:", error);
+      if (isOfflineError(error)) {
+        // Offline WITH a usable cache: local pipeline + banner chip.
+        try {
+          const cached = await getCachedRecipes();
+          if (cached.length > 0) {
+            applyRecipes(cached);
+            setOffline(true);
+            setState("ready");
+            setApplying(false);
+            return;
+          }
+        } catch {
+          // Fall through to the error state below.
+        }
+      }
+      // Server answered with an error (or offline with an empty cache):
+      // keep any content already on screen, else surface the error state.
+      setApplying(false);
+      if (serverItemsCountRef.current === 0) {
+        setErrorMessage(t("common.couldNotLoadRecipes"));
+        setState("error");
+      }
+    }
+  }, [buildSearchParams, commitServerItems, applyRecipes, t]);
+
+  /**
+   * Server-driven search: q / category / max_time / sort changes debounce
+   * 350ms, then page 1 replaces the list. Chip-style filter changes flash
+   * the skeleton immediately (instant visual acknowledgment); typing keeps
+   * the current results until the new page lands. Leaving offline mode
+   * (e.g. after a successful pull-to-refresh) re-runs the search silently.
+   */
+  const serverFilterKey = `${filter.kind === "category" ? `cat:${filter.id}` : filter.kind}|${timeMax ?? ""}|${sortMode}`;
+  const prevServerFilterKeyRef = useRef<string | null>(null);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (offline) return; // Local pipeline owns the screen while offline.
+    if (
+      serverFilterKey !== prevServerFilterKeyRef.current &&
+      prevServerFilterKeyRef.current != null
+    ) {
+      setApplying(true);
+    }
+    prevServerFilterKeyRef.current = serverFilterKey;
+    if (searchDebounceRef.current != null) {
+      clearTimeout(searchDebounceRef.current);
+    }
+    searchDebounceRef.current = setTimeout(() => {
+      searchDebounceRef.current = null;
+      runSearch().catch((error) => {
+        console.warn("[RecipeReal] search effect failed:", error);
+      });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (searchDebounceRef.current != null) {
+        clearTimeout(searchDebounceRef.current);
+        searchDebounceRef.current = null;
+      }
+    };
+  }, [search, serverFilterKey, offline, runSearch]);
+
+  /**
+   * Infinite scroll: while the paginator says more pages exist, fetch the
+   * next one and append (deduped by id — server pages can shift slightly).
+   * Concurrent triggers are guarded; stale responses are dropped via the
+   * shared request id.
+   */
+  const loadingMoreRef = useRef(false);
+  const handleEndReached = useCallback(() => {
+    if (offline || loadingMoreRef.current) return;
+    if (serverMeta == null || serverMeta.current >= serverMeta.last) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    const requestId = ++searchRequestIdRef.current;
+    searchRecipes({ ...buildSearchParams(), page: serverMeta.current + 1 })
+      .then((result) => {
+        if (requestId !== searchRequestIdRef.current) return;
+        setServerItems((prev) => {
+          const seen = new Set(prev.map((r) => r.id));
+          const merged = [
+            ...prev,
+            ...result.recipes.filter((r) => !seen.has(r.id)),
+          ];
+          serverItemsCountRef.current = merged.length;
+          return merged;
+        });
+        setServerMeta({ current: result.currentPage, last: result.lastPage });
+      })
+      .catch((error) => {
+        // Best-effort: keep the loaded pages, just log.
+        console.warn("[RecipeReal] load more failed:", error);
+      })
+      .finally(() => {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      });
+  }, [offline, serverMeta, buildSearchParams]);
+
+  // Category chips from the server (cached in AsyncStorage by the client;
+  // empty/offline → local keyword categories). Loaded once per mount.
+  useEffect(() => {
+    let cancelled = false;
+    fetchCategories()
+      .then((rows) => {
+        if (cancelled) return;
+        setServerChips(
+          rows.length > 0
+            ? rows.map((row) => ({ id: row.category, label: row.category }))
+            : null,
+        );
+      })
+      .catch(() => {
+        // Keep the local fallback chips.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const chips = useMemo(() => {
+    if (serverChips != null) return serverChips;
+    return CATEGORIES.map((c) => ({ id: c.id, label: categoryLabel(c.id) }));
+  }, [serverChips]);
 
   useEffect(() => {
     // Favorites are independent of the cache load: pull them in parallel.
@@ -911,20 +1198,31 @@ applyRecipes(await getCachedRecipes());
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await refreshInBackground();
-    setRefreshing(false);
-  }, [refreshInBackground]);
+    try {
+      // Refresh both pipelines; a successful server search also clears the
+      // offline banner (the search effect's mode flip is silent).
+      await Promise.all([refreshInBackground(), runSearch()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshInBackground, runSearch]);
 
-  // Deferred apply: chip state (and its accent tone) updates synchronously in
-  // the press handler; this effect then flags `applying` (skeleton paints) and
-  // recomputes the list one timeout later, so the chip acknowledgment and the
-  // skeleton always paint BEFORE the (potentially large) list churn. Search
-  // typing recomputes the same way but without the skeleton flash. Rapid
-  // changes cancel the pending apply — only the last one lands.
-  const chipKey = `${filter}|${timeMax ?? ""}|${cleanupMax ?? ""}|${sortMode}`;
+  const handleRetry = useCallback(async () => {
+    // Error state: retry the cache pipeline; the debounced search effect
+    // picks the server list back up once the cache resolves.
+    await loadFromCache();
+    void runSearch();
+  }, [loadFromCache, runSearch]);
+
+  // Deferred apply (OFFLINE/local path only): chip state (and its accent
+  // tone) updates synchronously in the press handler; this effect then flags
+  // `applying` (skeleton paints) and recomputes the list one timeout later.
+  // In server mode this is a no-op — the search effect owns applying.
+  const chipKey = `${filter.kind === "category" ? `cat:${filter.id}` : filter.kind}|${timeMax ?? ""}|${cleanupMax ?? ""}|${sortMode}`;
   const prevChipKeyRef = useRef(chipKey);
   const applyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
+    if (!offline) return;
     const chipChanged = chipKey !== prevChipKeyRef.current;
     prevChipKeyRef.current = chipKey;
     if (chipChanged) {
@@ -953,14 +1251,35 @@ applyRecipes(await getCachedRecipes());
         applyTimerRef.current = null;
       }
     };
-  }, [recipes, search, filter, timeMax, cleanupMax, sortMode, chipKey]);
+  }, [recipes, search, filter, timeMax, cleanupMax, sortMode, chipKey, offline]);
+
+  /**
+   * Client-side post-processing of the SERVER pages: the cleanup filter and
+   * cleanup sort have no search-endpoint equivalent, so they apply over the
+   * pages loaded so far (more matches appear as pagination continues).
+   */
+  const serverVisible = useMemo(() => {
+    let out = serverItems;
+    if (cleanupMax != null) {
+      out = out.filter(
+        (r) =>
+          r.cleanup_avg_minutes != null && r.cleanup_avg_minutes <= cleanupMax,
+      );
+    }
+    if (sortMode === "cleanup") {
+      out = sortAscNullsLast(out, (r) => r.cleanup_avg_minutes);
+    }
+    return out;
+  }, [serverItems, cleanupMax, sortMode]);
+
+  const displayRecipes = offline ? visibleRecipes : serverVisible;
 
   const hasAdvancedFilters =
     timeMax != null || cleanupMax != null || sortMode !== "default";
 
   const hasActiveFilters =
     search.trim().length > 0 ||
-    filter !== "all" ||
+    filter.kind !== "all" ||
     timeMax != null ||
     cleanupMax != null;
 
@@ -1004,7 +1323,18 @@ applyRecipes(await getCachedRecipes());
       )}
 
       {state === "ready" && (
-        <ChipRow filter={filter} onSelect={handleSelectFilter} styles={styles} />
+        <ChipRow
+          chips={chips}
+          filter={filter}
+          onSelect={handleSelectFilter}
+          styles={styles}
+        />
+      )}
+
+      {state === "ready" && offline && (
+        <View style={styles.offlineBannerWrap}>
+          <Chip tone="amber" size="sm" label={t("browse.offlineCaption")} />
+        </View>
       )}
 
       {state === "ready" && showFilters && (
@@ -1055,7 +1385,7 @@ applyRecipes(await getCachedRecipes());
           <Text style={styles.muted}>
             {errorMessage ?? t("common.couldNotLoadRecipes")}
           </Text>
-          <Pressable style={styles.retry} onPress={loadFromCache}>
+          <Pressable style={styles.retry} onPress={handleRetry}>
             <Text style={styles.retryText}>{t("common.retry")}</Text>
           </Pressable>
         </View>
@@ -1064,7 +1394,7 @@ applyRecipes(await getCachedRecipes());
       {state === "ready" && !applying && (
         <FlatList
           key={numColumns === 1 ? "list-1col" : "list-2col"}
-          data={visibleRecipes}
+          data={displayRecipes}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderItem}
           numColumns={numColumns}
@@ -1084,6 +1414,10 @@ applyRecipes(await getCachedRecipes());
           removeClippedSubviews
           refreshing={refreshing}
           onRefresh={handleRefresh}
+          // Server pagination: fetch the next page near the end of the list.
+          onEndReached={offline ? undefined : handleEndReached}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={offline ? null : ListFooter}
           ItemSeparatorComponent={Separator}
           ListEmptyComponent={
             <View style={styles.center}>
@@ -1093,8 +1427,8 @@ applyRecipes(await getCachedRecipes());
                   <Text style={styles.muted}>{t("browse.noMatch")}</Text>
                   <Text style={styles.emptyCount}>
                     {t("browse.countOf", {
-                      shown: visibleRecipes.length,
-                      total: recipes.length,
+                      shown: displayRecipes.length,
+                      total: offline ? recipes.length : serverTotal,
                     })}
                   </Text>
                 </>

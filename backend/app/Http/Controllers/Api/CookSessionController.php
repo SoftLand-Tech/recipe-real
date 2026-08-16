@@ -4,10 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreCookSessionRequest;
+use App\Http\Requests\StoreQuickTimeRequest;
 use App\Http\Resources\CookSessionResource;
 use App\Jobs\RecalculatePaceCalibration;
 use App\Models\CookSession;
+use App\Models\Recipe;
 use App\Models\TimingSubmission;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
@@ -79,6 +82,49 @@ class CookSessionController extends Controller
         RecalculatePaceCalibration::dispatch($request->user()->id);
 
         return (new CookSessionResource($session))->response()->setStatusCode(201);
+    }
+
+    /**
+     * One-tap honest time contribution: record a cook session with just the
+     * total minutes it actually took (no per-step timings).
+     *
+     * Creates a CookSession with total_actual_minutes and no timing
+     * submissions — the schema tolerates that (timing_submissions.session_id
+     * is a client uuid with no FK to cook_sessions), and the pace
+     * calibration job reads only timing submissions, so it is unaffected
+     * and not re-dispatched. The recipe's community_avg_minutes is
+     * recomputed inline (plain average of the last 100 sessions), the same
+     * aggregate full cook sessions feed.
+     */
+    public function quickTime(StoreQuickTimeRequest $request, Recipe $recipe): JsonResponse
+    {
+        $minutes = (float) $request->validated('minutes');
+
+        CookSession::create([
+            'user_id' => $request->user()->id,
+            'recipe_id' => $recipe->id,
+            'total_actual_minutes' => $minutes,
+        ]);
+
+        // Cheap recompute: count+avg over this recipe's sessions only.
+        $avg = CookSession::query()
+            ->where('recipe_id', $recipe->id)
+            ->whereNotNull('total_actual_minutes')
+            ->latest('id')
+            ->limit(100)
+            ->avg('total_actual_minutes');
+
+        if ($avg !== null) {
+            $recipe->community_avg_minutes = round((float) $avg, 2);
+            $recipe->save();
+        }
+
+        return response()->json([
+            'ok' => true,
+            'recipe_id' => $recipe->id,
+            'minutes_submitted' => $minutes,
+            'community_avg_minutes' => $recipe->community_avg_minutes,
+        ], 201);
     }
 
     /**

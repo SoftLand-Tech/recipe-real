@@ -3,6 +3,8 @@ import { useLocalSearchParams, router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,7 +13,13 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { getRecipe, hasToken, isPaywallError } from "@/api/client";
+import {
+  getRecipe,
+  hasToken,
+  isPaywallError,
+  QuickTimeUnauthorizedError,
+  submitQuickTime,
+} from "@/api/client";
 import { track } from "@/analytics";
 import {
   getCachedRecipe,
@@ -56,6 +64,7 @@ import {
   StatPill,
   TimeChip,
 } from "@/components/ui";
+import { recipeMinutes, stepMinutes } from "@/utils/recipeTime";
 
 type LoadState = "loading" | "ready" | "error" | "paywall";
 
@@ -123,6 +132,18 @@ export default function RecipeDetailScreen() {
   const [note, setNote] = useState("");
   const [savedNote, setSavedNote] = useState("");
   const [noteJustSaved, setNoteJustSaved] = useState(false);
+
+  // Quick-time contribution: one-tap "how long did it take?" submission.
+  // Rendered for everyone; an unauthenticated submit surfaces the sign-in
+  // CTA (the 401 is mapped to QuickTimeUnauthorizedError in the client).
+  const [quickMinutes, setQuickMinutes] = useState("");
+  const [quickSubmitting, setQuickSubmitting] = useState(false);
+  const [quickDone, setQuickDone] = useState(false);
+  const [quickAvg, setQuickAvg] = useState<number | null>(null);
+  const [quickError, setQuickError] = useState<string | null>(null);
+  const [quickNeedsAuth, setQuickNeedsAuth] = useState(false);
+  // Fade-in for the "Thanks! …" success line (native-driven opacity).
+  const quickFadeRef = useRef(new Animated.Value(0));
 
   // Mirror of `recipe` for use inside `loadRecipe`'s catch block without
   // forcing `recipe` into the callback's dependency array (which would
@@ -235,6 +256,62 @@ export default function RecipeDetailScreen() {
           flexWrap: "wrap",
           gap: Space.xs,
           marginTop: Space.lg,
+        },
+        // ---- Quick-time contribution card ----
+        quickCard: {
+          marginTop: Space.lg,
+          padding: Space.lg,
+          gap: Space.xs,
+        },
+        quickCaption: {
+          ...Type.overline,
+          color: colors.inkSecondary,
+          textTransform: "uppercase",
+        },
+        quickTitle: {
+          ...Type.title,
+          color: colors.ink,
+        },
+        quickRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.md,
+          marginTop: Space.sm,
+        },
+        // flex on the wrapper row (never on the Button's Pressable itself —
+        // Android paint rules); the input stretches to the remaining space.
+        quickInputWrap: {
+          flexGrow: 1,
+          flexBasis: 0,
+        },
+        quickInput: {
+          ...Type.body,
+          color: colors.ink,
+          backgroundColor: colors.surfaceSoft,
+          borderWidth: 1,
+          borderColor: colors.hairline,
+          borderRadius: Radius.md,
+          paddingVertical: Space.md,
+          paddingHorizontal: Space.md,
+        },
+        quickError: {
+          ...Type.caption,
+          color: colors.danger,
+          marginTop: Space.xs,
+        },
+        quickSuccess: {
+          ...Type.bodySm,
+          color: colors.success,
+          fontWeight: "600",
+          marginTop: Space.xs,
+        },
+        quickSignIn: {
+          ...Type.caption,
+          color: colors.accent,
+          fontWeight: "700",
+          marginTop: Space.xs,
+          paddingVertical: Space.xs,
+          alignSelf: "flex-start",
         },
         timelineHeadline: {
           ...Type.title,
@@ -437,6 +514,14 @@ export default function RecipeDetailScreen() {
     setState("loading");
     setErrorMessage(null);
     recipeRef.current = null;
+    // Reset the quick-time contribution state for the (new) recipe.
+    setQuickMinutes("");
+    setQuickSubmitting(false);
+    setQuickDone(false);
+    setQuickAvg(null);
+    setQuickError(null);
+    setQuickNeedsAuth(false);
+    quickFadeRef.current.setValue(0);
     try {
       const numericId = Number(id);
       let result = await getCachedRecipe(numericId);
@@ -532,15 +617,64 @@ export default function RecipeDetailScreen() {
     }
   }, [id, note]);
 
+  /**
+   * Submit the quick-time contribution (1..1440 minutes). Success swaps the
+   * form for a faded-in "Thanks! Community avg is now ~Xm" line using the
+   * server-recomputed average. A 401 shows the sign-in CTA instead; any
+   * other failure shows an inline error and keeps the form usable.
+   */
+  const onSubmitQuickTime = useCallback(async () => {
+    const minutes = Number.parseInt(quickMinutes, 10);
+    if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) return;
+    const recipeId = Number(id);
+    if (!Number.isFinite(recipeId)) return;
+    setQuickSubmitting(true);
+    setQuickError(null);
+    setQuickNeedsAuth(false);
+    try {
+      const result = await submitQuickTime(recipeId, minutes);
+      track("quick_time_submitted", { recipe_id: recipeId, minutes });
+      setQuickAvg(result.community_avg_minutes);
+      setQuickDone(true);
+      quickFadeRef.current.setValue(0);
+      Animated.timing(quickFadeRef.current, {
+        toValue: 1,
+        duration: 350,
+        useNativeDriver: true,
+      }).start();
+    } catch (error) {
+      console.warn("[RecipeReal] quick-time submit failed:", error);
+      if (error instanceof QuickTimeUnauthorizedError) {
+        setQuickNeedsAuth(true);
+        setQuickError(t("quick.signInRequired"));
+      } else {
+        setQuickError(t("quick.error"));
+      }
+    } finally {
+      setQuickSubmitting(false);
+    }
+  }, [quickMinutes, id, t]);
+
+  /** Parsed quick-time minutes, valid only within 1..1440. */
+  const quickMinutesValue = Number.parseInt(quickMinutes, 10);
+  const quickMinutesValid =
+    Number.isFinite(quickMinutesValue) &&
+    quickMinutesValue >= 1 &&
+    quickMinutesValue <= 1440;
+
   const publisher = roundMin(recipe?.publisher_time_minutes);
   const community = roundMin(recipe?.community_avg_minutes);
   const cleanupAvg = roundMin(recipe?.cleanup_avg_minutes);
   const cleanupEstimate = roundMin(recipe?.cleanup_estimate_minutes);
   // Prefer the model-based cleanup estimate, fall back to community average.
   const cleanup = cleanupEstimate ?? cleanupAvg;
+  // Best-known cook time: community consensus, else the publisher claim, so
+  // sparse community data never blanks the cook-time stat (the label below
+  // distinguishes "Real avg" from a "Publisher" fallback).
+  const cookMinutes = roundMin(recipe ? recipeMinutes(recipe) : null);
 
   const totalInclCleanup =
-    community != null && cleanup != null ? community + cleanup : null;
+    cookMinutes != null && cleanup != null ? cookMinutes + cleanup : null;
 
   const chips = recipe ? cleanupChips(t, recipe.cleanup_factors) : [];
 
@@ -562,9 +696,12 @@ export default function RecipeDetailScreen() {
     let hasAny = false;
     for (const step of steps) {
       if (step.step_type === "cleanup") continue;
-      if (step.community_minutes == null) continue;
+      // Per-step publisher fallback: a missing community figure alone must
+      // not drop the step from the personalized estimate.
+      const stepM = stepMinutes(step);
+      if (stepM == null) continue;
       const mult = paceMap.get(step.step_type) ?? 1;
-      sum += step.community_minutes * mult;
+      sum += stepM * mult;
       hasAny = true;
     }
     if (recipe.cleanup_avg_minutes != null) {
@@ -759,9 +896,16 @@ export default function RecipeDetailScreen() {
                     />
                   </View>
                   <View style={styles.statCell}>
+                    {/* "Real avg" when the community consensus exists, else
+                        the publisher claim relabeled as such — never a dash
+                        when the publisher time is known. */}
                     <StatPill
-                      label={t("common.focused")}
-                      value={fmtMin(community ?? 0)}
+                      label={
+                        community != null
+                          ? t("detail.statRealAvg")
+                          : t("detail.statPublisher")
+                      }
+                      value={fmtMin(cookMinutes ?? 0)}
                     />
                   </View>
                   <View style={styles.statCell}>
@@ -778,6 +922,82 @@ export default function RecipeDetailScreen() {
                     />
                   </View>
                 </View>
+
+                {/* 1b. RATING — compact "★ rating (N)" line when known. */}
+                {recipe.aggregated_rating != null ? (
+                  <View style={styles.chipRow}>
+                    <Chip
+                      tone="amber"
+                      size="sm"
+                      label={
+                        recipe.review_count != null && recipe.review_count > 0
+                          ? t("detail.ratingWithCount", {
+                              rating: recipe.aggregated_rating.toFixed(1),
+                              n: recipe.review_count,
+                            })
+                          : t("detail.ratingOnly", {
+                              rating: recipe.aggregated_rating.toFixed(1),
+                            })
+                      }
+                    />
+                  </View>
+                ) : null}
+
+                {/* 1c. QUICK-TIME CONTRIBUTION — "Cooked it? How long did it
+                    take?" Rendered for everyone; unauthenticated submits
+                    prompt sign-in (401 → QuickTimeUnauthorizedError). */}
+                <Card style={styles.quickCard} padding={0}>
+                  <Text style={styles.quickCaption}>{t("quick.cookedIt")}</Text>
+                  <Text style={styles.quickTitle}>{t("quick.howLong")}</Text>
+                  {quickDone ? (
+                    <Animated.Text
+                      style={[styles.quickSuccess, { opacity: quickFadeRef.current }]}
+                    >
+                      {t("quick.thanks", {
+                        time: fmtMin(quickAvg ?? quickMinutesValue),
+                      })}
+                    </Animated.Text>
+                  ) : (
+                    <>
+                      <View style={styles.quickRow}>
+                        <View style={styles.quickInputWrap}>
+                          <TextInput
+                            style={styles.quickInput}
+                            value={quickMinutes}
+                            onChangeText={(text) =>
+                              setQuickMinutes(text.replace(/[^0-9]/g, ""))
+                            }
+                            placeholder={t("quick.minutesPlaceholder")}
+                            placeholderTextColor={colors.inkFaint}
+                            keyboardType="number-pad"
+                            maxLength={4}
+                          />
+                        </View>
+                        <Button
+                          title={t("quick.submit")}
+                          variant="primary"
+                          disabled={!quickMinutesValid}
+                          loading={quickSubmitting}
+                          onPress={onSubmitQuickTime}
+                        />
+                      </View>
+                      {quickError != null ? (
+                        <Text style={styles.quickError}>{quickError}</Text>
+                      ) : null}
+                      {quickNeedsAuth ? (
+                        <Pressable
+                          onPress={() => router.push("/login")}
+                          hitSlop={Space.sm}
+                          style={styles.quickSignIn}
+                        >
+                          <Text style={styles.quickSignIn}>
+                            {t("quick.signIn")}
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </>
+                  )}
+                </Card>
 
                 {/* 2. YOUR PACE */}
                 {personalTotal != null ? (
@@ -952,7 +1172,7 @@ export default function RecipeDetailScreen() {
                                 stepType={step.step_type}
                               />
                               <View style={styles.stepTime}>
-                                <TimeChip minutes={step.community_minutes} />
+                                <TimeChip minutes={stepMinutes(step)} />
                               </View>
                             </View>
                             {adjusted != null ? (

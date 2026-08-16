@@ -29,6 +29,16 @@ class RecipeResource extends JsonResource
             'steps_ar' => $this->steps_ar,
             'ingredients' => $this->ingredients,
             'steps' => $this->steps,
+            // Food.com metadata, raw nullable passthrough (keywords is an
+            // array via the model cast, like ingredients).
+            'aggregated_rating' => $this->aggregated_rating,
+            'review_count' => $this->review_count,
+            'category' => $this->category,
+            'keywords' => $this->keywords,
+            'description' => $this->description,
+            'calories' => $this->calories,
+            'protein_g' => $this->protein_g,
+            'fat_g' => $this->fat_g,
             'publisher_time_minutes' => $this->publisher_time_minutes,
             'community_avg_minutes' => $this->community_avg_minutes,
             'cleanup_avg_minutes' => $this->cleanup_avg_minutes,

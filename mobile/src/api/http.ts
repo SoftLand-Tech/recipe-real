@@ -127,6 +127,16 @@ export function normalizeRecipe(r: any): Recipe {
     community_avg_minutes: toNum(r.community_avg_minutes),
     cleanup_avg_minutes: toNum(r.cleanup_avg_minutes),
     cleanup_estimate_minutes: toNum(r.cleanup_estimate_minutes),
+    // Food.com metadata (server-driven rows): numbers coerced, strings and
+    // the keywords array passed through defensively. Missing on SQLite rows.
+    aggregated_rating: toNum(r?.aggregated_rating),
+    review_count: toNum(r?.review_count),
+    category: r?.category != null ? String(r.category) : null,
+    keywords: Array.isArray(r?.keywords) ? r.keywords : null,
+    description: r?.description ?? null,
+    calories: toNum(r?.calories),
+    protein_g: toNum(r?.protein_g),
+    fat_g: toNum(r?.fat_g),
     ...(cleanup_factors ? { cleanup_factors } : {}),
     recipe_steps: Array.isArray(r.recipe_steps)
       ? r.recipe_steps.map(normalizeStep)
@@ -214,6 +224,43 @@ export async function fetchRecipePage(
   const { data } = await http.get<PagedRecipesResponse>("/api/recipes", {
     params: { page, per_page: perPage },
   });
+  return normalizePage(data, page, perPage);
+}
+
+/** Query params accepted by the public search endpoint. */
+export interface SearchQuery {
+  q?: string;
+  category?: string;
+  max_time?: number;
+  sort?: string;
+  page?: number;
+  per_page?: number;
+}
+
+/**
+ * One page of LIGHT recipe rows from the public search endpoint
+ * (GET /api/recipes/search). `per_page` is clamped server-side to 1..50
+ * (default 20); `sort` must be one of relevance|top_rated|fastest|most_loved
+ * (the server defaults to relevance when `q` is present, else top_rated).
+ */
+export async function fetchSearchPage(
+  query: SearchQuery = {},
+): Promise<RecipePage> {
+  const page = query.page ?? 1;
+  const perPage = query.per_page ?? 20;
+  const { data } = await http.get<PagedRecipesResponse>(
+    "/api/recipes/search",
+    {
+      params: {
+        ...(query.q ? { q: query.q } : {}),
+        ...(query.category ? { category: query.category } : {}),
+        ...(query.max_time != null ? { max_time: query.max_time } : {}),
+        ...(query.sort ? { sort: query.sort } : {}),
+        page,
+        per_page: perPage,
+      },
+    },
+  );
   return normalizePage(data, page, perPage);
 }
 

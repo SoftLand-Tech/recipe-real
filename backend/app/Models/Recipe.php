@@ -19,6 +19,15 @@ class Recipe extends Model
         'dish_count',
         'grease_level',
         'dishwasher_safe',
+        // Food.com metadata (recipereal:import-foodcom-meta).
+        'aggregated_rating',
+        'review_count',
+        'category',
+        'keywords',
+        'description',
+        'calories',
+        'protein_g',
+        'fat_g',
     ];
 
     protected function casts(): array
@@ -26,6 +35,7 @@ class Recipe extends Model
         return [
             'ingredients' => 'array',
             'steps' => 'array',
+            'keywords' => 'array',
             'publisher_time_minutes' => 'integer',
             'community_avg_minutes' => 'decimal:2',
             'cleanup_avg_minutes' => 'decimal:2',

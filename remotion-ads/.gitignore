@@ -8,3 +8,4 @@ out
 
 # elevenlabs key
 .env.local
+.env.deepgram

@@ -34,6 +34,7 @@ export const en: Record<string, string> = {
   "common.loadingRecipe": "Loading recipe…",
   "common.couldNotLoadRecipe": "Could not load this recipe.",
   "common.loadFailedRecipe": "Failed to load recipe.",
+  "common.ratingChip": "★ {rating}",
 
   // ---- Home ---------------------------------------------------------------
   "home.tagline": "Honest cook times, verified by real cooks",
@@ -43,6 +44,8 @@ export const en: Record<string, string> = {
   "home.handsOffSubtitle": "Mostly simmering, minimal stirring",
   "home.quickCleanup": "Quick cleanup",
   "home.browseByCraving": "Browse by craving",
+  "home.railTopRated": "Top rated",
+  "home.railMostLoved": "Most loved",
 
   // ---- Categories ---------------------------------------------------------
   "cat.pasta": "Pasta",
@@ -84,13 +87,18 @@ export const en: Record<string, string> = {
   "browse.cookAgain": "Cook again",
   "browse.noMatch": "No recipes match — try another filter.",
   "browse.countOf": "{shown} of {total} recipes",
+  "browse.offlineCaption": "Offline — showing saved recipes",
+  "browse.loadingMore": "Loading more…",
 
   // ---- Recipe detail ------------------------------------------------------
   "detail.freeLimitTitle": "Free limit reached",
   "detail.freeLimitBody":
     "You've reached the free limit (5 recipes/month). Upgrade for unlimited recipes.",
   "detail.statPublisher": "Publisher",
+  "detail.statRealAvg": "Real avg",
   "detail.statTotalInclCleanup": "Total incl. cleanup",
+  "detail.ratingWithCount": "★ {rating} · {n} reviews",
+  "detail.ratingOnly": "★ {rating}",
   "detail.yourPace": "Your pace · ~{time}",
   "detail.dishes": "{n} dishes",
   "detail.dishwasherSafe": "Dishwasher-safe",
@@ -110,6 +118,16 @@ export const en: Record<string, string> = {
   "detail.steps": "Steps",
   "detail.adjustedForYou": "~{time} you",
   "detail.startCookMode": "Start Cook Mode",
+
+  // ---- Quick-time contribution ----------------------------------------------
+  "quick.cookedIt": "Cooked it?",
+  "quick.howLong": "How long did it take?",
+  "quick.minutesPlaceholder": "Minutes",
+  "quick.submit": "Submit",
+  "quick.thanks": "Thanks! Community avg is now ~{time}",
+  "quick.error": "Couldn't submit. Please try again.",
+  "quick.signInRequired": "Sign in to contribute your time.",
+  "quick.signIn": "Sign in",
 
   // ---- Cleanup factors / step types ----------------------------------------
   "grease.low": "Low",

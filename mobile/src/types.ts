@@ -48,6 +48,19 @@ export interface Recipe {
   cleanup_estimate_minutes?: number | null;
   /** Cleanup-burden factors backing the estimate (Week 4). */
   cleanup_factors?: CleanupFactors;
+  /**
+   * Food.com metadata (server-driven browse/home rows). All nullable — the
+   * local dev DB has metadata only partially, and SQLite-cached rows don't
+   * persist these columns, so every reader must treat them as optional.
+   */
+  aggregated_rating?: number | null;
+  review_count?: number | null;
+  category?: string | null;
+  keywords?: string[] | null;
+  description?: string | null;
+  calories?: number | null;
+  protein_g?: number | null;
+  fat_g?: number | null;
   /** Present on the detail / seed payloads. */
   recipe_steps?: RecipeStep[];
 }
@@ -66,6 +79,43 @@ export interface GetRecipesParams {
   page?: number;
   search?: string;
   maxTime?: number;
+}
+
+// ---- Server-driven browse & home --------------------------------------------
+
+/** Sort orders accepted by GET /api/recipes/search. */
+export type SearchSort = "relevance" | "top_rated" | "fastest" | "most_loved";
+
+/** Query params for the public search endpoint (GET /api/recipes/search). */
+export interface SearchParams {
+  q?: string;
+  category?: string;
+  maxTime?: number;
+  sort?: SearchSort;
+  page?: number;
+  perPage?: number;
+}
+
+/** One row of GET /api/recipes/categories (top real Food.com categories). */
+export interface CategoryCount {
+  category: string;
+  count: number;
+}
+
+/** The four curated rails served by GET /api/home (light rows, may be empty). */
+export interface HomeRails {
+  top_rated: Recipe[];
+  easy_wins: Recipe[];
+  most_loved: Recipe[];
+  hands_off: Recipe[];
+}
+
+/** Response of POST /api/recipes/{id}/quick-time (community_avg may be a string). */
+export interface QuickTimeResult {
+  ok: boolean;
+  recipe_id: number;
+  minutes_submitted: number;
+  community_avg_minutes: number | null;
 }
 
 // ---- Cook Mode (Week 2) ----------------------------------------------------
