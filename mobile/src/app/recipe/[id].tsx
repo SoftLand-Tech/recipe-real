@@ -46,7 +46,6 @@ import {
 } from "@/theme";
 import {
   greaseLevelLabel,
-  stepTypeLabel,
   useFmtMinutes,
   useLang,
   useLocalizedRecipe,
@@ -54,7 +53,6 @@ import {
   type TranslateFn,
 } from "@/i18n";
 import {
-  Badge,
   Button,
   Card,
   Chip,
@@ -62,7 +60,6 @@ import {
   IconPressable,
   SectionHeader,
   StatPill,
-  TimeChip,
 } from "@/components/ui";
 import { recipeMinutes, stepMinutes } from "@/utils/recipeTime";
 
@@ -113,6 +110,40 @@ function cleanupChips(
   return chips;
 }
 
+/** One entry of the backend `ingredients_structured` JSON column. */
+interface StructuredIngredient {
+  raw?: string | null;
+  qty?: number | string | null;
+  qty_display?: string | null;
+  unit?: string | null;
+  item?: string | null;
+  prep?: string | null;
+}
+
+/**
+ * Parse `ingredients_structured` defensively. The API ships it as an object
+ * (`{"v":1,"items":[…]}`), but it may also arrive as a raw JSON string or be
+ * absent entirely (the SQLite cache doesn't persist it) — every failure mode
+ * returns [] so the plain-text bullets remain the fallback.
+ */
+function parseStructuredIngredients(value: unknown): StructuredIngredient[] {
+  let parsed: unknown = value;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return [];
+    }
+  }
+  if (parsed == null || typeof parsed !== "object") return [];
+  const items = (parsed as { items?: unknown }).items;
+  if (!Array.isArray(items)) return [];
+  return items.filter(
+    (entry): entry is StructuredIngredient =>
+      entry != null && typeof entry === "object",
+  );
+}
+
 export default function RecipeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
@@ -144,6 +175,11 @@ export default function RecipeDetailScreen() {
   const [quickNeedsAuth, setQuickNeedsAuth] = useState(false);
   // Fade-in for the "Thanks! …" success line (native-driven opacity).
   const quickFadeRef = useRef(new Animated.Value(0));
+  // Inline quick-time row under the stat grid: collapsed to a hint while a
+  // community average already exists, expanded by default when it doesn't.
+  const [quickOpen, setQuickOpen] = useState(false);
+  // Focuses the inline minutes input as soon as it mounts.
+  const quickInputRef = useRef<TextInput | null>(null);
 
   // Mirror of `recipe` for use inside `loadRecipe`'s catch block without
   // forcing `recipe` into the callback's dependency array (which would
@@ -247,6 +283,18 @@ export default function RecipeDetailScreen() {
           paddingHorizontal: Space.sm,
           paddingTop: Space.sm,
         },
+        // "Be the first!" CTA replacing the cooks-average stat when the
+        // community has no data yet. Negative margins + matching padding keep
+        // the label/value aligned with the neighbouring cells while painting
+        // the accentSoft background out to the gutter edge.
+        statCellCta: {
+          marginHorizontal: -Space.sm,
+          marginTop: -Space.sm,
+          backgroundColor: colors.accentSoft,
+          borderRadius: Radius.md,
+          paddingHorizontal: Space.sm,
+          paddingVertical: Space.sm,
+        },
         paceRow: {
           flexDirection: "row",
           marginTop: Space.lg,
@@ -257,10 +305,9 @@ export default function RecipeDetailScreen() {
           gap: Space.xs,
           marginTop: Space.lg,
         },
-        // ---- Quick-time contribution card ----
-        quickCard: {
-          marginTop: Space.lg,
-          padding: Space.lg,
+        // ---- Quick-time contribution (inline under the stat grid) ----
+        quickInline: {
+          marginTop: Space.md,
           gap: Space.xs,
         },
         quickCaption: {
@@ -268,9 +315,16 @@ export default function RecipeDetailScreen() {
           color: colors.inkSecondary,
           textTransform: "uppercase",
         },
-        quickTitle: {
-          ...Type.title,
-          color: colors.ink,
+        // "Cooked it? Add your time" toggle shown while the input is collapsed.
+        quickHint: {
+          marginTop: Space.sm,
+          alignSelf: "flex-start",
+          paddingVertical: Space.xs,
+        },
+        quickHintText: {
+          ...Type.caption,
+          color: colors.accent,
+          fontWeight: "600",
         },
         quickRow: {
           flexDirection: "row",
@@ -321,11 +375,6 @@ export default function RecipeDetailScreen() {
           ...Type.caption,
           color: colors.inkSecondary,
           marginTop: Space.xs,
-        },
-        timelineStats: {
-          flexDirection: "row",
-          gap: Space.xl,
-          marginTop: Space.md,
         },
         timelineList: {
           gap: Space.xs,
@@ -406,6 +455,11 @@ export default function RecipeDetailScreen() {
           ...Type.body,
           color: colors.ink,
         },
+        // Bold "½ cup" quantity prefix on structured ingredient rows.
+        ingredientQty: {
+          fontWeight: "700",
+          color: colors.ink,
+        },
         stepList: {
           gap: Space.md,
         },
@@ -427,11 +481,6 @@ export default function RecipeDetailScreen() {
           color: colors.accent,
           fontSize: 13,
           fontWeight: "700",
-        },
-        stepTime: {
-          // Auto margin on the TRAILING physical side pushes the time chip to
-          // the end of the row in both directions.
-          ...(dir === "rtl" ? { marginRight: "auto" } : { marginLeft: "auto" }),
         },
         stepAdjustedRow: {
           marginBottom: Space.sm,
@@ -521,6 +570,7 @@ export default function RecipeDetailScreen() {
     setQuickAvg(null);
     setQuickError(null);
     setQuickNeedsAuth(false);
+    setQuickOpen(false);
     quickFadeRef.current.setValue(0);
     try {
       const numericId = Number(id);
@@ -655,6 +705,15 @@ export default function RecipeDetailScreen() {
     }
   }, [quickMinutes, id, t]);
 
+  /**
+   * Reveal the inline quick-time input under the stat grid and focus it.
+   * Focus waits one frame so the just-mounted TextInput exists first.
+   */
+  const openQuick = useCallback(() => {
+    setQuickOpen(true);
+    requestAnimationFrame(() => quickInputRef.current?.focus());
+  }, []);
+
   /** Parsed quick-time minutes, valid only within 1..1440. */
   const quickMinutesValue = Number.parseInt(quickMinutes, 10);
   const quickMinutesValid =
@@ -668,10 +727,12 @@ export default function RecipeDetailScreen() {
   const cleanupEstimate = roundMin(recipe?.cleanup_estimate_minutes);
   // Prefer the model-based cleanup estimate, fall back to community average.
   const cleanup = cleanupEstimate ?? cleanupAvg;
-  // Best-known cook time: community consensus, else the publisher claim, so
-  // sparse community data never blanks the cook-time stat (the label below
-  // distinguishes "Real avg" from a "Publisher" fallback).
+  // Best-known cook time feeding the "Total incl. cleanup" stat: community
+  // consensus, else the publisher claim (sparse data never blanks the total).
   const cookMinutes = roundMin(recipe ? recipeMinutes(recipe) : null);
+  // "Cooks average" cell: the community consensus, or — once THIS device
+  // submits a quick time — the server-recomputed average it returns.
+  const cooksAvg = community ?? (quickDone ? roundMin(quickAvg) : null);
 
   const totalInclCleanup =
     cookMinutes != null && cleanup != null ? cookMinutes + cleanup : null;
@@ -679,6 +740,22 @@ export default function RecipeDetailScreen() {
   const chips = recipe ? cleanupChips(t, recipe.cleanup_factors) : [];
 
   const steps: RecipeStep[] = recipe?.recipe_steps ?? [];
+
+  // Localized ingredient text list, paired by index with the structured rows.
+  const ingredientLines = recipe ? lr.ingredients(recipe) : [];
+  const structuredIngredients = useMemo(
+    () =>
+      parseStructuredIngredients(
+        (recipe as { ingredients_structured?: unknown } | null)
+          ?.ingredients_structured,
+      ),
+    [recipe],
+  );
+  // Use the structured rows only when they line up 1:1 with the (possibly
+  // localized) text list — otherwise plain bullets stay the fallback.
+  const structuredAligned =
+    ingredientLines.length > 0 &&
+    structuredIngredients.length === ingredientLines.length;
 
   // Build a step_type -> multiplier map and compute the personalized estimate.
   const paceMap = new Map<string, number>();
@@ -733,18 +810,15 @@ export default function RecipeDetailScreen() {
 
   // Timeline: cooking steps only — cleanup is quoted separately (you eat first).
   const timelineSteps = steps.filter((s) => s.step_type !== "cleanup");
-  let focusedTotal = 0;
-  let handsOffTotal = 0;
-  let cookTotal = 0;
+  // Anchor the clock walk once per recipe (not per render) so re-renders —
+  // heart toggles, quick-time keystrokes — never shift the displayed times.
+  const timelineStart = useMemo(() => Date.now(), [recipe?.id, steps.length]);
   const timelineRows: { step: RecipeStep; at: Date; minutes: number }[] = [];
-  let cursor = Date.now();
+  let cursor = timelineStart;
   for (const step of timelineSteps) {
     const minutes = minutesForStep(step);
     timelineRows.push({ step, at: new Date(cursor), minutes });
     cursor += minutes * 60000;
-    cookTotal += minutes;
-    if (step.step_type === "passive") handsOffTotal += minutes;
-    else focusedTotal += minutes;
   }
   // "Start now" eat time — cleanup is intentionally excluded from the walk.
   const eatAt = new Date(cursor);
@@ -887,43 +961,113 @@ export default function RecipeDetailScreen() {
 
               {/* RISING CONTENT CARD overlapping the hero. */}
               <View style={styles.contentCard}>
-                {/* 1. STAT GRID */}
+                {/* 1. STAT GRID — publisher claim vs. cooks average (+ total). */}
                 <View style={styles.statGrid}>
                   <View style={styles.statCell}>
                     <StatPill
-                      label={t("detail.statPublisher")}
+                      label={t("detail.statClaimed")}
                       value={fmtMin(publisher ?? 0)}
                     />
                   </View>
                   <View style={styles.statCell}>
-                    {/* "Real avg" when the community consensus exists, else
-                        the publisher claim relabeled as such — never a dash
-                        when the publisher time is known. */}
-                    <StatPill
-                      label={
-                        community != null
-                          ? t("detail.statRealAvg")
-                          : t("detail.statPublisher")
-                      }
-                      value={fmtMin(cookMinutes ?? 0)}
-                    />
+                    {/* Community consensus; until one exists the cell becomes
+                        the quick-time CTA ("Be the first!"). */}
+                    {cooksAvg != null ? (
+                      <StatPill
+                        label={t("detail.statCooksAvg")}
+                        value={fmtMin(cooksAvg)}
+                      />
+                    ) : (
+                      <Pressable
+                        style={styles.statCellCta}
+                        onPress={openQuick}
+                        hitSlop={Space.xs}
+                      >
+                        <StatPill
+                          label={t("detail.statCooksAvg")}
+                          value={t("detail.beTheFirst")}
+                          tone="accent"
+                        />
+                      </Pressable>
+                    )}
                   </View>
-                  <View style={styles.statCell}>
-                    <StatPill
-                      label={t("common.cleanup")}
-                      value={fmtMin(cleanupAvg ?? 0)}
-                    />
-                  </View>
-                  <View style={styles.statCell}>
-                    <StatPill
-                      label={t("detail.statTotalInclCleanup")}
-                      value={fmtMin(totalInclCleanup ?? 0)}
-                      tone="accent"
-                    />
-                  </View>
+                  {cleanup != null ? (
+                    <View style={styles.statCell}>
+                      <StatPill
+                        label={t("detail.statTotalInclCleanup")}
+                        value={fmtMin(totalInclCleanup ?? 0)}
+                        tone="accent"
+                      />
+                    </View>
+                  ) : null}
                 </View>
 
-                {/* 1b. RATING — compact "★ rating (N)" line when known. */}
+                {/* 1b. QUICK-TIME CONTRIBUTION — inline under the grid.
+                    Collapsed to a hint once a community average exists,
+                    expanded by default when it doesn't. Unauthenticated
+                    submits prompt sign-in (401 → QuickTimeUnauthorizedError). */}
+                {quickDone ? (
+                  <Animated.Text
+                    style={[styles.quickSuccess, { opacity: quickFadeRef.current }]}
+                  >
+                    {t("quick.thanks", {
+                      time: fmtMin(quickAvg ?? quickMinutesValue),
+                    })}
+                  </Animated.Text>
+                ) : community == null || quickOpen ? (
+                  <View style={styles.quickInline}>
+                    <Text style={styles.quickCaption}>{t("quick.howLong")}</Text>
+                    <View style={styles.quickRow}>
+                      <View style={styles.quickInputWrap}>
+                        <TextInput
+                          ref={quickInputRef}
+                          style={styles.quickInput}
+                          value={quickMinutes}
+                          onChangeText={(text) =>
+                            setQuickMinutes(text.replace(/[^0-9]/g, ""))
+                          }
+                          placeholder={t("quick.minutesPlaceholder")}
+                          placeholderTextColor={colors.inkFaint}
+                          keyboardType="number-pad"
+                          maxLength={4}
+                        />
+                      </View>
+                      <Button
+                        title={t("quick.submit")}
+                        variant="primary"
+                        disabled={!quickMinutesValid}
+                        loading={quickSubmitting}
+                        onPress={onSubmitQuickTime}
+                      />
+                    </View>
+                    {quickError != null ? (
+                      <Text style={styles.quickError}>{quickError}</Text>
+                    ) : null}
+                    {quickNeedsAuth ? (
+                      <Pressable
+                        onPress={() => router.push("/login")}
+                        hitSlop={Space.sm}
+                        style={styles.quickSignIn}
+                      >
+                        <Text style={styles.quickSignIn}>
+                          {t("quick.signIn")}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                ) : (
+                  <Pressable
+                    onPress={openQuick}
+                    hitSlop={Space.sm}
+                    style={styles.quickHint}
+                  >
+                    <Text style={styles.quickHintText}>
+                      {t("detail.cooksAvgAddHint")}
+                    </Text>
+                  </Pressable>
+                )}
+
+                {/* 1c. RATING — compact "★ rating (N)" line when known. */}
                 {recipe.aggregated_rating != null ? (
                   <View style={styles.chipRow}>
                     <Chip
@@ -942,62 +1086,6 @@ export default function RecipeDetailScreen() {
                     />
                   </View>
                 ) : null}
-
-                {/* 1c. QUICK-TIME CONTRIBUTION — "Cooked it? How long did it
-                    take?" Rendered for everyone; unauthenticated submits
-                    prompt sign-in (401 → QuickTimeUnauthorizedError). */}
-                <Card style={styles.quickCard} padding={0}>
-                  <Text style={styles.quickCaption}>{t("quick.cookedIt")}</Text>
-                  <Text style={styles.quickTitle}>{t("quick.howLong")}</Text>
-                  {quickDone ? (
-                    <Animated.Text
-                      style={[styles.quickSuccess, { opacity: quickFadeRef.current }]}
-                    >
-                      {t("quick.thanks", {
-                        time: fmtMin(quickAvg ?? quickMinutesValue),
-                      })}
-                    </Animated.Text>
-                  ) : (
-                    <>
-                      <View style={styles.quickRow}>
-                        <View style={styles.quickInputWrap}>
-                          <TextInput
-                            style={styles.quickInput}
-                            value={quickMinutes}
-                            onChangeText={(text) =>
-                              setQuickMinutes(text.replace(/[^0-9]/g, ""))
-                            }
-                            placeholder={t("quick.minutesPlaceholder")}
-                            placeholderTextColor={colors.inkFaint}
-                            keyboardType="number-pad"
-                            maxLength={4}
-                          />
-                        </View>
-                        <Button
-                          title={t("quick.submit")}
-                          variant="primary"
-                          disabled={!quickMinutesValid}
-                          loading={quickSubmitting}
-                          onPress={onSubmitQuickTime}
-                        />
-                      </View>
-                      {quickError != null ? (
-                        <Text style={styles.quickError}>{quickError}</Text>
-                      ) : null}
-                      {quickNeedsAuth ? (
-                        <Pressable
-                          onPress={() => router.push("/login")}
-                          hitSlop={Space.sm}
-                          style={styles.quickSignIn}
-                        >
-                          <Text style={styles.quickSignIn}>
-                            {t("quick.signIn")}
-                          </Text>
-                        </Pressable>
-                      ) : null}
-                    </>
-                  )}
-                </Card>
 
                 {/* 2. YOUR PACE */}
                 {personalTotal != null ? (
@@ -1032,20 +1120,6 @@ export default function RecipeDetailScreen() {
                         {t("detail.cleanupAfter", { time: fmtMin(cleanup) })}
                       </Text>
                     ) : null}
-                    <View style={styles.timelineStats}>
-                      <StatPill
-                        label={t("common.focused")}
-                        value={`~${fmtMin(focusedTotal)}`}
-                      />
-                      <StatPill
-                        label={t("common.handsOff")}
-                        value={`~${fmtMin(handsOffTotal)}`}
-                      />
-                      <StatPill
-                        label={t("common.cleanup")}
-                        value={`~${fmtMin(cleanup ?? 0)}`}
-                      />
-                    </View>
                     <View style={styles.timelineList}>
                       {timelineRows.map(({ step, at, minutes }) => {
                         const passive = step.step_type === "passive";
@@ -1074,7 +1148,7 @@ export default function RecipeDetailScreen() {
                                 <Text style={styles.timelineStepCaption}>
                                   {t("detail.stepCaption", {
                                     n: step.step_number,
-                                  }) + (passive ? "" : ` ${t("detail.stepActive")}`)}
+                                  })}
                                 </Text>
                                 {passive ? (
                                   <View style={styles.timelineChipWrap}>
@@ -1108,51 +1182,55 @@ export default function RecipeDetailScreen() {
                   </View>
                 ) : null}
 
-                {/* 5. INGREDIENTS */}
+                {/* 5. INGREDIENTS — structured "½ cup | brown sugar, packed"
+                    rows when the parsed data lines up, plain bullets otherwise. */}
                 <View style={styles.section}>
                   <SectionHeader title={t("detail.ingredients")} />
-                  {recipe.ingredients.length > 0 ? (
+                  {ingredientLines.length > 0 ? (
                     <View style={styles.bulletList}>
-                      {lr.ingredients(recipe).map((ingredient, idx) => (
-                        <View key={`ing-${idx}`} style={styles.bulletRow}>
-                          <Text style={styles.bullet}>•</Text>
-                          <Text style={styles.bulletText}>{ingredient}</Text>
-                        </View>
-                      ))}
+                      {ingredientLines.map((ingredient, idx) => {
+                        const structured = structuredAligned
+                          ? structuredIngredients[idx]
+                          : undefined;
+                        const qty =
+                          structured?.qty_display ??
+                          (structured?.qty != null
+                            ? String(structured.qty)
+                            : null);
+                        const unit = structured?.unit?.trim() || null;
+                        const itemText = [
+                          structured?.item?.trim(),
+                          structured?.prep?.trim(),
+                        ]
+                          .filter(Boolean)
+                          .join(", ");
+                        const qtyPart = [qty, unit].filter(Boolean).join(" ");
+                        const hasStructure = qtyPart !== "" && itemText !== "";
+                        return (
+                          <View key={`ing-${idx}`} style={styles.bulletRow}>
+                            <Text style={styles.bullet}>•</Text>
+                            {hasStructure ? (
+                              <Text style={styles.bulletText}>
+                                <Text style={styles.ingredientQty}>
+                                  {qtyPart}
+                                </Text>
+                                {` ${itemText}`}
+                              </Text>
+                            ) : (
+                              <Text style={styles.bulletText}>{ingredient}</Text>
+                            )}
+                          </View>
+                        );
+                      })}
                     </View>
                   ) : (
                     <Text style={styles.muted}>{t("detail.noIngredients")}</Text>
                   )}
                 </View>
 
-                {/* 6. YOUR NOTES — personal tweaks, kept on this device. */}
-                <View style={styles.section}>
-                  <SectionHeader
-                    title={t("detail.yourNotes")}
-                    subtitle={t("detail.notesSubtitle")}
-                  />
-                  <TextInput
-                    style={styles.noteInput}
-                    value={note}
-                    onChangeText={setNote}
-                    placeholder={t("detail.notesPlaceholder")}
-                    placeholderTextColor={colors.inkFaint}
-                    multiline
-                  />
-                  <View style={styles.noteActions}>
-                    <Button
-                      variant={noteDirty ? "primary" : "ghost"}
-                      disabled={!noteDirty}
-                      title={t("detail.saveNote")}
-                      onPress={onSaveNote}
-                    />
-                    {noteJustSaved ? (
-                      <Text style={styles.noteSaved}>{t("detail.saved")}</Text>
-                    ) : null}
-                  </View>
-                </View>
-
-                {/* 7. STEPS */}
+                {/* 6. STEPS — clean reading list: number + description. The
+                    hands-off chip is the only badge (passive steps only);
+                    times live in the timeline above. */}
                 <View style={styles.section}>
                   <SectionHeader title={t("detail.steps")} />
                   {steps.length > 0 ? (
@@ -1167,13 +1245,13 @@ export default function RecipeDetailScreen() {
                                   {step.step_number}
                                 </Text>
                               </View>
-                              <Badge
-                                label={stepTypeLabel(t, step.step_type)}
-                                stepType={step.step_type}
-                              />
-                              <View style={styles.stepTime}>
-                                <TimeChip minutes={stepMinutes(step)} />
-                              </View>
+                              {step.step_type === "passive" ? (
+                                <Chip
+                                  label={t("common.handsOff")}
+                                  tone="success"
+                                  size="sm"
+                                />
+                              ) : null}
                             </View>
                             {adjusted != null ? (
                               <View style={styles.stepAdjustedRow}>
@@ -1209,6 +1287,33 @@ export default function RecipeDetailScreen() {
                       ))}
                     </View>
                   )}
+                </View>
+
+                {/* 7. YOUR NOTES — personal tweaks, kept on this device. */}
+                <View style={styles.section}>
+                  <SectionHeader
+                    title={t("detail.yourNotes")}
+                    subtitle={t("detail.notesSubtitle")}
+                  />
+                  <TextInput
+                    style={styles.noteInput}
+                    value={note}
+                    onChangeText={setNote}
+                    placeholder={t("detail.notesPlaceholder")}
+                    placeholderTextColor={colors.inkFaint}
+                    multiline
+                  />
+                  <View style={styles.noteActions}>
+                    <Button
+                      variant={noteDirty ? "primary" : "ghost"}
+                      disabled={!noteDirty}
+                      title={t("detail.saveNote")}
+                      onPress={onSaveNote}
+                    />
+                    {noteJustSaved ? (
+                      <Text style={styles.noteSaved}>{t("detail.saved")}</Text>
+                    ) : null}
+                  </View>
                 </View>
               </View>
             </>

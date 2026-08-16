@@ -95,8 +95,10 @@ export const ar: Record<string, string> = {
   "detail.freeLimitTitle": "بلغت الحد المجاني",
   "detail.freeLimitBody":
     "وصلت إلى الحد المجاني (٥ وصفات شهريًا). قم بالترقية لوصفات بلا حدود.",
-  "detail.statPublisher": "الناشر",
-  "detail.statRealAvg": "المتوسط الفعلي",
+  "detail.statClaimed": "الوصفة تقول",
+  "detail.statCooksAvg": "متوسط الطبّاخين",
+  "detail.beTheFirst": "كن أول من يجرّب!",
+  "detail.cooksAvgAddHint": "طبختها؟ أضف وقتك",
   "detail.statTotalInclCleanup": "الإجمالي مع التنظيف",
   "detail.ratingWithCount": "★ {rating} · {n} تقييم",
   "detail.ratingOnly": "★ {rating}",
@@ -108,7 +110,6 @@ export const ar: Record<string, string> = {
   "detail.startNow": "ابدأ الآن ← جاهز للأكل ~{time}",
   "detail.cleanupAfter": "+ ~{time} تنظيفًا بعدها",
   "detail.stepCaption": "الخطوة {n}",
-  "detail.stepActive": "· نشطة",
   "detail.ingredients": "المكونات",
   "detail.noIngredients": "لا توجد مكونات مدرجة.",
   "detail.yourNotes": "ملاحظاتك",
@@ -121,7 +122,6 @@ export const ar: Record<string, string> = {
   "detail.startCookMode": "ابدأ وضع الطهي",
 
   // ---- المساهمة بوقت الطهي ----------------------------------------------------
-  "quick.cookedIt": "طبختها؟",
   "quick.howLong": "كم استغرق الأمر؟",
   "quick.minutesPlaceholder": "الدقائق",
   "quick.submit": "إرسال",

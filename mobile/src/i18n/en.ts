@@ -94,8 +94,10 @@ export const en: Record<string, string> = {
   "detail.freeLimitTitle": "Free limit reached",
   "detail.freeLimitBody":
     "You've reached the free limit (5 recipes/month). Upgrade for unlimited recipes.",
-  "detail.statPublisher": "Publisher",
-  "detail.statRealAvg": "Real avg",
+  "detail.statClaimed": "Recipe says",
+  "detail.statCooksAvg": "Cooks average",
+  "detail.beTheFirst": "Be the first!",
+  "detail.cooksAvgAddHint": "Cooked it? Add your time",
   "detail.statTotalInclCleanup": "Total incl. cleanup",
   "detail.ratingWithCount": "★ {rating} · {n} reviews",
   "detail.ratingOnly": "★ {rating}",
@@ -107,7 +109,6 @@ export const en: Record<string, string> = {
   "detail.startNow": "Start now → eating at ~{time}",
   "detail.cleanupAfter": "+ ~{time} cleanup after",
   "detail.stepCaption": "Step {n}",
-  "detail.stepActive": "· active",
   "detail.ingredients": "Ingredients",
   "detail.noIngredients": "No ingredients listed.",
   "detail.yourNotes": "Your notes",
@@ -120,7 +121,6 @@ export const en: Record<string, string> = {
   "detail.startCookMode": "Start Cook Mode",
 
   // ---- Quick-time contribution ----------------------------------------------
-  "quick.cookedIt": "Cooked it?",
   "quick.howLong": "How long did it take?",
   "quick.minutesPlaceholder": "Minutes",
   "quick.submit": "Submit",
