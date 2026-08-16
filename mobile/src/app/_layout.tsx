@@ -12,6 +12,8 @@ import {
   initialWindowMetrics,
 } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import "@/global.css";
 import { track } from "@/analytics";
@@ -21,8 +23,16 @@ import {
   DarkColors,
   LightColors,
   ThemePrefProvider,
+  LANG_STORAGE_KEY,
   useThemePrefs,
 } from "@/theme";
+
+// Hold the native splash until the persisted language preference has been
+// read and the RTL flags applied — otherwise the app boots in the wrong
+// direction for a frame and a SECOND reload is needed to fix the layout.
+void SplashScreen.preventAutoHideAsync().catch(() => {
+  // Already prevented or unavailable (dev web) — fine.
+});
 
 /**
  * Root layout. Initializes the offline SQLite cache on mount and provides the
@@ -32,6 +42,25 @@ import {
  */
 export default function RootLayout() {
   useEffect(() => {
+    // Apply the stored language's RTL flags BEFORE revealing the UI, then
+    // release the splash. The provider's own state load covers strings.
+    (async () => {
+      try {
+        const stored = await AsyncStorage.getItem(LANG_STORAGE_KEY);
+        const isAr = stored === "ar";
+        I18nManager.allowRTL(true);
+        I18nManager.forceRTL(isAr);
+      } catch {
+        // Preference unreadable — boot as-is.
+      } finally {
+        // Give the provider one tick to commit its loaded state, then show.
+        setTimeout(() => {
+          SplashScreen.hideAsync().catch(() => {
+            // Splash already hidden — fine.
+          });
+        }, 80);
+      }
+    })();
     initDatabase().catch((error) => {
       // Cache failures are non-fatal: screens fall back to the network.
       console.warn("[RecipeReal] initDatabase failed:", error);

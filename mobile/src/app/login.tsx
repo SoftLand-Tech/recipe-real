@@ -36,12 +36,24 @@ function resolveGoogleClientId(): string | null {
 }
 
 /**
- * The Expo proxy redirect URL (`https://auth.expo.io/@owner/slug`). SDK 57's
- * expo-auth-session no longer wires the proxy into `promptAsync`, so the flow
- * is assembled here from the same public building blocks. Returns null when the
- * proxy can't be resolved (e.g. missing project full name).
+ * The Google-flow redirect URI, by environment:
+ * - Expo Go: the auth.expo.io proxy (`https://auth.expo.io/@owner/slug`) —
+ *   SDK 57's expo-auth-session no longer wires the proxy into `promptAsync`,
+ *   so the flow is assembled here from the same public building blocks.
+ * - Standalone / store builds: the app's own scheme (`recipereal://auth`),
+ *   which must be listed as an Authorized Redirect URI on the Google OAuth
+ *   client (docs/google-auth.md).
  */
-function resolveProxyRedirectUri(): string | null {
+function resolveAuthRedirectUri(): string | null {
+  const isExpoGo =
+    Constants.executionEnvironment === "StoreClient";
+  if (!isExpoGo) {
+    const scheme = Constants.expoConfig?.scheme;
+    if (typeof scheme === "string" && scheme.length > 0) {
+      return `${scheme}://auth`;
+    }
+    return null;
+  }
   try {
     // Prefer the explicit owner/slug from app.json — getRedirectUrl() depends
     // on the runtime manifest exposing `originalFullName`, which Expo Go can
@@ -73,7 +85,7 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const googleClientId = resolveGoogleClientId();
-  const proxyRedirectUri = resolveProxyRedirectUri();
+  const proxyRedirectUri = resolveAuthRedirectUri();
 
   const styles = useMemo(
     () =>
@@ -161,18 +173,30 @@ export default function LoginScreen() {
 
     setGoogleBusy(true);
     try {
-      // Proxy start URL: auth.expo.io bounces the Google redirect (an HTTPS URL
-      // registerable on the Web OAuth client) back into the app.
-      const returnUrl = getDefaultReturnUrl();
       const authUrl =
         request.url ?? (await request.makeAuthUrlAsync(Google.discovery));
-      const startUrl = `${proxyRedirectUri}/start?${new URLSearchParams({
-        authUrl,
-        returnUrl,
-      })}`;
+
+      let openUrl: string;
+      let returnUrl: string;
+      const isExpoGo = Constants.executionEnvironment === "StoreClient";
+      if (isExpoGo) {
+        // Proxy flow: auth.expo.io bounces the Google redirect (an HTTPS URL
+        // registerable on the Web OAuth client) back into Expo Go.
+        returnUrl = getDefaultReturnUrl();
+        openUrl = `${proxyRedirectUri}/start?${new URLSearchParams({
+          authUrl,
+          returnUrl,
+        })}`;
+      } else {
+        // Standalone build: redirect straight back via the app scheme
+        // (recipereal://auth) — no proxy involved. The authUrl already
+        // carries redirect_uri=proxyRedirectUri from the request config.
+        returnUrl = proxyRedirectUri;
+        openUrl = authUrl;
+      }
 
       const result = await WebBrowser.openAuthSessionAsync(
-        startUrl,
+        openUrl,
         returnUrl,
       );
 

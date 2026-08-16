@@ -29,7 +29,8 @@ export type Lang = "en" | "ar";
 export type LangDir = "ltr" | "rtl";
 
 const STORAGE_KEY = "recipereal.themePref";
-const LANG_STORAGE_KEY = "recipereal.langPref";
+/** Exported for the root layout's pre-splash RTL bootstrap. */
+export const LANG_STORAGE_KEY = "recipereal.langPref";
 
 interface ThemeContextValue {
   /** Persisted preference (defaults to "system" until loaded). */
@@ -131,21 +132,33 @@ export function ThemePrefProvider({ children }: { children: ReactNode }) {
       const prevLang: Lang = langPref === "system" ? systemLang : langPref;
       const nextLang: Lang = next === "system" ? systemLang : next;
       setLangPrefState(next);
-      AsyncStorage.setItem(LANG_STORAGE_KEY, next).catch(() => {
-        // Persistence is best-effort; the in-memory preference still applies.
-      });
       // Pure en→system→en changes (no direction flip) apply instantly; an
       // actual en↔ar flip needs a JS reload to re-layout the whole app.
       const prevDir = prevLang === "ar" ? "rtl" : "ltr";
       const nextDir = nextLang === "ar" ? "rtl" : "ltr";
-      if (prevDir !== nextDir) {
-        try {
-          I18nManager.forceRTL(nextDir === "rtl");
-        } catch {
-          // Best-effort native flag; the reload still applies strings.
-        }
-        reloadForDirectionChange(nextLang);
+      if (prevDir === nextDir) {
+        AsyncStorage.setItem(LANG_STORAGE_KEY, next).catch(() => {
+          // Persistence is best-effort; the in-memory preference still applies.
+        });
+        return;
       }
+      // Direction flip: PERSIST FIRST, THEN reload. The old fire-and-forget
+      // write raced Updates.reloadAsync() — the restart then read the OLD
+      // stored preference and the language appeared unchanged.
+      AsyncStorage.setItem(LANG_STORAGE_KEY, next)
+        .catch(() => {
+          // Storage failing is non-fatal for the reload decision.
+        })
+        .finally(() => {
+          try {
+            I18nManager.forceRTL(nextDir === "rtl");
+          } catch {
+            // Best-effort native flag; the reload still applies strings.
+          }
+          // Small extra settle so the native side picks up forceRTL before
+          // the JS context is torn down.
+          setTimeout(() => reloadForDirectionChange(nextLang), 300);
+        });
     },
     [langPref, systemLang],
   );
