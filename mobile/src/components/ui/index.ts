@@ -36,3 +36,6 @@ export type { IconPressableProps } from "./IconPressable";
 
 export { HeartButton } from "./HeartButton";
 export type { HeartButtonProps } from "./HeartButton";
+
+export { NoteBadge } from "./NoteBadge";
+export type { NoteBadgeProps } from "./NoteBadge";

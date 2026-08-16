@@ -213,6 +213,10 @@ export const en: Record<string, string> = {
   "favorites.emptyTitle": "No favorites yet",
   "favorites.emptyCaption": "Tap the heart on any recipe to save it here.",
   "favorites.browseRecipes": "Browse recipes",
+  "favorites.yourNotes": "Your notes",
+  "favorites.noNotes": "Notes you write on recipes appear here.",
+  "favorites.showAllNotes": "Show all notes",
+  "favorites.showFewNotes": "Show fewer",
 
   // ---- Settings -------------------------------------------------------------
   "settings.appearance": "Appearance",

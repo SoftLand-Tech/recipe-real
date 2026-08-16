@@ -9,7 +9,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 
 import { fetchCategories, fetchHomeRails } from "@/api/client";
 import { track } from "@/analytics";
@@ -17,6 +17,7 @@ import {
   countCachedRecipes,
   flushPendingCookSessions,
   getCachedRecipes,
+  getNotedRecipeIds,
   refreshCacheLight,
   repairCachedStepsIfNeeded,
   seedCacheFirstPage,
@@ -29,6 +30,7 @@ import {
   Card,
   Chip,
   HeroImage,
+  NoteBadge,
   ScreenHeader,
   SectionHeader,
   SkeletonCard,
@@ -107,6 +109,25 @@ export default function HomeScreen() {
     id: string;
     label: string;
   }[] | null>(null);
+
+  // Ids of recipes carrying a personal note — drives the pencil badge on the
+  // rail cards. Purely local SQLite; loaded on mount and refreshed on focus so
+  // notes saved on the detail screen badge the rails when the user returns.
+  const [noteIds, setNoteIds] = useState<Set<number>>(new Set());
+
+  const reloadNoteIds = useCallback(async () => {
+    try {
+      setNoteIds(new Set(await getNotedRecipeIds()));
+    } catch (error) {
+      console.warn("[RecipeReal] home noted ids load failed:", error);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      reloadNoteIds();
+    }, [reloadNoteIds]),
+  );
 
   const styles = useMemo(
     () =>
@@ -447,16 +468,23 @@ export default function HomeScreen() {
             <HomeRail
               title={t("home.railTopRated")}
               items={serverRails.top_rated}
+              noteIds={noteIds}
             />
-            <HomeRail title={t("home.easyWins")} items={serverRails.easy_wins} />
+            <HomeRail
+              title={t("home.easyWins")}
+              items={serverRails.easy_wins}
+              noteIds={noteIds}
+            />
             <HomeRail
               title={t("home.railMostLoved")}
               items={serverRails.most_loved}
+              noteIds={noteIds}
             />
             <HomeRail
               title={t("home.handsOffHeroes")}
               subtitle={t("home.handsOffSubtitle")}
               items={serverRails.hands_off}
+              noteIds={noteIds}
             />
             <CategoryRail
               chips={cravingChips}
@@ -466,14 +494,23 @@ export default function HomeScreen() {
         ) : state === "ready" && recipes.length > 0 ? (
           // ---- Fallback: rails computed over the offline cache ----
           <>
-            <HomeRail title={t("home.topPicks")} items={topPicks} />
-            <HomeRail title={t("home.easyWins")} items={easyWins} />
+            <HomeRail title={t("home.topPicks")} items={topPicks} noteIds={noteIds} />
+            <HomeRail
+              title={t("home.easyWins")}
+              items={easyWins}
+              noteIds={noteIds}
+            />
             <HomeRail
               title={t("home.handsOffHeroes")}
               subtitle={t("home.handsOffSubtitle")}
               items={handsOffHeroes}
+              noteIds={noteIds}
             />
-            <HomeRail title={t("home.quickCleanup")} items={quickCleanup} />
+            <HomeRail
+              title={t("home.quickCleanup")}
+              items={quickCleanup}
+              noteIds={noteIds}
+            />
             <CategoryRail
               chips={cravingChips}
               onCategoryPress={handleCategoryPress}
@@ -527,7 +564,7 @@ function SeeAllAction() {
 }
 
 /** Compact rail card: hero image, 2-line title, time + rating chips. */
-function HomeCard({ item }: { item: Recipe }) {
+function HomeCard({ item, hasNote }: { item: Recipe; hasNote: boolean }) {
   const colors = useThemeColors();
   const t = useT();
   const lr = useLocalizedRecipe();
@@ -562,7 +599,10 @@ function HomeCard({ item }: { item: Recipe }) {
       shadow="card"
       style={styles.card}
     >
-      <HeroImage uri={item.image_url} height={110} rounded={Radius.lg} />
+      <View>
+        <HeroImage uri={item.image_url} height={110} rounded={Radius.lg} />
+        <NoteBadge show={hasNote} />
+      </View>
       <View style={styles.body}>
         <Text style={styles.title} numberOfLines={2}>
           {lr.title(item)}
@@ -592,10 +632,12 @@ function HomeRail({
   title,
   subtitle,
   items,
+  noteIds,
 }: {
   title: string;
   subtitle?: string;
   items: Recipe[];
+  noteIds: Set<number>;
 }) {
   const styles = useMemo(
     () =>
@@ -627,7 +669,9 @@ function HomeRail({
         removeClippedSubviews
         data={items}
         keyExtractor={(item) => String(item.id)}
-        renderItem={({ item }) => <HomeCard item={item} />}
+        renderItem={({ item }) => (
+          <HomeCard item={item} hasNote={noteIds.has(item.id)} />
+        )}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.railContent}
       />

@@ -717,6 +717,39 @@ export async function saveNote(recipeId: number, note: string): Promise<void> {
   );
 }
 
+/** Ids of recipes with a saved note, most recently updated first. */
+export async function getNotedRecipeIds(): Promise<number[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ recipe_id: number }>(
+    `SELECT recipe_id FROM notes
+     ORDER BY updated_at DESC, recipe_id DESC;`,
+  );
+  return rows.map((row) => row.recipe_id);
+}
+
+/**
+ * Full Recipe objects together with their notes, newest note first. The INNER
+ * JOIN skips note ids whose recipe row is missing from the cache (orphans).
+ */
+export async function getNotedRecipes(): Promise<
+  { recipe: Recipe; note: string; updatedAt: number }[]
+> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<
+    RecipeRow & { note: string; updated_at: number }
+  >(
+    `SELECT recipes.*, notes.note AS note, notes.updated_at AS updated_at
+       FROM notes
+       INNER JOIN recipes ON recipes.id = notes.recipe_id
+     ORDER BY notes.updated_at DESC, notes.recipe_id DESC;`,
+  );
+  return rows.map((row) => ({
+    recipe: parseRecipe(row),
+    note: row.note,
+    updatedAt: row.updated_at,
+  }));
+}
+
 // ---- Pending cook sessions (offline queue) ---------------------------------
 
 interface PendingCookSessionRow {

@@ -30,6 +30,7 @@ import {
   getCachedRecipes,
   getFavoriteIds,
   getFavoriteRecipes,
+  getNotedRecipeIds,
   refreshCacheLight,
   repairCachedStepsIfNeeded,
   seedCacheFirstPage,
@@ -52,6 +53,7 @@ import {
   HeroImage,
   HeartButton,
   IconPressable,
+  NoteBadge,
   ScreenHeader,
   SectionHeader,
   SkeletonCard,
@@ -747,6 +749,7 @@ const FilterPanel = memo(function FilterPanel({
 interface RecipeCardProps {
   item: Recipe;
   favorited: boolean;
+  hasNote: boolean;
   onOpen: (id: number) => void;
   onToggleFavorite: (id: number) => void;
   numColumns: number;
@@ -756,6 +759,7 @@ interface RecipeCardProps {
 const RecipeCard = memo(function RecipeCard({
   item,
   favorited,
+  hasNote,
   onOpen,
   onToggleFavorite,
   numColumns,
@@ -776,6 +780,7 @@ const RecipeCard = memo(function RecipeCard({
           favorited={favorited}
           onPress={() => onToggleFavorite(item.id)}
         />
+        <NoteBadge show={hasNote} />
       </View>
       <View style={styles.cardBody}>
         <Text style={styles.cardTitle} numberOfLines={2}>
@@ -826,6 +831,8 @@ export default function BrowseScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
   const [favoriteRecipes, setFavoriteRecipes] = useState<Recipe[]>([]);
+  // Ids of recipes carrying a personal note — drives the pencil badge on cards.
+  const [noteIds, setNoteIds] = useState<Set<number>>(new Set());
 
   // ---- Server-driven list ----------------------------------------------------
   const [serverItems, setServerItems] = useState<Recipe[]>([]);
@@ -949,14 +956,26 @@ export default function BrowseScreen() {
     }
   }, []);
 
-  // Refresh the favorites snapshot whenever the screen regains focus, so
-  // un-hearting on the detail screen is reflected here instead of staying
-  // stale until the next mount (the reported bug). These are cheap SQLite
+  // Reload the noted-recipe id set from SQLite. Same cadence as the favorites
+  // reload (mount + focus), so notes saved/cleared on the detail screen are
+  // reflected in the card badges as soon as the user returns. Best-effort.
+  const reloadNoteIds = useCallback(async () => {
+    try {
+      setNoteIds(new Set(await getNotedRecipeIds()));
+    } catch (error) {
+      console.warn("[RecipeReal] loading noted recipe ids failed:", error);
+    }
+  }, []);
+
+  // Refresh the favorites + notes snapshots whenever the screen regains focus,
+  // so un-hearting or note edits on the detail screen are reflected here
+  // instead of staying stale until the next mount. These are cheap SQLite
   // reads, so no guard on the initial load is needed.
   useFocusEffect(
     useCallback(() => {
       reloadFavorites();
-    }, [reloadFavorites]),
+      reloadNoteIds();
+    }, [reloadFavorites, reloadNoteIds]),
   );
 
   // Leaving the screen closes the filters panel, so it never re-opens on
@@ -1230,8 +1249,10 @@ export default function BrowseScreen() {
   }, [serverChips]);
 
   useEffect(() => {
-    // Favorites are independent of the cache load: pull them in parallel.
+    // Favorites + notes are independent of the cache load: pull them in
+    // parallel. (They also refresh on focus — see useFocusEffect above.)
     reloadFavorites();
+    reloadNoteIds();
     loadFromCache().then((hadCachedData) => {
       // Only light-refresh when we showed previously cached data; a cold
       // cache was just (progressively) seeded, so refreshing would re-download
@@ -1391,13 +1412,21 @@ export default function BrowseScreen() {
       <RecipeCard
         item={item}
         favorited={favoriteIds.has(item.id)}
+        hasNote={noteIds.has(item.id)}
         onOpen={handleOpenRecipe}
         onToggleFavorite={handleToggleFavorite}
         numColumns={numColumns}
         styles={styles}
       />
     ),
-    [numColumns, favoriteIds, handleOpenRecipe, handleToggleFavorite, styles],
+    [
+      numColumns,
+      favoriteIds,
+      noteIds,
+      handleOpenRecipe,
+      handleToggleFavorite,
+      styles,
+    ],
   );
 
   const showSkeletons =

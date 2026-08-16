@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -11,9 +11,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 
 import { track } from "@/analytics";
-import { getFavoriteIds, getFavoriteRecipes, toggleFavorite } from "@/db/database";
+import {
+  getFavoriteIds,
+  getFavoriteRecipes,
+  getNotedRecipeIds,
+  getNotedRecipes,
+  toggleFavorite,
+} from "@/db/database";
 import type { Recipe } from "@/types";
-import { useLocalizedRecipe, useT } from "@/i18n";
+import { useLang, useLocalizedRecipe, useT, type Lang } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 import {
   Button,
@@ -21,15 +27,34 @@ import {
   Chip,
   HeroImage,
   HeartButton,
+  NoteBadge,
   ScreenHeader,
+  SectionHeader,
   SkeletonCard,
   TimeChip,
 } from "@/components/ui";
 
 type LoadState = "loading" | "ready" | "error";
 
+/** A recipe joined with its personal note (newest note first). */
+type NotedRecipe = { recipe: Recipe; note: string; updatedAt: number };
+
 /** Skeleton cards shown while the very first load runs. */
 const SKELETON_COUNT = 3;
+
+/** Note rows visible before the "Show all notes" toggle expands the list. */
+const NOTES_PREVIEW_COUNT = 10;
+
+/**
+ * Compact note date, e.g. "Aug 16" — short month + day, resolved for the
+ * in-app language. Text-only (no directional glyphs), so it is RTL-safe.
+ */
+function formatNoteDate(lang: Lang, updatedAt: number): string {
+  return new Date(updatedAt).toLocaleDateString(
+    lang === "ar" ? "ar" : "en-US",
+    { month: "short", day: "numeric" },
+  );
+}
 
 /**
  * Safety cap for the pull-to-refresh spinner: it must never outlive ~10s
@@ -50,12 +75,18 @@ export default function FavoritesScreen() {
   const colors = useThemeColors();
   const t = useT();
   const lr = useLocalizedRecipe();
+  const { lang } = useLang();
 
   // Tablet (width >= 768): two columns. Phones: one column. (Matches browse.)
   const numColumns = width >= 768 ? 2 : 1;
 
   const [favorites, setFavorites] = useState<Recipe[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
+  // Ids of recipes carrying a personal note (card badges) + the joined
+  // recipe+note rows for the "Your notes" section below the grid.
+  const [noteIds, setNoteIds] = useState<Set<number>>(new Set());
+  const [notedRecipes, setNotedRecipes] = useState<NotedRecipe[]>([]);
+  const [showAllNotes, setShowAllNotes] = useState(false);
   const [state, setState] = useState<LoadState>("loading");
   const [refreshing, setRefreshing] = useState(false);
 
@@ -64,6 +95,8 @@ export default function FavoritesScreen() {
   const firstLoadRef = useRef(true);
   // "favorites_viewed" is tracked once per mount, not on every focus.
   const viewedTrackedRef = useRef(false);
+  // "notes_list_viewed" likewise: once per mount, when the section has data.
+  const notesViewedRef = useRef(false);
 
   const styles = useMemo(
     () =>
@@ -136,22 +169,62 @@ export default function FavoritesScreen() {
           color: colors.inkSecondary,
           textAlign: "center",
         },
+        notesSection: {
+          gap: Space.md,
+        },
+        notesList: {
+          gap: Space.md,
+        },
+        noteRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.md,
+        },
+        noteMain: {
+          flex: 1,
+          gap: 2,
+        },
+        noteTitle: {
+          ...Type.title,
+          color: colors.ink,
+        },
+        noteSnippet: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+        },
+        noteDate: {
+          ...Type.caption,
+          color: colors.inkFaint,
+        },
+        notesEmpty: {
+          ...Type.caption,
+          color: colors.inkSecondary,
+        },
+        showAllButton: {
+          alignSelf: "flex-start",
+          marginTop: Space.xs,
+        },
       }),
     [colors, insets.bottom],
   );
 
-  // Reload the favorites list + the id set from SQLite. Purely local, so this
-  // works offline. Runs on mount AND on every focus so the list never goes
-  // stale after un-hearting a recipe on the detail screen.
+  // Reload the favorites list + the id set from SQLite, plus the noted-recipe
+  // data (badge id set + the "Your notes" rows). Purely local, so this works
+  // offline. Runs on mount AND on every focus so the list never goes stale
+  // after un-hearting a recipe or editing a note on the detail screen.
   const load = useCallback(async () => {
     if (firstLoadRef.current) setState("loading");
     try {
-      const [recipes, ids] = await Promise.all([
+      const [recipes, ids, noteIdList, noted] = await Promise.all([
         getFavoriteRecipes(),
         getFavoriteIds(),
+        getNotedRecipeIds(),
+        getNotedRecipes(),
       ]);
       setFavorites(recipes);
       setFavoriteIds(new Set(ids));
+      setNoteIds(new Set(noteIdList));
+      setNotedRecipes(noted);
       setState("ready");
       // Fire-and-forget analytics: favorites rendered with data, once.
       if (recipes.length > 0 && !viewedTrackedRef.current) {
@@ -170,6 +243,22 @@ export default function FavoritesScreen() {
     useCallback(() => {
       load();
     }, [load]),
+  );
+
+  // Fire-and-forget analytics: the notes section rendered with data. Tracked
+  // once per mount, not on silent refocus refreshes (pace history pattern).
+  useEffect(() => {
+    if (notedRecipes.length > 0 && !notesViewedRef.current) {
+      notesViewedRef.current = true;
+      track("notes_list_viewed");
+    }
+  }, [notedRecipes.length]);
+
+  // Note rows visible under the current "Show all notes" toggle.
+  const visibleNotes = useMemo(
+    () =>
+      showAllNotes ? notedRecipes : notedRecipes.slice(0, NOTES_PREVIEW_COUNT),
+    [showAllNotes, notedRecipes],
   );
 
   const handleRefresh = useCallback(async () => {
@@ -243,6 +332,7 @@ export default function FavoritesScreen() {
               favorited={favorited}
               onPress={() => handleToggleFavorite(item.id)}
             />
+            <NoteBadge show={noteIds.has(item.id)} />
           </View>
           <View style={styles.cardBody}>
             <Text style={styles.cardTitle} numberOfLines={2}>
@@ -339,6 +429,55 @@ export default function FavoritesScreen() {
           ))}
         </View>
       )}
+
+      {/* "Your notes" — independent of favorites: shows below the grid or the
+          empty state alike, refreshed on focus with the same load(). */}
+      {state === "ready" ? (
+        <View style={styles.notesSection}>
+          <SectionHeader title={t("favorites.yourNotes")} />
+          {notedRecipes.length === 0 ? (
+            <Text style={styles.notesEmpty}>{t("favorites.noNotes")}</Text>
+          ) : (
+            <>
+              <View style={styles.notesList}>
+                {visibleNotes.map(({ recipe, note, updatedAt }) => (
+                  <Card
+                    key={recipe.id}
+                    padding={Space.md}
+                    onPress={() => router.push(`/recipe/${recipe.id}`)}
+                  >
+                    <View style={styles.noteRow}>
+                      <View style={styles.noteMain}>
+                        <Text style={styles.noteTitle} numberOfLines={1}>
+                          {lr.title(recipe)}
+                        </Text>
+                        <Text style={styles.noteSnippet} numberOfLines={2}>
+                          {note}
+                        </Text>
+                      </View>
+                      <Text style={styles.noteDate}>
+                        {formatNoteDate(lang, updatedAt)}
+                      </Text>
+                    </View>
+                  </Card>
+                ))}
+              </View>
+              {notedRecipes.length > NOTES_PREVIEW_COUNT ? (
+                <Button
+                  title={
+                    showAllNotes
+                      ? t("favorites.showFewNotes")
+                      : t("favorites.showAllNotes")
+                  }
+                  variant="ghost"
+                  onPress={() => setShowAllNotes((v) => !v)}
+                  style={styles.showAllButton}
+                />
+              ) : null}
+            </>
+          )}
+        </View>
+      ) : null}
     </ScrollView>
   );
 }
