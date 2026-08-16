@@ -21,8 +21,8 @@ UNITS = {"cup","tablespoon","teaspoon","ounce","pound","gram","kilogram","ml","l
          "quart","pint","gallon","clove","can","package","envelope","box","jar","stick",
          "pinch","dash","drop","slice","sprig","leaf","stalk","bunch","head","piece",
          "whole","to_taste"}
-BATCH = 8
-WORKERS = 6
+BATCH = 10
+WORKERS = 8
 
 in_path, out_path = sys.argv[1], sys.argv[2]
 limit = int(sys.argv[3]) if len(sys.argv) > 3 else 10**9
@@ -153,11 +153,18 @@ def process_batch(batch):
 done_ids = set()
 try:
     with gzip.open(out_path, "rt") as f:
-        for line in f:
-            try:
-                done_ids.add(json.loads(line)["id"])
-            except Exception:
-                pass
+        try:
+            for line in f:
+                try:
+                    done_ids.add(json.loads(line)["id"])
+                except Exception:
+                    pass
+        except (EOFError, OSError):
+            # A previous run killed mid-write leaves the gzip without its
+            # end-of-stream marker — everything before the cut is still
+            # valid and counts; just stop reading at the truncation.
+            print(f"[resume] output file was truncated by a hard kill — "
+                  f"recovered {len(done_ids)} completed recipes from it")
 except FileNotFoundError:
     pass
 
