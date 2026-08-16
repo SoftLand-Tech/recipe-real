@@ -44,6 +44,12 @@ class Recipe extends Model
             'steps_count' => 'integer',
             'dish_count' => 'integer',
             'dishwasher_safe' => 'boolean',
+            // Stage A deterministic normalization (recipereal:normalize-
+            // ingredients): {"v":1,"items":[{raw,qty,qty_display,unit,item,
+            // prep},...]}. Array cast like ingredients/keywords; the command
+            // writes the JSON via DB::table, so no double-encode risk.
+            'ingredients_structured' => 'array',
+            'ingredients_needs_llm' => 'boolean',
         ];
     }
 
@@ -88,6 +94,25 @@ class Recipe extends Model
     public function scopeListable(Builder $query): Builder
     {
         return $query->where('recipes.steps_count', '>=', 2);
+    }
+
+    /**
+     * The quality tier surfacing rule (~51.7k of 520k rows in prod):
+     * listable + has an image + aggregated_rating >= 4 + review_count >= 5.
+     * Used by the Browse feed, the home rails and the paged seed endpoint
+     * so the app leads with the good stuff; search keeps searching the
+     * whole library and only tier-boosts its ordering.
+     *
+     * Columns are table-qualified like scopeListable for the same
+     * joined-against-recipes_fts reason.
+     */
+    public function scopeQualityTier(Builder $query): Builder
+    {
+        return $query
+            ->where('recipes.steps_count', '>=', 2)
+            ->whereNotNull('recipes.image_url')
+            ->where('recipes.aggregated_rating', '>=', 4)
+            ->where('recipes.review_count', '>=', 5);
     }
 
     public function recipeSteps(): HasMany

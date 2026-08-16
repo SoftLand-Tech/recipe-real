@@ -28,6 +28,10 @@ class RecipeResource extends JsonResource
             'ingredients_ar' => $this->ingredients_ar,
             'steps_ar' => $this->steps_ar,
             'ingredients' => $this->ingredients,
+            // Stage A deterministic normalization (recipereal:normalize-
+            // ingredients), raw JSON passthrough via the model's array cast
+            // (null when not yet normalized): {"v":1,"items":[...]}.
+            'ingredients_structured' => $this->ingredients_structured,
             'steps' => $this->steps,
             // Food.com metadata, raw nullable passthrough (keywords is an
             // array via the model cast, like ingredients).

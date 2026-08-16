@@ -38,8 +38,9 @@ class RecipeController extends Controller
     {
         $perPage = max(1, min(100, $request->integer('per_page', 15)));
 
-        // Listable: hide recipes with fewer than 2 steps (degenerate imports).
-        $query = Recipe::query()->listable();
+        // Quality tier: the default Browse feed leads with the good stuff
+        // (image + rating >= 4 + review_count >= 5, see Recipe::scopeQualityTier).
+        $query = Recipe::query()->qualityTier();
 
         if ($request->filled('search')) {
             $query->where('title', 'like', '%'.$request->string('search').'%');
@@ -188,9 +189,19 @@ class RecipeController extends Controller
 
     /**
      * Sort orders. `IS NULL ASC` puts nulls last on SQLite (0 sorts before 1).
+     *
+     * Every sort is tier-boosted: quality-tier rows (image + rating >= 4 +
+     * review_count >= 5) sort before everything else regardless of the
+     * requested order — search still covers the WHOLE library, it just
+     * surfaces the good stuff first. Columns are table-qualified for the
+     * recipes_fts join (which has no such columns).
      */
     private function applySearchOrder(Builder $query, string $sort, bool $withFts): void
     {
+        $query->orderByRaw(
+            '(recipes.image_url IS NOT NULL AND recipes.aggregated_rating >= 4 AND recipes.review_count >= 5) DESC'
+        );
+
         match ($sort) {
             'relevance' => $withFts
                 // FTS5 bm25() is negative-better, so ascending = best match
@@ -221,11 +232,12 @@ class RecipeController extends Controller
         if ($request->filled('page')) {
             $perPage = max(1, min(100, $request->integer('per_page', 50)));
 
-            // Paged mode: listable (>= 2 steps) so offline clients don't
-            // sync degenerate imports. The legacy unpaged dump below keeps
-            // its original behavior.
+            // Paged mode: quality tier (>= 2 steps, image, rating >= 4,
+            // review_count >= 5) so the offline cache holds the good stuff —
+            // the total will read ~51.7k in prod, not 520k. The legacy
+            // unpaged dump below keeps its original behavior.
             $recipes = Recipe::with('recipeSteps')
-                ->listable()
+                ->qualityTier()
                 ->orderByRaw('image_url IS NOT NULL DESC, id ASC')
                 ->paginate($perPage);
         } else {
