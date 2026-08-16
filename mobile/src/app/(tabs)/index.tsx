@@ -11,7 +11,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 
-import { fetchHomeRails } from "@/api/client";
+import { fetchCategories, fetchHomeRails } from "@/api/client";
 import { track } from "@/analytics";
 import {
   countCachedRecipes,
@@ -41,6 +41,15 @@ type LoadState = "loading" | "ready" | "error";
 
 /** Cards per curated rail. */
 const RAIL_SIZE = 10;
+
+/** Craving chips rendered in the "Browse by craving" rail. */
+const CRAVING_CHIP_LIMIT = 12;
+
+/**
+ * Safety cap for the pull-to-refresh spinner: it must never outlive ~10s
+ * whatever the network does (force-cleared by a setTimeout guard).
+ */
+const REFRESH_SPINNER_MAX_MS = 10_000;
 
 /**
  * Rough "hands-off" score for a recipe: the summed community minutes of its
@@ -89,6 +98,15 @@ export default function HomeScreen() {
   // available → the client-side cached rails render instead, so Home is
   // NEVER empty while the cache has data.
   const [serverRails, setServerRails] = useState<HomeRails | null>(null);
+
+  // Server category chips for "Browse by craving" (GET /api/recipes/categories,
+  // AsyncStorage-cached with a stale fallback in the client — same pattern as
+  // Browse). Null until loaded → the local keyword categories render as the
+  // offline fallback.
+  const [serverChips, setServerChips] = useState<{
+    id: string;
+    label: string;
+  }[] | null>(null);
 
   const styles = useMemo(
     () =>
@@ -316,17 +334,56 @@ export default function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Category chips from the server (real Food.com categories), loaded once per
+  // mount. Empty/offline → the local keyword categories remain the fallback.
+  useEffect(() => {
+    let cancelled = false;
+    fetchCategories()
+      .then((rows) => {
+        if (cancelled) return;
+        setServerChips(
+          rows.length > 0
+            ? rows.map((row) => ({ id: row.category, label: row.category }))
+            : null,
+        );
+      })
+      .catch(() => {
+        // Keep the local fallback chips.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const cravingChips = useMemo(() => {
+    const source =
+      serverChips ??
+      CATEGORIES.map((c) => ({ id: c.id as string, label: t(`cat.${c.id}`) }));
+    return source.slice(0, CRAVING_CHIP_LIMIT);
+  }, [serverChips, t]);
+
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
+    // Global safety: the spinner never outlives ~10s.
+    const guard = setTimeout(() => setRefreshing(false), REFRESH_SPINNER_MAX_MS);
     try {
-      await Promise.all([refreshInBackground(), loadRails()]);
+      // FAST primary work: the rails endpoint is 5-min cached server-side, so
+      // this lands quickly — the spinner clears the moment it does.
+      await loadRails();
     } finally {
+      clearTimeout(guard);
       setRefreshing(false);
     }
-  }, [refreshInBackground, loadRails]);
+    // The SLOW multi-page light cache sweep continues WITHOUT the spinner.
+    refreshInBackground().catch(() => {
+      // Best-effort background work.
+    });
+  }, [loadRails, refreshInBackground]);
 
   // Category chips land in Browse ALREADY FILTERED: the `filter` param carries
-  // the category id (e.g. "pasta", "quick") which Browse reads on mount.
+  // the REAL category LABEL for server chips (their id IS the label, e.g.
+  // "Chicken") or a local keyword id for the offline fallback ("pasta") —
+  // Browse's param parsing accepts both and matches labels case-insensitively.
   const handleCategoryPress = useCallback((id: string, label: string) => {
     track("home_category_tapped", { category: id, label });
     router.push({ pathname: "/browse", params: { filter: id } });
@@ -401,7 +458,10 @@ export default function HomeScreen() {
               subtitle={t("home.handsOffSubtitle")}
               items={serverRails.hands_off}
             />
-            <CategoryRail onCategoryPress={handleCategoryPress} />
+            <CategoryRail
+              chips={cravingChips}
+              onCategoryPress={handleCategoryPress}
+            />
           </>
         ) : state === "ready" && recipes.length > 0 ? (
           // ---- Fallback: rails computed over the offline cache ----
@@ -414,7 +474,10 @@ export default function HomeScreen() {
               items={handsOffHeroes}
             />
             <HomeRail title={t("home.quickCleanup")} items={quickCleanup} />
-            <CategoryRail onCategoryPress={handleCategoryPress} />
+            <CategoryRail
+              chips={cravingChips}
+              onCategoryPress={handleCategoryPress}
+            />
           </>
         ) : null}
       </ScrollView>
@@ -572,10 +635,17 @@ function HomeRail({
   );
 }
 
-/** Category chips row — every craving is one tap away in Browse. */
+/**
+ * Category chips row — every craving is one tap away in Browse. The chips are
+ * the REAL server categories when available (already capped to
+ * CRAVING_CHIP_LIMIT by the parent); the local keyword categories render as
+ * the offline fallback.
+ */
 function CategoryRail({
+  chips,
   onCategoryPress,
 }: {
+  chips: { id: string; label: string }[];
   onCategoryPress: (id: string, label: string) => void;
 }) {
   const t = useT();
@@ -606,12 +676,12 @@ function CategoryRail({
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.railContent}
       >
-        {CATEGORIES.map((category) => (
+        {chips.map((chip) => (
           <Pressable
-            key={category.id}
-            onPress={() => onCategoryPress(category.id, category.label)}
+            key={chip.id}
+            onPress={() => onCategoryPress(chip.id, chip.label)}
           >
-            <Chip label={t(`cat.${category.id}`)} />
+            <Chip label={chip.label} />
           </Pressable>
         ))}
       </ScrollView>

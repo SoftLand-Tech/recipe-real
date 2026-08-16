@@ -83,9 +83,13 @@ export const en: Record<string, string> = {
 
   // ---- Browse -------------------------------------------------------------
   "browse.searchPlaceholder": "Search recipes",
+  "browse.clearSearch": "Clear search",
   "browse.toggleFilters": "Toggle filters",
+  "browse.filtersTitle": "Filters",
+  "browse.closeFilters": "Close filters",
   "browse.cookAgain": "Cook again",
   "browse.noMatch": "No recipes match — try another filter.",
+  "browse.noResultsFor": 'No results for "{query}"',
   "browse.countOf": "{shown} of {total} recipes",
   "browse.offlineCaption": "Offline — showing saved recipes",
   "browse.loadingMore": "Loading more…",
@@ -261,11 +265,9 @@ export const en: Record<string, string> = {
   "upgrade.errBilling": "Billing isn't available yet.",
   "upgrade.errPortal": "Couldn't open subscription management right now.",
 
-  // ---- Language restart flow ---------------------------------------------------
-  "restart.title": "Restart to apply language?",
-  "restart.message": "The app needs to reload to switch the layout direction.",
-  "restart.confirm": "Restart",
-  "restart.cancel": "Later",
+  // ---- Language direction-change fallback ---------------------------------
+  // Only the manual-restart hint remains: the direction flip now reloads the
+  // app automatically; this Alert shows only when expo-updates can't reload.
   "restart.manualTitle": "Please restart the app",
   "restart.manualMessage":
     "Language direction changes take effect after the app restarts. Please close and reopen the app.",

@@ -84,9 +84,13 @@ export const ar: Record<string, string> = {
 
   // ---- الاستعراض ------------------------------------------------------------
   "browse.searchPlaceholder": "ابحث في الوصفات",
+  "browse.clearSearch": "مسح البحث",
   "browse.toggleFilters": "تبديل الفلاتر",
+  "browse.filtersTitle": "الفلاتر",
+  "browse.closeFilters": "إغلاق الفلاتر",
   "browse.cookAgain": "اطبخها مجددًا",
   "browse.noMatch": "لا توجد وصفات مطابقة — جرّب فلترًا آخر.",
+  "browse.noResultsFor": 'لا نتائج عن "{query}"',
   "browse.countOf": "{shown} من {total} وصفة",
   "browse.offlineCaption": "بدون اتصال — عرض الوصفات المحفوظة",
   "browse.loadingMore": "جارٍ تحميل المزيد…",
@@ -257,11 +261,9 @@ export const ar: Record<string, string> = {
   "upgrade.errBilling": "المدفوعات غير متاحة بعد.",
   "upgrade.errPortal": "تعذّر فتح إدارة الاشتراك الآن.",
 
-  // ---- إعادة التشغيل لتغيير اللغة ------------------------------------------------
-  "restart.title": "إعادة التشغيل لتطبيق اللغة؟",
-  "restart.message": "يحتاج التطبيق إلى إعادة تحميله لتبديل اتجاه الواجهة.",
-  "restart.confirm": "إعادة التشغيل",
-  "restart.cancel": "لاحقًا",
+  // ---- احتياطي تغيير اتجاه اللغة --------------------------------------------
+  // تبقى فقط رسالة إعادة التشغيل اليدوية: تبديل الاتجاه يعيد تحميل التطبيق
+  // تلقائيًا الآن، وهذا التنبيه يظهر فقط تعذّر إعادة التحميل.
   "restart.manualTitle": "أعد تشغيل التطبيق",
   "restart.manualMessage":
     "يسري تغيير اتجاه اللغة بعد إعادة تشغيل التطبيق. أغلقه ثم افتحه من جديد.",

@@ -44,8 +44,9 @@ interface ThemeContextValue {
   langPref: LangPref;
   /**
    * Set and persist the language preference. When the RESOLVED direction
-   * changes (en↔ar), flips the native RTL flag and prompts an app reload —
-   * layout direction only takes effect after a JS reload.
+   * changes (en↔ar), flips the native RTL flag and reloads the app
+   * immediately (seamless — no dialog) — layout direction only takes
+   * effect after a JS reload.
    */
   setLangPref: (pref: LangPref) => void;
   /** Language resolved from the preference (system → device locale). */
@@ -69,29 +70,17 @@ function resolveSystemLang(): Lang {
 }
 
 /**
- * Ask the user to reload the app so the new layout direction applies, showing
- * the prompt in the language they just switched TO. When expo-updates can't
- * reload (e.g. Expo Go), fall back to instructing a manual restart.
+ * Seamlessly apply a layout-direction flip: native RTL only takes effect
+ * after a JS reload, so reload the app IMMEDIATELY (no dialog, no user
+ * action — the reload completes in ~1-2s and IS the UX). When expo-updates
+ * can't reload (e.g. Expo Go), fall back to instructing a manual restart,
+ * shown in the language just switched TO.
  */
-function promptRestart(nextLang: Lang): void {
-  const dict = nextLang === "ar" ? ar : en;
-  Alert.alert(
-    dict["restart.title"],
-    dict["restart.message"],
-    [
-      { text: dict["restart.cancel"], style: "cancel" },
-      {
-        text: dict["restart.confirm"],
-        style: "default",
-        onPress: () => {
-          Updates.reloadAsync().catch(() => {
-            Alert.alert(dict["restart.manualTitle"], dict["restart.manualMessage"]);
-          });
-        },
-      },
-    ],
-    { cancelable: true },
-  );
+function reloadForDirectionChange(nextLang: Lang): void {
+  Updates.reloadAsync().catch(() => {
+    const dict = nextLang === "ar" ? ar : en;
+    Alert.alert(dict["restart.manualTitle"], dict["restart.manualMessage"]);
+  });
 }
 
 /**
@@ -155,7 +144,7 @@ export function ThemePrefProvider({ children }: { children: ReactNode }) {
         } catch {
           // Best-effort native flag; the reload still applies strings.
         }
-        promptRestart(nextLang);
+        reloadForDirectionChange(nextLang);
       }
     },
     [langPref, systemLang],

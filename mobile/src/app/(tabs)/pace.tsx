@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -35,6 +36,12 @@ type LoadState = "loading" | "ready" | "error" | "locked";
 
 /** History rows visible before the "Show all" toggle expands the list. */
 const HISTORY_PREVIEW_COUNT = 10;
+
+/**
+ * Safety cap for the pull-to-refresh spinner: it must never outlive ~10s
+ * whatever the network does (force-cleared by a setTimeout guard).
+ */
+const REFRESH_SPINNER_MAX_MS = 10_000;
 
 // ---- Remount cache + identity fingerprints ----------------------------------
 //
@@ -133,10 +140,20 @@ export default function PaceScreen() {
   // payloads also skips the spinner and renders the cache immediately.
   const firstLoadRef = useRef(true);
 
+  // Set by handleRefresh while a pull-to-refresh is in flight; invoked once
+  // the FAST portion (auth check + pace calibrations) lands so the spinner
+  // can stop without waiting on the slow cook-session pagination.
+  const coreLoadedRef = useRef<(() => void) | null>(null);
+
   const load = useCallback(async () => {
     if (firstLoadRef.current && lastCalibrations == null && lastSessions == null) {
       setState("loading");
     }
+    const coreLoaded = () => {
+      const cb = coreLoadedRef.current;
+      coreLoadedRef.current = null;
+      cb?.();
+    };
     try {
       const authed = await hasToken();
       setAuthenticated(authed);
@@ -154,20 +171,31 @@ export default function PaceScreen() {
         return;
       }
 
-      const [paceResult, sessions] = await Promise.all([
-        refreshPaceCalibrations(),
-        getCookSessions().catch(() => null),
-      ]);
-      const nextSessions = sessions?.data ?? [];
+      // The cook-session history paginates (up to 5 pages) — start it now in
+      // parallel, but DON'T let it gate the UI below.
+      const sessionsPromise = getCookSessions().catch(() => null);
 
-      // Identity guards: only hand React a new array when the payload actually
-      // changed (compare fingerprints), so refocus refreshes don't re-render
-      // the calibration cards / history rows mid-interaction.
+      // FAST path: the auth check + pace calibrations land first and unblock
+      // any pull-to-refresh spinner.
+      const paceResult = await refreshPaceCalibrations();
       const calibFp = calibrationsFingerprint(paceResult);
       if (calibFp !== lastCalibrationsFp) {
         lastCalibrationsFp = calibFp;
         setCalibrations(paceResult);
       }
+      lastCalibrations = paceResult;
+      setState("ready");
+      // Fire-and-forget analytics: pace dashboard rendered with multipliers.
+      // Only on the first load — silent refocus refreshes don't re-count.
+      if (paceResult.length > 0 && firstLoadRef.current) {
+        track("pace_viewed");
+      }
+      coreLoaded();
+
+      // SLOW path: the session pagination continues silently — the history
+      // state updates whenever it lands.
+      const sessions = await sessionsPromise;
+      const nextSessions = sessions?.data ?? [];
       const sessionsFp = sessionsFingerprint(nextSessions);
       if (sessionsFp !== lastSessionsFp) {
         lastSessionsFp = sessionsFp;
@@ -177,16 +205,9 @@ export default function PaceScreen() {
 
       // Refresh the remount cache (skip caching a failed sessions fetch — an
       // empty list from a network error shouldn't blank the next remount).
-      lastCalibrations = paceResult;
       if (sessions) {
         lastSessions = nextSessions;
         lastCookCount = sessions.meta?.total ?? sessions.data.length ?? 0;
-      }
-      setState("ready");
-      // Fire-and-forget analytics: pace dashboard rendered with multipliers.
-      // Only on the first load — silent refocus refreshes don't re-count.
-      if (paceResult.length > 0 && firstLoadRef.current) {
-        track("pace_viewed");
       }
     } catch (error) {
       // A 402 from the pace fetch is also a paywall state.
@@ -198,6 +219,9 @@ export default function PaceScreen() {
       setState("error");
     } finally {
       firstLoadRef.current = false;
+      // Safety net: clear the spinner on paths that never hit coreLoaded()
+      // (early returns / errors). No-op when the fast path already notified.
+      coreLoaded();
     }
   }, []);
 
@@ -208,6 +232,26 @@ export default function PaceScreen() {
       load();
     }, [load]),
   );
+
+  // Pull-to-refresh: the spinner clears when the auth check + pace
+  // calibrations land — never blocked on the cook-session pagination.
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    // Global safety: the spinner never outlives ~10s.
+    const guard = setTimeout(() => setRefreshing(false), REFRESH_SPINNER_MAX_MS);
+    coreLoadedRef.current = () => {
+      clearTimeout(guard);
+      setRefreshing(false);
+    };
+    try {
+      await load();
+    } finally {
+      coreLoadedRef.current = null;
+      clearTimeout(guard);
+      setRefreshing(false);
+    }
+  }, [load]);
 
   const handleSignOut = useCallback(async () => {
     try {
@@ -424,7 +468,19 @@ export default function PaceScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
+          progressBackgroundColor={colors.surface}
+        />
+      }
+    >
       <ScreenHeader
         title={t("tabs.pace")}
         subtitle={

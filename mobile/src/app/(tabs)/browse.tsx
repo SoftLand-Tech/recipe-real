@@ -112,18 +112,27 @@ const SORT_MODES = [
 const SEARCH_DEBOUNCE_MS = 350;
 
 /**
+ * Safety cap for the pull-to-refresh spinner: it must never outlive ~10s
+ * whatever the network does (force-cleared by a setTimeout guard).
+ */
+const REFRESH_SPINNER_MAX_MS = 10_000;
+
+/**
  * Parse the `filter` param other screens may pass (contract with Home's
- * craving shortcuts): a local CATEGORIES id or "quick". Anything else is
- * ignored. Local ids map to their label so the SAME string is sent to the
- * server (`category` matches case-insensitively) and to the offline filter.
+ * craving shortcuts): "quick", a local CATEGORIES id (offline fallback), or a
+ * REAL server category label — Home's chips are the server categories and
+ * their id IS the label. Local ids map to their label so the SAME string is
+ * sent to the server (`category` matches case-insensitively) and to the
+ * offline filter; raw labels are kept verbatim for the same reason.
  */
 function parseParamFilter(value: string | undefined): ListFilter | null {
   if (!value) return null;
   if (value === "quick") return { kind: "quick" };
   const local = CATEGORIES.find((c) => c.id === value);
-  return local
-    ? { kind: "category", id: local.id, label: categoryLabel(local.id) }
-    : null;
+  if (local) {
+    return { kind: "category", id: local.id, label: categoryLabel(local.id) };
+  }
+  return { kind: "category", id: value, label: value };
 }
 
 /** Sort ascending with nulls last (missing timings sink instead of floating). */
@@ -278,6 +287,11 @@ function createStyles(colors: ThemeColors) {
       fontSize: Type.body.fontSize,
       color: colors.ink,
     },
+    // Clear (X) button at the END of the search input; marginStart so the gap
+    // follows the layout direction in RTL.
+    searchClear: {
+      marginStart: Space.xs,
+    },
     listContent: {
       paddingHorizontal: Space.lg,
       paddingBottom: Space.xxl,
@@ -338,6 +352,16 @@ function createStyles(colors: ThemeColors) {
       padding: Space.md,
       gap: Space.md,
     },
+    panelHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    panelTitle: {
+      ...Type.body,
+      fontWeight: "700",
+      color: colors.ink,
+    },
     panelGroup: {
       gap: Space.xs,
     },
@@ -350,9 +374,6 @@ function createStyles(colors: ThemeColors) {
       flexDirection: "row",
       flexWrap: "wrap",
       gap: Space.xs,
-    },
-    clearAll: {
-      alignSelf: "flex-start",
     },
     offlineBannerWrap: {
       marginHorizontal: Space.lg,
@@ -449,15 +470,26 @@ const SearchBar = memo(function SearchBar({
             autoCorrect={false}
             returnKeyType="search"
           />
+          {search.length > 0 ? (
+            <IconPressable
+              onPress={() => onChangeSearch("")}
+              accessibilityLabel={t("browse.clearSearch")}
+              hitSlop={8}
+              style={styles.searchClear}
+            >
+              <Ionicons name="close" size={18} color={colors.inkFaint} />
+            </IconPressable>
+          ) : null}
         </View>
-        {/* Filter toggle beside the search bar — the common pattern. */}
+        {/* Filter toggle beside the search bar — the common pattern. Filled
+            "options" + accent while open so the active state reads clearly. */}
         <IconPressable
           onPress={onToggleFilters}
           accessibilityLabel={t("browse.toggleFilters")}
           style={styles.filterToggle}
         >
           <Ionicons
-            name="options"
+            name={showFilters ? "options" : "options-outline"}
             size={20}
             color={
               showFilters || hasAdvancedFilters
@@ -568,11 +600,17 @@ const ChipRow = memo(function ChipRow({
         />
       </IconPressable>
       {chips.map((chip) => (
-        <IconPressable key={chip.id} onPress={() => onSelect({ kind: "category", id: chip.id, label: chip.label })}>
+        <IconPressable
+          key={chip.id}
+          onPress={() =>
+            onSelect({ kind: "category", id: chip.id, label: chip.label })
+          }
+        >
           <Chip
             label={chip.label}
             tone={
-              filter.kind === "category" && filter.id === chip.id
+              filter.kind === "category" &&
+              filter.id.toLowerCase() === chip.id.toLowerCase()
                 ? "accent"
                 : "neutral"
             }
@@ -595,7 +633,9 @@ const ChipRow = memo(function ChipRow({
  * its own filter values change — never for list churn or panel toggling.
  * Total time + fastest sort round-trip through the server search; the
  * cleanup filter/sort (no server equivalent) is applied client-side over the
- * loaded pages.
+ * loaded pages. The header row (title + explicit X) makes the open state and
+ * how to close it unmistakable; "Clear all" is a full-width ghost button at
+ * the BOTTOM, rendered only while any advanced filter is active.
  */
 interface FilterPanelProps {
   timeMax: number | null;
@@ -605,6 +645,7 @@ interface FilterPanelProps {
   sortMode: SortMode;
   onSortModeChange: (mode: SortMode) => void;
   onClearAll: () => void;
+  onClose: () => void;
   styles: BrowseStyles;
 }
 
@@ -616,11 +657,25 @@ const FilterPanel = memo(function FilterPanel({
   sortMode,
   onSortModeChange,
   onClearAll,
+  onClose,
   styles,
 }: FilterPanelProps) {
   const t = useT();
+  const colors = useThemeColors();
+  const hasActive =
+    timeMax != null || cleanupMax != null || sortMode !== "default";
   return (
     <Card style={styles.filterPanel}>
+      <View style={styles.panelHeader}>
+        <Text style={styles.panelTitle}>{t("browse.filtersTitle")}</Text>
+        <IconPressable
+          onPress={onClose}
+          accessibilityLabel={t("browse.closeFilters")}
+          hitSlop={8}
+        >
+          <Ionicons name="close" size={20} color={colors.ink} />
+        </IconPressable>
+      </View>
       <View style={styles.panelGroup}>
         <Text style={styles.panelLabel}>{t("filter.totalTime")}</Text>
         <View style={styles.panelChips}>
@@ -672,12 +727,14 @@ const FilterPanel = memo(function FilterPanel({
           ))}
         </View>
       </View>
-      <Button
-        title={t("filter.clearAll")}
-        variant="ghost"
-        onPress={onClearAll}
-        style={styles.clearAll}
-      />
+      {hasActive ? (
+        <Button
+          title={t("filter.clearAll")}
+          variant="ghost"
+          onPress={onClearAll}
+          fullWidth
+        />
+      ) : null}
     </Card>
   );
 });
@@ -902,6 +959,16 @@ export default function BrowseScreen() {
     useCallback(() => {
       reloadFavorites();
     }, [reloadFavorites]),
+  );
+
+  // Leaving the screen closes the filters panel, so it never re-opens on
+  // return (tab screens stay mounted while navigating elsewhere).
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        setShowFilters(false);
+      };
+    }, []),
   );
 
   // Param-driven filter (contract with Home's "browse by craving" shortcuts):
@@ -1198,14 +1265,52 @@ export default function BrowseScreen() {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    try {
-      // Refresh both pipelines; a successful server search also clears the
-      // offline banner (the search effect's mode flip is silent).
-      await Promise.all([refreshInBackground(), runSearch()]);
-    } finally {
+    // Global safety: the spinner never outlives ~10s.
+    const guard = setTimeout(() => setRefreshing(false), REFRESH_SPINNER_MAX_MS);
+    const spinnerDone = () => {
+      clearTimeout(guard);
       setRefreshing(false);
+    };
+    // Is there an ACTIVE query for the server list? (Mirrors buildSearchParams:
+    // search text, category/quick chip, time cap, or fastest sort.)
+    const hasActiveQuery =
+      search.trim().length > 0 ||
+      filter.kind !== "all" ||
+      timeMax != null ||
+      sortMode !== "default";
+    try {
+      if (!offline && hasActiveQuery) {
+        // FAST: one API request re-running the CURRENT query.
+        await runSearch();
+      } else {
+        // INSTANT: reload the local fallback source from SQLite.
+        applyRecipes(await getCachedRecipes());
+      }
+    } catch (error) {
+      console.warn("[RecipeReal] pull-to-refresh failed:", error);
+    } finally {
+      spinnerDone();
     }
-  }, [refreshInBackground, runSearch]);
+    // The SLOW multi-page light cache sweep continues WITHOUT the spinner; in
+    // the default (unfiltered) online view the server list re-syncs silently.
+    refreshInBackground().catch(() => {
+      // Best-effort background work.
+    });
+    if (!offline && !hasActiveQuery) {
+      runSearch().catch(() => {
+        // Best-effort background work.
+      });
+    }
+  }, [
+    offline,
+    search,
+    filter,
+    timeMax,
+    sortMode,
+    runSearch,
+    refreshInBackground,
+    applyRecipes,
+  ]);
 
   const handleRetry = useCallback(async () => {
     // Error state: retry the cache pipeline; the debounced search effect
@@ -1346,6 +1451,7 @@ export default function BrowseScreen() {
           sortMode={sortMode}
           onSortModeChange={setSortMode}
           onClearAll={handleClearAdvanced}
+          onClose={toggleFilters}
           styles={styles}
         />
       )}
@@ -1424,7 +1530,11 @@ export default function BrowseScreen() {
               <Text style={styles.emptyGlyph}>🍳</Text>
               {hasActiveFilters ? (
                 <>
-                  <Text style={styles.muted}>{t("browse.noMatch")}</Text>
+                  <Text style={styles.muted}>
+                    {search.trim().length > 0
+                      ? t("browse.noResultsFor", { query: search.trim() })
+                      : t("browse.noMatch")}
+                  </Text>
                   <Text style={styles.emptyCount}>
                     {t("browse.countOf", {
                       shown: displayRecipes.length,

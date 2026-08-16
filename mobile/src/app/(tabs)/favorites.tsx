@@ -32,6 +32,13 @@ type LoadState = "loading" | "ready" | "error";
 const SKELETON_COUNT = 3;
 
 /**
+ * Safety cap for the pull-to-refresh spinner: it must never outlive ~10s
+ * whatever happens (force-cleared by a setTimeout guard). The load itself is
+ * purely local SQLite, so this is just belt-and-braces.
+ */
+const REFRESH_SPINNER_MAX_MS = 10_000;
+
+/**
  * The Favorites tab: all locally favorited recipes as a card grid. Data is
  * re-loaded from SQLite on mount AND on every focus, so un-hearting a recipe
  * on the detail screen is reflected here immediately (no snapshot-on-mount
@@ -167,8 +174,15 @@ export default function FavoritesScreen() {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await load();
-    setRefreshing(false);
+    // Global safety: the spinner never outlives ~10s.
+    const guard = setTimeout(() => setRefreshing(false), REFRESH_SPINNER_MAX_MS);
+    try {
+      // Purely local SQLite reads — already fast.
+      await load();
+    } finally {
+      clearTimeout(guard);
+      setRefreshing(false);
+    }
   }, [load]);
 
   // Un-hearting removes the card from this list: drop it optimistically,
