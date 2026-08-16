@@ -18,7 +18,7 @@ import type {
 const DB_NAME = "recipereal.db";
 
 /** Current version of the local cache schema. Bump when columns/tables change. */
-const CACHE_SCHEMA_VERSION = 5;
+const CACHE_SCHEMA_VERSION = 6;
 
 /**
  * Memoized ready-promise for the single DB connection.
