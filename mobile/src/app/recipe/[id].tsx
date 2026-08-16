@@ -382,10 +382,12 @@ export default function RecipeDetailScreen() {
         },
         timelineRow: {
           flexDirection: "row",
-          alignItems: "center",
+          // Top-aligned: rows carry full step text now (the timeline IS the
+          // step list), so the clock/duration anchor to the first line.
+          alignItems: "flex-start",
           gap: Space.sm,
           paddingHorizontal: Space.sm,
-          paddingVertical: 6,
+          paddingVertical: Space.sm,
           borderRadius: Radius.md,
         },
         timelineRowPassive: {
@@ -424,9 +426,9 @@ export default function RecipeDetailScreen() {
           marginTop: -2,
         },
         timelineDesc: {
-          ...Type.bodySm,
+          ...Type.body,
           color: colors.ink,
-          marginTop: 1,
+          marginTop: Space.xs,
         },
         timelineDuration: {
           ...Type.caption,
@@ -463,12 +465,6 @@ export default function RecipeDetailScreen() {
         stepList: {
           gap: Space.md,
         },
-        stepHeader: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.sm,
-          marginBottom: Space.sm,
-        },
         stepNumber: {
           width: 26,
           height: 26,
@@ -481,13 +477,6 @@ export default function RecipeDetailScreen() {
           color: colors.accent,
           fontSize: 13,
           fontWeight: "700",
-        },
-        stepAdjustedRow: {
-          marginBottom: Space.sm,
-        },
-        stepDescription: {
-          ...Type.body,
-          color: colors.ink,
         },
         noteInput: {
           ...Type.body,
@@ -1123,6 +1112,7 @@ export default function RecipeDetailScreen() {
                     <View style={styles.timelineList}>
                       {timelineRows.map(({ step, at, minutes }) => {
                         const passive = step.step_type === "passive";
+                        const adjusted = adjustedForStep(step);
                         const hasMinutes =
                           step.community_minutes != null ||
                           step.publisher_minutes != null;
@@ -1160,12 +1150,22 @@ export default function RecipeDetailScreen() {
                                   </View>
                                 ) : null}
                               </View>
-                              <Text
-                                style={styles.timelineDesc}
-                                numberOfLines={1}
-                              >
+                              {/* Full step text — this row IS the step list
+                                  (no separate Steps section below). */}
+                              <Text style={styles.timelineDesc}>
                                 {lr.stepDescription(step)}
                               </Text>
+                              {adjusted != null ? (
+                                <View style={styles.timelineChipWrap}>
+                                  <Chip
+                                    tone="accent"
+                                    size="sm"
+                                    label={t("detail.adjustedForYou", {
+                                      time: fmtMin(adjusted),
+                                    })}
+                                  />
+                                </View>
+                              ) : null}
                             </View>
                             {hasMinutes ? (
                               <Text
@@ -1228,50 +1228,12 @@ export default function RecipeDetailScreen() {
                   )}
                 </View>
 
-                {/* 6. STEPS — clean reading list: number + description. The
-                    hands-off chip is the only badge (passive steps only);
-                    times live in the timeline above. */}
-                <View style={styles.section}>
-                  <SectionHeader title={t("detail.steps")} />
-                  {steps.length > 0 ? (
-                    <View style={styles.stepList}>
-                      {steps.map((step) => {
-                        const adjusted = adjustedForStep(step);
-                        return (
-                          <Card key={`step-${step.id}`} padding={Space.lg}>
-                            <View style={styles.stepHeader}>
-                              <View style={styles.stepNumber}>
-                                <Text style={styles.stepNumberText}>
-                                  {step.step_number}
-                                </Text>
-                              </View>
-                              {step.step_type === "passive" ? (
-                                <Chip
-                                  label={t("common.handsOff")}
-                                  tone="success"
-                                  size="sm"
-                                />
-                              ) : null}
-                            </View>
-                            {adjusted != null ? (
-                              <View style={styles.stepAdjustedRow}>
-                                <Chip
-                                  tone="accent"
-                                  label={t("detail.adjustedForYou", {
-                                    time: fmtMin(adjusted),
-                                  })}
-                                  size="sm"
-                                />
-                              </View>
-                            ) : null}
-                            <Text style={styles.stepDescription}>
-                              {lr.stepDescription(step)}
-                            </Text>
-                          </Card>
-                        );
-                      })}
-                    </View>
-                  ) : (
+                {/* 6. STEPS (fallback) — only for recipes without structured
+                    recipe_steps: plain numbered list. Structured recipes get
+                    their full steps inside the timeline above. */}
+                {steps.length === 0 && lr.steps(recipe).length > 0 ? (
+                  <View style={styles.section}>
+                    <SectionHeader title={t("detail.steps")} />
                     <View style={styles.stepList}>
                       {lr.steps(recipe).map((step, idx) => (
                         <Card key={`plain-step-${idx}`} padding={Space.lg}>
@@ -1286,8 +1248,8 @@ export default function RecipeDetailScreen() {
                         </Card>
                       ))}
                     </View>
-                  )}
-                </View>
+                  </View>
+                ) : null}
 
                 {/* 7. YOUR NOTES — personal tweaks, kept on this device. */}
                 <View style={styles.section}>
