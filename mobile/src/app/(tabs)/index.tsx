@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { fetchCategories, fetchHomeRails } from "@/api/client";
 import { track } from "@/analytics";
@@ -46,6 +47,9 @@ const RAIL_SIZE = 10;
 
 /** Craving chips rendered in the "Browse by craving" rail. */
 const CRAVING_CHIP_LIMIT = 12;
+
+/** Mirror of the last successful /api/home payload for instant paint. */
+const HOME_RAILS_KEY = "recipereal.homeRails";
 
 /**
  * Safety cap for the pull-to-refresh spinner: it must never outlive ~10s
@@ -96,9 +100,11 @@ export default function HomeScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Server-driven rails (GET /api/home, 5-min server cache). Null = not yet
-  // available → the client-side cached rails render instead, so Home is
-  // NEVER empty while the cache has data.
+  // Server-driven rails (GET /api/home, 5-min server cache). The LAST
+  // successful payload is also mirrored to AsyncStorage, so the instant
+  // first paint shows the SAME rails the server will refresh — the old
+  // flow painted client-computed rails from the recipe cache first, then
+  // swapped to different server rails when loaded ("recipes changed!").
   const [serverRails, setServerRails] = useState<HomeRails | null>(null);
 
   // Server category chips for "Browse by craving" (GET /api/recipes/categories,
@@ -263,13 +269,32 @@ export default function HomeScreen() {
   }, [setRecipesIfChanged]);
 
   /**
-   * Load the four curated rails from the server. Any failure, or a payload
-   * with ALL rails empty (expected until server data lands), keeps the
-   * client-side cached rails on screen — Home is never empty when the cache
-   * has data. Rails that come back non-empty but sparse render as-is
-   * (HomeRail hides itself when empty).
+   * Load the four curated rails: the last server payload from
+   * AsyncStorage paints instantly (identical content to what the refresh
+   * will bring), then GET /api/home revalidates. On failure/empty payload
+   * the SAVED rails stay; only when nothing was ever saved do the
+   * client-side cached rails render (offline cold start).
    */
   const loadRails = useCallback(async () => {
+    // 1. Instant paint from the saved payload.
+    try {
+      const saved = await AsyncStorage.getItem(HOME_RAILS_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as HomeRails;
+        const any =
+          parsed.top_rated?.length ||
+          parsed.easy_wins?.length ||
+          parsed.most_loved?.length ||
+          parsed.hands_off?.length;
+        if (any) {
+          setServerRails(parsed);
+          track("home_rails_loaded", { source: "saved" });
+        }
+      }
+    } catch {
+      // Corrupt/unreadable mirror — ignore, fetch fresh below.
+    }
+    // 2. Revalidate from the server.
     try {
       const rails = await fetchHomeRails();
       const any =
@@ -280,12 +305,21 @@ export default function HomeScreen() {
       if (any) {
         setServerRails(rails);
         track("home_rails_loaded", { source: "server" });
+        AsyncStorage.setItem(HOME_RAILS_KEY, JSON.stringify(rails)).catch(
+          () => {
+            // Mirror is best-effort.
+          },
+        );
         return;
       }
     } catch (error) {
-      // Offline / server error: fall through to the cached rails.
+      // Offline / server error: keep whatever is on screen (saved rails
+      // or the cached-recipe rails).
       console.warn("[RecipeReal] home rails fetch failed:", error);
+      return;
     }
+    // Server answered with an all-empty payload (no data yet anywhere):
+    // clear to the cached rails.
     setServerRails(null);
     track("home_rails_loaded", { source: "cache" });
   }, []);
