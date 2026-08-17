@@ -6,8 +6,8 @@ import axios from "axios";
 import Constants from "expo-constants";
 import * as Google from "expo-auth-session/providers/google";
 import {
-  getDefaultReturnUrl,
   getRedirectUrl,
+  makeRedirectUri,
   ResponseType,
 } from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
@@ -172,9 +172,14 @@ export default function LoginScreen() {
 
       // Proxy flow (both Expo Go and standalone): auth.expo.io bounces the
       // Google redirect (an HTTPS URL — the only kind Google's web client
-      // accepts) back to the app. In standalone builds getDefaultReturnUrl()
-      // resolves to the app scheme, so the browser lands back in the app.
-      const returnUrl = getDefaultReturnUrl();
+      // accepts) back to the app. The return URL targets the /login ROUTE:
+      // makeRedirectUri({path}) resolves to exp://<host>/--/login in Expo Go
+      // (the /--/ marker is stripped by the router) and recipereal:///login
+      // in standalone builds — both land on this screen, whose mount effect
+      // calls maybeCompleteAuthSession() to hand the result back to the
+      // pending openAuthSessionAsync promise. A bare root return URL made
+      // standalone builds land on an unmatched route after the bounce.
+      const returnUrl = makeRedirectUri({ path: "login" });
       const openUrl = `${proxyRedirectUri}/start?${new URLSearchParams({
         authUrl,
         returnUrl,
