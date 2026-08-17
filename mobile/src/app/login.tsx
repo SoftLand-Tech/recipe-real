@@ -14,6 +14,7 @@ import * as WebBrowser from "expo-web-browser";
 
 import { loginWithGoogle } from "@/api/client";
 import { track } from "@/analytics";
+import { API_BASE_URL } from "@/config";
 import { useT, type TranslateFn } from "@/i18n";
 import {
   MaxContentWidth,
@@ -36,18 +37,22 @@ function resolveGoogleClientId(): string | null {
 }
 
 /**
- * The Google-flow redirect URI: ALWAYS the auth.expo.io proxy
- * (`https://auth.expo.io/@owner/slug`). The proxy is an HTTPS bounce that
- * works identically from Expo Go AND standalone builds — in a standalone
- * build `getDefaultReturnUrl()` resolves to the app scheme
- * (`recipereal://...`) and the proxy returns the browser there. The scheme
- * is only ever the proxy's return target, never a Google redirect_uri, so
- * it does NOT need to be registered in the Google console (Google's web
- * clients reject non-HTTPS URIs anyway). SDK 57's expo-auth-session no
- * longer wires the proxy into `promptAsync`, so the flow is assembled here
- * from the same public building blocks.
+ * The Google-flow redirect URI, by environment:
+ * - Standalone/store builds: OUR OWN domain trampoline
+ *   (`https://recipe-real.softland.tech/auth/callback`) — branded ("Finishing
+ *   sign-in…" on our warm palette, never "expo.io"), registered in the Google
+ *   console, and it forwards the OAuth response to recipereal:///login.
+ * - Expo Go: the auth.expo.io proxy (custom schemes can't return to Expo Go).
+ *   SDK 57's expo-auth-session no longer wires the proxy into `promptAsync`,
+ *   so the flow is assembled here from the same public building blocks.
  */
 function resolveAuthRedirectUri(): string | null {
+  const isStandalone =
+    Constants.executionEnvironment !==
+    Constants.ExecutionEnvironment.StoreClient;
+  if (isStandalone) {
+    return `${API_BASE_URL}/auth/callback`;
+  }
   try {
     // Prefer the explicit owner/slug from app.json — getRedirectUrl() depends
     // on the runtime manifest exposing `originalFullName`, which Expo Go can
@@ -170,20 +175,30 @@ export default function LoginScreen() {
       const authUrl =
         request.url ?? (await request.makeAuthUrlAsync(Google.discovery));
 
-      // Proxy flow (both Expo Go and standalone): auth.expo.io bounces the
-      // Google redirect (an HTTPS URL — the only kind Google's web client
-      // accepts) back to the app. The return URL targets the /login ROUTE:
-      // makeRedirectUri({path}) resolves to exp://<host>/--/login in Expo Go
-      // (the /--/ marker is stripped by the router) and recipereal:///login
-      // in standalone builds — both land on this screen, whose mount effect
-      // calls maybeCompleteAuthSession() to hand the result back to the
-      // pending openAuthSessionAsync promise. A bare root return URL made
-      // standalone builds land on an unmatched route after the bounce.
+      const isStandalone =
+        Constants.executionEnvironment !==
+        Constants.ExecutionEnvironment.StoreClient;
+
+      // The return always targets the /login ROUTE (this screen — its mount
+      // effect calls maybeCompleteAuthSession() to hand the result back to
+      // the pending openAuthSessionAsync promise).
       const returnUrl = makeRedirectUri({ path: "login" });
-      const openUrl = `${proxyRedirectUri}/start?${new URLSearchParams({
-        authUrl,
-        returnUrl,
-      })}`;
+
+      let openUrl: string;
+      if (isStandalone) {
+        // Domain flow: Google redirects straight to OUR trampoline
+        // (recipe-real.softland.tech/auth/callback — branded, HTTPS, the
+        // only kind Google's web client accepts) which forwards the
+        // response to recipereal:///login. No expo.io branding anywhere.
+        openUrl = authUrl;
+      } else {
+        // Expo Go: the auth.expo.io proxy bounce (custom schemes cannot
+        // return to Expo Go; the proxy is an HTTPS return target).
+        openUrl = `${proxyRedirectUri}/start?${new URLSearchParams({
+          authUrl,
+          returnUrl,
+        })}`;
+      }
 
       const result = await WebBrowser.openAuthSessionAsync(
         openUrl,
@@ -195,7 +210,12 @@ export default function LoginScreen() {
         return;
       }
 
-      const parsed = request.parseReturnUrl(result.url);
+      // The trampoline (and Google's implicit flow) may deliver the params
+      // in the URL FRAGMENT — normalize #params to ?params before parsing.
+      const resultUrl = result.url.includes("#")
+        ? result.url.replace("#", "?")
+        : result.url;
+      const parsed = request.parseReturnUrl(resultUrl);
       if (parsed.type !== "success") {
         setError(t("login.errNotComplete"));
         return;
