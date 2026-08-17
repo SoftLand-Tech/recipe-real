@@ -51,6 +51,13 @@ const CRAVING_CHIP_LIMIT = 12;
 /** Mirror of the last successful /api/home payload for instant paint. */
 const HOME_RAILS_KEY = "recipereal.homeRails";
 
+/** Rail-content fingerprint (per-rail recipe ids) for the no-op guard. */
+function railsFingerprint(rails: HomeRails): string {
+  return (["top_rated", "easy_wins", "most_loved", "hands_off"] as const)
+    .map((rail) => (rails[rail] ?? []).map((r) => r.id).join(","))
+    .join("|");
+}
+
 /**
  * Safety cap for the pull-to-refresh spinner: it must never outlive ~10s
  * whatever the network does (force-cleared by a setTimeout guard).
@@ -303,7 +310,16 @@ export default function HomeScreen() {
         rails.most_loved.length > 0 ||
         rails.hands_off.length > 0;
       if (any) {
-        setServerRails(rails);
+        // No-op guard: when the payload carries the same recipe ids per
+        // rail as what's on screen (saved mirror), skip the state update —
+        // re-setting identical-looking objects still re-renders every card
+        // and can flash image placeholders.
+        setServerRails((current) => {
+          if (current && railsFingerprint(current) === railsFingerprint(rails)) {
+            return current;
+          }
+          return rails;
+        });
         track("home_rails_loaded", { source: "server" });
         AsyncStorage.setItem(HOME_RAILS_KEY, JSON.stringify(rails)).catch(
           () => {

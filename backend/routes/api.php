@@ -37,7 +37,7 @@ Route::middleware('throttle:240,1')->group(function (): void {
     // Self-hosted product analytics: auth-optional (anonymous app_open events
     // are allowed), with a tighter throttle to limit anonymous spam.
     Route::post('/events', [AnalyticsController::class, 'store'])
-        ->middleware('throttle:30,1');
+        ->middleware('throttle:120,1'); // analytics: app_open fires per dev-reload; 30/min tripped 429s
 });
 
 // Protected routes.
