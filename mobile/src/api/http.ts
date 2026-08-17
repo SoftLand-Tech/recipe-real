@@ -122,6 +122,31 @@ export function normalizeStep(s: any): RecipeStep {
   };
 }
 
+/**
+ * Parse an Arabic-content array field that may arrive as a raw JSON string
+ * (how the API passes the DB json columns through) or an already-decoded
+ * array. Anything else → null (English fallback). Local copy of the db
+ * layer's parseJsonStringArray — that one is module-private and importing
+ * it here would create the http↔db circular import this split exists to
+ * avoid.
+ */
+function parseArArray(raw: unknown): string[] | null {
+  if (Array.isArray(raw)) {
+    return raw.every((x) => typeof x === "string") ? raw : null;
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) && parsed.every((x) => typeof x === "string")
+        ? parsed
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export function normalizeRecipe(r: any): Recipe {
   const factorsSrc = r?.cleanup_factors;
   const cleanup_factors: CleanupFactors | undefined = factorsSrc
@@ -140,11 +165,13 @@ export function normalizeRecipe(r: any): Recipe {
         ? String(r.image_url).trim()
         : null,
     // Arabic content columns: always present, null when untranslated. The
-    // array fields are parsed HERE (network path); the SQLite cache layer
-    // serializes/re-parses them like `ingredients`/`steps`.
+    // API passes ingredients_ar/steps_ar through as RAW JSON STRINGS (the
+    // DB columns are json text), so parse them HERE — accepting either a
+    // JSON string or an already-decoded array. (The old Array.isArray-only
+    // check nulled every network recipe's Arabic arrays → English shown.)
     title_ar: r?.title_ar ?? null,
-    ingredients_ar: Array.isArray(r?.ingredients_ar) ? r.ingredients_ar : null,
-    steps_ar: Array.isArray(r?.steps_ar) ? r.steps_ar : null,
+    ingredients_ar: parseArArray(r?.ingredients_ar),
+    steps_ar: parseArArray(r?.steps_ar),
     publisher_time_minutes: toNum(r.publisher_time_minutes),
     community_avg_minutes: toNum(r.community_avg_minutes),
     cleanup_avg_minutes: toNum(r.cleanup_avg_minutes),
