@@ -38,6 +38,7 @@ class ImportFoodcom extends Command
         {--limit= : Import at most N recipes, chosen as the highest-rated N (two-pass scan)}
         {--min-rating= : Skip recipes with AggregatedRating below this (e.g. 4.5)}
         {--max-time= : Skip recipes whose total time exceeds this many minutes}
+        {--ids-file= : Path to a text file of RecipeIds (one per line). Import ONLY those rows, inserting with the explicit id = RecipeId (matches the batch-pipeline id space used by recipereal:ai-apply)}
         {--fresh : Delete previously imported Food.com recipes first}';
 
     protected $description = 'Import recipes from the Kaggle Food.com (irkaal) CSV dataset.';
@@ -57,6 +58,25 @@ class ImportFoodcom extends Command
         $limit = (int) ($this->option('limit') ?: 0);
         $minRating = (float) ($this->option('min-rating') ?: 0);
         $maxTime = (int) ($this->option('max-time') ?: 0);
+
+        // --ids-file: exact-id import mode. The production recipes table was
+        // seeded with explicit id = RecipeId (the same id space the AI batch
+        // outputs key on), so targeted syncs must insert explicit ids too —
+        // plain inserts would get auto-increment ids ai-apply can never match.
+        $ids = null;
+        $idsFile = (string) ($this->option('ids-file') ?: '');
+        if ($idsFile !== '') {
+            if (! is_file($idsFile)) {
+                $this->error("ids-file not found: {$idsFile}");
+
+                return self::FAILURE;
+            }
+            $ids = array_flip(array_filter(
+                array_map('intval', file($idsFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES)),
+                fn ($v) => $v > 0
+            ));
+            $this->info(sprintf('ids-file: importing at most %d specific RecipeId(s) with explicit ids.', count($ids)));
+        }
 
         // Long write transactions + other writers (queue worker) = sqlite
         // "database is locked". Wait up to 60s instead of failing; stop the
@@ -115,6 +135,15 @@ class ImportFoodcom extends Command
             if ($record === null) {
                 $skipped++;
                 continue;
+            }
+
+            if ($ids !== null) {
+                $rid = (int) substr($record['source_url'], strlen(self::SOURCE_PREFIX));
+                if (! isset($ids[$rid])) {
+                    $skipped++;
+                    continue;
+                }
+                $record['id'] = $rid;
             }
 
             if ($minRating > 0 && $record['rating'] < $minRating) {
