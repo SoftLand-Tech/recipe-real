@@ -35,7 +35,6 @@ import {
   Type,
   useThemeColors,
   useThemePrefs,
-  type ThemeColors,
   type ThemePref,
 } from "@/theme";
 import { Button, Card, Chip, IconPressable, ScreenHeader } from "@/components/ui";
@@ -52,23 +51,8 @@ const LANG_OPTIONS: { pref: LangPref; labelKey: string }[] = [
   { pref: "ar", labelKey: "lang.arabic" },
 ];
 
-/** Icon-tile tint palettes (soft background + readable foreground). */
-type RowTone = "accent" | "timing" | "amber" | "success" | "danger" | "neutral";
-
-function rowTints(colors: ThemeColors): Record<RowTone, { bg: string; fg: string }> {
-  return {
-    accent: { bg: colors.accentSoft, fg: colors.accent },
-    timing: { bg: colors.timingSoft, fg: colors.timing },
-    amber: { bg: colors.amberSoft, fg: colors.amber },
-    success: { bg: colors.successSoft, fg: colors.success },
-    danger: { bg: colors.dangerSoft, fg: colors.danger },
-    neutral: { bg: colors.surfaceSoft, fg: colors.inkSecondary },
-  };
-}
-
 interface SettingsRowProps {
   icon?: ComponentProps<typeof Ionicons>["name"];
-  tone?: RowTone;
   label: string;
   caption?: string;
   /** Extra content under the label (the theme/language chip rows). */
@@ -83,13 +67,12 @@ interface SettingsRowProps {
 }
 
 /**
- * One grouped-list row: icon tile, label (+caption), trailing control.
- * Pressed feedback follows the Card pattern (opacity via state, never a
- * style function or background swap — Android paint rules).
+ * One grouped-list row: quiet monochrome glyph, label (+caption), trailing
+ * control. Pressed feedback follows the Card pattern (opacity via state,
+ * never a style function or background swap — Android paint rules).
  */
 function SettingsRow({
   icon,
-  tone = "neutral",
   label,
   caption,
   below,
@@ -101,7 +84,6 @@ function SettingsRow({
   onPress,
 }: SettingsRowProps) {
   const colors = useThemeColors();
-  const tints = rowTints(colors);
   const [pressed, setPressed] = useState(false);
   const styles = useMemo(
     () =>
@@ -116,13 +98,6 @@ function SettingsRow({
         },
         rowPressed: { opacity: 0.6 },
         rowDisabled: { opacity: 0.5 },
-        iconTile: {
-          width: 30,
-          height: 30,
-          borderRadius: 9,
-          alignItems: "center",
-          justifyContent: "center",
-        },
         rowText: {
           flex: 1,
           gap: 2,
@@ -152,9 +127,7 @@ function SettingsRow({
   const body = (
     <>
       {icon ? (
-        <View style={[styles.iconTile, { backgroundColor: tints[tone].bg }]}>
-          <Ionicons name={icon} size={17} color={tints[tone].fg} />
-        </View>
+        <Ionicons name={icon} size={20} color={colors.inkSecondary} />
       ) : null}
       <View style={styles.rowText}>
         <Text style={[styles.rowLabel, danger && styles.dangerLabel]}>
@@ -249,17 +222,17 @@ export default function SettingsScreen() {
           color: colors.inkFaint,
           textTransform: "uppercase",
           letterSpacing: 0.8,
-          marginBottom: -Space.xs,
+          marginBottom: Space.xs,
         },
         group: {
           // Card already clips to its radius; rows run edge to edge.
         },
         // Inset divider — starts at the row text so the icon column reads as
-        // one solid rail down the group (16 padding + 30 tile + 12 gap).
+        // one solid rail down the group (16 padding + 20 glyph + 12 gap).
         divider: {
           height: StyleSheet.hairlineWidth,
           backgroundColor: colors.hairline,
-          marginStart: 58,
+          marginStart: 48,
         },
         statusPad: {
           paddingHorizontal: Space.lg,
@@ -442,7 +415,6 @@ export default function SettingsScreen() {
         <Card padding={0} style={styles.group}>
           <SettingsRow
             icon="contrast"
-            tone="accent"
             label={t("settings.theme")}
             below={THEME_OPTIONS.map(({ pref: option, labelKey }) => (
               <IconPressable
@@ -459,7 +431,6 @@ export default function SettingsScreen() {
           <View style={styles.divider} />
           <SettingsRow
             icon="language"
-            tone="timing"
             label={t("settings.language")}
             caption={t("settings.languageCaption")}
             below={LANG_OPTIONS.map(({ pref: option, labelKey }) => (
@@ -480,7 +451,6 @@ export default function SettingsScreen() {
         <Card padding={0} style={styles.group}>
           <SettingsRow
             icon="notifications"
-            tone="amber"
             label={t("settings.nudges")}
             caption={t("settings.nudgesCaption")}
             end={
@@ -510,7 +480,6 @@ export default function SettingsScreen() {
         <Card padding={0} style={styles.group}>
           <SettingsRow
             icon="cloud-download-outline"
-            tone="accent"
             label={t("settings.syncTop200")}
             chevron
             busy={syncingOption === "quick"}
@@ -520,7 +489,6 @@ export default function SettingsScreen() {
           <View style={styles.divider} />
           <SettingsRow
             icon="cloud-download"
-            tone="accent"
             label={t("settings.syncDeep")}
             chevron
             busy={syncingOption === "deep"}
@@ -530,7 +498,6 @@ export default function SettingsScreen() {
           <View style={styles.divider} />
           <SettingsRow
             icon="trash-outline"
-            tone="danger"
             danger
             label={t("settings.clearCache")}
             chevron
@@ -562,7 +529,6 @@ export default function SettingsScreen() {
           <Card padding={0} style={styles.group}>
             <SettingsRow
               icon="person-outline"
-              tone="accent"
               label={t("profile.title")}
               chevron
               disabled={authed === null}
@@ -571,7 +537,6 @@ export default function SettingsScreen() {
             <View style={styles.divider} />
             <SettingsRow
               icon="add-circle-outline"
-              tone="success"
               label={t("settings.newRecipe")}
               chevron
               onPress={() => router.push("/recipe-composer")}
@@ -579,7 +544,6 @@ export default function SettingsScreen() {
             <View style={styles.divider} />
             <SettingsRow
               icon="log-out-outline"
-              tone="neutral"
               label={t("common.signOut")}
               chevron
               disabled={authed === null}
@@ -588,7 +552,6 @@ export default function SettingsScreen() {
             <View style={styles.divider} />
             <SettingsRow
               icon="trash-outline"
-              tone="danger"
               danger
               label={t("settings.deleteAccount")}
               caption={t("settings.deleteAccountHint")}
