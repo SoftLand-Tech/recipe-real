@@ -23,6 +23,7 @@ import {
 import { deleteAccount, hasToken, logout } from "@/api/client";
 import {
   clearRecipeCache,
+  countCachedRecipes,
   seedCacheFirstPage,
   seedCacheRemainingPages,
 } from "@/db/database";
@@ -194,6 +195,8 @@ export default function SettingsScreen() {
   const [nudgeOn, setNudgeOn] = useState(true);
   const [nudgeBlocked, setNudgeBlocked] = useState(false);
   const [nudgeUnavailable, setNudgeUnavailable] = useState(false);
+  /** Recipes in the local offline cache (null while the count loads). */
+  const [cachedCount, setCachedCount] = useState<number | null>(null);
   /** Which sync option is running (null = idle) — drives its busy spinner. */
   const [syncingOption, setSyncingOption] = useState<"quick" | "deep" | null>(
     null,
@@ -238,6 +241,11 @@ export default function SettingsScreen() {
           paddingHorizontal: Space.lg,
           paddingVertical: Space.sm,
         },
+        countText: {
+          ...Type.bodySm,
+          color: colors.inkFaint,
+          fontVariant: ["tabular-nums"] as ("tabular-nums")[],
+        },
         blockedCaption: {
           ...Type.caption,
           color: colors.danger,
@@ -259,6 +267,16 @@ export default function SettingsScreen() {
     [colors],
   );
 
+  /** COUNT(*) over the recipes table — cheap enough to re-run after any
+ *  cache mutation and on every focus. */
+  const reloadCachedCount = useCallback(async () => {
+    try {
+      setCachedCount(await countCachedRecipes());
+    } catch {
+      // The count is informational; leave the last value on failure.
+    }
+  }, []);
+
   // Refresh auth + the nudge preference whenever the screen gains focus, so
   // the account rows update after returning from /login (sign-in / sign-out).
   useFocusEffect(
@@ -270,10 +288,11 @@ export default function SettingsScreen() {
         setAuthed(ok);
         setNudgeOn(nudge === "on");
       })();
+      void reloadCachedCount();
       return () => {
         cancelled = true;
       };
-    }, []),
+    }, [reloadCachedCount]),
   );
 
   const refreshAuth = useCallback(async () => {
@@ -359,13 +378,14 @@ export default function SettingsScreen() {
         await seedCacheFirstPage();
         await seedCacheRemainingPages({ maxRecipes });
         setSyncDone(true);
+        await reloadCachedCount();
       } catch (error) {
         console.warn("[RecipeReal] library sync failed:", error);
       } finally {
         setSyncingOption(null);
       }
     },
-    [syncingOption],
+    [syncingOption, reloadCachedCount],
   );
 
   /** Clear the offline recipe cache (favorites/notes are preserved). */
@@ -376,12 +396,13 @@ export default function SettingsScreen() {
     try {
       await clearRecipeCache();
       setClearDone(true);
+      await reloadCachedCount();
     } catch (error) {
       console.warn("[RecipeReal] clear offline library failed:", error);
     } finally {
       setClearing(false);
     }
-  }, [clearing]);
+  }, [clearing, reloadCachedCount]);
 
   /** Destructive confirm before clearing the offline library. */
   const confirmClearCache = useCallback(() => {
@@ -474,10 +495,22 @@ export default function SettingsScreen() {
         </Card>
       </View>
 
-      {/* Data & storage: sync options + clear, as tappable rows. */}
+      {/* Data & storage: how much is saved, sync options, clear. */}
       <View>
         <Text style={styles.groupCaption}>{t("settings.dataStorage")}</Text>
         <Card padding={0} style={styles.group}>
+          <SettingsRow
+            icon="library-outline"
+            label={t("settings.offlineLibrary")}
+            end={
+              cachedCount != null ? (
+                <Text style={styles.countText}>
+                  {t("settings.recipesCached", { n: cachedCount })}
+                </Text>
+              ) : null
+            }
+          />
+          <View style={styles.divider} />
           <SettingsRow
             icon="cloud-download-outline"
             label={t("settings.syncTop200")}

@@ -335,6 +335,7 @@ export const en: Record<string, string> = {
     "Nudges need the full app build — notifications aren't available in Expo Go.",
   "settings.dataStorage": "Data & storage",
   "settings.offlineLibrary": "Offline library",
+  "settings.recipesCached": "{n} recipes saved",
   "settings.syncTop200": "Quick sync — top 200 recipes",
   "settings.syncDeep": "Deep sync — top 1,000 recipes",
   "settings.syncing": "Syncing…",

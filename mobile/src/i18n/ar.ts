@@ -334,6 +334,7 @@ export const ar: Record<string, string> = {
     "التنبيهات تتطلب النسخة الكاملة من التطبيق — الإشعارات غير متاحة في Expo Go.",
   "settings.dataStorage": "البيانات والتخزين",
   "settings.offlineLibrary": "مكتبة بلا اتصال",
+  "settings.recipesCached": "{n} وصفة محفوظة",
   "settings.syncTop200": "مزامنة سريعة — أفضل ٢٠٠ وصفة",
   "settings.syncDeep": "مزامنة عميقة — أفضل ١٠٠٠ وصفة",
   "settings.syncing": "جارٍ المزامنة…",
