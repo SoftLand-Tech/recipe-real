@@ -167,7 +167,8 @@ class CookSessionController extends Controller
     public function index(Request $request): AnonymousResourceCollection
     {
         $sessions = CookSession::where('user_id', $request->user()->id)
-            ->with('recipe:id,title,community_avg_minutes')
+            // image_url feeds the Home "Recently cooked" photo cards.
+            ->with('recipe:id,title,community_avg_minutes,image_url')
             ->latest()
             ->paginate(15);
 

@@ -215,7 +215,12 @@ export interface CookSessionPayload {
 
 export interface CookSessionSummary {
   id: number;
-  recipe: { id: number; title: string; community_avg_minutes: number | null };
+  recipe: {
+    id: number;
+    title: string;
+    community_avg_minutes: number | null;
+    image_url?: string | null;
+  };
   total_actual_minutes: number | null;
   cleanup_minutes: number | null;
   feedback: Feedback | null;

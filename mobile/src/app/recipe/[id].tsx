@@ -367,6 +367,12 @@ export default function RecipeDetailScreen() {
           textShadowOffset: { width: 0, height: 1 },
           textShadowRadius: 6,
         },
+        // No-photo heroes skip the scrim entirely, so the same texts flip to
+        // ink on the tinted fallback card.
+        heroTitlePlain: {
+          ...Type.h1,
+          color: colors.ink,
+        },
         // ★ rating line right under the hero title (white + small so it sits
         // inside the scrim). The info chip row below skips the rating — the
         // hero line is the single home for it.
@@ -378,6 +384,12 @@ export default function RecipeDetailScreen() {
           textShadowColor: "rgba(0,0,0,0.55)",
           textShadowOffset: { width: 0, height: 1 },
           textShadowRadius: 4,
+        },
+        heroRatingPlain: {
+          ...Type.caption,
+          color: colors.inkSecondary,
+          fontWeight: "600",
+          marginTop: Space.xs,
         },
         heroSource: {
           ...Type.caption,
@@ -1534,11 +1546,25 @@ export default function RecipeDetailScreen() {
                       },
                     ]}
                   >
-                    <Text style={styles.heroTitle} numberOfLines={3}>
+                    <Text
+                      style={
+                        recipe.image_url
+                          ? styles.heroTitle
+                          : styles.heroTitlePlain
+                      }
+                      numberOfLines={3}
+                    >
                       {lr.title(recipe)}
                     </Text>
                     {recipe.aggregated_rating != null ? (
-                      <Text style={styles.heroRating} numberOfLines={1}>
+                      <Text
+                        style={
+                          recipe.image_url
+                            ? styles.heroRating
+                            : styles.heroRatingPlain
+                        }
+                        numberOfLines={1}
+                      >
                         {recipe.review_count != null && recipe.review_count > 0
                           ? t("detail.ratingWithCount", {
                               rating: recipe.aggregated_rating.toFixed(1),

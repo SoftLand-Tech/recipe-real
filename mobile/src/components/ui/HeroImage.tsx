@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
 import { Platform, StyleSheet, Text, View } from "react-native";
 
 import { Radius, Space, useThemeColors } from "@/theme";
@@ -17,12 +18,6 @@ export interface HeroImageProps {
 /**
  * Full-bleed recipe hero image with a graceful fallback and an optional
  * legibility scrim behind overlaid children (title etc.).
- *
- * Scrim note: `expo-linear-gradient` is not installed and `@expo/ui` does NOT
- * export a `LinearGradient` component in this project (verified against
- * `node_modules/@expo/ui/build/universal/index.d.ts` — no gradient export).
- * We therefore fake the gradient with a dependency-free stack of five
- * absolutely-positioned, full-width Views of increasing opacity at the bottom.
  */
 export function HeroImage({
   uri,
@@ -92,7 +87,9 @@ export function HeroImage({
         />
       )}
 
-      {withScrim ? <Scrim height={height} /> : null}
+      {/* The scrim only ever darkens a real photo — never the fallback
+          placeholder (no gray wash over the tinted no-image card). */}
+      {withScrim && !showFallback ? <Scrim /> : null}
 
       {children ? (
         <View style={styles.children} pointerEvents="box-none">
@@ -104,32 +101,20 @@ export function HeroImage({
 }
 
 /**
- * Dependency-free fake gradient: 5 stacked full-width bars of increasing
- * opacity, anchored to the bottom ~55% of the hero. Renders as a smooth-ish
- * dark-to-transparent legibility layer behind overlaid text. Black-based in
- * both schemes on purpose — it overlays photos, so it must darken, not tint.
+ * Smooth bottom legibility gradient behind overlaid text. A real linear
+ * gradient (replaces the old five stacked opacity bars, which rendered as
+ * visible bands). Black-based in both schemes on purpose — it overlays
+ * photos, so it must darken, not tint.
  */
-function Scrim({ height }: { height: number }) {
-  const opacities = [0.06, 0.14, 0.24, 0.36, 0.5];
-  const barHeight = Math.max(1, (height * 0.55) / opacities.length);
+function Scrim() {
   return (
-    <View
-      style={{
-        ...StyleSheet.absoluteFill,
-        justifyContent: "flex-end",
-      }}
+    <LinearGradient
+      style={StyleSheet.absoluteFill}
+      colors={["rgba(0,0,0,0)", "rgba(0,0,0,0.55)"]}
+      // Transparent over the top ~45%, darkening to the bottom edge.
+      locations={[0.45, 1]}
       pointerEvents="none"
-    >
-      {opacities.map((o, i) => (
-        <View
-          key={i}
-          style={{
-            height: barHeight,
-            backgroundColor: `rgba(0,0,0,${o})`,
-          }}
-        />
-      ))}
-    </View>
+    />
   );
 }
 

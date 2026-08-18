@@ -18,6 +18,7 @@ class CookSessionResource extends JsonResource
                 'id' => $this->recipe->id,
                 'title' => $this->recipe->title,
                 'community_avg_minutes' => $this->recipe->community_avg_minutes,
+                'image_url' => $this->recipe->image_url,
             ]),
             'total_actual_minutes' => $this->total_actual_minutes,
             'cleanup_minutes' => $this->cleanup_minutes,

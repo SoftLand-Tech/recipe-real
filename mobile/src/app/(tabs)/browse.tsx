@@ -289,8 +289,9 @@ function createStyles(colors: ThemeColors) {
     searchClear: {
       marginStart: Space.xs,
     },
-    // Compact header (photo-first layout): Type.h2 title row + small add
-    // shortcut. The top safe-area inset is applied inline by the screen.
+    // Compact header (photo-first layout): Type.h2 title row; the add
+    // shortcut lives in the search row below. The top safe-area inset is
+    // applied inline by the screen.
     compactHeader: {
       paddingHorizontal: Space.lg,
     },
@@ -305,20 +306,11 @@ function createStyles(colors: ThemeColors) {
       color: colors.ink,
       flex: 1,
     },
-    headerAction: {
-      // Static style, fixed size (Android paint rules) — IconPressable
-      // provides the pressed feedback.
-      width: 36,
-      height: 36,
-      borderRadius: Radius.pill,
-      backgroundColor: colors.surfaceSoft,
-      borderWidth: 1,
-      borderColor: colors.hairline,
-      alignItems: "center",
-      justifyContent: "center",
-    },
     listContent: {
       paddingHorizontal: Space.lg,
+      // Vertical breathing room between grid rows (the columnWrapper gap
+      // covers the horizontal gutter).
+      rowGap: Space.sm,
       paddingBottom: Space.xxl,
     },
     // Immersive photo grid: each cell flexes to half the row; the
@@ -528,6 +520,8 @@ interface SearchBarProps {
   showFilters: boolean;
   onToggleFilters: () => void;
   hasAdvancedFilters: boolean;
+  /** Opens the recipe composer — the "+" pill at the END of the row. */
+  onCreate: () => void;
   /** Attached to the TextInput so `?focus=1` can autofocus it on mount. */
   inputRef: RefObject<TextInput | null>;
   colors: ThemeColors;
@@ -540,6 +534,7 @@ const SearchBar = memo(function SearchBar({
   showFilters,
   onToggleFilters,
   hasAdvancedFilters,
+  onCreate,
   inputRef,
   colors,
   styles,
@@ -588,6 +583,14 @@ const SearchBar = memo(function SearchBar({
                 : colors.inkSecondary
             }
           />
+        </IconPressable>
+        {/* Create recipe — completes the row: search, filters, then add. */}
+        <IconPressable
+          onPress={onCreate}
+          accessibilityLabel={t("browse.addRecipe")}
+          style={styles.filterToggle}
+        >
+          <Ionicons name="add" size={24} color={colors.accent} />
         </IconPressable>
       </View>
     </View>
@@ -1543,21 +1546,13 @@ export default function BrowseScreen() {
 
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      {/* Compact header — essentials only: title row (Type.h2) + the add
-          shortcut. The search field + filter toggle sit directly below. */}
+      {/* Compact header — essentials only: just the title row; the search
+          field, filter toggle AND the add shortcut sit together below. */}
       <View
         style={[styles.compactHeader, { paddingTop: insets.top + Space.md }]}
       >
         <View style={styles.compactTitleRow}>
           <Text style={styles.compactTitle}>{t("tabs.browse")}</Text>
-          <IconPressable
-            onPress={() => router.push("/recipe-composer")}
-            accessibilityLabel={t("browse.addRecipe")}
-            hitSlop={Space.xs}
-            style={styles.headerAction}
-          >
-            <Ionicons name="add" size={22} color={colors.accent} />
-          </IconPressable>
         </View>
       </View>
       <SearchBar
@@ -1566,6 +1561,7 @@ export default function BrowseScreen() {
         showFilters={showFilters}
         onToggleFilters={toggleFilters}
         hasAdvancedFilters={hasAdvancedFilters}
+        onCreate={() => router.push("/recipe-composer")}
         inputRef={searchInputRef}
         colors={colors}
         styles={styles}

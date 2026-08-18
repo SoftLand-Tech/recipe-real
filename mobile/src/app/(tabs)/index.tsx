@@ -146,17 +146,23 @@ function relativeDate(t: TranslateFn, iso: string): string {
   }
 }
 
+/** Photo-first home: rails/featured only ever show recipes with an image. */
+function hasPhoto(recipe: Recipe): boolean {
+  return (
+    typeof recipe.image_url === "string" && recipe.image_url.trim().length > 0
+  );
+}
+
 /**
- * Cook-session rows carry only a light recipe reference (id/title). Wrap one
- * as a minimal Recipe so the "Recently cooked" rail reuses HomeCard — the
- * missing image renders the standard HeroImage fallback.
+ * Cook-session rows carry only a light recipe reference (id/title/image). Wrap
+ * one as a minimal Recipe so the "Recently cooked" rail reuses HomeCard.
  */
 function sessionRecipe(session: CookSessionSummary): Recipe {
   return {
     id: session.recipe.id,
     title: session.recipe.title ?? "",
     source_url: null,
-    image_url: null,
+    image_url: session.recipe.image_url ?? null,
     ingredients: [],
     steps: [],
     publisher_time_minutes: null,
@@ -294,6 +300,7 @@ export default function HomeScreen() {
     if (recipes.length === 0) return [];
     const todayIndex = Math.floor(Date.now() / 86_400_000);
     return [...recipes]
+      .filter(hasPhoto)
       .sort(
         (a, b) =>
           ((a.id * 31 + todayIndex) % recipes.length) -
@@ -306,11 +313,13 @@ export default function HomeScreen() {
   // the reality "most underestimated" rail, falling back to "Top rated", and
   // to the offline cached top picks when no server rails ever loaded.
   const featured = useMemo(() => {
-    const pool = serverRails
-      ? serverRails.most_underestimated.length > 0
-        ? serverRails.most_underestimated
-        : serverRails.top_rated
-      : topPicks;
+    const pool = (
+      serverRails
+        ? serverRails.most_underestimated.length > 0
+          ? serverRails.most_underestimated
+          : serverRails.top_rated
+        : topPicks
+    ).filter(hasPhoto);
     if (pool.length === 0) return null;
     return pool[dayOfYear() % pool.length];
   }, [serverRails, topPicks]);
@@ -592,6 +601,9 @@ export default function HomeScreen() {
     for (const session of recentSessions ?? []) {
       if (items.length >= RECENTLY_COOKED_LIMIT) break;
       if (session.recipe == null || !(session.recipe.id > 0)) continue;
+      // Photo-first home: sessions whose recipe has no image stay in the
+      // Pace history instead of breaking the rail with gray cards.
+      if (session.recipe.image_url == null) continue;
       items.push(sessionRecipe(session));
       captions.set(session.recipe.id, relativeDate(t, session.created_at));
     }
