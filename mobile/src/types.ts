@@ -30,6 +30,21 @@ export interface CleanupFactors {
   dishwasher_safe: boolean | null;
 }
 
+/**
+ * Reality-check block carried by recipe rows: the maintained best-known real
+ * cook time vs. the publisher's claim. `gap_pct` is null when the claim is
+ * missing (no gap can be computed); the whole block is null/absent when the
+ * backend has neither community samples nor an estimate yet.
+ */
+export interface RealityCheck {
+  minutes: number;
+  source: "community" | "estimate";
+  samples: number;
+  claimed_minutes: number;
+  gap_minutes: number;
+  gap_pct: number | null;
+}
+
 export interface Recipe {
   id: number;
   title: string;
@@ -48,6 +63,8 @@ export interface Recipe {
   cleanup_estimate_minutes?: number | null;
   /** Cleanup-burden factors backing the estimate (Week 4). */
   cleanup_factors?: CleanupFactors;
+  /** Reality-check block (real time vs. claimed); null when unknown. */
+  reality?: RealityCheck | null;
   /**
    * Food.com metadata (server-driven browse/home rows). All nullable — the
    * local dev DB has metadata only partially, and SQLite-cached rows don't
@@ -102,12 +119,16 @@ export interface CategoryCount {
   count: number;
 }
 
-/** The four curated rails served by GET /api/home (light rows, may be empty). */
+/** The curated rails served by GET /api/home (light rows, may be empty) plus
+ *  the reality rail merged in from GET /api/reality (client-side). */
 export interface HomeRails {
   top_rated: Recipe[];
   easy_wins: Recipe[];
   most_loved: Recipe[];
   hands_off: Recipe[];
+  /** "Most underestimated" recipes (GET /api/reality?mode=under), merged into
+   *  the home payload by the client and mirrored alongside the other rails. */
+  most_underestimated: Recipe[];
 }
 
 /** Response of POST /api/recipes/{id}/quick-time (community_avg may be a string). */

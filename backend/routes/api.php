@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\CookSessionController;
 use App\Http\Controllers\Api\HomeController;
 use App\Http\Controllers\Api\PaceCalibrationController;
 use App\Http\Controllers\Api\RecipeController;
+use App\Http\Controllers\Api\RealityController;
 use App\Http\Controllers\Api\UsageController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebhookController;
@@ -34,6 +35,10 @@ Route::middleware('throttle:240,1')->group(function (): void {
 
     // Home-screen rails (curated, cached, light).
     Route::get('/home', HomeController::class);
+
+    // Reality Index leaderboard: most under/over-estimated recipes
+    // (cached 5 min, light RecipeResource rows).
+    Route::get('/reality', RealityController::class);
 
     // Self-hosted product analytics: auth-optional (anonymous app_open events
     // are allowed), with a tighter throttle to limit anonymous spam.

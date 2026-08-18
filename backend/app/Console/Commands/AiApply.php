@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Recipe;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use stdClass;
@@ -71,6 +72,8 @@ class AiApply extends Command
 
     private int $servingsSeen = 0;
 
+    private int $realityRefreshed = 0;
+
     /** @var array<int, true> */
     private array $junkIds = [];
 
@@ -132,6 +135,9 @@ class AiApply extends Command
         $this->line(sprintf('  Malformed records:  %d', $this->malformed));
         if ($this->servingsSeen > 0) {
             $this->line(sprintf('  Servings on %d record(s) — no column yet, ignored.', $this->servingsSeen));
+        }
+        if ($this->realityRefreshed > 0) {
+            $this->line(sprintf('  Reality refreshed: %d recipe(s) via Recipe::recalculateReality()', $this->realityRefreshed));
         }
         if ($dryRun) {
             $this->info('Dry run: nothing was written.');
@@ -258,6 +264,20 @@ class AiApply extends Command
         }
         foreach ($stepUpdates as $stepId => $fields) {
             DB::table('recipe_steps')->where('id', $stepId)->update($fields);
+        }
+
+        // Fresh per-step minutes change the Reality Index estimate (when
+        // the recipe has no community average yet — recalculateReality()
+        // decides). Only touched when this record actually carried
+        // minutes, so records with translations alone stay cheap.
+        foreach ($stepUpdates as $fields) {
+            if (array_key_exists('ai_minutes', $fields)) {
+                $recipeModel = Recipe::find($id);
+                if ($recipeModel !== null && $recipeModel->recalculateReality()) {
+                    $this->realityRefreshed++;
+                }
+                break;
+            }
         }
 
         if ($updates !== [] || $stepUpdates !== []) {

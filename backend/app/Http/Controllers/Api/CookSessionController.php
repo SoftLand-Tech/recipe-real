@@ -97,6 +97,8 @@ class CookSessionController extends Controller
      * recomputed inline (plain average of the last 100 sessions), the same
      * aggregate full cook sessions feed; cleanup_avg_minutes is recomputed
      * the same way, but only when this submission included cleanup_minutes.
+     * The recipe's Reality Index columns follow via
+     * Recipe::recalculateReality() — 'community' source, live.
      */
     public function quickTime(StoreQuickTimeRequest $request, Recipe $recipe): JsonResponse
     {
@@ -140,9 +142,11 @@ class CookSessionController extends Controller
             }
         }
 
-        if ($recipe->isDirty()) {
-            $recipe->save();
-        }
+        // A cook submission is the strongest timing signal there is: flip
+        // the Reality Index to 'community' (reality_minutes mirrors the
+        // average above, samples = session count). recalculateReality()
+        // saves the model when anything is dirty.
+        $recipe->recalculateReality();
 
         return response()->json([
             'ok' => true,

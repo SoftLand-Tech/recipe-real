@@ -45,6 +45,21 @@ class RecipeResource extends JsonResource
             'fat_g' => $this->fat_g,
             'publisher_time_minutes' => $this->publisher_time_minutes,
             'community_avg_minutes' => $this->community_avg_minutes,
+            // Reality Index: the honest duration vs the publisher's claim,
+            // with a labeled source ('community' = real cook submissions,
+            // 'estimate' = AI step-time sum). null while no signal exists.
+            // gap_pct is a whole-number percent (null when the publisher
+            // claims nothing); positive = takes longer than claimed.
+            'reality' => $this->reality_minutes != null ? [
+                'minutes' => (float) $this->reality_minutes,
+                'source' => $this->reality_source,
+                'samples' => (int) $this->reality_samples,
+                'claimed_minutes' => $this->publisher_time_minutes,
+                'gap_minutes' => round((float) $this->reality_minutes - $this->publisher_time_minutes, 1),
+                'gap_pct' => $this->publisher_time_minutes > 0
+                    ? round((((float) $this->reality_minutes - $this->publisher_time_minutes) / $this->publisher_time_minutes) * 100)
+                    : null,
+            ] : null,
             'cleanup_avg_minutes' => $this->cleanup_avg_minutes,
             'cleanup_estimate_minutes' => $premium ? $this->cleanupEstimateMinutes() : null,
             'cleanup_factors' => $premium ? [

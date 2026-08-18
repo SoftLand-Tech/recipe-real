@@ -5,6 +5,7 @@ import { API_BASE_URL, AUTH_TOKEN_KEY } from "@/config";
 import type {
   CleanupFactors,
   PaceCalibration,
+  RealityCheck,
   Recipe,
   RecipeStep,
 } from "@/types";
@@ -147,6 +148,25 @@ function parseArArray(raw: unknown): string[] | null {
   return null;
 }
 
+/**
+ * Normalize the reality-check block defensively: decimals may serialize as
+ * strings, and a malformed/absent object must read as "unknown" (null) so the
+ * badge simply stays hidden. Numeric holes collapse to 0 except gap_pct, which
+ * keeps its null meaning ("no claim to compare against").
+ */
+function normalizeReality(v: unknown): RealityCheck | null {
+  if (v == null || typeof v !== "object") return null;
+  const r = v as Record<string, unknown>;
+  return {
+    minutes: toNum(r.minutes) ?? 0,
+    source: r.source === "estimate" ? "estimate" : "community",
+    samples: toNum(r.samples) ?? 0,
+    claimed_minutes: toNum(r.claimed_minutes) ?? 0,
+    gap_minutes: toNum(r.gap_minutes) ?? 0,
+    gap_pct: toNum(r.gap_pct),
+  };
+}
+
 export function normalizeRecipe(r: any): Recipe {
   const factorsSrc = r?.cleanup_factors;
   const cleanup_factors: CleanupFactors | undefined = factorsSrc
@@ -187,6 +207,7 @@ export function normalizeRecipe(r: any): Recipe {
     protein_g: toNum(r?.protein_g),
     fat_g: toNum(r?.fat_g),
     ...(cleanup_factors ? { cleanup_factors } : {}),
+    reality: normalizeReality(r?.reality),
     recipe_steps: Array.isArray(r.recipe_steps)
       ? r.recipe_steps.map(normalizeStep)
       : r.recipe_steps,

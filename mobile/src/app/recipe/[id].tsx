@@ -66,6 +66,11 @@ import {
   recipeMinutes,
   stepMinutes,
 } from "@/utils/recipeTime";
+import {
+  cancelPlannedNotifications,
+  requestNotificationsPermission,
+  scheduleAtNotification,
+} from "@/utils/notifications";
 
 type LoadState = "loading" | "ready" | "error" | "paywall";
 
@@ -96,6 +101,16 @@ function formatClock(date: Date): string {
 }
 
 /**
+ * Cap on scheduled planner notifications (one per step boundary): the OS
+ * keeps a limited pool of pending notifications, so only the NEXT steps get
+ * nudges when a plan is armed.
+ */
+const MAX_PLAN_STEPS = 10;
+
+/** Stepper granularity of the eat-at planner, in minutes. */
+const PLAN_STEP_MINUTES = 15;
+
+/**
  * Build the cleanup-burden chip labels from the factors object. Each entry is
  * only included when its underlying value is non-null.
  */
@@ -119,6 +134,30 @@ function cleanupChips(
     );
   }
   return chips;
+}
+
+/**
+ * Reality badge tone + label for the gap thresholds: ≥ +20% slower than
+ * claimed (amber), ≤ −20% faster (success), otherwise the claim checks out
+ * (neutral). Called only when `reality.gap_pct != null`.
+ */
+function realityBadge(
+  t: TranslateFn,
+  gapPct: number,
+): { tone: "amber" | "success" | "neutral"; label: string } {
+  if (gapPct >= 20) {
+    return {
+      tone: "amber",
+      label: t("detail.realitySlower", { pct: Math.round(gapPct) }),
+    };
+  }
+  if (gapPct <= -20) {
+    return {
+      tone: "success",
+      label: t("detail.realityFaster", { pct: Math.round(Math.abs(gapPct)) }),
+    };
+  }
+  return { tone: "neutral", label: t("detail.realityAccurate") };
 }
 
 /** One entry of the backend `ingredients_structured` JSON column. */
@@ -196,6 +235,27 @@ export default function RecipeDetailScreen() {
   const [quickOpen, setQuickOpen] = useState(false);
   // Focuses the inline total-time input as soon as it mounts.
   const quickInputRef = useRef<TextInput | null>(null);
+
+  // ---- Start-time planner (eat-at mode) --------------------------------------
+  // Target eat time as a ms epoch; null = "start now" mode (the timeline
+  // anchors at the per-recipe load moment). Any stepper press enters plan
+  // mode and REANCHORS the timeline so dinner lands at the chosen time.
+  const [planEatAt, setPlanEatAt] = useState<number | null>(null);
+  // "Notify me" scheduling: spinner while arming, scheduled-step count after.
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planCount, setPlanCount] = useState<number | null>(null);
+  // Ids of the currently scheduled plan notifications (kept in a ref: no
+  // re-renders; used to replace/cancel the plan and cleared on unmount).
+  const planIdsRef = useRef<(string | null)[]>([]);
+
+  // Cancel any scheduled plan notifications when the screen unmounts.
+  useEffect(() => {
+    return () => {
+      cancelPlannedNotifications(planIdsRef.current).catch(() => {
+        // Best-effort cleanup.
+      });
+    };
+  }, []);
 
   // Mirror of `recipe` for use inside `loadRecipe`'s catch block without
   // forcing `recipe` into the callback's dependency array (which would
@@ -321,6 +381,12 @@ export default function RecipeDetailScreen() {
           gap: Space.xs,
           marginTop: Space.lg,
         },
+        // Source caption sitting next to the reality badge chip (same row).
+        realityCaption: {
+          ...Type.caption,
+          color: colors.inkFaint,
+          flexShrink: 1,
+        },
         // ---- Quick-time contribution (inline under the stat grid) ----
         quickInline: {
           marginTop: Space.md,
@@ -392,6 +458,50 @@ export default function RecipeDetailScreen() {
         timelineHeadline: {
           ...Type.title,
           color: colors.ink,
+        },
+        // ---- Start-time planner (eat-at mode) ----
+        planRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: Space.sm,
+          marginTop: Space.sm,
+        },
+        planLabel: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+          fontWeight: "600",
+        },
+        planTime: {
+          ...Type.title,
+          color: colors.ink,
+          fontWeight: "700",
+          fontVariant: ["tabular-nums"] as ("tabular-nums")[],
+        },
+        // Circular ±15m stepper buttons (static style only — Android paint
+        // rules; IconPressable adds the pressed feedback).
+        planStepBtn: {
+          width: 34,
+          height: 34,
+          borderRadius: Radius.pill,
+          backgroundColor: colors.surfaceSoft,
+          borderWidth: 1,
+          borderColor: colors.hairline,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        planSetRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: Space.sm,
+          marginTop: Space.xs,
+        },
+        planSetCaption: {
+          ...Type.caption,
+          color: colors.success,
+          fontWeight: "600",
+          flexShrink: 1,
         },
         timelineCleanupNote: {
           ...Type.caption,
@@ -582,7 +692,13 @@ export default function RecipeDetailScreen() {
     setState("loading");
     setErrorMessage(null);
     recipeRef.current = null;
-    // Reset the quick-time contribution state for the (new) recipe.
+    // Reset the quick-time contribution + planner state for the (new) recipe;
+    // any notifications armed for the previous recipe are cancelled.
+    cancelPlannedNotifications(planIdsRef.current).catch(() => {});
+    planIdsRef.current = [];
+    setPlanEatAt(null);
+    setPlanLoading(false);
+    setPlanCount(null);
     setQuickPlates("");
     setQuickHandsOn("");
     setQuickTotal("");
@@ -778,14 +894,25 @@ export default function RecipeDetailScreen() {
   // Best-known cook time feeding the "Total incl. cleanup" stat: community
   // consensus, else the publisher claim (sparse data never blanks the total).
   const cookMinutes = roundMin(recipe ? recipeMinutes(recipe) : null);
-  // "Cooks average" cell: the community consensus, or — once THIS device
-  // submits a quick time — the server-recomputed average it returns.
-  const cooksAvg = community ?? (quickDone ? roundMin(quickAvg) : null);
+  // Reality-check block (server-maintained best-known real time vs. claim).
+  const reality = recipe?.reality ?? null;
+  const realityGap = reality?.gap_pct ?? null;
+  // "Cooks average" cell: the maintained reality copy when present, else the
+  // community consensus, or — once THIS device submits a quick time — the
+  // server-recomputed average it returns.
+  const cooksAvg =
+    reality != null
+      ? roundMin(reality.minutes)
+      : (community ?? (quickDone ? roundMin(quickAvg) : null));
 
   const totalInclCleanup =
     cookMinutes != null && cleanup != null ? cookMinutes + cleanup : null;
 
   const chips = recipe ? cleanupChips(t, recipe.cleanup_factors) : [];
+
+  // Reality badge chip (tone + label), computed once for the gap thresholds.
+  const realityChip =
+    realityGap != null ? realityBadge(t, realityGap) : null;
 
   const steps: RecipeStep[] = recipe?.recipe_steps ?? [];
 
@@ -862,15 +989,102 @@ export default function RecipeDetailScreen() {
   // Anchor the clock walk once per recipe (not per render) so re-renders —
   // heart toggles, quick-time keystrokes — never shift the displayed times.
   const timelineStart = useMemo(() => Date.now(), [recipe?.id, steps.length]);
-  const timelineRows: { step: RecipeStep; at: Date; minutes: number }[] = [];
-  let cursor = timelineStart;
+  // Walk the cooking steps into (step, minutes) pairs once; the absolute
+  // clock times are stamped from the anchor below so flipping between
+  // "start now" and "eating at" modes reanchors without re-walking.
+  const timelineBase: { step: RecipeStep; minutes: number }[] = [];
+  let totalTimelineMs = 0;
   for (const step of timelineSteps) {
     const minutes = minutesForStep(step);
-    timelineRows.push({ step, at: new Date(cursor), minutes });
-    cursor += minutes * 60000;
+    timelineBase.push({ step, minutes });
+    totalTimelineMs += minutes * 60000;
   }
-  // "Start now" eat time — cleanup is intentionally excluded from the walk.
-  const eatAt = new Date(cursor);
+  // Planner anchor: eat-at mode walks BACK from the chosen eat time
+  // (start = eatAt − total); now-mode anchors at the fixed load moment.
+  const anchorMs =
+    planEatAt != null ? planEatAt - totalTimelineMs : timelineStart;
+  const timelineRows: { step: RecipeStep; at: Date; minutes: number }[] = [];
+  let offsetMs = 0;
+  for (const { step, minutes } of timelineBase) {
+    timelineRows.push({ step, minutes, at: new Date(anchorMs + offsetMs) });
+    offsetMs += minutes * 60000;
+  }
+  // Eat time ("Start now" target or the planner's choice) and the matching
+  // "start by" moment — cleanup is intentionally excluded (you eat first).
+  const eatAtMs = anchorMs + totalTimelineMs;
+  const eatAt = new Date(eatAtMs);
+  const startBy = new Date(anchorMs);
+
+  /**
+   * Shift the target eat time by ±15-minute steps, entering eat-at mode (the
+   * timeline reanchors on the next render via the planEatAt state).
+   */
+  const shiftEatAt = useCallback(
+    (deltaMinutes: number) => {
+      setPlanEatAt(eatAtMs + deltaMinutes * 60_000);
+    },
+    [eatAtMs],
+  );
+
+  // ---- Start-time planner: step-boundary notifications ----------------------
+
+  /**
+   * Arm the plan: schedule a local notification at each of the next step
+   * boundaries (capped at MAX_PLAN_STEPS; cleanup steps are already excluded
+   * from the timeline). Any previously armed plan is replaced first.
+   * Permission is requested via the existing helper — a denial leaves the
+   * planner usable but schedules nothing. Success shows the "We'll nudge
+   * you…" caption plus a Cancel button; boundaries already in the past (or
+   * beyond the ~3h clamp) are skipped by scheduleAtNotification itself.
+   */
+  const onNotifyMe = useCallback(async () => {
+    if (!recipe || planLoading) return;
+    setPlanLoading(true);
+    try {
+      // Replace any previous plan first so re-pressing reschedules cleanly.
+      const previous = planIdsRef.current;
+      planIdsRef.current = [];
+      await cancelPlannedNotifications(previous);
+      if (!(await requestNotificationsPermission())) return;
+      const title = lr.title(recipe);
+      const ids: string[] = [];
+      for (const row of timelineRows.slice(0, MAX_PLAN_STEPS)) {
+        const base = t("detail.planStepBody", {
+          n: row.step.step_number,
+          time: formatClock(row.at),
+        });
+        // First 40 chars of the localized step description as a reminder.
+        const snippet = lr.stepDescription(row.step).slice(0, 40).trim();
+        const id = await scheduleAtNotification(
+          title,
+          snippet ? `${base} — ${snippet}` : base,
+          row.at,
+        );
+        if (id) ids.push(id);
+      }
+      planIdsRef.current = ids;
+      if (ids.length > 0) {
+        setPlanCount(ids.length);
+        track("plan_notifications_set", {
+          recipe_id: recipe.id,
+          steps: ids.length,
+        });
+      }
+    } catch (error) {
+      // Scheduling is best-effort; never crash the detail screen.
+      console.warn("[RecipeReal] plan notifications failed:", error);
+    } finally {
+      setPlanLoading(false);
+    }
+  }, [recipe, planLoading, timelineRows, t, lr]);
+
+  /** Clear every scheduled plan notification and hide the success state. */
+  const onCancelPlan = useCallback(async () => {
+    const ids = planIdsRef.current;
+    planIdsRef.current = [];
+    setPlanCount(null);
+    await cancelPlannedNotifications(ids);
+  }, []);
 
   const ready = state === "ready" && recipe;
 
@@ -1084,6 +1298,24 @@ export default function RecipeDetailScreen() {
                   ) : null}
                 </View>
 
+                {/* 1b. REALITY BADGE — how the best-known real time compares
+                    to the publisher's claim (only when a gap was computed),
+                    with the data-source caption beside it. */}
+                {reality != null && realityChip != null ? (
+                  <View style={styles.chipRow}>
+                    <Chip
+                      size="sm"
+                      tone={realityChip.tone}
+                      label={realityChip.label}
+                    />
+                    <Text style={styles.realityCaption}>
+                      {reality.source === "community"
+                        ? t("detail.realityFrom", { n: reality.samples })
+                        : t("detail.realityEstimate")}
+                    </Text>
+                  </View>
+                ) : null}
+
                 {/* 1c. RATING — compact "★ rating (N)" line when known. */}
                 {recipe.aggregated_rating != null ? (
                   <View style={styles.chipRow}>
@@ -1171,13 +1403,69 @@ export default function RecipeDetailScreen() {
                   )}
                 </View>
 
-                {/* 5. WHEN'S DINNER READY? — start-now timeline. */}
+                {/* 5. WHEN'S DINNER READY? — start-now timeline + eat-at
+                    planner: the two-way headline swaps between "Start now →
+                    eating at ~X" (now-mode) and "Eating at X — start by Y"
+                    (plan-mode, timeline reanchored to the chosen time). */}
                 {steps.length > 0 ? (
                   <View style={styles.section}>
                     <SectionHeader title={t("detail.timelineTitle")} />
                     <Text style={styles.timelineHeadline} numberOfLines={1}>
-                      {t("detail.startNow", { time: formatClock(eatAt) })}
+                      {planEatAt != null
+                        ? t("detail.eatAtPlan", {
+                            time: formatClock(eatAt),
+                            start: formatClock(startBy),
+                          })
+                        : t("detail.startNow", { time: formatClock(eatAt) })}
                     </Text>
+
+                    {/* Compact planner row: eat-at label + time display +
+                        ±15m steppers + "Notify me" (schedules a nudge at each
+                        of the next step boundaries). */}
+                    <View style={styles.planRow}>
+                      <Text style={styles.planLabel}>{t("detail.eatAt")}</Text>
+                      <Text style={styles.planTime}>{formatClock(eatAt)}</Text>
+                      <IconPressable
+                        style={styles.planStepBtn}
+                        onPress={() => shiftEatAt(-PLAN_STEP_MINUTES)}
+                        hitSlop={Space.xs}
+                      >
+                        <Ionicons
+                          name="remove"
+                          size={20}
+                          color={colors.inkSecondary}
+                        />
+                      </IconPressable>
+                      <IconPressable
+                        style={styles.planStepBtn}
+                        onPress={() => shiftEatAt(PLAN_STEP_MINUTES)}
+                        hitSlop={Space.xs}
+                      >
+                        <Ionicons
+                          name="add"
+                          size={20}
+                          color={colors.inkSecondary}
+                        />
+                      </IconPressable>
+                      <Button
+                        title={t("detail.notifyMe")}
+                        variant="secondary"
+                        loading={planLoading}
+                        onPress={onNotifyMe}
+                      />
+                    </View>
+                    {planCount != null ? (
+                      <View style={styles.planSetRow}>
+                        <Text style={styles.planSetCaption}>
+                          {t("detail.planSet", { n: planCount })}
+                        </Text>
+                        <Button
+                          variant="ghost"
+                          title={t("detail.cancelPlan")}
+                          onPress={onCancelPlan}
+                        />
+                      </View>
+                    ) : null}
                     {cleanup != null && cleanup > 0 ? (
                       <Text style={styles.timelineCleanupNote}>
                         {t("detail.cleanupAfter", { time: fmtMin(cleanup) })}

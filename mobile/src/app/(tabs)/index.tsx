@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { fetchCategories, fetchHomeRails } from "@/api/client";
+import { fetchCategories, fetchHomeRails, fetchRealityRail } from "@/api/client";
 import { track } from "@/analytics";
 import {
   countCachedRecipes,
@@ -53,9 +53,32 @@ const HOME_RAILS_KEY = "recipereal.homeRails";
 
 /** Rail-content fingerprint (per-rail recipe ids) for the no-op guard. */
 function railsFingerprint(rails: HomeRails): string {
-  return (["top_rated", "easy_wins", "most_loved", "hands_off"] as const)
+  return (
+    [
+      "top_rated",
+      "easy_wins",
+      "most_loved",
+      "hands_off",
+      "most_underestimated",
+    ] as const
+  )
     .map((rail) => (rails[rail] ?? []).map((r) => r.id).join(","))
     .join("|");
+}
+
+/**
+ * Fill any rail missing from an older saved mirror (pre-reality payloads have
+ * no `most_underestimated`) with an empty array so downstream readers never
+ * see undefined.
+ */
+function railsWithDefaults(rails: Partial<HomeRails>): HomeRails {
+  return {
+    top_rated: rails.top_rated ?? [],
+    easy_wins: rails.easy_wins ?? [],
+    most_loved: rails.most_loved ?? [],
+    hands_off: rails.hands_off ?? [],
+    most_underestimated: rails.most_underestimated ?? [],
+  };
 }
 
 /**
@@ -276,10 +299,12 @@ export default function HomeScreen() {
   }, [setRecipesIfChanged]);
 
   /**
-   * Load the four curated rails: the last server payload from
+   * Load the curated rails: the last server payload from
    * AsyncStorage paints instantly (identical content to what the refresh
-   * will bring), then GET /api/home revalidates. On failure/empty payload
-   * the SAVED rails stay; only when nothing was ever saved do the
+   * will bring), then GET /api/home revalidates while GET /api/reality
+   * (mode=under) fills the "Most underestimated" rail in parallel — a reality
+   * fetch failure simply leaves that rail empty (hidden). On failure/empty
+   * payload the SAVED rails stay; only when nothing was ever saved do the
    * client-side cached rails render (offline cold start).
    */
   const loadRails = useCallback(async () => {
@@ -287,28 +312,34 @@ export default function HomeScreen() {
     try {
       const saved = await AsyncStorage.getItem(HOME_RAILS_KEY);
       if (saved) {
-        const parsed = JSON.parse(saved) as HomeRails;
+        const parsed = JSON.parse(saved) as Partial<HomeRails>;
         const any =
           parsed.top_rated?.length ||
           parsed.easy_wins?.length ||
           parsed.most_loved?.length ||
-          parsed.hands_off?.length;
+          parsed.hands_off?.length ||
+          parsed.most_underestimated?.length;
         if (any) {
-          setServerRails(parsed);
+          setServerRails(railsWithDefaults(parsed));
           track("home_rails_loaded", { source: "saved" });
         }
       }
     } catch {
       // Corrupt/unreadable mirror — ignore, fetch fresh below.
     }
-    // 2. Revalidate from the server.
+    // 2. Revalidate from the server (+ the reality rail in parallel).
     try {
-      const rails = await fetchHomeRails();
+      const [fetched, mostUnderestimated] = await Promise.all([
+        fetchHomeRails(),
+        fetchRealityRail(),
+      ]);
+      const rails: HomeRails = { ...fetched, most_underestimated: mostUnderestimated };
       const any =
         rails.top_rated.length > 0 ||
         rails.easy_wins.length > 0 ||
         rails.most_loved.length > 0 ||
-        rails.hands_off.length > 0;
+        rails.hands_off.length > 0 ||
+        rails.most_underestimated.length > 0;
       if (any) {
         // No-op guard: when the payload carries the same recipe ids per
         // rail as what's on screen (saved mirror), skip the state update —
@@ -513,8 +544,16 @@ export default function HomeScreen() {
           )}
 
         {serverRails != null ? (
-          // ---- Server-driven rails (GET /api/home) ----
+          // ---- Server-driven rails (GET /api/home + reality rail) ----
           <>
+            {/* Reality rail first — hidden silently when the reality fetch
+                failed (HomeRail renders null for empty items). */}
+            <HomeRail
+              title={t("home.realityRail")}
+              subtitle={t("home.realityRailSub")}
+              items={serverRails.most_underestimated ?? []}
+              noteIds={noteIds}
+            />
             <HomeRail
               title={t("home.railTopRated")}
               items={serverRails.top_rated}
@@ -618,6 +657,7 @@ function HomeCard({ item, hasNote }: { item: Recipe; hasNote: boolean }) {
   const colors = useThemeColors();
   const t = useT();
   const lr = useLocalizedRecipe();
+  const { dir } = useLang();
   const styles = useMemo(
     () =>
       StyleSheet.create({
@@ -639,9 +679,23 @@ function HomeCard({ item, hasNote }: { item: Recipe; hasNote: boolean }) {
           alignItems: "center",
           gap: Space.xs,
         },
+        // "+{gap}%" reality badge over the photo. Static style only (no
+        // function styles — Android paint rules); anchored to the physical
+        // top-end corner per direction so it never collides with the
+        // top-start NoteBadge.
+        realityChip: {
+          position: "absolute",
+          top: Space.sm,
+          ...(dir === "rtl"
+            ? { left: Space.sm }
+            : { right: Space.sm }),
+        },
       }),
-    [colors],
+    [colors, dir],
   );
+  // Reality gap on the card corner: rounded, shown only when a gap was
+  // computed (gap_pct is null when the recipe has no claimed time).
+  const realityGap = item.reality?.gap_pct;
   return (
     <Card
       onPress={() => router.push(`/recipe/${item.id}`)}
@@ -652,6 +706,15 @@ function HomeCard({ item, hasNote }: { item: Recipe; hasNote: boolean }) {
       <View>
         <HeroImage uri={item.image_url} height={110} rounded={Radius.lg} />
         <NoteBadge show={hasNote} />
+        {realityGap != null ? (
+          <View style={styles.realityChip} pointerEvents="none">
+            <Chip
+              tone="amber"
+              size="sm"
+              label={`+${Math.round(realityGap)}%`}
+            />
+          </View>
+        ) : null}
       </View>
       <View style={styles.body}>
         <Text style={styles.title} numberOfLines={2}>

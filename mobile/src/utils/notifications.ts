@@ -103,3 +103,42 @@ export async function cancelNotification(id: string | null): Promise<void> {
     // Already fired or cancelled — nothing to do.
   }
 }
+
+/** Upper clamp for planned (absolute-time) notification delays: ~3 hours. */
+const MAX_PLAN_DELAY_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * Schedule a notification at an ABSOLUTE time (the start-time planner's step
+ * boundaries). The delay is `at - now`, clamped to ~3h out; a boundary already
+ * in the past (delay < 0) or an unavailable API resolves to null so callers
+ * can skip it. Never throws.
+ */
+export async function scheduleAtNotification(
+  title: string,
+  body: string,
+  at: Date,
+): Promise<string | null> {
+  const api = await notificationsApi();
+  if (!api) return null;
+  const delayMs = at.getTime() - Date.now();
+  if (delayMs < 0) return null;
+  try {
+    return await api.scheduleNotificationAsync({
+      content: { title, body },
+      trigger: {
+        type: api.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: Math.round(Math.min(delayMs, MAX_PLAN_DELAY_MS) / 1000),
+        repeats: false,
+      },
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** Cancel every notification id in the list (planned plans/steps); never throws. */
+export async function cancelPlannedNotifications(
+  ids: (string | null)[],
+): Promise<void> {
+  await Promise.all(ids.map((id) => cancelNotification(id)));
+}

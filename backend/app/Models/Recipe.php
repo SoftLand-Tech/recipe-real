@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 class Recipe extends Model
 {
@@ -17,6 +18,10 @@ class Recipe extends Model
         'publisher_time_minutes',
         'community_avg_minutes',
         'cleanup_avg_minutes',
+        // Reality Index (see recalculateReality()).
+        'reality_minutes',
+        'reality_source',
+        'reality_samples',
         'steps_count',
         'dish_count',
         'grease_level',
@@ -41,6 +46,8 @@ class Recipe extends Model
             'publisher_time_minutes' => 'integer',
             'community_avg_minutes' => 'decimal:2',
             'cleanup_avg_minutes' => 'decimal:2',
+            'reality_minutes' => 'decimal:2',
+            'reality_samples' => 'integer',
             'steps_count' => 'integer',
             'dish_count' => 'integer',
             'dishwasher_safe' => 'boolean',
@@ -79,6 +86,56 @@ class Recipe extends Model
         $handwash = ($this->dishwasher_safe ? 0 : $dishCount * 1.0);
 
         return (int) round($base + $dishes + $grease + $handwash);
+    }
+
+    /**
+     * Recompute the Reality Index columns (reality_minutes /
+     * reality_source / reality_samples) and save when anything changed.
+     *
+     * 'community': the honest real-cook average wins whenever
+     * community_avg_minutes is set (feed it first — CookSessionController@
+     * quickTime recomputes the average, then calls this); reality_samples
+     * then counts the cook sessions it rests on. 'estimate': the sum of
+     * per-step ai_minutes over non-cleanup steps, honestly labeled until
+     * cooks replace it. Neither available → null reality.
+     *
+     * Shared by quick-time submissions and recipereal:ai-apply; the bulk
+     * backfill (recipereal:backfill-reality) re-implements the same rule
+     * set-based for the whole table.
+     */
+    public function recalculateReality(): bool
+    {
+        if ($this->community_avg_minutes !== null) {
+            $this->reality_minutes = round((float) $this->community_avg_minutes, 2);
+            $this->reality_source = 'community';
+            $this->reality_samples = (int) CookSession::query()
+                ->where('recipe_id', $this->id)
+                ->whereNotNull('total_actual_minutes')
+                ->count();
+        } else {
+            $estimate = (float) DB::table('recipe_steps')
+                ->where('recipe_id', $this->id)
+                ->where('step_type', '!=', 'cleanup')
+                ->whereNotNull('ai_minutes')
+                ->sum('ai_minutes');
+
+            if ($estimate > 0) {
+                $this->reality_minutes = round($estimate, 2);
+                $this->reality_source = 'estimate';
+            } else {
+                $this->reality_minutes = null;
+                $this->reality_source = null;
+            }
+            $this->reality_samples = 0;
+        }
+
+        if (! $this->isDirty()) {
+            return false;
+        }
+
+        $this->save();
+
+        return true;
     }
 
     /**

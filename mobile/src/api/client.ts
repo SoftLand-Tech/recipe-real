@@ -212,10 +212,14 @@ export async function fetchCategories(): Promise<CategoryCount[]> {
 }
 
 /**
- * The four curated Home rails (GET /api/home, 5-min server cache). Rows are
+ * The curated Home rails (GET /api/home, 5-min server cache). Rows are
  * light and some rails may legitimately be empty until server data lands —
  * callers decide whether to fall back to their local cache rails. A network
  * failure rethrows so the caller can degrade.
+ *
+ * `most_underestimated` is NOT served by /api/home — it comes from
+ * GET /api/reality (see fetchRealityRail) and is merged in by the caller; the
+ * empty array here just satisfies the HomeRails shape.
  */
 export async function fetchHomeRails(): Promise<HomeRails> {
   const { data } = await api.get<{ data?: Partial<HomeRails> }>("/api/home");
@@ -227,7 +231,30 @@ export async function fetchHomeRails(): Promise<HomeRails> {
     easy_wins: rails(src.easy_wins),
     most_loved: rails(src.most_loved),
     hands_off: rails(src.hands_off),
+    most_underestimated: [],
   };
+}
+
+/**
+ * The reality rail (GET /api/reality?mode=under|over): recipes whose REAL
+ * cook times diverge most from their claims, as light recipe rows including
+ * the `reality` block. Defensive: any failure or non-array payload resolves
+ * to an empty list so Home can hide the rail silently instead of degrading
+ * the rest of the screen.
+ */
+export async function fetchRealityRail(
+  mode: "under" | "over" = "under",
+): Promise<Recipe[]> {
+  try {
+    const { data } = await api.get<{ data?: unknown }>("/api/reality", {
+      params: { mode },
+    });
+    const rows = data?.data;
+    return Array.isArray(rows) ? rows.map(normalizeRecipe) : [];
+  } catch {
+    // Offline / server error / not deployed yet: hide the rail.
+    return [];
+  }
 }
 
 /**
