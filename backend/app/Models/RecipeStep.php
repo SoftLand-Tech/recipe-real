@@ -19,6 +19,9 @@ class RecipeStep extends Model
         // User recipes store their per-step estimate here; the AI pipeline
         // (recipereal:ai-apply) writes the same column for imported rows.
         'ai_minutes',
+        // Minutes literally stated in the step's source text (the app's
+        // cooking-mode alarm anchor). null when the step states no time.
+        'literal_minutes',
     ];
 
     protected function casts(): array
@@ -28,6 +31,7 @@ class RecipeStep extends Model
             'publisher_minutes' => 'decimal:2',
             'community_avg_minutes' => 'decimal:2',
             'ai_minutes' => 'decimal:2',
+            'literal_minutes' => 'decimal:2',
         ];
     }
 

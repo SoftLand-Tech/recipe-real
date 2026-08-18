@@ -67,7 +67,59 @@ class RecipeResource extends JsonResource
                 'grease_level' => $this->grease_level,
                 'dishwasher_safe' => (bool) $this->dishwasher_safe,
             ] : null,
+            // Cooking-mode time contract (2026-08-18): totals derived from
+            // the per-step ai_minutes the same way derive_times.py computes
+            // them for the JSONL files — total includes every step (cleanup
+            // included), active/passive split by step_type. null when steps
+            // aren't loaded or carry no AI minutes yet. Per-step countdown
+            // alarms come from recipe_steps[].literal_minutes, not from
+            // these totals; stopwatch progress is step-count based.
+            'time' => $this->timeBreakdown(),
             'recipe_steps' => RecipeStepResource::collection($this->whenLoaded('recipeSteps')),
+        ];
+    }
+
+    /**
+     * Recipe-level time totals from the loaded steps relation. Mirrors
+     * derive_times.py: time_total = sum of all ai_minutes, time_active /
+     * time_passive = sums by step_type. Returns null when steps are not
+     * loaded or none carry AI minutes (translations-only recipes).
+     *
+     * @return array{time_total_minutes: float, time_active_minutes: float, time_passive_minutes: float}|null
+     */
+    private function timeBreakdown(): ?array
+    {
+        if (! $this->relationLoaded('recipeSteps')) {
+            return null;
+        }
+
+        $total = 0.0;
+        $active = 0.0;
+        $passive = 0.0;
+        $hasMinutes = false;
+
+        foreach ($this->recipeSteps as $step) {
+            if ($step->ai_minutes === null) {
+                continue;
+            }
+            $hasMinutes = true;
+            $minutes = (float) $step->ai_minutes;
+            $total += $minutes;
+            if ($step->step_type === 'active') {
+                $active += $minutes;
+            } elseif ($step->step_type === 'passive') {
+                $passive += $minutes;
+            }
+        }
+
+        if (! $hasMinutes) {
+            return null;
+        }
+
+        return [
+            'time_total_minutes' => round($total),
+            'time_active_minutes' => round($active),
+            'time_passive_minutes' => round($passive),
         ];
     }
 }

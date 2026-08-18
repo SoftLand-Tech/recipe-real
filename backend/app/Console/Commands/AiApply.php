@@ -337,6 +337,14 @@ class AiApply extends Command
                 $fields['ai_minutes'] = min(self::MAX_MINUTES, max(0, (float) $step['minutes_estimated']));
             }
 
+            // derive_times.py output: the time literally stated in this
+            // step's source text — the cooking-mode alarm anchor. Applied
+            // exactly like ai_minutes (clamped, keyed by step_id, safe to
+            // re-run); absent/null leaves the column untouched.
+            if (isset($step['literal_minutes']) && is_numeric($step['literal_minutes'])) {
+                $fields['literal_minutes'] = min(self::MAX_MINUTES, max(0, (float) $step['literal_minutes']));
+            }
+
             $type = $step['step_type'] ?? null;
             if (is_string($type) && in_array($type, self::STEP_TYPES, true)) {
                 $fields['step_type'] = $type;
