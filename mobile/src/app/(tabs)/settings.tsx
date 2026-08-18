@@ -1,6 +1,8 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ComponentProps, type ReactNode } from "react";
 import {
+  ActivityIndicator,
   Alert,
+  I18nManager,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,6 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
 
 import {
@@ -32,16 +35,10 @@ import {
   Type,
   useThemeColors,
   useThemePrefs,
+  type ThemeColors,
   type ThemePref,
 } from "@/theme";
-import {
-  Button,
-  Card,
-  Chip,
-  IconPressable,
-  ScreenHeader,
-  SectionHeader,
-} from "@/components/ui";
+import { Button, Card, Chip, IconPressable, ScreenHeader } from "@/components/ui";
 
 const THEME_OPTIONS: { pref: ThemePref; labelKey: string }[] = [
   { pref: "system", labelKey: "theme.system" },
@@ -55,10 +52,163 @@ const LANG_OPTIONS: { pref: LangPref; labelKey: string }[] = [
   { pref: "ar", labelKey: "lang.arabic" },
 ];
 
+/** Icon-tile tint palettes (soft background + readable foreground). */
+type RowTone = "accent" | "timing" | "amber" | "success" | "danger" | "neutral";
+
+function rowTints(colors: ThemeColors): Record<RowTone, { bg: string; fg: string }> {
+  return {
+    accent: { bg: colors.accentSoft, fg: colors.accent },
+    timing: { bg: colors.timingSoft, fg: colors.timing },
+    amber: { bg: colors.amberSoft, fg: colors.amber },
+    success: { bg: colors.successSoft, fg: colors.success },
+    danger: { bg: colors.dangerSoft, fg: colors.danger },
+    neutral: { bg: colors.surfaceSoft, fg: colors.inkSecondary },
+  };
+}
+
+interface SettingsRowProps {
+  icon?: ComponentProps<typeof Ionicons>["name"];
+  tone?: RowTone;
+  label: string;
+  caption?: string;
+  /** Extra content under the label (the theme/language chip rows). */
+  below?: ReactNode;
+  /** End-of-row control (Switch) — replaces the chevron. */
+  end?: ReactNode;
+  chevron?: boolean;
+  busy?: boolean;
+  danger?: boolean;
+  disabled?: boolean;
+  onPress?: () => void;
+}
+
 /**
- * The Settings tab: theme preference, cooking-nudge notifications, offline
- * library re-sync, account sign-in / sign-out, and a compact about row. All
- * sections are theme-aware (light + warm dark) via useThemeColors().
+ * One grouped-list row: icon tile, label (+caption), trailing control.
+ * Pressed feedback follows the Card pattern (opacity via state, never a
+ * style function or background swap — Android paint rules).
+ */
+function SettingsRow({
+  icon,
+  tone = "neutral",
+  label,
+  caption,
+  below,
+  end,
+  chevron = false,
+  busy = false,
+  danger = false,
+  disabled = false,
+  onPress,
+}: SettingsRowProps) {
+  const colors = useThemeColors();
+  const tints = rowTints(colors);
+  const [pressed, setPressed] = useState(false);
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        row: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.md,
+          minHeight: 52,
+          paddingHorizontal: Space.lg,
+          paddingVertical: Space.sm,
+        },
+        rowPressed: { opacity: 0.6 },
+        rowDisabled: { opacity: 0.5 },
+        iconTile: {
+          width: 30,
+          height: 30,
+          borderRadius: 9,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        rowText: {
+          flex: 1,
+          gap: 2,
+        },
+        rowLabel: {
+          ...Type.body,
+          fontWeight: "600",
+          color: colors.ink,
+        },
+        dangerLabel: {
+          color: colors.danger,
+        },
+        rowCaption: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+        },
+        chipsBelow: {
+          flexDirection: "row",
+          flexWrap: "wrap",
+          gap: Space.xs,
+          marginTop: Space.xs,
+        },
+      }),
+    [colors],
+  );
+
+  const body = (
+    <>
+      {icon ? (
+        <View style={[styles.iconTile, { backgroundColor: tints[tone].bg }]}>
+          <Ionicons name={icon} size={17} color={tints[tone].fg} />
+        </View>
+      ) : null}
+      <View style={styles.rowText}>
+        <Text style={[styles.rowLabel, danger && styles.dangerLabel]}>
+          {label}
+        </Text>
+        {caption ? (
+          <Text style={styles.rowCaption} numberOfLines={2}>
+            {caption}
+          </Text>
+        ) : null}
+        {below ? <View style={styles.chipsBelow}>{below}</View> : null}
+      </View>
+      {busy ? (
+        <ActivityIndicator size="small" color={colors.accent} />
+      ) : end ? (
+        end
+      ) : chevron && onPress ? (
+        <Ionicons
+          name={I18nManager.isRTL ? "chevron-back" : "chevron-forward"}
+          size={18}
+          color={colors.inkFaint}
+        />
+      ) : null}
+    </>
+  );
+
+  if (!onPress) {
+    return <View style={styles.row}>{body}</View>;
+  }
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      disabled={disabled || busy}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      style={[
+        styles.row,
+        pressed ? styles.rowPressed : null,
+        disabled ? styles.rowDisabled : null,
+      ]}
+    >
+      {body}
+    </Pressable>
+  );
+}
+
+/**
+ * The Settings tab as a grouped list: one card per section, icon rows with
+ * hairline dividers, the control at the end of each row — the pattern every
+ * phone user already knows. Sections: Appearance (theme + language),
+ * Notifications (nudges), Data & storage (sync / clear), Account, and a
+ * plain about footer.
  */
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -71,7 +221,7 @@ export default function SettingsScreen() {
   const [nudgeOn, setNudgeOn] = useState(true);
   const [nudgeBlocked, setNudgeBlocked] = useState(false);
   const [nudgeUnavailable, setNudgeUnavailable] = useState(false);
-  /** Which sync option is running (null = idle) — drives its busy label. */
+  /** Which sync option is running (null = idle) — drives its busy spinner. */
   const [syncingOption, setSyncingOption] = useState<"quick" | "deep" | null>(
     null,
   );
@@ -94,32 +244,26 @@ export default function SettingsScreen() {
           paddingHorizontal: Space.lg,
           gap: Space.lg,
         },
-        section: {
-          gap: Space.sm,
+        groupCaption: {
+          ...Type.caption,
+          color: colors.inkFaint,
+          textTransform: "uppercase",
+          letterSpacing: 0.8,
+          marginBottom: -Space.xs,
         },
-        row: {
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: Space.md,
+        group: {
+          // Card already clips to its radius; rows run edge to edge.
         },
-        rowText: {
-          flex: 1,
-          gap: 2,
+        // Inset divider — starts at the row text so the icon column reads as
+        // one solid rail down the group (16 padding + 30 tile + 12 gap).
+        divider: {
+          height: StyleSheet.hairlineWidth,
+          backgroundColor: colors.hairline,
+          marginStart: 58,
         },
-        rowLabel: {
-          ...Type.title,
-          color: colors.ink,
-        },
-        rowCaption: {
-          ...Type.bodySm,
-          color: colors.inkSecondary,
-        },
-        themeRow: {
-          flexDirection: "row",
-          flexWrap: "wrap",
-          gap: Space.sm,
-          marginTop: Space.xs,
+        statusPad: {
+          paddingHorizontal: Space.lg,
+          paddingVertical: Space.sm,
         },
         blockedCaption: {
           ...Type.caption,
@@ -129,26 +273,9 @@ export default function SettingsScreen() {
           ...Type.caption,
           color: colors.success,
         },
-        signedInCaption: {
-          ...Type.caption,
-          color: colors.inkSecondary,
-        },
-        // Danger row: a plain Pressable (not a ghost Button) so the label can
-        // carry the danger color — visually distinct from "Sign out" above it.
-        deleteRow: {
-          alignSelf: "stretch",
-          paddingVertical: Space.sm,
-        },
-        deleteDisabled: {
-          opacity: 0.5,
-        },
-        deleteLabel: {
-          ...Type.title,
-          color: colors.danger,
-        },
-        deleteCaption: {
-          ...Type.bodySm,
-          color: colors.inkSecondary,
+        signInCard: {
+          padding: Space.lg,
+          gap: Space.sm,
         },
         aboutText: {
           ...Type.caption,
@@ -160,7 +287,7 @@ export default function SettingsScreen() {
   );
 
   // Refresh auth + the nudge preference whenever the screen gains focus, so
-  // the account row updates after returning from /login (sign-in / sign-out).
+  // the account rows update after returning from /login (sign-in / sign-out).
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
@@ -304,177 +431,184 @@ export default function SettingsScreen() {
       style={styles.container}
       contentContainerStyle={[
         styles.content,
-        { paddingBottom: insets.bottom + Space.xxl },
+        { paddingTop: 0, paddingBottom: insets.bottom + Space.xxl },
       ]}
     >
       <ScreenHeader title={t("tabs.settings")} />
 
-      {/* Appearance */}
-      <Card style={styles.section}>
-        <SectionHeader title={t("settings.appearance")} />
-        <Text style={styles.rowLabel}>{t("settings.theme")}</Text>
-        <View style={styles.themeRow}>
-          {THEME_OPTIONS.map(({ pref: option, labelKey }) => (
-            <IconPressable key={option} onPress={() => setThemePref(option)}>
-              <Chip
-                label={t(labelKey)}
-                tone={themePref === option ? "accent" : "neutral"}
-              />
-            </IconPressable>
-          ))}
-        </View>
-      </Card>
-
-      {/* Language */}
-      <Card style={styles.section}>
-        <SectionHeader
-          title={t("settings.language")}
-          subtitle={t("settings.languageCaption")}
-        />
-        <View style={styles.themeRow}>
-          {LANG_OPTIONS.map(({ pref: option, labelKey }) => (
-            <IconPressable key={option} onPress={() => setLangPref(option)}>
-              <Chip
-                label={t(labelKey)}
-                tone={langPref === option ? "accent" : "neutral"}
-              />
-            </IconPressable>
-          ))}
-        </View>
-      </Card>
-
-      {/* Notifications */}
-      <Card style={styles.section}>
-        <SectionHeader title={t("settings.notifications")} />
-        <View style={styles.row}>
-          <View style={styles.rowText}>
-            <Text style={styles.rowLabel}>{t("settings.nudges")}</Text>
-            <Text style={styles.rowCaption}>
-              {t("settings.nudgesCaption")}
-            </Text>
-          </View>
-          <Switch
-            value={nudgeOn}
-            onValueChange={handleNudgeToggle}
-            trackColor={{ false: colors.hairline, true: colors.accent }}
-            thumbColor={colors.surface}
+      {/* Appearance: theme + language as two rows of the same group. */}
+      <View>
+        <Text style={styles.groupCaption}>{t("settings.appearance")}</Text>
+        <Card padding={0} style={styles.group}>
+          <SettingsRow
+            icon="contrast"
+            tone="accent"
+            label={t("settings.theme")}
+            below={THEME_OPTIONS.map(({ pref: option, labelKey }) => (
+              <IconPressable
+                key={option}
+                onPress={() => setThemePref(option)}
+              >
+                <Chip
+                  label={t(labelKey)}
+                  tone={themePref === option ? "accent" : "neutral"}
+                />
+              </IconPressable>
+            ))}
           />
-        </View>
-        {nudgeBlocked ? (
-          <Text style={styles.blockedCaption}>
-            {t("settings.nudgesBlocked")}
-          </Text>
-        ) : null}
-        {nudgeUnavailable ? (
-          <Text style={styles.blockedCaption}>
-            {t("settings.nudgesUnavailable")}
-          </Text>
-        ) : null}
-      </Card>
-
-      {/* Data & storage */}
-      <Card style={styles.section}>
-        <SectionHeader title={t("settings.dataStorage")} />
-        <Text style={styles.rowLabel}>{t("settings.offlineLibrary")}</Text>
-        <Button
-          title={
-            syncingOption === "quick"
-              ? t("settings.syncing")
-              : t("settings.syncTop200")
-          }
-          variant="ghost"
-          onPress={() => handleSync(200)}
-          disabled={syncingOption != null || clearing}
-        />
-        <Button
-          title={
-            syncingOption === "deep"
-              ? t("settings.syncing")
-              : t("settings.syncDeep")
-          }
-          variant="ghost"
-          onPress={() => handleSync(1000)}
-          disabled={syncingOption != null || clearing}
-        />
-        <Button
-          title={clearing ? t("settings.clearing") : t("settings.clearCache")}
-          variant="ghost"
-          onPress={confirmClearCache}
-          disabled={clearing || syncingOption != null}
-        />
-        {syncDone ? (
-          <Text style={styles.doneCaption}>{t("settings.syncDone")}</Text>
-        ) : null}
-        {clearDone ? (
-          <Text style={styles.doneCaption}>{t("settings.clearDone")}</Text>
-        ) : null}
-      </Card>
-
-      {/* Account */}
-      <Card style={styles.section}>
-        <SectionHeader title={t("settings.account")} />
-        {authed === false ? (
-          <Button
-            title={t("common.signIn")}
-            onPress={() => router.push("/login")}
+          <View style={styles.divider} />
+          <SettingsRow
+            icon="language"
+            tone="timing"
+            label={t("settings.language")}
+            caption={t("settings.languageCaption")}
+            below={LANG_OPTIONS.map(({ pref: option, labelKey }) => (
+              <IconPressable key={option} onPress={() => setLangPref(option)}>
+                <Chip
+                  label={t(labelKey)}
+                  tone={langPref === option ? "accent" : "neutral"}
+                />
+              </IconPressable>
+            ))}
           />
-        ) : (
-          <>
-            {authed === true ? (
-              <Text style={styles.signedInCaption}>
-                {t("settings.signedIn")}
+        </Card>
+      </View>
+
+      {/* Notifications: the nudge switch. */}
+      <View>
+        <Text style={styles.groupCaption}>{t("settings.notifications")}</Text>
+        <Card padding={0} style={styles.group}>
+          <SettingsRow
+            icon="notifications"
+            tone="amber"
+            label={t("settings.nudges")}
+            caption={t("settings.nudgesCaption")}
+            end={
+              <Switch
+                value={nudgeOn}
+                onValueChange={handleNudgeToggle}
+                trackColor={{ false: colors.hairline, true: colors.accent }}
+                thumbColor={colors.surface}
+              />
+            }
+          />
+          {nudgeBlocked || nudgeUnavailable ? (
+            <View style={styles.statusPad}>
+              <Text style={styles.blockedCaption}>
+                {nudgeUnavailable
+                  ? t("settings.nudgesUnavailable")
+                  : t("settings.nudgesBlocked")}
               </Text>
-            ) : null}
-            {/* Profile entry to the signed-in user's profile screen. */}
+            </View>
+          ) : null}
+        </Card>
+      </View>
+
+      {/* Data & storage: sync options + clear, as tappable rows. */}
+      <View>
+        <Text style={styles.groupCaption}>{t("settings.dataStorage")}</Text>
+        <Card padding={0} style={styles.group}>
+          <SettingsRow
+            icon="cloud-download-outline"
+            tone="accent"
+            label={t("settings.syncTop200")}
+            chevron
+            busy={syncingOption === "quick"}
+            disabled={syncingOption != null && syncingOption !== "quick"}
+            onPress={() => handleSync(200)}
+          />
+          <View style={styles.divider} />
+          <SettingsRow
+            icon="cloud-download"
+            tone="accent"
+            label={t("settings.syncDeep")}
+            chevron
+            busy={syncingOption === "deep"}
+            disabled={syncingOption != null && syncingOption !== "deep"}
+            onPress={() => handleSync(1000)}
+          />
+          <View style={styles.divider} />
+          <SettingsRow
+            icon="trash-outline"
+            tone="danger"
+            danger
+            label={t("settings.clearCache")}
+            chevron
+            busy={clearing}
+            disabled={syncingOption != null}
+            onPress={confirmClearCache}
+          />
+          {syncDone || clearDone ? (
+            <View style={styles.statusPad}>
+              <Text style={styles.doneCaption}>
+                {clearDone ? t("settings.clearDone") : t("settings.syncDone")}
+              </Text>
+            </View>
+          ) : null}
+        </Card>
+      </View>
+
+      {/* Account: sign-in card when signed out; grouped rows when in. */}
+      <View>
+        <Text style={styles.groupCaption}>{t("settings.account")}</Text>
+        {authed === false ? (
+          <Card padding={0} style={styles.signInCard}>
             <Button
-              title={t("profile.title")}
-              variant="ghost"
+              title={t("common.signIn")}
+              onPress={() => router.push("/login")}
+            />
+          </Card>
+        ) : (
+          <Card padding={0} style={styles.group}>
+            <SettingsRow
+              icon="person-outline"
+              tone="accent"
+              label={t("profile.title")}
+              chevron
+              disabled={authed === null}
               onPress={() => router.push("/profile")}
             />
-            {/* Profile entry to the recipe composer (user-submitted recipes). */}
-            <Button
-              title={t("settings.newRecipe")}
-              variant="ghost"
+            <View style={styles.divider} />
+            <SettingsRow
+              icon="add-circle-outline"
+              tone="success"
+              label={t("settings.newRecipe")}
+              chevron
               onPress={() => router.push("/recipe-composer")}
             />
-            <Button
-              title={t("common.signOut")}
-              variant="ghost"
-              onPress={handleSignOut}
+            <View style={styles.divider} />
+            <SettingsRow
+              icon="log-out-outline"
+              tone="neutral"
+              label={t("common.signOut")}
+              chevron
               disabled={authed === null}
+              onPress={handleSignOut}
             />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t("settings.deleteAccount")}
+            <View style={styles.divider} />
+            <SettingsRow
+              icon="trash-outline"
+              tone="danger"
+              danger
+              label={t("settings.deleteAccount")}
+              caption={t("settings.deleteAccountHint")}
+              busy={deleting}
+              disabled={authed === null}
               onPress={confirmDeleteAccount}
-              disabled={deleting || authed === null}
-              style={[
-                styles.deleteRow,
-                deleting ? styles.deleteDisabled : null,
-              ]}
-            >
-              <View style={styles.rowText}>
-                <Text style={styles.deleteLabel}>
-                  {t("settings.deleteAccount")}
-                </Text>
-                <Text style={styles.deleteCaption}>
-                  {t("settings.deleteAccountHint")}
+            />
+            {deleteFailed ? (
+              <View style={styles.statusPad}>
+                <Text style={styles.blockedCaption}>
+                  {t("settings.deleteFailed")}
                 </Text>
               </View>
-            </Pressable>
-            {deleteFailed ? (
-              <Text style={styles.blockedCaption}>
-                {t("settings.deleteFailed")}
-              </Text>
             ) : null}
-          </>
+          </Card>
         )}
-      </Card>
+      </View>
 
-      {/* About — one compact centered row. */}
-      <Card padding={Space.md}>
-        <Text style={styles.aboutText}>{t("settings.about", { version })}</Text>
-      </Card>
+      {/* About — one plain centered footer line, no card. */}
+      <Text style={styles.aboutText}>{t("settings.about", { version })}</Text>
     </ScrollView>
   );
 }
