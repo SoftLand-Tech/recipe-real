@@ -39,3 +39,6 @@ export type { HeartButtonProps } from "./HeartButton";
 
 export { NoteBadge } from "./NoteBadge";
 export type { NoteBadgeProps } from "./NoteBadge";
+
+export { GoogleLogo } from "./GoogleLogo";
+export type { GoogleLogoProps } from "./GoogleLogo";
