@@ -29,7 +29,6 @@ import {
 import { Button, Badge, Chip, Card, IconPressable, StepDots } from "@/components/ui";
 import {
   useFmtMinutes,
-  useLang,
   useLocalizedRecipe,
   useT,
   stepTypeLabel,
@@ -122,7 +121,6 @@ export default function CookModeScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const t = useT();
-  const { dir } = useLang();
   const fmtMin = useFmtMinutes();
   const lr = useLocalizedRecipe();
 
@@ -172,15 +170,11 @@ export default function CookModeScreen() {
           ...Type.overline,
           color: colors.inkSecondary,
           textTransform: "uppercase",
-        },
-        headerTitle: {
-          ...Type.bodySm,
-          color: colors.inkFaint,
-          maxWidth: 120,
-          // Trailing-edge alignment (right in LTR, left in RTL) — the title
-          // sits at the end of the header row in both directions.
-          textAlign: dir === "rtl" ? "left" : "right",
-          flexShrink: 1,
+          // Sole text in the header row (the recipe title was removed): take
+          // the remaining width and center "STEP x / y" between the close
+          // button and the far edge.
+          flex: 1,
+          textAlign: "center",
         },
         // Dots
         dotsRow: {
@@ -207,6 +201,7 @@ export default function CookModeScreen() {
         },
         statusHint: {
           ...Type.caption,
+          fontSize: 15,
           color: colors.inkSecondary,
           textAlign: "center",
         },
@@ -216,7 +211,7 @@ export default function CookModeScreen() {
         stepDescription: {
           ...Type.body,
           fontSize: 17,
-          lineHeight: 24,
+          lineHeight: 26,
           color: colors.ink,
           // Default "auto" alignment follows the layout direction.
           textAlign: "auto",
@@ -331,7 +326,7 @@ export default function CookModeScreen() {
           textAlign: "center",
         },
       }),
-    [colors, dir],
+    [colors],
   );
 
   const [recipe, setRecipe] = useState<Recipe | null>(null);
@@ -963,7 +958,8 @@ export default function CookModeScreen() {
 
   return (
     <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
-      {/* Header */}
+      {/* Header — close ✕ + "STEP x / y" only (no recipe title: less on
+          screen, the step is the focus). */}
       <View style={styles.headerRow}>
         <IconPressable onPress={() => router.back()} hitSlop={Space.md}>
           <Text style={styles.closeGlyph}>✕</Text>
@@ -973,9 +969,6 @@ export default function CookModeScreen() {
             current: currentIndex + 1,
             total: steps.length,
           })}
-        </Text>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {lr.title(recipe)}
         </Text>
       </View>
 
@@ -1007,7 +1000,7 @@ export default function CookModeScreen() {
             >
               <Chip
                 tone={alarmArmedHere ? "accent" : "amber"}
-                size="sm"
+                size="md"
                 label={
                   alarmArmedHere
                     ? `${t("cook.alarmArmed")} · ${t("cook.alarmCancel")}`

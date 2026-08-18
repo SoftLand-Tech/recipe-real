@@ -19,7 +19,7 @@ export interface AvatarProps {
  * avatars 404/expire over time, so a load failure swaps back to the initial
  * instead of rendering a blank circle.
  */
-export function Avatar({ name, uri, size = 36 }: AvatarProps) {
+export function Avatar({ name, uri, size = 40 }: AvatarProps) {
   const colors = useThemeColors();
   // Remote avatar URIs expire — fall back to the initial circle on error.
   const [failed, setFailed] = useState(false);

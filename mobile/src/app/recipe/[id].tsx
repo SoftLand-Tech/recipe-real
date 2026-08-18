@@ -434,17 +434,24 @@ export default function RecipeDetailScreen() {
           paddingHorizontal: Space.sm,
           paddingVertical: Space.sm,
         },
-        paceRow: {
-          flexDirection: "row",
-          marginTop: Space.lg,
+        // ONE caption line under the two big stats: the total incl. cleanup
+        // and the "+ ~Xm cleanup after" note merged into a single muted line.
+        statCaption: {
+          ...Type.caption,
+          color: colors.inkSecondary,
+          marginTop: Space.sm,
         },
-        chipRow: {
+        // ONE compact info-chips row: reality badge, rating, personalized
+        // pace, and cleanup-factor chips share a single wrapping row — the
+        // same information with far less visual weight than stacked rows.
+        infoChipRow: {
           flexDirection: "row",
           flexWrap: "wrap",
+          alignItems: "center",
           gap: Space.xs,
-          marginTop: Space.lg,
+          marginTop: Space.md,
         },
-        // Source caption sitting next to the reality badge chip (same row).
+        // Source caption sitting inline at the end of the info chips row.
         realityCaption: {
           ...Type.caption,
           color: colors.inkFaint,
@@ -566,11 +573,6 @@ export default function RecipeDetailScreen() {
           fontWeight: "600",
           flexShrink: 1,
         },
-        timelineCleanupNote: {
-          ...Type.caption,
-          color: colors.inkSecondary,
-          marginTop: Space.xs,
-        },
         timelineList: {
           gap: Space.xs,
           marginTop: Space.md,
@@ -582,7 +584,7 @@ export default function RecipeDetailScreen() {
           alignItems: "flex-start",
           gap: Space.sm,
           paddingHorizontal: Space.sm,
-          paddingVertical: Space.sm,
+          paddingVertical: Space.md,
           borderRadius: Radius.md,
         },
         timelineRowPassive: {
@@ -622,7 +624,7 @@ export default function RecipeDetailScreen() {
           marginTop: Space.xxl,
         },
         bulletList: {
-          gap: Space.xs,
+          gap: Space.sm,
         },
         bulletRow: {
           flexDirection: "row",
@@ -1119,6 +1121,10 @@ export default function RecipeDetailScreen() {
       ? roundMin(reality.minutes)
       : (community ?? (quickDone ? roundMin(quickAvg) : null));
 
+  // "Really takes" big stat: reality copy → community consensus → publisher
+  // claim fallback, so the second stat never reads empty on sparse data.
+  const reallyTakes = cooksAvg ?? publisher;
+
   const totalInclCleanup =
     cookMinutes != null && cleanup != null ? cookMinutes + cleanup : null;
 
@@ -1565,7 +1571,11 @@ export default function RecipeDetailScreen() {
                   />
                 ) : null}
 
-                {/* 1. STAT GRID — publisher claim vs. cooks average (+ total). */}
+                {/* 1. TWO BIG STATS — "Recipe says" vs "Really takes"
+                    (reality → community → publisher fallback). Until a real
+                    figure exists the second cell becomes the quick-time CTA
+                    ("Be the first!"). Total-incl-cleanup + the cleanup note
+                    merge into ONE caption line underneath. */}
                 <View style={styles.statGrid}>
                   <View style={styles.statCell}>
                     <StatPill
@@ -1574,12 +1584,11 @@ export default function RecipeDetailScreen() {
                     />
                   </View>
                   <View style={styles.statCell}>
-                    {/* Community consensus; until one exists the cell becomes
-                        the quick-time CTA ("Be the first!"). */}
-                    {cooksAvg != null ? (
+                    {reallyTakes != null ? (
                       <StatPill
-                        label={t("detail.statCooksAvg")}
-                        value={fmtMin(cooksAvg)}
+                        label={t("detail.statReally")}
+                        value={fmtMin(reallyTakes)}
+                        tone="accent"
                       />
                     ) : (
                       <Pressable
@@ -1588,84 +1597,75 @@ export default function RecipeDetailScreen() {
                         hitSlop={Space.xs}
                       >
                         <StatPill
-                          label={t("detail.statCooksAvg")}
+                          label={t("detail.statReally")}
                           value={t("detail.beTheFirst")}
                           tone="accent"
                         />
                       </Pressable>
                     )}
                   </View>
-                  {cleanup != null ? (
-                    <View style={styles.statCell}>
-                      <StatPill
-                        label={t("detail.statTotalInclCleanup")}
-                        value={fmtMin(totalInclCleanup ?? 0)}
-                        tone="accent"
-                      />
-                    </View>
-                  ) : null}
                 </View>
-
-                {/* 1b. REALITY BADGE — how the best-known real time compares
-                    to the publisher's claim (only when a gap was computed),
-                    with the data-source caption beside it. */}
-                {reality != null && realityChip != null ? (
-                  <View style={styles.chipRow}>
-                    <Chip
-                      size="sm"
-                      tone={realityChip.tone}
-                      label={realityChip.label}
-                    />
-                    <Text style={styles.realityCaption}>
-                      {reality.source === "community"
-                        ? t("detail.realityFrom", { n: reality.samples })
-                        : t("detail.realityEstimate")}
-                    </Text>
-                  </View>
+                {cleanup != null && totalInclCleanup != null ? (
+                  <Text style={styles.statCaption} numberOfLines={1}>
+                    {`${t("detail.statTotalInclCleanup")} ~${fmtMin(totalInclCleanup)} · ${t("detail.cleanupAfter", { time: fmtMin(cleanup) })}`}
+                  </Text>
                 ) : null}
 
-                {/* 1c. RATING — compact "★ rating (N)" line when known. */}
-                {recipe.aggregated_rating != null ? (
-                  <View style={styles.chipRow}>
-                    <Chip
-                      tone="amber"
-                      size="sm"
-                      label={
-                        recipe.review_count != null && recipe.review_count > 0
-                          ? t("detail.ratingWithCount", {
-                              rating: recipe.aggregated_rating.toFixed(1),
-                              n: recipe.review_count,
-                            })
-                          : t("detail.ratingOnly", {
-                              rating: recipe.aggregated_rating.toFixed(1),
-                            })
-                      }
-                    />
-                  </View>
-                ) : null}
-
-                {/* 2. YOUR PACE */}
-                {personalTotal != null ? (
-                  <View style={styles.paceRow}>
-                    <Chip
-                      tone="accent"
-                      label={t("detail.yourPace", {
-                        time: fmtMin(personalTotal),
-                      })}
-                    />
-                  </View>
-                ) : null}
-
-                {/* 3. CLEANUP CHIPS */}
-                {chips.length > 0 ? (
-                  <View style={styles.chipRow}>
+                {/* 1b. INFO CHIPS — reality badge, rating, personalized pace
+                    and cleanup factors share ONE compact wrapping row (same
+                    information, smaller visual weight), with the data-source
+                    caption inline at the end. */}
+                {realityChip != null ||
+                recipe.aggregated_rating != null ||
+                personalTotal != null ||
+                chips.length > 0 ? (
+                  <View style={styles.infoChipRow}>
+                    {realityChip != null ? (
+                      <Chip
+                        size="sm"
+                        tone={realityChip.tone}
+                        label={realityChip.label}
+                      />
+                    ) : null}
+                    {recipe.aggregated_rating != null ? (
+                      <Chip
+                        tone="amber"
+                        size="sm"
+                        label={
+                          recipe.review_count != null && recipe.review_count > 0
+                            ? t("detail.ratingWithCount", {
+                                rating: recipe.aggregated_rating.toFixed(1),
+                                n: recipe.review_count,
+                              })
+                            : t("detail.ratingOnly", {
+                                rating: recipe.aggregated_rating.toFixed(1),
+                              })
+                        }
+                      />
+                    ) : null}
+                    {personalTotal != null ? (
+                      <Chip
+                        tone="accent"
+                        size="sm"
+                        label={t("detail.yourPace", {
+                          time: fmtMin(personalTotal),
+                        })}
+                      />
+                    ) : null}
                     {chips.map((label) => (
                       <Chip key={label} tone="neutral" label={label} size="sm" />
                     ))}
+                    {reality != null && realityChip != null ? (
+                      <Text style={styles.realityCaption}>
+                        {reality.source === "community"
+                          ? t("detail.realityFrom", { n: reality.samples })
+                          : t("detail.realityEstimate")}
+                      </Text>
+                    ) : null}
                   </View>
                 ) : null}
 
-                {/* 4. INGREDIENTS — structured "½ cup | brown sugar, packed"
+                {/* 2. INGREDIENTS — structured "½ cup | brown sugar, packed"
                     rows when the parsed data lines up, plain bullets otherwise. */}
                 <View style={styles.section}>
                   <SectionHeader title={t("detail.ingredients")} />
@@ -1711,7 +1711,7 @@ export default function RecipeDetailScreen() {
                   )}
                 </View>
 
-                {/* 5. WHEN'S DINNER READY? — start-now timeline + eat-at
+                {/* 3. WHEN'S DINNER READY? — start-now timeline + eat-at
                     planner: the two-way headline swaps between "Start now →
                     eating at ~X" (now-mode) and "Eating at X — start by Y"
                     (plan-mode, timeline reanchored to the chosen time). */}
@@ -1774,11 +1774,6 @@ export default function RecipeDetailScreen() {
                         />
                       </View>
                     ) : null}
-                    {cleanup != null && cleanup > 0 ? (
-                      <Text style={styles.timelineCleanupNote}>
-                        {t("detail.cleanupAfter", { time: fmtMin(cleanup) })}
-                      </Text>
-                    ) : null}
                     <View style={styles.timelineList}>
                       {timelineRows.map(({ step }) => {
                         const passive = step.step_type === "passive";
@@ -1839,7 +1834,7 @@ export default function RecipeDetailScreen() {
                 ) : null}
 
 
-                {/* 6. STEPS (fallback) — only for recipes without structured
+                {/* 4. STEPS (fallback) — only for recipes without structured
                     recipe_steps: plain numbered list. Structured recipes get
                     their full steps inside the timeline above. */}
                 {steps.length === 0 && lr.steps(recipe).length > 0 ? (
@@ -1944,7 +1939,7 @@ export default function RecipeDetailScreen() {
                   </Pressable>
                 )}
 
-                {/* 7. YOUR NOTES — personal tweaks, kept on this device. */}
+                {/* 5. YOUR NOTES — personal tweaks, kept on this device. */}
                 <View style={styles.section}>
                   <SectionHeader
                     title={t("detail.yourNotes")}
@@ -2008,7 +2003,7 @@ export default function RecipeDetailScreen() {
                   </View>
                 </View>
 
-                {/* 8. COMMUNITY NOTES — public tips from other cooks, paginated
+                {/* 6. COMMUNITY NOTES — public tips from other cooks, paginated
                     20/page with a "load more" ghost button. Signed-in users get
                     a compose row; a 401 there shows a sign-in prompt instead. */}
                 <View style={styles.section}>

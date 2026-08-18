@@ -18,7 +18,9 @@ export function SectionHeader({ title, subtitle, action }: SectionHeaderProps) {
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
-          marginBottom: Space.sm,
+          // Breathing room below the header so the section content that
+          // follows reads as a calmer, lower-density block.
+          marginBottom: Space.md,
         },
         text: {
           flex: 1,

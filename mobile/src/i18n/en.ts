@@ -441,4 +441,7 @@ export const en: Record<string, string> = {
   "profile.statNotes": "Public notes",
   "profile.myRecipes": "My recipes",
   "profile.noRecipes": "You haven't published a recipe yet.",
+
+  // ---- Recipe detail (declutter additions; appended at the end) -------------
+  "detail.statReally": "Really takes",
 };

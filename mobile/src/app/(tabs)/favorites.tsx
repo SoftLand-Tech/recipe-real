@@ -153,7 +153,7 @@ export default function FavoritesScreen() {
           color: colors.ink,
         },
         emptyCaption: {
-          ...Type.bodySm,
+          ...Type.body,
           color: colors.inkSecondary,
           textAlign: "center",
         },
@@ -169,11 +169,13 @@ export default function FavoritesScreen() {
           color: colors.inkSecondary,
           textAlign: "center",
         },
+        // Matches the favorites grid rhythm (Space.lg) so both sections read
+        // as one consistent list cadence.
         notesSection: {
-          gap: Space.md,
+          gap: Space.lg,
         },
         notesList: {
-          gap: Space.md,
+          gap: Space.lg,
         },
         noteRow: {
           flexDirection: "row",
@@ -189,7 +191,7 @@ export default function FavoritesScreen() {
           color: colors.ink,
         },
         noteSnippet: {
-          ...Type.bodySm,
+          ...Type.body,
           color: colors.inkSecondary,
         },
         noteDate: {
@@ -335,7 +337,7 @@ export default function FavoritesScreen() {
             <NoteBadge show={noteIds.has(item.id)} />
           </View>
           <View style={styles.cardBody}>
-            <Text style={styles.cardTitle} numberOfLines={2}>
+            <Text style={styles.cardTitle} numberOfLines={3}>
               {lr.title(item)}
             </Text>
             <View style={styles.cardChips}>
@@ -451,7 +453,7 @@ export default function FavoritesScreen() {
                         <Text style={styles.noteTitle} numberOfLines={1}>
                           {lr.title(recipe)}
                         </Text>
-                        <Text style={styles.noteSnippet} numberOfLines={2}>
+                        <Text style={styles.noteSnippet} numberOfLines={3}>
                           {note}
                         </Text>
                       </View>

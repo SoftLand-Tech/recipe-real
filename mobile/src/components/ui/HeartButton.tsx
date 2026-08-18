@@ -9,11 +9,11 @@ import { IconPressable } from "./IconPressable";
 export interface HeartButtonProps {
   favorited: boolean;
   onPress: () => void;
-  /** sm = 30px list-card overlay; lg = 38px detail-hero overlay. */
+  /** sm = 34px list-card overlay; lg = 42px detail-hero overlay. */
   size?: "sm" | "lg";
 }
 
-const DIMENSIONS = { sm: 30, lg: 38 } as const;
+const DIMENSIONS = { sm: 34, lg: 42 } as const;
 
 /**
  * The heart overlay used on recipe cards and the detail hero. Sits over
@@ -30,7 +30,7 @@ export function HeartButton({ favorited, onPress, size = "sm" }: HeartButtonProp
   return (
     <IconPressable
       onPress={onPress}
-      hitSlop={8}
+      hitSlop={10}
       style={[
         styles.base,
         dir === "rtl" ? styles.baseRtl : styles.baseLtr,

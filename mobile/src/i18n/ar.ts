@@ -435,4 +435,7 @@ export const ar: Record<string, string> = {
   "profile.statNotes": "ملاحظات عامة",
   "profile.myRecipes": "وصفاتي",
   "profile.noRecipes": "لم تنشر أي وصفة بعد.",
+
+  // ---- إضافات صفحة الوصفة (التقليل من العناصر؛ تُضاف في النهاية) -------------
+  "detail.statReally": "يستغرق فعليًا",
 };

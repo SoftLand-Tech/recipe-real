@@ -88,25 +88,6 @@ function railsWithDefaults(rails: Partial<HomeRails>): HomeRails {
 const REFRESH_SPINNER_MAX_MS = 10_000;
 
 /**
- * Rough "hands-off" score for a recipe: the summed community minutes of its
- * passive steps when steps are hydrated, else ~40% of the best-known total
- * (community avg with publisher fallback — long-cooking recipes are mostly
- * passive). `getCachedRecipes()` does not hydrate recipe_steps, so in
- * practice the fallback drives the ordering — the step sum takes over
- * automatically wherever steps are present.
- */
-function passiveScore(recipe: Recipe): number {
-  if (Array.isArray(recipe.recipe_steps) && recipe.recipe_steps.length > 0) {
-    return recipe.recipe_steps.reduce(
-      (sum, step) =>
-        step.step_type === "passive" ? sum + (step.community_minutes ?? 0) : sum,
-      0,
-    );
-  }
-  return (recipeMinutes(recipe) ?? 0) * 0.4;
-}
-
-/**
  * Cheap content fingerprint of a recipe list. Background reloads from the
  * cache return fresh object identities even when nothing changed; comparing
  * fingerprints lets us keep the previous array (and its render identities).
@@ -208,7 +189,7 @@ export default function HomeScreen() {
           fontWeight: "700",
         },
         skeletonCard: {
-          width: 160,
+          width: 170,
         },
       }),
     [colors],
@@ -229,41 +210,6 @@ export default function HomeScreen() {
       )
       .slice(0, RAIL_SIZE);
   }, [recipes]);
-
-  const easyWins = useMemo(
-    () =>
-      recipes
-        .filter((r) => {
-          const m = recipeMinutes(r);
-          return m != null && m <= 30;
-        })
-        .sort((a, b) => (recipeMinutes(a) ?? 0) - (recipeMinutes(b) ?? 0))
-        .slice(0, RAIL_SIZE),
-    [recipes],
-  );
-
-  const handsOffHeroes = useMemo(
-    () =>
-      recipes
-        .map((recipe) => ({ recipe, score: passiveScore(recipe) }))
-        .filter(({ score }) => score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, RAIL_SIZE)
-        .map(({ recipe }) => recipe),
-    [recipes],
-  );
-
-  const quickCleanup = useMemo(
-    () =>
-      recipes
-        .filter((r) => r.cleanup_avg_minutes != null)
-        .sort(
-          (a, b) =>
-            (a.cleanup_avg_minutes ?? 0) - (b.cleanup_avg_minutes ?? 0),
-        )
-        .slice(0, RAIL_SIZE),
-    [recipes],
-  );
 
   // ---- Cache load: same progressive skeleton as the Browse tab -------------
 
@@ -545,6 +491,11 @@ export default function HomeScreen() {
 
         {serverRails != null ? (
           // ---- Server-driven rails (GET /api/home + reality rail) ----
+          // DECLUTTERED: only three rails render — reality ("Most
+          // underestimated"), "Top rated", and "Browse by craving". The
+          // easy-wins / most-loved / hands-off rails are still FETCHED and
+          // mirrored (the HomeRails payload shape is untouched); they are
+          // simply not rendered (fewer choices on screen).
           <>
             {/* Reality rail first — hidden silently when the reality fetch
                 failed (HomeRail renders null for empty items). */}
@@ -559,22 +510,6 @@ export default function HomeScreen() {
               items={serverRails.top_rated}
               noteIds={noteIds}
             />
-            <HomeRail
-              title={t("home.easyWins")}
-              items={serverRails.easy_wins}
-              noteIds={noteIds}
-            />
-            <HomeRail
-              title={t("home.railMostLoved")}
-              items={serverRails.most_loved}
-              noteIds={noteIds}
-            />
-            <HomeRail
-              title={t("home.handsOffHeroes")}
-              subtitle={t("home.handsOffSubtitle")}
-              items={serverRails.hands_off}
-              noteIds={noteIds}
-            />
             <CategoryRail
               chips={cravingChips}
               onCategoryPress={handleCategoryPress}
@@ -584,22 +519,6 @@ export default function HomeScreen() {
           // ---- Fallback: rails computed over the offline cache ----
           <>
             <HomeRail title={t("home.topPicks")} items={topPicks} noteIds={noteIds} />
-            <HomeRail
-              title={t("home.easyWins")}
-              items={easyWins}
-              noteIds={noteIds}
-            />
-            <HomeRail
-              title={t("home.handsOffHeroes")}
-              subtitle={t("home.handsOffSubtitle")}
-              items={handsOffHeroes}
-              noteIds={noteIds}
-            />
-            <HomeRail
-              title={t("home.quickCleanup")}
-              items={quickCleanup}
-              noteIds={noteIds}
-            />
             <CategoryRail
               chips={cravingChips}
               onCategoryPress={handleCategoryPress}
@@ -662,15 +581,14 @@ function HomeCard({ item, hasNote }: { item: Recipe; hasNote: boolean }) {
     () =>
       StyleSheet.create({
         card: {
-          width: 160,
+          width: 170,
         },
         body: {
-          padding: Space.sm,
-          gap: Space.xs,
+          padding: Space.md,
+          gap: Space.sm,
         },
         title: {
-          ...Type.bodySm,
-          fontWeight: "600",
+          ...Type.title,
           color: colors.ink,
         },
         chips: {
@@ -704,7 +622,7 @@ function HomeCard({ item, hasNote }: { item: Recipe; hasNote: boolean }) {
       style={styles.card}
     >
       <View>
-        <HeroImage uri={item.image_url} height={110} rounded={Radius.lg} />
+        <HeroImage uri={item.image_url} height={120} rounded={Radius.lg} />
         <NoteBadge show={hasNote} />
         {realityGap != null ? (
           <View style={styles.realityChip} pointerEvents="none">
@@ -756,7 +674,7 @@ function HomeRail({
     () =>
       StyleSheet.create({
         section: {
-          marginBottom: Space.md,
+          marginBottom: Space.lg,
         },
         sectionHeaderPad: {
           paddingHorizontal: Space.lg,
@@ -810,7 +728,7 @@ function CategoryRail({
     () =>
       StyleSheet.create({
         section: {
-          marginBottom: Space.md,
+          marginBottom: Space.lg,
         },
         sectionHeaderPad: {
           paddingHorizontal: Space.lg,
@@ -853,7 +771,7 @@ function SkeletonRail() {
     () =>
       StyleSheet.create({
         section: {
-          marginBottom: Space.md,
+          marginBottom: Space.lg,
         },
         sectionHeaderPad: {
           paddingHorizontal: Space.lg,
@@ -863,7 +781,7 @@ function SkeletonRail() {
           gap: Space.md,
         },
         card: {
-          width: 160,
+          width: 170,
         },
       }),
     [],

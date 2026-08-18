@@ -313,9 +313,11 @@ export default function PaceScreen() {
           color: colors.ink,
         },
         multiplier: {
-          ...Type.body,
+          // The headline value of the card: title-size and bold so it reads
+          // as the number that matters (elderly-first hierarchy).
+          ...Type.title,
+          fontWeight: "700",
           color: colors.ink,
-          fontWeight: "500",
         },
         historySection: {
           marginTop: Space.lg,
@@ -338,8 +340,7 @@ export default function PaceScreen() {
           gap: 2,
         },
         historyTitle: {
-          ...Type.body,
-          fontWeight: "600",
+          ...Type.title,
           color: colors.ink,
         },
         historyDate: {
@@ -569,7 +570,7 @@ export default function PaceScreen() {
                             ? fmtMin(entry.actualMinutes)
                             : "—"}
                         </Text>
-                        <Chip label={chip.label} tone={chip.tone} size="sm" />
+                        <Chip label={chip.label} tone={chip.tone} size="md" />
                       </View>
                     </View>
                   </Card>

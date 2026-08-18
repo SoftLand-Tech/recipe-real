@@ -21,20 +21,22 @@ function variantContent(
   colors: ThemeColors,
 ): Record<
   NonNullable<ButtonProps["variant"]>,
-  { bg: string; fg: string; pressedBg: string }
+  { bg: string; fg: string; pressedBg: string; labelWeight: "600" | "700" }
 > {
   return {
     primary: {
       bg: colors.accent,
       fg: colors.surface,
       pressedBg: colors.accentPress,
+      labelWeight: "700",
     },
     secondary: {
       bg: colors.surfaceSoft,
       fg: colors.ink,
       pressedBg: colors.hairlineStrong,
+      labelWeight: "600",
     },
-    ghost: { bg: "transparent", fg: colors.ink, pressedBg: colors.surfaceSoft },
+    ghost: { bg: "transparent", fg: colors.ink, pressedBg: colors.surfaceSoft, labelWeight: "600" },
   };
 }
 
@@ -64,13 +66,18 @@ export function Button({
           justifyContent: "center",
           borderRadius: 999,
         },
+        // Touch-target minimums: md ≈ 54px tall, lg ≈ 62px tall (labels are
+        // 17/19 with generous vertical padding) — comfortable for elderly and
+        // low-tech users. minHeight guarantees the floor even with tiny labels.
         sizeMd: {
-          paddingVertical: Space.md,
+          paddingVertical: Space.lg,
           paddingHorizontal: Space.xl,
+          minHeight: 54,
         },
         sizeLg: {
-          paddingVertical: Space.lg,
+          paddingVertical: Space.xl,
           paddingHorizontal: Space.xxl,
+          minHeight: 62,
         },
         // alignSelf stretch (not width: "100%") — percentage widths on Pressables
         // collapsed painting on some Android devices; stretch is resolved by the
@@ -79,7 +86,7 @@ export function Button({
           alignSelf: "stretch",
         },
         disabled: {
-          opacity: 0.5,
+          opacity: 0.45,
         },
         // Opacity is the pressed workhorse: it's GPU-composited, so unlike a
         // background-color swap (which some Android devices fail to repaint,
@@ -90,7 +97,6 @@ export function Button({
           opacity: 0.75,
         },
         label: {
-          fontWeight: "600",
           textAlign: "center",
         },
         labelMd: { fontSize: Type.body.fontSize },
@@ -122,9 +128,11 @@ export function Button({
       ]}
     >
       {loading ? (
+        // 24dp spinner: bigger than "small" (20) to match the enlarged
+        // buttons, without swallowing them like "large" (36) would.
         <ActivityIndicator
           color={variant === "primary" ? colors.surface : colors.accent}
-          size="small"
+          size={24}
         />
       ) : (
         <>
@@ -132,7 +140,7 @@ export function Button({
           <Text
             style={[
               styles.label,
-              { color: tone.fg },
+              { color: tone.fg, fontWeight: tone.labelWeight },
               large ? styles.labelLg : styles.labelMd,
             ]}
             numberOfLines={1}

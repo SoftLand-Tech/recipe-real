@@ -86,20 +86,13 @@ type ListFilter =
 /** Advanced sort options (applied after all filters). */
 type SortMode = "default" | "fastest" | "cleanup";
 
-/** Total-time cap options (community avg with publisher fallback; null = Any). */
+/** Total-time cap options (community avg with publisher fallback; null = Any).
+ *  DECLUTTERED: the ≤ 15 option was dropped — Any/≤30/≤45/≤60 is enough. */
 const TIME_FILTERS = [
   { max: null, labelKey: "filter.any" },
-  { max: 15, labelKey: "filter.time15" },
   { max: 30, labelKey: "filter.time30" },
   { max: 45, labelKey: "filter.time45" },
   { max: 60, labelKey: "filter.time60" },
-] as const;
-
-/** Cleanup cap options (cleanup_avg_minutes; null = Any). */
-const CLEANUP_FILTERS = [
-  { max: null, labelKey: "filter.any" },
-  { max: 15, labelKey: "filter.cleanupLow" },
-  { max: 10, labelKey: "filter.cleanupVeryLow" },
 ] as const;
 
 const SORT_MODES = [
@@ -107,6 +100,9 @@ const SORT_MODES = [
   { mode: "fastest", labelKey: "filter.sortFastest" },
   { mode: "cleanup", labelKey: "filter.sortLeastCleanup" },
 ] as const;
+
+/** Visible category chips (DECLUTTERED: capped so the row stays one glance). */
+const CATEGORY_CHIP_LIMIT = 8;
 
 /** Debounce for search/filter changes before hitting the server. */
 const SEARCH_DEBOUNCE_MS = 350;
@@ -274,9 +270,11 @@ function createStyles(colors: ThemeColors) {
       borderColor: colors.hairline,
       borderRadius: Radius.pill,
       paddingHorizontal: Space.md,
+      // Taller touch-and-read target for elderly / low-tech users.
+      minHeight: 56,
     },
     searchGlyph: {
-      fontSize: 16,
+      fontSize: 18,
       color: colors.inkFaint,
       // marginEnd so the gap follows the layout direction in RTL.
       marginEnd: Space.xs,
@@ -628,20 +626,20 @@ const ChipRow = memo(function ChipRow({
 });
 
 /**
- * The advanced-filters card (total time / cleanup / sort + clear all).
+ * The advanced-filters card (total time / sort + clear all).
  * Memoized: the setters are stable state setters, so it re-renders only when
  * its own filter values change — never for list churn or panel toggling.
- * Total time + fastest sort round-trip through the server search; the
- * cleanup filter/sort (no server equivalent) is applied client-side over the
- * loaded pages. The header row (title + explicit X) makes the open state and
- * how to close it unmistakable; "Clear all" is a full-width ghost button at
- * the BOTTOM, rendered only while any advanced filter is active.
+ * Total time + fastest sort round-trip through the server search. The cleanup
+ * filter/sort (no server equivalent) still applies client-side over the
+ * loaded pages when armed by state, but its chip row was removed from the
+ * panel — one less decision on screen (fewer choices, same mechanics).
+ * The header row (title + explicit X) makes the open state and how to close
+ * it unmistakable; "Clear all" is a full-width ghost button at the BOTTOM,
+ * rendered only while any advanced filter is active.
  */
 interface FilterPanelProps {
   timeMax: number | null;
   onTimeMaxChange: (max: number | null) => void;
-  cleanupMax: number | null;
-  onCleanupMaxChange: (max: number | null) => void;
   sortMode: SortMode;
   onSortModeChange: (mode: SortMode) => void;
   onClearAll: () => void;
@@ -652,8 +650,6 @@ interface FilterPanelProps {
 const FilterPanel = memo(function FilterPanel({
   timeMax,
   onTimeMaxChange,
-  cleanupMax,
-  onCleanupMaxChange,
   sortMode,
   onSortModeChange,
   onClearAll,
@@ -662,8 +658,7 @@ const FilterPanel = memo(function FilterPanel({
 }: FilterPanelProps) {
   const t = useT();
   const colors = useThemeColors();
-  const hasActive =
-    timeMax != null || cleanupMax != null || sortMode !== "default";
+  const hasActive = timeMax != null || sortMode !== "default";
   return (
     <Card style={styles.filterPanel}>
       <View style={styles.panelHeader}>
@@ -688,23 +683,6 @@ const FilterPanel = memo(function FilterPanel({
                 label={t(option.labelKey)}
                 size="sm"
                 tone={timeMax === option.max ? "accent" : "neutral"}
-              />
-            </IconPressable>
-          ))}
-        </View>
-      </View>
-      <View style={styles.panelGroup}>
-        <Text style={styles.panelLabel}>{t("filter.cleanup")}</Text>
-        <View style={styles.panelChips}>
-          {CLEANUP_FILTERS.map((option) => (
-            <IconPressable
-              key={`cleanup-${option.max ?? "any"}`}
-              onPress={() => onCleanupMaxChange(option.max)}
-            >
-              <Chip
-                label={t(option.labelKey)}
-                size="sm"
-                tone={cleanupMax === option.max ? "accent" : "neutral"}
               />
             </IconPressable>
           ))}
@@ -783,7 +761,7 @@ const RecipeCard = memo(function RecipeCard({
         <NoteBadge show={hasNote} />
       </View>
       <View style={styles.cardBody}>
-        <Text style={styles.cardTitle} numberOfLines={2}>
+        <Text style={styles.cardTitle} numberOfLines={3}>
           {lr.title(item)}
         </Text>
         <View style={styles.cardChips}>
@@ -1244,8 +1222,10 @@ export default function BrowseScreen() {
   }, []);
 
   const chips = useMemo(() => {
-    if (serverChips != null) return serverChips;
-    return CATEGORIES.map((c) => ({ id: c.id, label: categoryLabel(c.id) }));
+    const source =
+      serverChips ??
+      CATEGORIES.map((c) => ({ id: c.id, label: categoryLabel(c.id) }));
+    return source.slice(0, CATEGORY_CHIP_LIMIT);
   }, [serverChips]);
 
   useEffect(() => {
@@ -1484,8 +1464,6 @@ export default function BrowseScreen() {
         <FilterPanel
           timeMax={timeMax}
           onTimeMaxChange={setTimeMax}
-          cleanupMax={cleanupMax}
-          onCleanupMaxChange={setCleanupMax}
           sortMode={sortMode}
           onSortModeChange={setSortMode}
           onClearAll={handleClearAdvanced}

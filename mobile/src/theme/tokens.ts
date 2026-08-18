@@ -6,7 +6,8 @@ export const Color = {
   hairlineStrong: "#E0D5C5",
   ink: "#241D17",
   inkSecondary: "#6E6357",
-  inkFaint: "#9C9082",
+  // Darkened from #9C9082 — too low-contrast for text on canvas.
+  inkFaint: "#857A6D",
   accent: "#BF552B",
   accentPress: "#A4471F",
   accentSoft: "#F8E9DE",
@@ -27,7 +28,9 @@ export const StepTone: Record<string, { bg: string; fg: string }> = {
   default: { bg: "#F4EFE7", fg: "#6E6357" },
 };
 
-export const Space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 24, huge: 32, mega: 48 } as const;
+// `tap` = touch-target spacer (48px-min era); alias of md so existing rhythm
+// is preserved while tappable rows can be tuned independently.
+export const Space = { xs: 4, sm: 8, md: 12, tap: 12, lg: 16, xl: 20, xxl: 24, huge: 32, mega: 48 } as const;
 export const Radius = { sm: 8, md: 12, lg: 16, xl: 22, pill: 999 } as const;
 
 export const Shadow = {
@@ -35,16 +38,18 @@ export const Shadow = {
   floating: { shadowColor: "#3A2A1F", shadowOpacity: 0.1, shadowRadius: 18, shadowOffset: { width: 0, height: 6 }, elevation: 5 },
 } as const;
 
+// Accessibility-first scale (elderly / low-tech users): large base text,
+// nothing meant for body reading below ~13, strong hierarchy steps.
 export const Type = {
-  timer: { fontSize: 72, fontWeight: "800", fontVariant: ["tabular-nums"] as ("tabular-nums")[], letterSpacing: 1 },
-  h1: { fontSize: 28, fontWeight: "700" },
-  h2: { fontSize: 22, fontWeight: "700" },
-  h3: { fontSize: 18, fontWeight: "700" },
-  title: { fontSize: 17, fontWeight: "600" },
-  body: { fontSize: 15, fontWeight: "400", lineHeight: 22 },
-  bodySm: { fontSize: 13, fontWeight: "400", lineHeight: 18 },
-  caption: { fontSize: 12, fontWeight: "500" },
-  overline: { fontSize: 11, fontWeight: "700", letterSpacing: 1 },
+  timer: { fontSize: 76, fontWeight: "800", fontVariant: ["tabular-nums"] as ("tabular-nums")[], letterSpacing: 1 },
+  h1: { fontSize: 30, fontWeight: "700" },
+  h2: { fontSize: 26, fontWeight: "700" },
+  h3: { fontSize: 21, fontWeight: "700" },
+  title: { fontSize: 19, fontWeight: "600" },
+  body: { fontSize: 17, fontWeight: "400", lineHeight: 25 },
+  bodySm: { fontSize: 14, fontWeight: "400", lineHeight: 20 },
+  caption: { fontSize: 13.5, fontWeight: "500" },
+  overline: { fontSize: 12, fontWeight: "700", letterSpacing: 1 },
 } as const;
 
 export const MaxContentWidth = 720;

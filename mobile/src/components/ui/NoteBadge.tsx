@@ -22,7 +22,7 @@ export function NoteBadge({ show }: NoteBadgeProps) {
   if (!show) return null;
   return (
     <View style={[styles.base, dir === "rtl" ? styles.baseRtl : styles.baseLtr]}>
-      <Ionicons name="pencil" size={12} color="#FFFFFF" />
+      <Ionicons name="pencil" size={14} color="#FFFFFF" />
     </View>
   );
 }
@@ -31,8 +31,8 @@ const styles = StyleSheet.create({
   base: {
     position: "absolute",
     top: Space.sm,
-    width: 22,
-    height: 22,
+    width: 26,
+    height: 26,
     borderRadius: Radius.pill,
     backgroundColor: "rgba(0,0,0,0.35)",
     alignItems: "center",

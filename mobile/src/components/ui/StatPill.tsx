@@ -20,13 +20,14 @@ export function StatPill({ label, value, tone = "neutral" }: StatPillProps) {
         label: {
           color: colors.inkSecondary,
           fontWeight: "700",
-          letterSpacing: 0.5,
+          letterSpacing: 0.4,
           textTransform: "uppercase",
-          fontSize: 11,
+          fontSize: Type.caption.fontSize,
           marginBottom: Space.xs,
         },
         value: {
           ...Type.title,
+          fontWeight: "700",
           color: colors.ink,
         },
         valueAccent: {
