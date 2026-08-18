@@ -1,18 +1,26 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { fetchCategories, fetchHomeRails, fetchRealityRail } from "@/api/client";
+import {
+  fetchCategories,
+  fetchHomeRails,
+  fetchRealityRail,
+  searchRecipes,
+} from "@/api/client";
+import { isOfflineError } from "@/api/http";
 import { track } from "@/analytics";
 import {
   countCachedRecipes,
@@ -46,6 +54,18 @@ const RAIL_SIZE = 10;
 
 /** Craving chips rendered in the "Browse by craving" rail. */
 const CRAVING_CHIP_LIMIT = 12;
+
+/** Debounce for the hero's inline search before hitting the server. */
+const HERO_SEARCH_DEBOUNCE_MS = 350;
+
+/** Minimum trimmed chars before the hero search fires. */
+const HERO_SEARCH_MIN_CHARS = 2;
+
+/** Page size for the hero's inline search result row. */
+const HERO_SEARCH_PER_PAGE = 8;
+
+/** Snap interval of the hero results row: rail card width (160) + gutter. */
+const HERO_SEARCH_SNAP_INTERVAL = 160 + Space.md;
 
 /** Mirror of the last successful /api/home payload for instant paint. */
 const HOME_RAILS_KEY = "recipereal.homeRails";
@@ -209,6 +229,18 @@ export default function HomeScreen() {
       )
       .slice(0, RAIL_SIZE);
   }, [recipes]);
+
+  // "Surprise me" pool: the first 10 of whichever top-rated rail is live
+  // (the server rails when loaded, else the cached top picks) — the chip
+  // stays disabled until this has entries.
+  const surprisePool = useMemo(
+    () =>
+      (serverRails != null ? serverRails.top_rated : topPicks).slice(
+        0,
+        RAIL_SIZE,
+      ),
+    [serverRails, topPicks],
+  );
 
   // ---- Cache load: same progressive skeleton as the Browse tab -------------
 
@@ -454,7 +486,7 @@ export default function HomeScreen() {
           />
         }
       >
-        <HomeHero />
+        <HomeHero topRated={surprisePool} noteIds={noteIds} />
 
         {showSkeletons && (
           <SkeletonRail />
@@ -530,16 +562,38 @@ export default function HomeScreen() {
 
 /**
  * The hero "what do you want to cook?" moment at the top of Home: headline,
- * a BIG tappable search field (routes to Browse with focus=1 so Browse
- * focuses its search input), and three quick filter chips that land in
- * Browse already filtered (same `filter` param contract as the craving
- * chips). Replaces the old ScreenHeader and carries the top safe-area
- * inset itself.
+ * a BIG live search field (debounced server search — results render as a
+ * snap-scroll row of the SAME HomeCard the rails use, directly under the
+ * field inside the panel), and quick filter chips that land in Browse
+ * already filtered (same `filter` param contract as the craving chips).
+ * The chips hide while search results are showing and return when the
+ * field is cleared. Replaces the old ScreenHeader and carries the top
+ * safe-area inset itself.
  */
-function HomeHero() {
+function HomeHero({
+  topRated,
+  noteIds,
+}: {
+  topRated: Recipe[];
+  noteIds: Set<number>;
+}) {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const t = useT();
+
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<Recipe[]>([]);
+  const [searching, setSearching] = useState(false);
+  // Why the mini-search failed: offline (network) vs anything else — both
+  // render a caption under the field, but offline says so.
+  const [failed, setFailed] = useState<"offline" | "error" | null>(null);
+
+  // Monotonic request id: only the LATEST debounced search may commit
+  // state, so out-of-order responses never clobber newer results (same
+  // stale-guard as Browse's search).
+  const searchRequestIdRef = useRef(0);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const styles = useMemo(
     () =>
       StyleSheet.create({
@@ -560,8 +614,8 @@ function HomeHero() {
           ...Type.h2,
           color: colors.ink,
         },
-        // BIG search-field look. Static style only (no function styles on
-        // Pressables — Android paint rules).
+        // BIG search-field look (same warm pill). Static styles only (no
+        // function styles on Pressables — Android paint rules).
         searchField: {
           minHeight: 60,
           flexDirection: "row",
@@ -577,50 +631,198 @@ function HomeHero() {
           fontSize: 22,
           color: colors.inkFaint,
         },
-        searchText: {
-          ...Type.body,
+        searchInput: {
+          flex: 1,
+          paddingVertical: Space.md,
+          fontSize: Type.body.fontSize,
+          color: colors.ink,
+        },
+        // Clear (✕) button at the END of the input; marginStart so the gap
+        // follows the layout direction in RTL.
+        searchClear: {
+          marginStart: Space.xs,
+        },
+        searchClearGlyph: {
+          fontSize: 16,
           color: colors.inkFaint,
+        },
+        // Muted caption under the field (no results / search failure).
+        searchCaption: {
+          ...Type.caption,
+          color: colors.inkSecondary,
+        },
+        resultsContent: {
+          gap: Space.md,
         },
         chips: {
           flexDirection: "row",
           flexWrap: "wrap",
           gap: Space.sm,
         },
+        // Static enabled/disabled pair (no function styles on Pressables —
+        // Android paint rules): the surprise chip dims until rails load.
+        surpriseEnabled: {},
+        surpriseDisabled: {
+          opacity: 0.4,
+        },
       }),
     [colors, insets.top],
   );
 
-  const openSearch = useCallback(() => {
-    track("home_hero_search_tapped");
-    router.push({ pathname: "/browse", params: { focus: "1" } });
-  }, []);
+  // Debounced live search: ≥2 trimmed chars fires page 1 with a small
+  // per_page (the row only needs a handful of cards) after 350ms. Clearing
+  // the field resets the mini-search and brings the quick chips back.
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < HERO_SEARCH_MIN_CHARS) {
+      // Invalidate any in-flight request so a late response can't repopulate
+      // results after the field was cleared.
+      searchRequestIdRef.current++;
+      if (searchDebounceRef.current != null) {
+        clearTimeout(searchDebounceRef.current);
+        searchDebounceRef.current = null;
+      }
+      setResults([]);
+      setFailed(null);
+      setSearching(false);
+      return;
+    }
+    if (searchDebounceRef.current != null) {
+      clearTimeout(searchDebounceRef.current);
+    }
+    searchDebounceRef.current = setTimeout(() => {
+      searchDebounceRef.current = null;
+      setSearching(true);
+      track("home_search_performed", { query: q });
+      const requestId = ++searchRequestIdRef.current;
+      searchRecipes({ q, page: 1, perPage: HERO_SEARCH_PER_PAGE })
+        .then((page) => {
+          if (requestId !== searchRequestIdRef.current) return; // stale
+          setResults(page.recipes);
+          setFailed(null);
+          setSearching(false);
+        })
+        .catch((error) => {
+          if (requestId !== searchRequestIdRef.current) return; // stale
+          console.warn("[RecipeReal] home hero search failed:", error);
+          setResults([]);
+          setFailed(isOfflineError(error) ? "offline" : "error");
+          setSearching(false);
+        });
+    }, HERO_SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (searchDebounceRef.current != null) {
+        clearTimeout(searchDebounceRef.current);
+        searchDebounceRef.current = null;
+      }
+    };
+  }, [query]);
+
+  // Active mini-search: results (or their captions) show and the quick
+  // chips hide while the trimmed query is long enough to search.
+  const searchActive = query.trim().length >= HERO_SEARCH_MIN_CHARS;
 
   const openQuick = useCallback((id: string) => {
     track("home_hero_chip_tapped", { filter: id });
     router.push({ pathname: "/browse", params: { filter: id } });
   }, []);
 
+  // "Surprise me": jump to a random recipe from the ALREADY-LOADED
+  // top-rated rail — no extra fetch, instant navigation.
+  const surpriseReady = topRated.length > 0;
+  const handleSurprise = useCallback(() => {
+    if (topRated.length === 0) return;
+    const pick = topRated[Math.floor(Math.random() * topRated.length)];
+    track("home_surprise_tapped", { recipe_id: pick.id });
+    router.push(`/recipe/${pick.id}`);
+  }, [topRated]);
+
   return (
     <View style={styles.wrap}>
       <View style={styles.panel}>
         <Text style={styles.headline}>{t("home.heroPrompt")}</Text>
-        <Pressable onPress={openSearch} style={styles.searchField}>
+        <View style={styles.searchField}>
           <Text style={styles.searchGlyph}>⌕</Text>
-          <Text style={styles.searchText} numberOfLines={1}>
-            {t("browse.searchPlaceholder")}
-          </Text>
-        </Pressable>
-        <View style={styles.chips}>
-          <Pressable hitSlop={4} onPress={() => openQuick("quick")}>
-            <Chip tone="accent" label={t("filter.under30")} />
-          </Pressable>
-          <Pressable hitSlop={4} onPress={() => openQuick("pasta")}>
-            <Chip tone="accent" label={t("cat.pasta")} />
-          </Pressable>
-          <Pressable hitSlop={4} onPress={() => openQuick("curry")}>
-            <Chip tone="accent" label={t("cat.curry")} />
-          </Pressable>
+          <TextInput
+            style={styles.searchInput}
+            placeholder={t("browse.searchPlaceholder")}
+            placeholderTextColor={colors.inkFaint}
+            value={query}
+            onChangeText={setQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+          />
+          {searching ? (
+            <ActivityIndicator size="small" color={colors.accent} />
+          ) : null}
+          {query.length > 0 ? (
+            <Pressable
+              hitSlop={8}
+              onPress={() => setQuery("")}
+              accessibilityLabel={t("browse.clearSearch")}
+              style={styles.searchClear}
+            >
+              <Text style={styles.searchClearGlyph}>✕</Text>
+            </Pressable>
+          ) : null}
         </View>
+        {searchActive ? (
+          failed === "offline" ? (
+            <Text style={styles.searchCaption}>
+              {t("browse.offlineCaption")}
+            </Text>
+          ) : failed === "error" ? (
+            <Text style={styles.searchCaption}>{t("home.noResultsMini")}</Text>
+          ) : results.length > 0 ? (
+            <FlatList
+              horizontal
+              initialNumToRender={4}
+              maxToRenderPerBatch={4}
+              windowSize={5}
+              removeClippedSubviews
+              data={results}
+              keyExtractor={(item) => String(item.id)}
+              renderItem={({ item }) => (
+                <HomeCard item={item} hasNote={noteIds.has(item.id)} />
+              )}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.resultsContent}
+              snapToInterval={HERO_SEARCH_SNAP_INTERVAL}
+              decelerationRate="fast"
+            />
+          ) : !searching ? (
+            <Text style={styles.searchCaption}>{t("home.noResultsMini")}</Text>
+          ) : null
+        ) : (
+          <View style={styles.chips}>
+            <Pressable hitSlop={4} onPress={() => openQuick("quick")}>
+              <Chip tone="accent" label={t("filter.under30")} />
+            </Pressable>
+            <Pressable hitSlop={4} onPress={() => openQuick("pasta")}>
+              <Chip tone="accent" label={t("cat.pasta")} />
+            </Pressable>
+            <Pressable hitSlop={4} onPress={() => openQuick("curry")}>
+              <Chip tone="accent" label={t("cat.curry")} />
+            </Pressable>
+            <Pressable
+              hitSlop={4}
+              onPress={handleSurprise}
+              disabled={!surpriseReady}
+              style={
+                surpriseReady
+                  ? styles.surpriseEnabled
+                  : styles.surpriseDisabled
+              }
+            >
+              <Chip
+                tone="timing"
+                label={t("home.surprise")}
+                icon={<Text>🎲</Text>}
+              />
+            </Pressable>
+          </View>
+        )}
       </View>
     </View>
   );

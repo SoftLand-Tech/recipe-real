@@ -439,4 +439,6 @@ export const ar: Record<string, string> = {
   // ---- إضافات صفحة الوصفة (التقليل من العناصر؛ تُضاف في النهاية) -------------
   "detail.statReally": "يستغرق فعليًا",
   "home.heroPrompt": "ماذا تريد أن تطبخ اليوم؟",
+  "home.surprise": "افتح لي مفاجأة",
+  "home.noResultsMini": "لا توجد نتائج",
 };
