@@ -32,7 +32,6 @@ import {
   Chip,
   HeroImage,
   NoteBadge,
-  ScreenHeader,
   SectionHeader,
   SkeletonCard,
   TimeChip,
@@ -455,10 +454,7 @@ export default function HomeScreen() {
           />
         }
       >
-        <ScreenHeader
-          title="RecipeReal"
-          subtitle={t("home.tagline")}
-        />
+        <HomeHero />
 
         {showSkeletons && (
           <SkeletonRail />
@@ -531,6 +527,104 @@ export default function HomeScreen() {
 }
 
 // ---- Local building blocks --------------------------------------------------
+
+/**
+ * The hero "what do you want to cook?" moment at the top of Home: headline,
+ * a BIG tappable search field (routes to Browse with focus=1 so Browse
+ * focuses its search input), and three quick filter chips that land in
+ * Browse already filtered (same `filter` param contract as the craving
+ * chips). Replaces the old ScreenHeader and carries the top safe-area
+ * inset itself.
+ */
+function HomeHero() {
+  const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
+  const t = useT();
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        // Was ScreenHeader's job: top safe-area inset + page gutters so the
+        // panel aligns with the rails below.
+        wrap: {
+          paddingTop: insets.top + Space.md,
+          paddingHorizontal: Space.lg,
+          marginBottom: Space.xxl,
+        },
+        panel: {
+          backgroundColor: colors.surface,
+          borderRadius: Radius.xl,
+          padding: Space.xxl,
+          gap: Space.lg,
+        },
+        headline: {
+          ...Type.h2,
+          color: colors.ink,
+        },
+        // BIG search-field look. Static style only (no function styles on
+        // Pressables — Android paint rules).
+        searchField: {
+          minHeight: 60,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+          paddingHorizontal: Space.xl,
+          backgroundColor: colors.surfaceSoft,
+          borderRadius: Radius.pill,
+          borderWidth: 1,
+          borderColor: colors.hairline,
+        },
+        searchGlyph: {
+          fontSize: 22,
+          color: colors.inkFaint,
+        },
+        searchText: {
+          ...Type.body,
+          color: colors.inkFaint,
+        },
+        chips: {
+          flexDirection: "row",
+          flexWrap: "wrap",
+          gap: Space.sm,
+        },
+      }),
+    [colors, insets.top],
+  );
+
+  const openSearch = useCallback(() => {
+    track("home_hero_search_tapped");
+    router.push({ pathname: "/browse", params: { focus: "1" } });
+  }, []);
+
+  const openQuick = useCallback((id: string) => {
+    track("home_hero_chip_tapped", { filter: id });
+    router.push({ pathname: "/browse", params: { filter: id } });
+  }, []);
+
+  return (
+    <View style={styles.wrap}>
+      <View style={styles.panel}>
+        <Text style={styles.headline}>{t("home.heroPrompt")}</Text>
+        <Pressable onPress={openSearch} style={styles.searchField}>
+          <Text style={styles.searchGlyph}>⌕</Text>
+          <Text style={styles.searchText} numberOfLines={1}>
+            {t("browse.searchPlaceholder")}
+          </Text>
+        </Pressable>
+        <View style={styles.chips}>
+          <Pressable hitSlop={4} onPress={() => openQuick("quick")}>
+            <Chip tone="accent" label={t("filter.under30")} />
+          </Pressable>
+          <Pressable hitSlop={4} onPress={() => openQuick("pasta")}>
+            <Chip tone="accent" label={t("cat.pasta")} />
+          </Pressable>
+          <Pressable hitSlop={4} onPress={() => openQuick("curry")}>
+            <Chip tone="accent" label={t("cat.curry")} />
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
+}
 
 /**
  * "See all" header action for each rail: a quiet caption-toned pressable that
@@ -627,8 +721,9 @@ function HomeCard({ item, hasNote }: { item: Recipe; hasNote: boolean }) {
         <NoteBadge show={hasNote} />
         {realityGap != null ? (
           <View style={styles.realityChip} pointerEvents="none">
+            {/* Timing info reads teal per the palette contract (colors.timing). */}
             <Chip
-              tone="amber"
+              tone="timing"
               size="sm"
               label={`+${Math.round(realityGap)}%`}
             />

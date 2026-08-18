@@ -5,7 +5,7 @@ import { Radius, Space, Type, useThemeColors, type ThemeColors } from "@/theme";
 
 export interface ChipProps {
   label: string;
-  tone?: "neutral" | "accent" | "success" | "danger" | "amber";
+  tone?: "neutral" | "accent" | "success" | "danger" | "amber" | "timing";
   icon?: ReactNode;
   size?: "sm" | "md";
 }
@@ -21,6 +21,8 @@ function tones(
     // Amber fg mirrors the "active" step tone ink so it reads on amberSoft
     // in both schemes (light: #8A5A12, dark: #E8C87E).
     amber: { bg: colors.amberSoft, fg: colors.stepTones.active.fg },
+    // Timing/calibration semantic — every honest-time signal reads teal.
+    timing: { bg: colors.timingSoft, fg: colors.timing },
   };
 }
 

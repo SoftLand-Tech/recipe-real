@@ -23,6 +23,9 @@ export interface ThemeColors {
   successSoft: string;
   danger: string;
   dangerSoft: string;
+  /** Timing/calibration accent — the "honest times" teal. */
+  timing: string;
+  timingSoft: string;
   scrim: string;
   /** Tone map for step badges: active / passive / cleanup / default. */
   stepTones: Record<string, { bg: string; fg: string }>;
@@ -35,9 +38,9 @@ export const LightColors: ThemeColors = {
 };
 
 /**
- * Warm dark palette. Keeps the terracotta identity: near-black browns for
- * canvas/surface, cream ink, and a brightened terracotta accent so it holds
- * contrast on dark backgrounds.
+ * Warm dark palette. Keeps the new terracotta identity: near-black browns for
+ * canvas/surface, cream ink, a brightened terracotta accent and a brightened
+ * timing teal so both hold contrast on dark backgrounds.
  */
 export const DarkColors: ThemeColors = {
   canvas: "#171310",
@@ -48,15 +51,17 @@ export const DarkColors: ThemeColors = {
   ink: "#F3EDE6",
   inkSecondary: "#B5A897",
   inkFaint: "#877B6C",
-  accent: "#D96E3F",
-  accentPress: "#C65D31",
+  accent: "#F07A45",
+  accentPress: "#E86A33",
   accentSoft: "#3A2417",
   amber: "#E0A447",
   amberSoft: "#3A2E18",
-  success: "#6FA97F",
+  success: "#5CA576",
   successSoft: "#243326",
-  danger: "#D96B5C",
+  danger: "#E46B67",
   dangerSoft: "#3E211D",
+  timing: "#3E9B96",
+  timingSoft: "#1E3433",
   scrim: "rgba(0,0,0,0.6)",
   stepTones: {
     active: { bg: "#3A2E18", fg: "#E8C87E" },

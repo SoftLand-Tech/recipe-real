@@ -444,4 +444,5 @@ export const en: Record<string, string> = {
 
   // ---- Recipe detail (declutter additions; appended at the end) -------------
   "detail.statReally": "Really takes",
+  "home.heroPrompt": "What do you want to cook?",
 };

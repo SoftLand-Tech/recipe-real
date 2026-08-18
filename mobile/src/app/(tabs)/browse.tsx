@@ -1,4 +1,12 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -10,7 +18,6 @@ import {
   Text,
   TextInput,
   View,
-  useWindowDimensions,
   type ListRenderItem,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -54,10 +61,9 @@ import {
   HeartButton,
   IconPressable,
   NoteBadge,
-  ScreenHeader,
   SectionHeader,
-  SkeletonCard,
   TimeChip,
+  fmtMinutes,
 } from "@/components/ui";
 import {
   CATEGORIES,
@@ -219,11 +225,6 @@ function computeVisibleRecipes(
   return out;
 }
 
-/** Number of steps attached to a recipe (joined rows, else embedded). */
-function stepCount(item: Recipe): number {
-  return item.recipe_steps?.length ?? item.steps?.length ?? 0;
-}
-
 /** One-star rating label, e.g. "★ 4.8" (only rendered when non-null). */
 function ratingLabel(rating: number): string {
   return `★ ${rating.toFixed(1)}`;
@@ -288,28 +289,118 @@ function createStyles(colors: ThemeColors) {
     searchClear: {
       marginStart: Space.xs,
     },
+    // Compact header (photo-first layout): Type.h2 title row + small add
+    // shortcut. The top safe-area inset is applied inline by the screen.
+    compactHeader: {
+      paddingHorizontal: Space.lg,
+    },
+    compactTitleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Space.sm,
+      paddingBottom: Space.sm,
+    },
+    compactTitle: {
+      ...Type.h2,
+      color: colors.ink,
+      flex: 1,
+    },
+    headerAction: {
+      // Static style, fixed size (Android paint rules) — IconPressable
+      // provides the pressed feedback.
+      width: 36,
+      height: 36,
+      borderRadius: Radius.pill,
+      backgroundColor: colors.surfaceSoft,
+      borderWidth: 1,
+      borderColor: colors.hairline,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     listContent: {
       paddingHorizontal: Space.lg,
       paddingBottom: Space.xxl,
     },
-    card: {
-      marginBottom: 0,
-    },
-    cardColumn: {
+    // Immersive photo grid: each cell flexes to half the row; the
+    // columnWrapper gap provides the Space.sm gutter (no separators).
+    photoCard: {
       flex: 1,
     },
-    cardBody: {
-      padding: Space.lg,
+    // HeroImage takes a fixed `height` prop; "auto" (merged LAST in its
+    // style array) yields to the 3:4 aspect so the photo derives its height
+    // from the cell width at every size/orientation.
+    photoHero: {
+      height: "auto",
+      aspectRatio: 3 / 4,
+    },
+    photoOverlay: {
+      gap: Space.xs,
+    },
+    photoTitle: {
+      fontSize: 15,
+      fontWeight: "600",
+      color: "#FFFFFF",
+    },
+    photoMeta: {
+      flexDirection: "row",
+      alignItems: "center",
       gap: Space.sm,
     },
-    cardTitle: {
-      ...Type.title,
-      color: colors.ink,
+    photoMetaItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Space.xs,
     },
-    cardChips: {
+    photoMetaText: {
+      ...Type.caption,
+      fontWeight: "600",
+      // Pure white over the bottom scrim — the correct overlay color in
+      // both schemes (the scrim darkens, never tints).
+      color: "#FFFFFF",
+    },
+    photoFallbackBody: {
+      aspectRatio: 3 / 4,
+      backgroundColor: colors.surfaceSoft,
+      alignItems: "center",
+      justifyContent: "center",
+      padding: Space.md,
+      gap: Space.sm,
+    },
+    photoFallbackTitle: {
+      ...Type.body,
+      fontWeight: "600",
+      color: colors.ink,
+      textAlign: "center",
+    },
+    skeletonBlock: {
+      flex: 1,
+      aspectRatio: 3 / 4,
+      backgroundColor: colors.surfaceSoft,
+      borderRadius: Radius.lg,
+    },
+    // Dismissible summary chips shown above the grid while a discrete
+    // filter is active (reuses existing chip/panel labels).
+    activeChipRow: {
       flexDirection: "row",
       flexWrap: "wrap",
+      alignItems: "center",
       gap: Space.xs,
+      marginHorizontal: Space.lg,
+      marginBottom: Space.sm,
+    },
+    activeChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Space.xs,
+      backgroundColor: colors.accentSoft,
+      borderRadius: Radius.pill,
+      paddingVertical: Space.xs,
+      paddingHorizontal: Space.md,
+    },
+    activeChipText: {
+      ...Type.caption,
+      fontWeight: "600",
+      color: colors.accent,
     },
     favoritesSection: {
       marginBottom: Space.md,
@@ -437,6 +528,8 @@ interface SearchBarProps {
   showFilters: boolean;
   onToggleFilters: () => void;
   hasAdvancedFilters: boolean;
+  /** Attached to the TextInput so `?focus=1` can autofocus it on mount. */
+  inputRef: RefObject<TextInput | null>;
   colors: ThemeColors;
   styles: BrowseStyles;
 }
@@ -447,6 +540,7 @@ const SearchBar = memo(function SearchBar({
   showFilters,
   onToggleFilters,
   hasAdvancedFilters,
+  inputRef,
   colors,
   styles,
 }: SearchBarProps) {
@@ -457,6 +551,7 @@ const SearchBar = memo(function SearchBar({
         <View style={styles.searchWrap}>
           <Text style={styles.searchGlyph}>⌕</Text>
           <TextInput
+            ref={inputRef}
             style={styles.searchInput}
             placeholder={t("browse.searchPlaceholder")}
             placeholderTextColor={colors.inkFaint}
@@ -716,90 +811,100 @@ const FilterPanel = memo(function FilterPanel({
 });
 
 /**
- * The main list card. Memoized so that when VirtualizedList re-renders its
- * cells (e.g. the panel toggle re-rendering the screen), each card bails out
- * on shallow-equal props: stable `item`, boolean heart state, and stable
- * callbacks. The time chip falls back to the publisher claim; the amber
- * rating chip renders only when the server row carries a rating.
+ * One immersive photo-grid cell. Memoized so that when VirtualizedList
+ * re-renders its cells (e.g. the panel toggle re-rendering the screen), each
+ * card bails out on shallow-equal props: stable `item`, boolean heart state,
+ * and stable callbacks. The photo fills the 3:4 cell edge-to-edge with a
+ * bottom scrim; title + a one-line meta row (time via recipeMinutes →
+ * fmtMinutes, ★ rating when present) overlay it in white. Recipes without an
+ * image render a surfaceSoft placeholder cell — the same grid shape — with a
+ * centered title + time chip.
  */
-interface RecipeCardProps {
+interface PhotoCardProps {
   item: Recipe;
   favorited: boolean;
   hasNote: boolean;
   onOpen: (id: number) => void;
   onToggleFavorite: (id: number) => void;
-  numColumns: number;
   styles: BrowseStyles;
 }
 
-const RecipeCard = memo(function RecipeCard({
+const PhotoCard = memo(function PhotoCard({
   item,
   favorited,
   hasNote,
   onOpen,
   onToggleFavorite,
-  numColumns,
   styles,
-}: RecipeCardProps) {
+}: PhotoCardProps) {
   const t = useT();
   const lr = useLocalizedRecipe();
+  const minutes = recipeMinutes(item);
+  const hasImage =
+    typeof item.image_url === "string" && item.image_url.trim().length > 0;
   return (
     <Card
       onPress={() => onOpen(item.id)}
       padding={0}
       shadow="card"
-      style={numColumns > 1 ? styles.cardColumn : styles.card}
+      style={styles.photoCard}
     >
-      <View>
-        <HeroImage uri={item.image_url} height={150} rounded={Radius.lg} />
-        <HeartButton
-          favorited={favorited}
-          onPress={() => onToggleFavorite(item.id)}
-        />
-        <NoteBadge show={hasNote} />
-      </View>
-      <View style={styles.cardBody}>
-        <Text style={styles.cardTitle} numberOfLines={3}>
-          {lr.title(item)}
-        </Text>
-        <View style={styles.cardChips}>
-          <TimeChip
-            minutes={recipeMinutes(item)}
-            label={t("common.focused")}
-          />
-          <TimeChip
-            minutes={item.cleanup_avg_minutes}
-            label={t("common.cleanup")}
-          />
-          {item.aggregated_rating != null ? (
-            <Chip
-              tone="amber"
-              size="sm"
-              label={ratingLabel(item.aggregated_rating)}
-            />
-          ) : null}
-          <Chip
-            tone="amber"
-            label={t("common.stepCount", { n: stepCount(item) })}
-            size="sm"
-          />
+      {hasImage ? (
+        <HeroImage
+          uri={item.image_url}
+          // Nominal value — the photoHero style (height "auto" + 3:4
+          // aspect) wins the style merge and sizes the photo from the cell.
+          height={240}
+          rounded={Radius.lg}
+          withScrim
+          style={styles.photoHero}
+        >
+          <View style={styles.photoOverlay}>
+            <Text style={styles.photoTitle} numberOfLines={2}>
+              {lr.title(item)}
+            </Text>
+            <View style={styles.photoMeta}>
+              {minutes != null ? (
+                <View style={styles.photoMetaItem}>
+                  <Ionicons name="time-outline" size={12} color="#FFFFFF" />
+                  <Text style={styles.photoMetaText}>
+                    {fmtMinutes(minutes)}
+                  </Text>
+                </View>
+              ) : null}
+              {item.aggregated_rating != null ? (
+                <Text style={styles.photoMetaText}>
+                  {ratingLabel(item.aggregated_rating)}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        </HeroImage>
+      ) : (
+        <View style={styles.photoFallbackBody}>
+          <Text style={styles.photoFallbackTitle} numberOfLines={3}>
+            {lr.title(item)}
+          </Text>
+          <TimeChip minutes={minutes} label={t("common.focused")} />
         </View>
-      </View>
+      )}
+      {/* Overlays anchor to the physical top corners of the photo-sized
+          card: HeartButton owns top-end, NoteBadge top-start. */}
+      <HeartButton
+        favorited={favorited}
+        onPress={() => onToggleFavorite(item.id)}
+      />
+      <NoteBadge show={hasNote} />
     </Card>
   );
 });
 
 export default function BrowseScreen() {
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
   const colors = useThemeColors();
   const t = useT();
-  const params = useLocalSearchParams<{ filter?: string }>();
+  const params = useLocalSearchParams<{ filter?: string; focus?: string }>();
   const paramFilter = params.filter;
-
-  // Tablet (width >= 768): two columns. Phones: one column.
-  const numColumns = width >= 768 ? 2 : 1;
-  const columnGap = Space.lg;
 
   // ---- Local cache source (offline fallback + favorites) --------------------
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -828,6 +933,8 @@ export default function BrowseScreen() {
   }[] | null>(null);
 
   const [search, setSearch] = useState("");
+  // Ref into the (memoized) SearchBar's TextInput — used by `?focus=1`.
+  const searchInputRef = useRef<TextInput>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<ListFilter>({ kind: "all" });
 
@@ -846,14 +953,6 @@ export default function BrowseScreen() {
   const [applying, setApplying] = useState(true);
 
   const styles = useMemo(() => createStyles(colors), [colors]);
-
-  // Hoisted so both FlatLists see a stable component type: an inline arrow in
-  // ItemSeparatorComponent creates a NEW component type every render, which
-  // remounts every separator on every keystroke.
-  const Separator = useCallback(
-    () => <View style={{ height: columnGap }} />,
-    [columnGap],
-  );
 
   /** Load-more footer spinner (server pagination only); stable per state. */
   const ListFooter = useCallback(() => {
@@ -981,6 +1080,15 @@ export default function BrowseScreen() {
       }
     }, [paramFilter]),
   );
+
+  // `?focus=1` (deep-link contract): focus the search field on mount. The
+  // rAF hop waits for the first layout so the ref is attached by the
+  // memoized SearchBar before focus fires.
+  useEffect(() => {
+    if (params.focus !== "1") return;
+    const raf = requestAnimationFrame(() => searchInputRef.current?.focus());
+    return () => cancelAnimationFrame(raf);
+  }, [params.focus]);
 
   const handleToggleFavorite = useCallback(
     async (id: number) => {
@@ -1387,25 +1495,47 @@ export default function BrowseScreen() {
 
   const renderItem: ListRenderItem<Recipe> = useCallback(
     ({ item }) => (
-      <RecipeCard
+      <PhotoCard
         item={item}
         favorited={favoriteIds.has(item.id)}
         hasNote={noteIds.has(item.id)}
         onOpen={handleOpenRecipe}
         onToggleFavorite={handleToggleFavorite}
-        numColumns={numColumns}
         styles={styles}
       />
     ),
-    [
-      numColumns,
-      favoriteIds,
-      noteIds,
-      handleOpenRecipe,
-      handleToggleFavorite,
-      styles,
-    ],
+    [favoriteIds, noteIds, handleOpenRecipe, handleToggleFavorite, styles],
   );
+
+  // Dismissible summary chips for the active discrete filters (i18n FROZEN:
+  // reuses the existing chip/panel labels; the search text already has its
+  // own clear button inside the field, so it is not duplicated here).
+  const activeFilterChips: {
+    key: string;
+    label: string;
+    onClear: () => void;
+  }[] = [];
+  if (filter.kind === "category") {
+    activeFilterChips.push({
+      key: "cat",
+      label: filter.label,
+      onClear: () => setFilter({ kind: "all" }),
+    });
+  } else if (filter.kind === "quick") {
+    activeFilterChips.push({
+      key: "quick",
+      label: t("filter.under30"),
+      onClear: () => setFilter({ kind: "all" }),
+    });
+  }
+  if (timeMax != null) {
+    const option = TIME_FILTERS.find((o) => o.max === timeMax);
+    activeFilterChips.push({
+      key: "time",
+      label: option ? t(option.labelKey) : fmtMinutes(timeMax),
+      onClear: () => setTimeMax(null),
+    });
+  }
 
   const showSkeletons =
     (state === "loading" && recipes.length === 0) ||
@@ -1413,41 +1543,47 @@ export default function BrowseScreen() {
 
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      <ScreenHeader
-        title={t("tabs.browse")}
-        right={
+      {/* Compact header — essentials only: title row (Type.h2) + the add
+          shortcut. The search field + filter toggle sit directly below. */}
+      <View
+        style={[styles.compactHeader, { paddingTop: insets.top + Space.md }]}
+      >
+        <View style={styles.compactTitleRow}>
+          <Text style={styles.compactTitle}>{t("tabs.browse")}</Text>
           <IconPressable
             onPress={() => router.push("/recipe-composer")}
             accessibilityLabel={t("browse.addRecipe")}
             hitSlop={Space.xs}
+            style={styles.headerAction}
           >
-            <Ionicons name="add" size={24} color={colors.accent} />
+            <Ionicons name="add" size={22} color={colors.accent} />
           </IconPressable>
-        }
-      />
+        </View>
+      </View>
       <SearchBar
         search={search}
         onChangeSearch={setSearch}
         showFilters={showFilters}
         onToggleFilters={toggleFilters}
         hasAdvancedFilters={hasAdvancedFilters}
+        inputRef={searchInputRef}
         colors={colors}
         styles={styles}
       />
-
-      {state === "ready" && favoriteRecipes.length > 0 && (
-        <FavoritesRail
-          favoriteRecipes={favoriteRecipes}
-          onOpen={handleOpenRecipe}
-          styles={styles}
-        />
-      )}
 
       {state === "ready" && (
         <ChipRow
           chips={chips}
           filter={filter}
           onSelect={handleSelectFilter}
+          styles={styles}
+        />
+      )}
+
+      {state === "ready" && favoriteRecipes.length > 0 && (
+        <FavoritesRail
+          favoriteRecipes={favoriteRecipes}
+          onOpen={handleOpenRecipe}
           styles={styles}
         />
       )}
@@ -1470,30 +1606,33 @@ export default function BrowseScreen() {
         />
       )}
 
+      {state === "ready" && activeFilterChips.length > 0 && (
+        <View style={styles.activeChipRow}>
+          {activeFilterChips.map((chip) => (
+            <View key={chip.key} style={styles.activeChip}>
+              <Text style={styles.activeChipText} numberOfLines={1}>
+                {chip.label}
+              </Text>
+              <IconPressable
+                onPress={chip.onClear}
+                accessibilityLabel={t("filter.clearAll")}
+                hitSlop={6}
+              >
+                <Ionicons name="close" size={14} color={colors.accent} />
+              </IconPressable>
+            </View>
+          ))}
+        </View>
+      )}
+
       {showSkeletons && (
         <FlatList
-          key={numColumns === 1 ? "skel-1col" : "skel-2col"}
-          data={[0, 1, 2, 3]}
+          data={[0, 1, 2, 3, 4, 5]}
           keyExtractor={(item) => `skel-${item}`}
-          numColumns={numColumns}
-          renderItem={() => (
-            <View
-              style={
-                numColumns > 1
-                  ? [styles.cardColumn, { paddingHorizontal: 0 }]
-                  : null
-              }
-            >
-              <SkeletonCard hasImage />
-            </View>
-          )}
+          numColumns={2}
+          renderItem={() => <View style={styles.skeletonBlock} />}
           contentContainerStyle={styles.listContent}
-          columnWrapperStyle={
-            numColumns > 1
-              ? { justifyContent: "flex-start", gap: columnGap }
-              : undefined
-          }
-          ItemSeparatorComponent={Separator}
+          columnWrapperStyle={{ gap: Space.sm }}
           scrollEnabled={false}
         />
       )}
@@ -1513,22 +1652,19 @@ export default function BrowseScreen() {
 
       {state === "ready" && !applying && (
         <FlatList
-          key={numColumns === 1 ? "list-1col" : "list-2col"}
           data={displayRecipes}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderItem}
-          numColumns={numColumns}
+          // Immersive photo grid: always two columns, Space.sm gutter via the
+          // column wrapper, no separators.
+          numColumns={2}
           contentContainerStyle={styles.listContent}
-          columnWrapperStyle={
-            numColumns > 1
-              ? { justifyContent: "flex-start", gap: columnGap }
-              : undefined
-          }
-          // Heavy image cards: render small batches so no single frame tries
+          columnWrapperStyle={{ gap: Space.sm }}
+          // Heavy image cells: render small batches so no single frame tries
           // to mount a whole window of photos (fixes the VirtualizedList
           // "slow to update" warning on lower-end devices).
-          initialNumToRender={4}
-          maxToRenderPerBatch={4}
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
           windowSize={5}
           updateCellsBatchingPeriod={80}
           removeClippedSubviews
@@ -1538,7 +1674,6 @@ export default function BrowseScreen() {
           onEndReached={offline ? undefined : handleEndReached}
           onEndReachedThreshold={0.5}
           ListFooterComponent={offline ? null : ListFooter}
-          ItemSeparatorComponent={Separator}
           ListEmptyComponent={
             <View style={styles.center}>
               <Text style={styles.emptyGlyph}>🍳</Text>

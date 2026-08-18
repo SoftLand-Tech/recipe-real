@@ -179,27 +179,28 @@ function cleanupChips(
 }
 
 /**
- * Reality badge tone + label for the gap thresholds: ≥ +20% slower than
- * claimed (amber), ≤ −20% faster (success), otherwise the claim checks out
- * (neutral). Called only when `reality.gap_pct != null`.
+ * Reality badge label for the gap thresholds: ≥ +20% slower than claimed,
+ * ≤ −20% faster, otherwise the claim checks out. The chip always renders in
+ * timing teal (bg timingSoft / fg timing) — reality checks are calibration
+ * data. Called only when `reality.gap_pct != null`.
  */
 function realityBadge(
   t: TranslateFn,
   gapPct: number,
-): { tone: "amber" | "success" | "neutral"; label: string } {
+): { tone: "timing"; label: string } {
   if (gapPct >= 20) {
     return {
-      tone: "amber",
+      tone: "timing",
       label: t("detail.realitySlower", { pct: Math.round(gapPct) }),
     };
   }
   if (gapPct <= -20) {
     return {
-      tone: "success",
+      tone: "timing",
       label: t("detail.realityFaster", { pct: Math.round(Math.abs(gapPct)) }),
     };
   }
-  return { tone: "neutral", label: t("detail.realityAccurate") };
+  return { tone: "timing", label: t("detail.realityAccurate") };
 }
 
 /** One entry of the backend `ingredients_structured` JSON column. */
@@ -366,6 +367,18 @@ export default function RecipeDetailScreen() {
           textShadowOffset: { width: 0, height: 1 },
           textShadowRadius: 6,
         },
+        // ★ rating line right under the hero title (white + small so it sits
+        // inside the scrim). The info chip row below skips the rating — the
+        // hero line is the single home for it.
+        heroRating: {
+          ...Type.caption,
+          color: "#FFFFFF",
+          fontWeight: "600",
+          marginTop: Space.xs,
+          textShadowColor: "rgba(0,0,0,0.55)",
+          textShadowOffset: { width: 0, height: 1 },
+          textShadowRadius: 4,
+        },
         heroSource: {
           ...Type.caption,
           color: "rgba(255,255,255,0.85)",
@@ -425,11 +438,12 @@ export default function RecipeDetailScreen() {
         // "Be the first!" CTA replacing the cooks-average stat when the
         // community has no data yet. Negative margins + matching padding keep
         // the label/value aligned with the neighbouring cells while painting
-        // the accentSoft background out to the gutter edge.
+        // the timingSoft background out to the gutter edge (quick-time is
+        // calibration data → teal, not accent).
         statCellCta: {
           marginHorizontal: -Space.sm,
           marginTop: -Space.sm,
-          backgroundColor: colors.accentSoft,
+          backgroundColor: colors.timingSoft,
           borderRadius: Radius.md,
           paddingHorizontal: Space.sm,
           paddingVertical: Space.sm,
@@ -441,9 +455,9 @@ export default function RecipeDetailScreen() {
           color: colors.inkSecondary,
           marginTop: Space.sm,
         },
-        // ONE compact info-chips row: reality badge, rating, personalized
-        // pace, and cleanup-factor chips share a single wrapping row — the
-        // same information with far less visual weight than stacked rows.
+        // ONE compact info-chips row: reality badge, personalized pace, and
+        // cleanup-factor chips share a single wrapping row — the rating lives
+        // up in the hero overlay (no duplicate chip here).
         infoChipRow: {
           flexDirection: "row",
           flexWrap: "wrap",
@@ -470,7 +484,8 @@ export default function RecipeDetailScreen() {
         },
         quickHintText: {
           ...Type.caption,
-          color: colors.accent,
+          // Quick-time contribution = calibration data → timing teal.
+          color: colors.timing,
           fontWeight: "600",
         },
         quickFormTitle: {
@@ -525,9 +540,11 @@ export default function RecipeDetailScreen() {
           paddingVertical: Space.xs,
           alignSelf: "flex-start",
         },
+        // Timeline headline ("Start now → eating at…") — timing teal: the
+        // whole "when's dinner" block is calibration data.
         timelineHeadline: {
-          ...Type.title,
-          color: colors.ink,
+          ...Type.h3,
+          color: colors.timing,
         },
         // ---- Start-time planner (eat-at mode) ----
         planRow: {
@@ -1504,7 +1521,7 @@ export default function RecipeDetailScreen() {
                 <View style={styles.heroWrap}>
                   <HeroImage
                     uri={recipe.image_url}
-                    height={340}
+                    height={380}
                     withScrim
                     rounded={0}
                   >
@@ -1520,6 +1537,18 @@ export default function RecipeDetailScreen() {
                     <Text style={styles.heroTitle} numberOfLines={3}>
                       {lr.title(recipe)}
                     </Text>
+                    {recipe.aggregated_rating != null ? (
+                      <Text style={styles.heroRating} numberOfLines={1}>
+                        {recipe.review_count != null && recipe.review_count > 0
+                          ? t("detail.ratingWithCount", {
+                              rating: recipe.aggregated_rating.toFixed(1),
+                              n: recipe.review_count,
+                            })
+                          : t("detail.ratingOnly", {
+                              rating: recipe.aggregated_rating.toFixed(1),
+                            })}
+                      </Text>
+                    ) : null}
                     {recipe.source_url ? (
                       <Text style={styles.heroSource} numberOfLines={1}>
                         {recipe.source_url}
@@ -1571,11 +1600,12 @@ export default function RecipeDetailScreen() {
                   />
                 ) : null}
 
-                {/* 1. TWO BIG STATS — "Recipe says" vs "Really takes"
-                    (reality → community → publisher fallback). Until a real
-                    figure exists the second cell becomes the quick-time CTA
-                    ("Be the first!"). Total-incl-cleanup + the cleanup note
-                    merge into ONE caption line underneath. */}
+                {/* 1. TWO BIG STATS — "Recipe says" (neutral ink) vs "Really
+                    takes" (timing teal: honest times are calibration data).
+                    Until a real figure exists the second cell becomes the
+                    quick-time CTA ("Be the first!" — also teal). Total-incl-
+                    cleanup + the cleanup note merge into ONE caption line
+                    underneath. */}
                 <View style={styles.statGrid}>
                   <View style={styles.statCell}>
                     <StatPill
@@ -1588,7 +1618,7 @@ export default function RecipeDetailScreen() {
                       <StatPill
                         label={t("detail.statReally")}
                         value={fmtMin(reallyTakes)}
-                        tone="accent"
+                        tone="timing"
                       />
                     ) : (
                       <Pressable
@@ -1599,7 +1629,7 @@ export default function RecipeDetailScreen() {
                         <StatPill
                           label={t("detail.statReally")}
                           value={t("detail.beTheFirst")}
-                          tone="accent"
+                          tone="timing"
                         />
                       </Pressable>
                     )}
@@ -1611,12 +1641,11 @@ export default function RecipeDetailScreen() {
                   </Text>
                 ) : null}
 
-                {/* 1b. INFO CHIPS — reality badge, rating, personalized pace
-                    and cleanup factors share ONE compact wrapping row (same
-                    information, smaller visual weight), with the data-source
-                    caption inline at the end. */}
+                {/* 1b. INFO CHIPS — reality badge, personalized pace and
+                    cleanup factors share ONE compact wrapping row (the ★
+                    rating lives in the hero overlay above, not duplicated
+                    here), with the data-source caption inline at the end. */}
                 {realityChip != null ||
-                recipe.aggregated_rating != null ||
                 personalTotal != null ||
                 chips.length > 0 ? (
                   <View style={styles.infoChipRow}>
@@ -1625,22 +1654,6 @@ export default function RecipeDetailScreen() {
                         size="sm"
                         tone={realityChip.tone}
                         label={realityChip.label}
-                      />
-                    ) : null}
-                    {recipe.aggregated_rating != null ? (
-                      <Chip
-                        tone="amber"
-                        size="sm"
-                        label={
-                          recipe.review_count != null && recipe.review_count > 0
-                            ? t("detail.ratingWithCount", {
-                                rating: recipe.aggregated_rating.toFixed(1),
-                                n: recipe.review_count,
-                              })
-                            : t("detail.ratingOnly", {
-                                rating: recipe.aggregated_rating.toFixed(1),
-                              })
-                        }
                       />
                     ) : null}
                     {personalTotal != null ? (

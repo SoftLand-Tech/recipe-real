@@ -6,7 +6,7 @@ import { Space, Type, useThemeColors } from "@/theme";
 export interface StatPillProps {
   label: string;
   value: string;
-  tone?: "neutral" | "accent";
+  tone?: "neutral" | "accent" | "timing";
 }
 
 export function StatPill({ label, value, tone = "neutral" }: StatPillProps) {
@@ -32,6 +32,9 @@ export function StatPill({ label, value, tone = "neutral" }: StatPillProps) {
         valueAccent: {
           color: colors.accent,
         },
+        valueTiming: {
+          color: colors.timing,
+        },
       }),
     [colors],
   );
@@ -41,7 +44,11 @@ export function StatPill({ label, value, tone = "neutral" }: StatPillProps) {
         {label}
       </Text>
       <Text
-        style={[styles.value, tone === "accent" && styles.valueAccent]}
+        style={[
+          styles.value,
+          tone === "accent" && styles.valueAccent,
+          tone === "timing" && styles.valueTiming,
+        ]}
         numberOfLines={1}
       >
         {value}
