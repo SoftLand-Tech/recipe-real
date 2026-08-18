@@ -625,11 +625,6 @@ export default function RecipeDetailScreen() {
           color: colors.ink,
           marginTop: Space.xs,
         },
-        timelineDuration: {
-          ...Type.caption,
-          color: colors.inkSecondary,
-          fontWeight: "600",
-        },
         section: {
           marginTop: Space.xxl,
         },
@@ -1792,14 +1787,9 @@ export default function RecipeDetailScreen() {
                       </Text>
                     ) : null}
                     <View style={styles.timelineList}>
-                      {timelineRows.map(({ step, at, minutes }) => {
+                      {timelineRows.map(({ step, at }) => {
                         const passive = step.step_type === "passive";
                         const adjusted = adjustedForStep(step);
-                        // Show the per-step duration whenever there is a basis
-                        // for it: the step's own figure OR a recipe total that
-                        // was distributed across the untimed steps.
-                        const hasMinutes =
-                          stepMinutes(step) != null || cookMinutes != null;
                         return (
                           <View
                             key={`tl-${step.id}`}
@@ -1851,14 +1841,6 @@ export default function RecipeDetailScreen() {
                                 </View>
                               ) : null}
                             </View>
-                            {hasMinutes ? (
-                              <Text
-                                style={styles.timelineDuration}
-                                numberOfLines={1}
-                              >
-                                {`~${fmtMin(minutes)}`}
-                              </Text>
-                            ) : null}
                           </View>
                         );
                       })}

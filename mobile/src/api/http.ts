@@ -120,6 +120,7 @@ export function normalizeStep(s: any): RecipeStep {
     description_ar: s?.description_ar ?? null,
     publisher_minutes: toNum(s.publisher_minutes),
     community_minutes: toNum(s.community_minutes),
+    literal_minutes: toNum(s.literal_minutes),
   };
 }
 

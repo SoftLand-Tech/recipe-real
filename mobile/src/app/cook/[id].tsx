@@ -10,11 +10,13 @@ import { useKeepAwake } from "expo-keep-awake";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-  cancelNotification,
-  requestNotificationsPermission,
-  scheduleMinuteNotification,
-  setupNotificationHandler,
-} from "@/utils/notifications";
+  cancelStepAlarm,
+  initCookEventHandlers,
+  requestAlarmPermission,
+  scheduleStepAlarm,
+  startCookNotification,
+  stopCookNotification,
+} from "@/utils/cookAlarms";
 
 import { getRecipe, submitCookSession } from "@/api/client";
 import { track } from "@/analytics";
@@ -31,11 +33,8 @@ import {
   useLocalizedRecipe,
   useT,
   stepTypeLabel,
-  type TranslateFn,
 } from "@/i18n";
 import { Radius, Shadow, Space, Type, useThemeColors } from "@/theme";
-import { getNudgePref } from "@/utils/prefs";
-import { estimateStepMinutes } from "@/utils/recipeTime";
 import type {
   CookSessionPayload,
   Feedback,
@@ -45,7 +44,8 @@ import type {
 
 type LoadState = "loading" | "ready" | "error";
 type Phase = "cooking" | "feedback" | "submitting" | "done";
-type TimerState = "idle" | "running" | "paused" | "done";
+/** Whole-recipe stopwatch state (replaces the old per-step timers). */
+type CookStatus = "idle" | "running" | "paused" | "finished";
 
 const TICK_MS = 250;
 
@@ -81,26 +81,37 @@ function makeId(): string {
   }${rnd().slice(1)}-${rnd()}${rnd()}${rnd()}`;
 }
 
-// ---- Passive-step nudges (local notifications) ------------------------------
+// ---- Whole-recipe stopwatch math ---------------------------------------------
 
-/**
- * Lazily ensure notification permission. Returns whether notifications may be
- * shown. Never throws — nudges are strictly optional and must never block
- * cooking. Also false in Expo Go, where expo-notifications cannot load.
- */
-async function ensureNotifPermission(): Promise<boolean> {
-  return requestNotificationsPermission();
+/** One closed pause interval of the stopwatch, in wall-clock epoch ms. */
+interface PauseInterval {
+  from: number;
+  to: number;
 }
 
-/** Friendly nudge copy: community estimate + a short step snippet. */
-function nudgeBody(
-  t: TranslateFn,
-  minutes: number,
-  description: string,
-): string {
-  const snippet =
-    description.length > 30 ? `${description.slice(0, 30)}…` : description;
-  return t("cook.nudgeBody", { n: minutes, snippet });
+/**
+ * Pause-adjusted duration of the wall-clock segment [from, to]: its raw
+ * length minus any pause time overlapping it. This is the single place
+ * pause time is subtracted, shared by the live display and the per-step
+ * durations built at finish.
+ */
+function adjust(from: number, to: number, pauses: PauseInterval[]): number {
+  const ms = Math.max(0, to - from);
+  if (ms === 0) return 0;
+  let overlap = 0;
+  for (const p of pauses) {
+    const lo = Math.max(from, p.from);
+    const hi = Math.min(to, p.to);
+    if (hi > lo) overlap += hi - lo;
+  }
+  return Math.max(0, ms - overlap);
+}
+
+/** Submission summary — the exact shape the calibration pipeline consumes. */
+interface CookSummary {
+  perStep: { step: RecipeStep; actual_minutes: number }[];
+  cleanup_minutes: number | null;
+  total_actual_minutes: number;
 }
 
 export default function CookModeScreen() {
@@ -219,6 +230,17 @@ export default function CookModeScreen() {
           gap: Space.sm,
           ...Shadow.floating,
         },
+        // Pause/Resume (primary) + Finish (secondary) share one row while a
+        // cook is active. Flex lives on the wrapper View (never on the
+        // Pressable itself) — Android paint-collapse quirk.
+        controlRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+        },
+        primaryBtn: {
+          flex: 1,
+        },
         navRow: {
           flexDirection: "row",
           alignItems: "center",
@@ -316,21 +338,38 @@ export default function CookModeScreen() {
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // ---- Timer state ---------------------------------------------------------
+  // ---- Whole-recipe stopwatch ------------------------------------------------
   const [currentIndex, setCurrentIndex] = useState(0);
-  /** Accumulated paused/ms per step (excludes the live running segment). */
-  const [elapsedMs, setElapsedMs] = useState<number[]>([]);
-  /** Per-step timer state. The cook decides when to start each step. */
-  const [timerState, setTimerState] = useState<TimerState[]>([]);
+  /** Wall-clock instant the cook started; null until Start is pressed. */
+  const [cookStartAt, setCookStartAt] = useState<number | null>(null);
+  /** Total ms spent paused across all completed pause intervals. */
+  const [pausedMsTotal, setPausedMsTotal] = useState(0);
+  /** Set while paused (the instant the pause began); null while running. */
+  const [pausedAt, setPausedAt] = useState<number | null>(null);
+  const [status, setStatus] = useState<CookStatus>("idle");
   /** Re-render tick: only updated while running, to drive the live display. */
   const [now, setNow] = useState(Date.now());
 
-  const stepStartRef = useRef<number>(Date.now());
+  /** Pause log (closed intervals) — subtracted from each step's segment. */
+  const pausesRef = useRef<PauseInterval[]>([]);
+  /**
+   * Wall-clock instant each step was FIRST entered (keyed by step_number).
+   * Recorded on initial start and on every Next/Prev/jump once the cook has
+   * started; converted to pause-adjusted elapsed via adjust() at finish.
+   * Steps never entered have no mark and submit 0 minutes.
+   */
+  const stepMarksRef = useRef<Record<number, number>>({});
+
+  /** Armed step alarm: id in a ref (event handlers), step number for render. */
+  const armedAlarmIdRef = useRef<string | null>(null);
+  const [armedStep, setArmedStep] = useState<number | null>(null);
+
   // Stable per-session idempotency key (generated on first submission) so
   // retried/offline-replayed POSTs don't create duplicate cook sessions.
   const idempotencyKey = useRef<string>("");
 
   const [phase, setPhase] = useState<Phase>("cooking");
+  const [summary, setSummary] = useState<CookSummary | null>(null);
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
   // Whether submitMsg is an ERROR message (drives the done-screen color; the
   // old `startsWith("Could not")` check doesn't survive translation).
@@ -376,212 +415,261 @@ export default function CookModeScreen() {
     loadRecipe();
   }, [loadRecipe]);
 
-  // Initialize the elapsed + timer-state arrays once steps are known.
-  // Per the new interaction model, steps start IDLE — the cook starts the
-  // timer when they begin each step.
+  // Fire-and-forget analytics: cook started once steps are present (once).
+  const startedTrackedRef = useRef(false);
   useEffect(() => {
-    if (steps.length > 0 && elapsedMs.length === 0) {
-      setElapsedMs(new Array(steps.length).fill(0));
-      setTimerState(new Array(steps.length).fill("idle"));
-      // Fire-and-forget analytics: cook started once steps are present.
-      if (recipe?.id != null) {
-        track("cook_started", {
-          recipe_id: recipe.id,
-          step_count: steps.length,
-        });
-      }
+    if (steps.length > 0 && recipe?.id != null && !startedTrackedRef.current) {
+      startedTrackedRef.current = true;
+      track("cook_started", {
+        recipe_id: recipe.id,
+        step_count: steps.length,
+      });
     }
-  }, [steps, elapsedMs.length, recipe]);
+  }, [steps, recipe]);
+
+  // ---- Pause-adjusted elapsed (derived from timestamps) ---------------------
+  // Deriving the display from cookStartAt/pausedAt/pausedMsTotal means the
+  // correct elapsed reappears after ANY amount of backgrounded time: the
+  // wall clock kept running and pauses are explicit intervals.
+  const elapsedMs = useMemo(() => {
+    if (cookStartAt == null) return 0;
+    // While paused the display freezes at the pause instant.
+    const end = pausedAt ?? now;
+    return Math.max(0, end - cookStartAt - pausedMsTotal);
+  }, [cookStartAt, pausedAt, pausedMsTotal, now]);
 
   // ---- Live ticking --------------------------------------------------------
-  // Only tick while the current step is actively running.
+  // Only tick while the stopwatch is actively running.
   useEffect(() => {
-    if (phase !== "cooking" || timerState[currentIndex] !== "running") return;
+    if (phase !== "cooking" || status !== "running") return;
     const handle = setInterval(() => setNow(Date.now()), TICK_MS);
     return () => clearInterval(handle);
-  }, [phase, timerState, currentIndex]);
+  }, [phase, status]);
 
-  // ---- Timer actions -------------------------------------------------------
-  /** Fold the current running segment into elapsedMs[currentIndex], then reset
-   *  the baseline so the same segment can never be re-committed (e.g. when
-   *  navigating away from and back to a running step). Computing the delta
-   *  outside the state updater also avoids re-running it under StrictMode. */
-  const commitLiveSegment = useCallback(() => {
-    const delta = Date.now() - stepStartRef.current;
-    stepStartRef.current = Date.now();
-    if (delta <= 0) return;
-    const i = currentIndex;
-    setElapsedMs((prev) => {
-      const next = [...prev];
-      next[i] = (next[i] ?? 0) + delta;
-      return next;
-    });
-  }, [currentIndex]);
+  // ---- Step alarms (notifee; no-op in Expo Go) ------------------------------
 
-  // ---- Passive-step nudges ---------------------------------------------------
-  /** Id of the currently scheduled nudge, if any (ref: no re-renders). */
-  const nudgeIdRef = useRef<string | null>(null);
-
-  /** Cancel the pending nudge, if any. Idempotent; never throws. */
-  const cancelNudge = useCallback(async () => {
-    const nudgeId = nudgeIdRef.current;
-    nudgeIdRef.current = null;
-    await cancelNotification(nudgeId);
+  /** Cancel the armed step alarm, if any. Idempotent; never throws. */
+  const clearArmedAlarm = useCallback(async () => {
+    const alarmId = armedAlarmIdRef.current;
+    armedAlarmIdRef.current = null;
+    setArmedStep(null);
+    await cancelStepAlarm(alarmId);
   }, []);
 
+  /** Arm (or cancel, when already armed) the alarm for the current step. */
+  const onAlarmChipPress = useCallback(async () => {
+    const step = steps[currentIndex];
+    const minutes = step?.literal_minutes;
+    if (!recipe || !step || typeof minutes !== "number" || minutes <= 0) {
+      return;
+    }
+    // One armed alarm at a time: tapping the armed chip cancels it; tapping
+    // elsewhere replaces the previous one.
+    if (armedStep === step.step_number) {
+      await clearArmedAlarm();
+      return;
+    }
+    await clearArmedAlarm();
+    if (!(await requestAlarmPermission())) return;
+    const alarmId = await scheduleStepAlarm({
+      recipeTitle: lr.title(recipe),
+      stepNumber: step.step_number,
+      minutes,
+      t,
+    });
+    if (!alarmId) return;
+    armedAlarmIdRef.current = alarmId;
+    setArmedStep(step.step_number);
+    track("alarm_armed", {
+      recipe_id: recipe.id,
+      step_number: step.step_number,
+      minutes,
+    });
+  }, [steps, currentIndex, recipe, armedStep, clearArmedAlarm, lr, t]);
+
+  // ---- Stopwatch actions -----------------------------------------------------
+
+  /** Record the entry mark for step `i` (first entry only, post-Start). */
+  const recordMark = useCallback(
+    (i: number) => {
+      if (cookStartAt == null) return;
+      const stepNumber = steps[i]?.step_number;
+      if (stepNumber == null) return;
+      if (stepMarksRef.current[stepNumber] == null) {
+        stepMarksRef.current[stepNumber] = Date.now();
+      }
+    },
+    [cookStartAt, steps],
+  );
+
+  const startCooking = useCallback(() => {
+    if (!recipe || cookStartAt != null) return;
+    const at = Date.now();
+    setCookStartAt(at);
+    setPausedMsTotal(0);
+    setPausedAt(null);
+    setStatus("running");
+    setNow(at);
+    recordMark(currentIndex);
+    // Persistent Android notification with the ticking chronometer (no-op
+    // in Expo Go / iOS — the in-app stopwatch is unaffected).
+    void startCookNotification({
+      recipeTitle: lr.title(recipe),
+      recipeId: recipe.id,
+      startedAt: at,
+      pausedMs: 0,
+      paused: false,
+      t,
+    });
+  }, [recipe, cookStartAt, currentIndex, recordMark, lr, t]);
+
+  /** The single Pause/Resume control (button + notification quick action). */
+  const togglePauseResume = useCallback(() => {
+    if (!recipe || cookStartAt == null) return;
+    if (status === "running") {
+      const at = Date.now();
+      setPausedAt(at);
+      setStatus("paused");
+      // pausedMs is unchanged at the pause instant; the re-post flips the
+      // quick action to Resume and re-bases the chronometer.
+      void startCookNotification({
+        recipeTitle: lr.title(recipe),
+        recipeId: recipe.id,
+        startedAt: cookStartAt,
+        pausedMs: pausedMsTotal,
+        paused: true,
+        t,
+      });
+    } else if (status === "paused") {
+      const at = Date.now();
+      let newTotal = pausedMsTotal;
+      if (pausedAt != null) {
+        pausesRef.current.push({ from: pausedAt, to: at });
+        newTotal = pausedMsTotal + (at - pausedAt);
+        setPausedMsTotal(newTotal);
+      }
+      setPausedAt(null);
+      setStatus("running");
+      setNow(at);
+      void startCookNotification({
+        recipeTitle: lr.title(recipe),
+        recipeId: recipe.id,
+        startedAt: cookStartAt,
+        pausedMs: newTotal,
+        paused: false,
+        t,
+      });
+    }
+  }, [recipe, cookStartAt, status, pausedAt, pausedMsTotal, lr, t]);
+
   /**
-   * Replace any pending nudge with one for the given passive step, scheduled
-   * for its estimated minutes: the step's own community/publisher figure,
-   * else its word-weighted share of the recipe's total (distributed so the
-   * per-step estimates sum back to the recipe's stated time). Best-effort:
-   * silently skips when nudges are turned off, permission is denied, or the
-   * notifications API is unavailable (Expo Go) — never blocks the cooking flow.
+   * Finish the cook: freeze the stopwatch, derive per-step durations from
+   * the entry marks (mark[next] - mark[this], pause-adjusted via adjust();
+   * the last step ends at the finish elapsed; unvisited steps submit 0) and
+   * move to the feedback phase. Same handler for the Finish button, Next on
+   * the last step, and the notification quick action.
    */
-  const scheduleNudge = useCallback(
-    async (step: RecipeStep, recipeId: number) => {
-      await cancelNudge();
-      const minutes = estimateStepMinutes(step, recipe, steps);
-      if (typeof minutes !== "number" || minutes <= 0) return;
-      try {
-        if ((await getNudgePref()) !== "on") return;
-        if (!(await ensureNotifPermission())) return;
-        const nudgeId = await scheduleMinuteNotification(
-          "RecipeReal",
-          nudgeBody(t, minutes, lr.stepDescription(step)),
-          minutes,
-        );
-        if (!nudgeId) return;
-        nudgeIdRef.current = nudgeId;
-        track("nudge_scheduled", {
-          recipe_id: recipeId,
-          step_number: step.step_number,
-          minutes,
-        });
-      } catch {
-        // Scheduling is best-effort; never block the cook.
-      }
-    },
-    [cancelNudge, t, lr, recipe, steps],
-  );
-
-  /** Arm a nudge for step `i` if it's a passive step with a community time. */
-  const maybeNudge = useCallback(
-    (i: number) => {
-      const step = steps[i];
-      if (step?.step_type === "passive" && recipe?.id != null) {
-        scheduleNudge(step, recipe.id);
-      }
-    },
-    [steps, recipe, scheduleNudge],
-  );
-
-  // Configure foreground presentation once on mount; the cleanup clears any
-  // pending nudge when Cook Mode unmounts. setupNotificationHandler is a
-  // no-op when expo-notifications can't load (Expo Go).
-  useEffect(() => {
-    setupNotificationHandler();
-    return () => {
-      cancelNudge();
-    };
-  }, [cancelNudge]);
-
-  const startTimer = useCallback(
-    (i: number) => {
-      stepStartRef.current = Date.now();
-      setNow(Date.now());
-      setTimerState((s) => s.map((t, idx) => (idx === i ? "running" : t)));
-      // Fire-and-forget passive-step nudge (skips itself when N/A).
-      maybeNudge(i);
-    },
-    [maybeNudge],
-  );
-
-  const pauseTimer = useCallback(
-    (i: number) => {
-      if (currentIndex === i) commitLiveSegment();
-      setTimerState((s) => s.map((t, idx) => (idx === i ? "paused" : t)));
-      // A paused step shouldn't nudge.
-      cancelNudge();
-    },
-    [commitLiveSegment, currentIndex, cancelNudge],
-  );
-
-  const resumeTimer = useCallback(
-    (i: number) => {
-      stepStartRef.current = Date.now();
-      setNow(Date.now());
-      setTimerState((s) => s.map((t, idx) => (idx === i ? "running" : t)));
-      // Re-arm the nudge for the resumed passive step.
-      maybeNudge(i);
-    },
-    [maybeNudge],
-  );
-
-  /** "Next" = mark current step done + advance. The cook is in control. */
-  const nextStep = useCallback(() => {
-    if (timerState[currentIndex] === "running") commitLiveSegment();
-    setTimerState((s) =>
-      s.map((t, idx) => (idx === currentIndex ? "done" : t)),
-    );
-    // Step completed — drop its pending nudge.
-    cancelNudge();
-    if (currentIndex < steps.length - 1) {
-      setCurrentIndex(currentIndex + 1);
+  const finishCooking = useCallback(() => {
+    if (!recipe || phase !== "cooking") return;
+    const startAt = cookStartAt;
+    const endWall = pausedAt ?? Date.now();
+    const pauses = pausesRef.current;
+    let built: CookSummary;
+    if (startAt == null) {
+      // Never started: everything submits as 0 (same as idle steps before).
+      built = {
+        perStep: steps.map((step) => ({ step, actual_minutes: 0 })),
+        cleanup_minutes: null,
+        total_actual_minutes: 0,
+      };
     } else {
-      setPhase("feedback");
+      const marks = stepMarksRef.current;
+      const finishElapsed = adjust(startAt, endWall, pauses);
+      const perStep = steps.map((step, i) => {
+        const startWall = marks[step.step_number];
+        if (startWall == null) return { step, actual_minutes: 0 };
+        const startAdj = adjust(startAt, startWall, pauses);
+        const nextWall =
+          i + 1 < steps.length ? marks[steps[i + 1].step_number] : undefined;
+        const endAdj =
+          nextWall != null ? adjust(startAt, nextWall, pauses) : finishElapsed;
+        return {
+          step,
+          actual_minutes: round2(Math.max(0, endAdj - startAdj) / 60000),
+        };
+      });
+      const cleanupSum =
+        perStep
+          .filter((p) => p.step.step_type === "cleanup")
+          .reduce((sum, p) => sum + p.actual_minutes, 0) || null;
+      const nonCleanup =
+        perStep.filter((p) => p.step.step_type !== "cleanup").length > 0;
+      built = {
+        perStep,
+        cleanup_minutes: cleanupSum,
+        total_actual_minutes: round2(
+          perStep
+            .filter((p) => (nonCleanup ? p.step.step_type !== "cleanup" : true))
+            .reduce((sum, p) => sum + p.actual_minutes, 0),
+        ),
+      };
     }
-  }, [commitLiveSegment, currentIndex, steps.length, timerState, cancelNudge]);
+    setStatus("finished");
+    setSummary(built);
+    setPhase("feedback");
+    track("cook_finished", {
+      recipe_id: recipe.id,
+      total_actual_minutes: built.total_actual_minutes,
+    });
+    void clearArmedAlarm();
+    void stopCookNotification();
+  }, [recipe, phase, cookStartAt, pausedAt, steps, clearArmedAlarm]);
 
-  const prevStep = useCallback(() => {
-    if (timerState[currentIndex] === "running") {
-      commitLiveSegment();
-      // Pause the step we're leaving so its timer doesn't keep accruing while
-      // we view another step; the cook resumes it explicitly on return.
-      setTimerState((s) =>
-        s.map((t, idx) => (idx === currentIndex ? "paused" : t)),
-      );
-    }
-    // Step changed — drop the pending nudge.
-    cancelNudge();
-    setCurrentIndex(Math.max(0, currentIndex - 1));
-  }, [commitLiveSegment, currentIndex, timerState, cancelNudge]);
+  // ---- Notification quick actions -> same handlers as the buttons ----------
+  // Latest-handler refs: the wiring effect runs once, the callbacks change.
+  const togglePauseRef = useRef(togglePauseResume);
+  const finishRef = useRef(finishCooking);
+  togglePauseRef.current = togglePauseResume;
+  finishRef.current = finishCooking;
+  useEffect(() => {
+    const unsubscribe = initCookEventHandlers({
+      onPauseToggle: () => togglePauseRef.current(),
+      onFinish: () => finishRef.current(),
+    });
+    return () => {
+      unsubscribe();
+      // Leaving Cook Mode entirely: drop the notification + armed alarm.
+      void stopCookNotification();
+      const alarmId = armedAlarmIdRef.current;
+      armedAlarmIdRef.current = null;
+      void cancelStepAlarm(alarmId);
+    };
+  }, []);
 
-  const onJump = useCallback(
+  // ---- Step navigation -------------------------------------------------------
+
+  /** Enter step `i`: cancel the armed alarm and record its entry mark. */
+  const goToStep = useCallback(
     (i: number) => {
       if (i === currentIndex) return;
-      if (timerState[currentIndex] === "running") {
-        commitLiveSegment();
-        // Pause the running step we're leaving (see prevStep).
-        setTimerState((s) =>
-          s.map((t, idx) => (idx === currentIndex ? "paused" : t)),
-        );
-      }
-      // Step changed — drop the pending nudge.
-      cancelNudge();
+      void clearArmedAlarm();
       setCurrentIndex(i);
+      recordMark(i);
     },
-    [commitLiveSegment, currentIndex, timerState, cancelNudge],
+    [currentIndex, clearArmedAlarm, recordMark],
   );
 
-  // ---- Submission summary --------------------------------------------------
-  const summary = useMemo(() => {
-    const perStep = steps.map((s, i) => ({
-      step: s,
-      actual_minutes: round2((elapsedMs[i] ?? 0) / 60000),
-    }));
-    const cleanup_minutes =
-      perStep
-        .filter((p) => p.step.step_type === "cleanup")
-        .reduce((sum, p) => sum + p.actual_minutes, 0) || null;
-    const nonCleanup =
-      perStep.filter((p) => p.step.step_type !== "cleanup").length > 0;
-    const total_actual_minutes = round2(
-      perStep
-        .filter((p) => (nonCleanup ? p.step.step_type !== "cleanup" : true))
-        .reduce((sum, p) => sum + p.actual_minutes, 0),
-    );
-    return { perStep, cleanup_minutes, total_actual_minutes };
-  }, [steps, elapsedMs]);
+  const nextStep = useCallback(() => {
+    if (currentIndex < steps.length - 1) {
+      goToStep(currentIndex + 1);
+    } else {
+      finishCooking();
+    }
+  }, [currentIndex, steps.length, goToStep, finishCooking]);
+
+  const prevStep = useCallback(() => {
+    goToStep(Math.max(0, currentIndex - 1));
+  }, [goToStep, currentIndex]);
 
   // Recipe cleanup estimate shown as context on the feedback phase.
   const cleanupEstimate =
@@ -589,7 +677,7 @@ export default function CookModeScreen() {
 
   const handleSubmit = useCallback(
     async (feedback: Feedback | null) => {
-      if (!recipe) return;
+      if (!recipe || !summary) return;
       // Fire-and-forget analytics when a feedback button is chosen or skipped.
       track("cook_completed", {
         recipe_id: recipe.id,
@@ -703,6 +791,8 @@ export default function CookModeScreen() {
   // ---- Feedback / submitting / done phases ----
   if (phase === "feedback" || phase === "submitting" || phase === "done") {
     const submitting = phase === "submitting";
+    const totalCooked = summary?.total_actual_minutes ?? 0;
+    const cleanupMinutes = summary?.cleanup_minutes ?? null;
     return (
       <View
         style={[
@@ -724,13 +814,13 @@ export default function CookModeScreen() {
               ]}
             >
               <Text style={[styles.totalPillValue, { color: colors.accent }]}>
-                {fmtMin(summary.total_actual_minutes)}
+                {fmtMin(totalCooked)}
               </Text>
               <Text style={styles.totalPillLabel}>
                 {t("cook.totalCooked")}
               </Text>
             </View>
-            {summary.cleanup_minutes != null ? (
+            {cleanupMinutes != null ? (
               <View
                 style={[
                   styles.totalPill,
@@ -740,7 +830,7 @@ export default function CookModeScreen() {
                 <Text
                   style={[styles.totalPillValue, { color: colors.inkSecondary }]}
                 >
-                  {fmtMin(summary.cleanup_minutes)}
+                  {fmtMin(cleanupMinutes)}
                 </Text>
                 <Text style={styles.totalPillLabel}>
                   {t("common.cleanup")}
@@ -849,26 +939,27 @@ export default function CookModeScreen() {
 
   // ---- Cooking phase ----
   const step = steps[currentIndex];
-  const tState = timerState[currentIndex] ?? "idle";
-  const acc = elapsedMs[currentIndex] ?? 0;
-  const live =
-    tState === "running" ? acc + (now - stepStartRef.current) : acc;
+  const alarmMinutes = step.literal_minutes ?? null;
+  const alarmArmedHere = armedStep != null && armedStep === step.step_number;
 
   const timerColor =
-    tState === "running"
+    status === "running"
       ? colors.ink
-      : tState === "done"
-        ? colors.success
-        : colors.inkSecondary;
+      : status === "paused"
+        ? colors.inkSecondary
+        : colors.inkFaint;
 
   const statusHint =
-    tState === "idle"
-      ? t("cook.hintIdle")
-      : tState === "running"
-        ? t("cook.hintRunning")
-        : tState === "paused"
-          ? t("cook.hintPaused")
-          : t("cook.hintDone");
+    status === "running"
+      ? t("cook.hintRunning")
+      : status === "paused"
+        ? t("cook.hintPaused")
+        : t("cook.hintIdle");
+
+  // Visited (entered post-Start) steps render as filled dots.
+  const doneFlags = steps.map(
+    (s, i) => i !== currentIndex && stepMarksRef.current[s.step_number] != null,
+  );
 
   return (
     <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
@@ -893,8 +984,8 @@ export default function CookModeScreen() {
         <StepDots
           count={steps.length}
           current={currentIndex}
-          done={timerState.map((t) => t === "done")}
-          onJump={onJump}
+          done={doneFlags}
+          onJump={goToStep}
         />
       </View>
 
@@ -905,17 +996,32 @@ export default function CookModeScreen() {
             label={stepTypeLabel(t, step.step_type || "active")}
             stepType={step.step_type}
           />
-          <Chip
-            tone="amber"
-            label={t("cook.estChip", {
-              time: fmtMin(estimateStepMinutes(step, recipe, steps)),
-            })}
-            size="sm"
-          />
+          {/* Step alarm chip: only steps whose text states a time. */}
+          {alarmMinutes != null && alarmMinutes > 0 ? (
+            <IconPressable
+              onPress={onAlarmChipPress}
+              hitSlop={Space.xs}
+              accessibilityLabel={t("cook.alarmChip", {
+                minutes: Math.round(alarmMinutes),
+              })}
+            >
+              <Chip
+                tone={alarmArmedHere ? "accent" : "amber"}
+                size="sm"
+                label={
+                  alarmArmedHere
+                    ? `${t("cook.alarmArmed")} · ${t("cook.alarmCancel")}`
+                    : t("cook.alarmChip", {
+                        minutes: Math.round(alarmMinutes),
+                      })
+                }
+              />
+            </IconPressable>
+          ) : null}
         </View>
 
         <Text style={[styles.timer, { color: timerColor }]}>
-          {formatMSS(live)}
+          {formatMSS(elapsedMs)}
         </Text>
         <Text style={styles.statusHint}>{statusHint}</Text>
 
@@ -926,7 +1032,7 @@ export default function CookModeScreen() {
         </Card>
       </View>
 
-      {/* Footer: timer control + navigation row */}
+      {/* Footer: stopwatch control + navigation row */}
       <View
         style={[
           styles.footer,
@@ -936,38 +1042,38 @@ export default function CookModeScreen() {
           },
         ]}
       >
-        {tState === "idle" ? (
+        {status === "idle" ? (
           <Button
-            title={t("cook.startTimer")}
+            title={t("cook.startCooking")}
             variant="primary"
             size="lg"
             fullWidth
-            onPress={() => startTimer(currentIndex)}
-          />
-        ) : tState === "running" ? (
-          <Button
-            title={t("cook.pause")}
-            variant="secondary"
-            size="lg"
-            fullWidth
-            onPress={() => pauseTimer(currentIndex)}
-          />
-        ) : tState === "paused" ? (
-          <Button
-            title={t("cook.resume")}
-            variant="primary"
-            size="lg"
-            fullWidth
-            onPress={() => resumeTimer(currentIndex)}
+            onPress={startCooking}
           />
         ) : (
-          <Button
-            title={t("cook.stepDone")}
-            variant="ghost"
-            size="lg"
-            fullWidth
-            disabled
-          />
+          <View style={styles.controlRow}>
+            {/* flex on the wrapper View (never on the Pressable itself) so
+                the button stretches without the Android paint quirk. */}
+            <View style={styles.primaryBtn}>
+              <Button
+                title={
+                  status === "running"
+                    ? t("cook.pauseCooking")
+                    : t("cook.resumeCooking")
+                }
+                variant={status === "running" ? "secondary" : "primary"}
+                size="lg"
+                fullWidth
+                onPress={togglePauseResume}
+              />
+            </View>
+            <Button
+              title={t("cook.finishCooking")}
+              variant="ghost"
+              size="lg"
+              onPress={finishCooking}
+            />
+          </View>
         )}
 
         <View style={styles.navRow}>
@@ -984,7 +1090,7 @@ export default function CookModeScreen() {
             <Button
               title={
                 currentIndex === steps.length - 1
-                  ? t("cook.finish")
+                  ? t("cook.finishCooking")
                   : t("cook.next")
               }
               variant="primary"
@@ -998,4 +1104,3 @@ export default function CookModeScreen() {
     </View>
   );
 }
-

@@ -22,6 +22,11 @@ export interface RecipeStep {
   step_type: StepType;
   publisher_minutes: number | null;
   community_minutes: number | null;
+  /**
+   * Minutes literally stated in the step text ("simmer for 8 minutes");
+   * null when the text states no time. Drives the Cook Mode step alarm.
+   */
+  literal_minutes?: number | null;
 }
 
 /** One step row of a user-submitted recipe (POST/PATCH /api/recipes). */
