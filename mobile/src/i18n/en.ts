@@ -42,7 +42,7 @@ export const en: Record<string, string> = {
   "common.cancel": "Cancel",
 
   // ---- Home ---------------------------------------------------------------
-  "home.tagline": "Honest cook times, verified by real cooks",
+  "home.tagline": "Know your time before you start.",
   "home.topPicks": "Top picks today",
   "home.easyWins": "Easy wins",
   "home.handsOffHeroes": "Hands-off heroes",
@@ -447,4 +447,13 @@ export const en: Record<string, string> = {
   "home.heroPrompt": "What do you want to cook?",
   "home.surprise": "Surprise me",
   "home.noResultsMini": "No recipes found",
+
+  // ---- Home restructure (mockup) ---------------------------------------------
+  "home.greetMorning": "Good morning",
+  "home.greetAfternoon": "Good afternoon",
+  "home.greetEvening": "Good evening",
+  "home.quickTonight": "Quick tonight",
+  "home.forYourPace": "For your pace",
+  "home.forYourPaceSub": "Adjusted with your cooking times",
+  "home.recentlyCooked": "Recently cooked",
 };

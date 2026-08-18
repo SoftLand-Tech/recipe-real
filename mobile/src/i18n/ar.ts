@@ -43,7 +43,7 @@ export const ar: Record<string, string> = {
   "common.cancel": "إلغاء",
 
   // ---- الرئيسية -----------------------------------------------------------
-  "home.tagline": "أوقات طهي صادقة، موثّقة من طهاة حقيقيين",
+  "home.tagline": "اعرف وقتك قبل أن تبدأ.",
   "home.topPicks": "أفضل الاختيارات اليوم",
   "home.easyWins": "وصفات سهلة",
   "home.handsOffHeroes": "على نار هادئة",
@@ -441,4 +441,13 @@ export const ar: Record<string, string> = {
   "home.heroPrompt": "ماذا تريد أن تطبخ اليوم؟",
   "home.surprise": "افتح لي مفاجأة",
   "home.noResultsMini": "لا توجد نتائج",
+
+  // ---- إعادة هيكلة الشاشة الرئيسية (التصميم الجديد) -------------------------
+  "home.greetMorning": "صباح الخير",
+  "home.greetAfternoon": "مساء الخير",
+  "home.greetEvening": "مساء الخير",
+  "home.quickTonight": "سريع الليلة",
+  "home.forYourPace": "على خلفية سرعتك",
+  "home.forYourPaceSub": "مُعدّلة حسب أوقات طهيك",
+  "home.recentlyCooked": "طبختها مؤخرًا",
 };

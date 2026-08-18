@@ -103,6 +103,17 @@ export interface Recipe {
   /** Reality-check block (real time vs. claimed); null when unknown. */
   reality?: RealityCheck | null;
   /**
+   * Cooking-mode time-contract totals (server `time` block): per-step AI
+   * minute sums split active/passive, total incl. cleanup. Present only on
+   * payloads where the backend loaded steps with AI minutes; light rail
+   * rows carry null/omit it.
+   */
+  time?: {
+    time_total_minutes: number;
+    time_active_minutes: number;
+    time_passive_minutes: number;
+  } | null;
+  /**
    * Food.com metadata (server-driven browse/home rows). All nullable — the
    * local dev DB has metadata only partially, and SQLite-cached rows don't
    * persist these columns, so every reader must treat them as optional.

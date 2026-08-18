@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,32 +15,38 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   fetchCategories,
   fetchHomeRails,
+  fetchMyProfile,
   fetchRealityRail,
-  searchRecipes,
+  getCookSessions,
 } from "@/api/client";
-import { isOfflineError } from "@/api/http";
 import { track } from "@/analytics";
 import {
   countCachedRecipes,
   flushPendingCookSessions,
   getCachedRecipes,
+  getFavoriteIds,
   getNotedRecipeIds,
   refreshCacheLight,
+  refreshPaceCalibrations,
   repairCachedStepsIfNeeded,
   seedCacheFirstPage,
   seedCacheRemainingPages,
+  toggleFavorite,
 } from "@/db/database";
-import type { HomeRails, Recipe } from "@/types";
-import { useLang, useLocalizedRecipe, useT } from "@/i18n";
+import type { CookSessionSummary, HomeRails, Recipe } from "@/types";
+import { useLang, useLocalizedRecipe, useT, type TranslateFn } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 import {
+  Button,
   Card,
   Chip,
+  HeartButton,
   HeroImage,
   NoteBadge,
   SectionHeader,
   SkeletonCard,
   TimeChip,
+  fmtMinutes,
 } from "@/components/ui";
 import { CATEGORIES } from "@/utils/categorize";
 import { recipeMinutes } from "@/utils/recipeTime";
@@ -55,17 +59,11 @@ const RAIL_SIZE = 10;
 /** Craving chips rendered in the "Browse by craving" rail. */
 const CRAVING_CHIP_LIMIT = 12;
 
-/** Debounce for the hero's inline search before hitting the server. */
-const HERO_SEARCH_DEBOUNCE_MS = 350;
+/** Cards in the "Recently cooked" rail (start of the session history). */
+const RECENTLY_COOKED_LIMIT = 6;
 
-/** Minimum trimmed chars before the hero search fires. */
-const HERO_SEARCH_MIN_CHARS = 2;
-
-/** Page size for the hero's inline search result row. */
-const HERO_SEARCH_PER_PAGE = 8;
-
-/** Snap interval of the hero results row: rail card width (160) + gutter. */
-const HERO_SEARCH_SNAP_INTERVAL = 160 + Space.md;
+/** AsyncStorage mirror of the signed-in user's name (instant greeting). */
+const PROFILE_NAME_KEY = "recipereal.profileName";
 
 /** Mirror of the last successful /api/home payload for instant paint. */
 const HOME_RAILS_KEY = "recipereal.homeRails";
@@ -120,6 +118,53 @@ function recipesFingerprint(list: Recipe[]): string {
     .join("|");
 }
 
+/** 1-based day of the year — drives the deterministic daily featured pick. */
+function dayOfYear(d = new Date()): number {
+  const start = new Date(d.getFullYear(), 0, 0);
+  return Math.floor((d.getTime() - start.getTime()) / 86_400_000);
+}
+
+/** Relative-date caption ("2d ago") over the shared rel.* keys. */
+function relativeDate(t: TranslateFn, iso: string): string {
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return "";
+  const mins = Math.floor((Date.now() - then) / 60000);
+  if (mins < 1) return t("rel.now");
+  if (mins < 60) return t("rel.minutesAgo", { n: mins });
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return t("rel.hoursAgo", { n: hours });
+  const days = Math.floor(hours / 24);
+  if (days < 7) return t("rel.daysAgo", { n: days });
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return t("rel.weeksAgo", { n: weeks });
+  const months = Math.floor(days / 30);
+  if (months < 12) return t("rel.monthsAgo", { n: months });
+  try {
+    return new Date(then).toLocaleDateString();
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Cook-session rows carry only a light recipe reference (id/title). Wrap one
+ * as a minimal Recipe so the "Recently cooked" rail reuses HomeCard — the
+ * missing image renders the standard HeroImage fallback.
+ */
+function sessionRecipe(session: CookSessionSummary): Recipe {
+  return {
+    id: session.recipe.id,
+    title: session.recipe.title ?? "",
+    source_url: null,
+    image_url: null,
+    ingredients: [],
+    steps: [],
+    publisher_time_minutes: null,
+    community_avg_minutes: session.recipe.community_avg_minutes ?? null,
+    cleanup_avg_minutes: null,
+  };
+}
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
@@ -151,6 +196,24 @@ export default function HomeScreen() {
   // notes saved on the detail screen badge the rails when the user returns.
   const [noteIds, setNoteIds] = useState<Set<number>>(new Set());
 
+  // Ids of favorited recipes — drives the featured hero's heart overlay.
+  // Same cadence as noteIds (mount + focus) so hearts stay in sync with
+  // toggles made on Browse / the detail screen.
+  const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
+
+  // "For your pace" gate: true only when the user has pace calibrations.
+  const [hasPace, setHasPace] = useState(false);
+
+  // Start of the signed-in user's cook-session history ("Recently cooked").
+  // Null = signed out / fetch failed → the section hides entirely.
+  const [recentSessions, setRecentSessions] = useState<
+    CookSessionSummary[] | null
+  >(null);
+
+  // Display name for the greeting. The AsyncStorage copy paints instantly on
+  // later loads; the profile fetch revalidates (and re-caches) it.
+  const [profileName, setProfileName] = useState<string | null>(null);
+
   const reloadNoteIds = useCallback(async () => {
     try {
       setNoteIds(new Set(await getNotedRecipeIds()));
@@ -159,10 +222,19 @@ export default function HomeScreen() {
     }
   }, []);
 
+  const reloadFavoriteIds = useCallback(async () => {
+    try {
+      setFavoriteIds(new Set(await getFavoriteIds()));
+    } catch (error) {
+      console.warn("[RecipeReal] home favorites load failed:", error);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       reloadNoteIds();
-    }, [reloadNoteIds]),
+      reloadFavoriteIds();
+    }, [reloadNoteIds, reloadFavoriteIds]),
   );
 
   const styles = useMemo(
@@ -230,16 +302,39 @@ export default function HomeScreen() {
       .slice(0, RAIL_SIZE);
   }, [recipes]);
 
-  // "Surprise me" pool: the first 10 of whichever top-rated rail is live
-  // (the server rails when loaded, else the cached top picks) — the chip
-  // stays disabled until this has entries.
-  const surprisePool = useMemo(
-    () =>
-      (serverRails != null ? serverRails.top_rated : topPicks).slice(
-        0,
-        RAIL_SIZE,
-      ),
-    [serverRails, topPicks],
+  // Featured recipe of the day: deterministic pick (dayOfYear % length) from
+  // the reality "most underestimated" rail, falling back to "Top rated", and
+  // to the offline cached top picks when no server rails ever loaded.
+  const featured = useMemo(() => {
+    const pool = serverRails
+      ? serverRails.most_underestimated.length > 0
+        ? serverRails.most_underestimated
+        : serverRails.top_rated
+      : topPicks;
+    if (pool.length === 0) return null;
+    return pool[dayOfYear() % pool.length];
+  }, [serverRails, topPicks]);
+
+  // Track the featured impression once per shown recipe.
+  const featuredTrackedRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (featured == null || featuredTrackedRef.current === featured.id) return;
+    featuredTrackedRef.current = featured.id;
+    track("home_featured_viewed", { recipe_id: featured.id });
+  }, [featured]);
+
+  // Featured hero heart: toggle the local favorite and re-sync the snapshot.
+  const handleToggleFavorite = useCallback(
+    async (id: number) => {
+      try {
+        const favorited = await toggleFavorite(id);
+        track("favorite_toggled", { recipe_id: id, favorited });
+        await reloadFavoriteIds();
+      } catch (error) {
+        console.warn("[RecipeReal] home toggle favorite failed:", error);
+      }
+    },
+    [reloadFavoriteIds],
   );
 
   // ---- Cache load: same progressive skeleton as the Browse tab -------------
@@ -434,6 +529,75 @@ export default function HomeScreen() {
     };
   }, []);
 
+  // Greeting name: the cached copy paints instantly, then the profile fetch
+  // revalidates it (and re-caches). Signed out / offline keeps the cache.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const cached = await AsyncStorage.getItem(PROFILE_NAME_KEY);
+        if (!cancelled && cached != null) setProfileName(cached);
+      } catch {
+        // Unreadable cache — the fetch below is the source of truth.
+      }
+      try {
+        const profile = await fetchMyProfile();
+        const name = (profile.display_name ?? profile.name ?? "").trim() || null;
+        if (cancelled) return;
+        setProfileName(name);
+        const mirror =
+          name != null
+            ? AsyncStorage.setItem(PROFILE_NAME_KEY, name)
+            : AsyncStorage.removeItem(PROFILE_NAME_KEY);
+        mirror.catch(() => {
+          // Mirror is best-effort.
+        });
+      } catch {
+        // Signed out / offline: keep whatever the cache gave us.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // "For your pace" gate + "Recently cooked" data: both auth-backed, loaded
+  // once per mount, both degrade to hidden on any failure (401 included).
+  useEffect(() => {
+    let cancelled = false;
+    refreshPaceCalibrations()
+      .then((items) => {
+        if (!cancelled) setHasPace(items.length > 0);
+      })
+      .catch(() => {
+        if (!cancelled) setHasPace(false);
+      });
+    getCookSessions()
+      .then((page) => {
+        if (!cancelled) setRecentSessions(page.data);
+      })
+      .catch(() => {
+        if (!cancelled) setRecentSessions(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // "Recently cooked": the first sessions as light pseudo-recipes plus a
+  // relative-date caption per card (rel.* keys).
+  const recentItems = useMemo(() => {
+    const items: Recipe[] = [];
+    const captions = new Map<number, string>();
+    for (const session of recentSessions ?? []) {
+      if (items.length >= RECENTLY_COOKED_LIMIT) break;
+      if (session.recipe == null || !(session.recipe.id > 0)) continue;
+      items.push(sessionRecipe(session));
+      captions.set(session.recipe.id, relativeDate(t, session.created_at));
+    }
+    return { items, captions };
+  }, [recentSessions, t]);
+
   const cravingChips = useMemo(() => {
     const source =
       serverChips ??
@@ -473,6 +637,18 @@ export default function HomeScreen() {
   const showSkeletons =
     serverRails == null && state === "loading" && recipes.length === 0;
 
+  // "Recently cooked" rail: shared by both the server-rails and offline
+  // layouts (it is auth-backed, not rails-backed), hidden when empty.
+  const recentlyCookedRail =
+    recentItems.items.length > 0 ? (
+      <HomeRail
+        title={t("home.recentlyCooked")}
+        items={recentItems.items}
+        noteIds={noteIds}
+        captionFor={(item) => recentItems.captions.get(item.id)}
+      />
+    ) : null;
+
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       <ScrollView
@@ -486,7 +662,15 @@ export default function HomeScreen() {
           />
         }
       >
-        <HomeHero topRated={surprisePool} noteIds={noteIds} />
+        <HomeHeader name={profileName} />
+
+        {featured != null ? (
+          <FeaturedHero
+            recipe={featured}
+            favorited={favoriteIds.has(featured.id)}
+            onToggleFavorite={handleToggleFavorite}
+          />
+        ) : null}
 
         {showSkeletons && (
           <SkeletonRail />
@@ -519,23 +703,32 @@ export default function HomeScreen() {
 
         {serverRails != null ? (
           // ---- Server-driven rails (GET /api/home + reality rail) ----
-          // DECLUTTERED: only three rails render — reality ("Most
-          // underestimated"), "Top rated", and "Browse by craving". The
-          // easy-wins / most-loved / hands-off rails are still FETCHED and
-          // mirrored (the HomeRails payload shape is untouched); they are
-          // simply not rendered (fewer choices on screen).
+          // Order: "Quick tonight" (easy wins) → "For your pace" (calibrated
+          // users only) → "Recently cooked" (signed-in only) → the reality
+          // leaderboard → cravings. All five rails are still FETCHED and
+          // mirrored (payload shape untouched); top_rated serves as the
+          // featured hero's fallback pool.
           <>
-            {/* Reality rail first — hidden silently when the reality fetch
+            <HomeRail
+              title={t("home.quickTonight")}
+              items={serverRails.easy_wins}
+              noteIds={noteIds}
+            />
+            {hasPace && serverRails.most_loved.length > 0 ? (
+              <HomeRail
+                title={t("home.forYourPace")}
+                subtitle={t("home.forYourPaceSub")}
+                items={serverRails.most_loved}
+                noteIds={noteIds}
+              />
+            ) : null}
+            {recentlyCookedRail}
+            {/* Reality leaderboard — hidden silently when the reality fetch
                 failed (HomeRail renders null for empty items). */}
             <HomeRail
               title={t("home.realityRail")}
               subtitle={t("home.realityRailSub")}
               items={serverRails.most_underestimated ?? []}
-              noteIds={noteIds}
-            />
-            <HomeRail
-              title={t("home.railTopRated")}
-              items={serverRails.top_rated}
               noteIds={noteIds}
             />
             <CategoryRail
@@ -547,6 +740,7 @@ export default function HomeScreen() {
           // ---- Fallback: rails computed over the offline cache ----
           <>
             <HomeRail title={t("home.topPicks")} items={topPicks} noteIds={noteIds} />
+            {recentlyCookedRail}
             <CategoryRail
               chips={cravingChips}
               onCategoryPress={handleCategoryPress}
@@ -561,270 +755,240 @@ export default function HomeScreen() {
 // ---- Local building blocks --------------------------------------------------
 
 /**
- * The hero "what do you want to cook?" moment at the top of Home: headline,
- * a BIG live search field (debounced server search — results render as a
- * snap-scroll row of the SAME HomeCard the rails use, directly under the
- * field inside the panel), and quick filter chips that land in Browse
- * already filtered (same `filter` param contract as the craving chips).
- * The chips hide while search results are showing and return when the
- * field is cleared. Replaces the old ScreenHeader and carries the top
- * safe-area inset itself.
+ * Brand header: "RecipeReal" beside a compact search pill (⌕ + the hero
+ * prompt) that lands in Browse with the field focused, then the time-of-day
+ * greeting (with the cached display name when known) and the tagline.
+ * Carries the top safe-area inset itself (replaces ScreenHeader).
  */
-function HomeHero({
-  topRated,
-  noteIds,
-}: {
-  topRated: Recipe[];
-  noteIds: Set<number>;
-}) {
+function HomeHeader({ name }: { name: string | null }) {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const t = useT();
-
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Recipe[]>([]);
-  const [searching, setSearching] = useState(false);
-  // Why the mini-search failed: offline (network) vs anything else — both
-  // render a caption under the field, but offline says so.
-  const [failed, setFailed] = useState<"offline" | "error" | null>(null);
-
-  // Monotonic request id: only the LATEST debounced search may commit
-  // state, so out-of-order responses never clobber newer results (same
-  // stale-guard as Browse's search).
-  const searchRequestIdRef = useRef(0);
-  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const styles = useMemo(
     () =>
       StyleSheet.create({
-        // Was ScreenHeader's job: top safe-area inset + page gutters so the
-        // panel aligns with the rails below.
         wrap: {
           paddingTop: insets.top + Space.md,
           paddingHorizontal: Space.lg,
-          marginBottom: Space.xxl,
+          marginBottom: Space.lg,
+          gap: Space.xs,
         },
-        panel: {
-          backgroundColor: colors.surface,
-          borderRadius: Radius.xl,
-          padding: Space.xxl,
-          gap: Space.lg,
+        brandRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: Space.md,
         },
-        headline: {
+        brand: {
           ...Type.h2,
           color: colors.ink,
         },
-        // BIG search-field look (same warm pill). Static styles only (no
-        // function styles on Pressables — Android paint rules).
-        searchField: {
-          minHeight: 60,
+        // Compact tappable search pill (44pt). Static style only (no
+        // function styles on Pressables — Android paint rules); shrinks so
+        // the long prompt ellipsizes instead of crushing the brand.
+        searchPill: {
+          height: 44,
+          flexShrink: 1,
           flexDirection: "row",
           alignItems: "center",
           gap: Space.sm,
-          paddingHorizontal: Space.xl,
+          paddingHorizontal: Space.lg,
           backgroundColor: colors.surfaceSoft,
           borderRadius: Radius.pill,
-          borderWidth: 1,
-          borderColor: colors.hairline,
         },
         searchGlyph: {
-          fontSize: 22,
+          fontSize: 18,
           color: colors.inkFaint,
         },
-        searchInput: {
-          flex: 1,
-          paddingVertical: Space.md,
-          fontSize: Type.body.fontSize,
-          color: colors.ink,
-        },
-        // Clear (✕) button at the END of the input; marginStart so the gap
-        // follows the layout direction in RTL.
-        searchClear: {
-          marginStart: Space.xs,
-        },
-        searchClearGlyph: {
-          fontSize: 16,
+        searchLabel: {
+          ...Type.bodySm,
           color: colors.inkFaint,
         },
-        // Muted caption under the field (no results / search failure).
-        searchCaption: {
-          ...Type.caption,
+        greeting: {
+          ...Type.body,
           color: colors.inkSecondary,
         },
-        resultsContent: {
-          gap: Space.md,
-        },
-        chips: {
-          flexDirection: "row",
-          flexWrap: "wrap",
-          gap: Space.sm,
-        },
-        // Static enabled/disabled pair (no function styles on Pressables —
-        // Android paint rules): the surprise chip dims until rails load.
-        surpriseEnabled: {},
-        surpriseDisabled: {
-          opacity: 0.4,
+        tagline: {
+          ...Type.h3,
+          color: colors.ink,
+          marginTop: Space.xs,
         },
       }),
     [colors, insets.top],
   );
 
-  // Debounced live search: ≥2 trimmed chars fires page 1 with a small
-  // per_page (the row only needs a handful of cards) after 350ms. Clearing
-  // the field resets the mini-search and brings the quick chips back.
-  useEffect(() => {
-    const q = query.trim();
-    if (q.length < HERO_SEARCH_MIN_CHARS) {
-      // Invalidate any in-flight request so a late response can't repopulate
-      // results after the field was cleared.
-      searchRequestIdRef.current++;
-      if (searchDebounceRef.current != null) {
-        clearTimeout(searchDebounceRef.current);
-        searchDebounceRef.current = null;
-      }
-      setResults([]);
-      setFailed(null);
-      setSearching(false);
-      return;
-    }
-    if (searchDebounceRef.current != null) {
-      clearTimeout(searchDebounceRef.current);
-    }
-    searchDebounceRef.current = setTimeout(() => {
-      searchDebounceRef.current = null;
-      setSearching(true);
-      track("home_search_performed", { query: q });
-      const requestId = ++searchRequestIdRef.current;
-      searchRecipes({ q, page: 1, perPage: HERO_SEARCH_PER_PAGE })
-        .then((page) => {
-          if (requestId !== searchRequestIdRef.current) return; // stale
-          setResults(page.recipes);
-          setFailed(null);
-          setSearching(false);
-        })
-        .catch((error) => {
-          if (requestId !== searchRequestIdRef.current) return; // stale
-          console.warn("[RecipeReal] home hero search failed:", error);
-          setResults([]);
-          setFailed(isOfflineError(error) ? "offline" : "error");
-          setSearching(false);
-        });
-    }, HERO_SEARCH_DEBOUNCE_MS);
-    return () => {
-      if (searchDebounceRef.current != null) {
-        clearTimeout(searchDebounceRef.current);
-        searchDebounceRef.current = null;
-      }
-    };
-  }, [query]);
-
-  // Active mini-search: results (or their captions) show and the quick
-  // chips hide while the trimmed query is long enough to search.
-  const searchActive = query.trim().length >= HERO_SEARCH_MIN_CHARS;
-
-  const openQuick = useCallback((id: string) => {
-    track("home_hero_chip_tapped", { filter: id });
-    router.push({ pathname: "/browse", params: { filter: id } });
-  }, []);
-
-  // "Surprise me": jump to a random recipe from the ALREADY-LOADED
-  // top-rated rail — no extra fetch, instant navigation.
-  const surpriseReady = topRated.length > 0;
-  const handleSurprise = useCallback(() => {
-    if (topRated.length === 0) return;
-    const pick = topRated[Math.floor(Math.random() * topRated.length)];
-    track("home_surprise_tapped", { recipe_id: pick.id });
-    router.push(`/recipe/${pick.id}`);
-  }, [topRated]);
+  // Device-hour greeting: morning / afternoon / evening.
+  const hour = new Date().getHours();
+  const greeting =
+    hour < 12
+      ? t("home.greetMorning")
+      : hour < 18
+        ? t("home.greetAfternoon")
+        : t("home.greetEvening");
 
   return (
     <View style={styles.wrap}>
-      <View style={styles.panel}>
-        <Text style={styles.headline}>{t("home.heroPrompt")}</Text>
-        <View style={styles.searchField}>
+      <View style={styles.brandRow}>
+        <Text style={styles.brand}>RecipeReal</Text>
+        <Pressable
+          accessibilityRole="search"
+          onPress={() => router.push("/browse?focus=1")}
+          style={styles.searchPill}
+        >
           <Text style={styles.searchGlyph}>⌕</Text>
-          <TextInput
-            style={styles.searchInput}
-            placeholder={t("browse.searchPlaceholder")}
-            placeholderTextColor={colors.inkFaint}
-            value={query}
-            onChangeText={setQuery}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-          />
-          {searching ? (
-            <ActivityIndicator size="small" color={colors.accent} />
-          ) : null}
-          {query.length > 0 ? (
-            <Pressable
-              hitSlop={8}
-              onPress={() => setQuery("")}
-              accessibilityLabel={t("browse.clearSearch")}
-              style={styles.searchClear}
-            >
-              <Text style={styles.searchClearGlyph}>✕</Text>
-            </Pressable>
-          ) : null}
-        </View>
-        {searchActive ? (
-          failed === "offline" ? (
-            <Text style={styles.searchCaption}>
-              {t("browse.offlineCaption")}
-            </Text>
-          ) : failed === "error" ? (
-            <Text style={styles.searchCaption}>{t("home.noResultsMini")}</Text>
-          ) : results.length > 0 ? (
-            <FlatList
-              horizontal
-              initialNumToRender={4}
-              maxToRenderPerBatch={4}
-              windowSize={5}
-              removeClippedSubviews
-              data={results}
-              keyExtractor={(item) => String(item.id)}
-              renderItem={({ item }) => (
-                <HomeCard item={item} hasNote={noteIds.has(item.id)} />
-              )}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.resultsContent}
-              snapToInterval={HERO_SEARCH_SNAP_INTERVAL}
-              decelerationRate="fast"
-            />
-          ) : !searching ? (
-            <Text style={styles.searchCaption}>{t("home.noResultsMini")}</Text>
-          ) : null
-        ) : (
-          <View style={styles.chips}>
-            <Pressable hitSlop={4} onPress={() => openQuick("quick")}>
-              <Chip tone="accent" label={t("filter.under30")} />
-            </Pressable>
-            <Pressable hitSlop={4} onPress={() => openQuick("pasta")}>
-              <Chip tone="accent" label={t("cat.pasta")} />
-            </Pressable>
-            <Pressable hitSlop={4} onPress={() => openQuick("curry")}>
-              <Chip tone="accent" label={t("cat.curry")} />
-            </Pressable>
-            <Pressable
-              hitSlop={4}
-              onPress={handleSurprise}
-              disabled={!surpriseReady}
-              style={
-                surpriseReady
-                  ? styles.surpriseEnabled
-                  : styles.surpriseDisabled
-              }
-            >
+          <Text style={styles.searchLabel} numberOfLines={1}>
+            {t("home.heroPrompt")}
+          </Text>
+        </Pressable>
+      </View>
+      <Text style={styles.greeting}>
+        {name ? `${greeting}, ${name}` : greeting}
+      </Text>
+      <Text style={styles.tagline}>{t("home.tagline")}</Text>
+    </View>
+  );
+}
+
+/**
+ * Featured recipe of the day — the centerpiece card. A deterministic daily
+ * pick (chosen by the parent from the reality "most underestimated" rail,
+ * with "Top rated" as fallback): 16:9 photo with the heart overlay, title,
+ * the REAL total in huge timing teal, the active/passive/cleanup breakdown
+ * chips (only when the row carries the time contract), the reality source
+ * caption, and a "Start cooking" CTA into Cook Mode.
+ */
+function FeaturedHero({
+  recipe,
+  favorited,
+  onToggleFavorite,
+}: {
+  recipe: Recipe;
+  favorited: boolean;
+  onToggleFavorite: (id: number) => void;
+}) {
+  const colors = useThemeColors();
+  const t = useT();
+  const lr = useLocalizedRecipe();
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        card: {
+          marginHorizontal: Space.lg,
+          marginBottom: Space.md,
+          borderRadius: Radius.xl,
+        },
+        // 16:9 by aspect ratio: the style entry overrides HeroImage's
+        // numeric height prop (later entries win in RN style arrays).
+        heroImage: {
+          height: undefined,
+          aspectRatio: 16 / 9,
+        },
+        body: {
+          padding: Space.lg,
+          gap: Space.sm,
+        },
+        title: {
+          ...Type.h2,
+          color: colors.ink,
+        },
+        totalLabel: {
+          ...Type.overline,
+          color: colors.inkFaint,
+        },
+        // THE honest-time number: huge, and timing teal per the palette
+        // contract (colors.timing for calibration info).
+        totalValue: {
+          ...Type.h1,
+          color: colors.timing,
+          fontWeight: "800",
+        },
+        breakdown: {
+          flexDirection: "row",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: Space.xs,
+        },
+        sourceCaption: {
+          ...Type.caption,
+          color: colors.inkFaint,
+        },
+      }),
+    [colors],
+  );
+
+  // REAL total: reality minutes when known, else the recipe's best figure.
+  const total = recipe.reality?.minutes ?? recipeMinutes(recipe);
+
+  // Time-contract breakdown: rail rows usually ship no `time` block — then
+  // the whole chips row hides. Only the values actually present render.
+  const activeMin = recipe.time?.time_active_minutes ?? 0;
+  const passiveMin = recipe.time?.time_passive_minutes ?? 0;
+  const cleanupMin =
+    recipe.cleanup_avg_minutes ?? recipe.cleanup_estimate_minutes ?? 0;
+
+  return (
+    <Card padding={0} shadow="card" style={styles.card}>
+      <View>
+        <HeroImage
+          uri={recipe.image_url}
+          height={0}
+          rounded={Radius.xl}
+          style={styles.heroImage}
+        />
+        <HeartButton
+          favorited={favorited}
+          size="lg"
+          onPress={() => onToggleFavorite(recipe.id)}
+        />
+      </View>
+      <View style={styles.body}>
+        <Text style={styles.title} numberOfLines={1}>
+          {lr.title(recipe)}
+        </Text>
+        {total != null ? (
+          <View>
+            <Text style={styles.totalLabel}>{t("detail.statReally")}</Text>
+            <Text style={styles.totalValue}>{fmtMinutes(total)}</Text>
+          </View>
+        ) : null}
+        {activeMin > 0 || passiveMin > 0 || cleanupMin > 0 ? (
+          <View style={styles.breakdown}>
+            {activeMin > 0 ? (
               <Chip
                 tone="timing"
-                label={t("home.surprise")}
-                icon={<Text>🎲</Text>}
+                size="sm"
+                label={`${t("stepType.active")} ${fmtMinutes(activeMin)}`}
               />
-            </Pressable>
+            ) : null}
+            {passiveMin > 0 ? (
+              <Chip
+                tone="neutral"
+                size="sm"
+                label={`${t("stepType.passive")} ${fmtMinutes(passiveMin)}`}
+              />
+            ) : null}
+            {cleanupMin > 0 ? (
+              <Chip
+                tone="amber"
+                size="sm"
+                label={`${t("stepType.cleanup")} ${fmtMinutes(cleanupMin)}`}
+              />
+            ) : null}
           </View>
-        )}
+        ) : null}
+        {recipe.reality != null ? (
+          <Text style={styles.sourceCaption} numberOfLines={1}>
+            {recipe.reality.source === "community"
+              ? t("detail.realityFrom", { n: recipe.reality.samples })
+              : t("detail.realityEstimate")}
+          </Text>
+        ) : null}
+        <Button
+          title={t("cook.startCooking")}
+          onPress={() => router.push(`/cook/${recipe.id}`)}
+        />
       </View>
-    </View>
+    </Card>
   );
 }
 
@@ -868,7 +1032,16 @@ function SeeAllAction() {
 }
 
 /** Compact rail card: hero image, 2-line title, time + rating chips. */
-function HomeCard({ item, hasNote }: { item: Recipe; hasNote: boolean }) {
+function HomeCard({
+  item,
+  hasNote,
+  caption,
+}: {
+  item: Recipe;
+  hasNote: boolean;
+  /** Optional muted line under the title (e.g. "Cooked 2d ago"). */
+  caption?: string;
+}) {
   const colors = useThemeColors();
   const t = useT();
   const lr = useLocalizedRecipe();
@@ -887,6 +1060,10 @@ function HomeCard({ item, hasNote }: { item: Recipe; hasNote: boolean }) {
           ...Type.bodySm,
           fontWeight: "600",
           color: colors.ink,
+        },
+        caption: {
+          ...Type.caption,
+          color: colors.inkFaint,
         },
         chips: {
           flexDirection: "row",
@@ -936,6 +1113,11 @@ function HomeCard({ item, hasNote }: { item: Recipe; hasNote: boolean }) {
         <Text style={styles.title} numberOfLines={2}>
           {lr.title(item)}
         </Text>
+        {caption ? (
+          <Text style={styles.caption} numberOfLines={1}>
+            {caption}
+          </Text>
+        ) : null}
         <View style={styles.chips}>
           <TimeChip
             minutes={recipeMinutes(item)}
@@ -962,11 +1144,14 @@ function HomeRail({
   subtitle,
   items,
   noteIds,
+  captionFor,
 }: {
   title: string;
   subtitle?: string;
   items: Recipe[];
   noteIds: Set<number>;
+  /** Per-card muted caption (e.g. the "cooked when" line). */
+  captionFor?: (item: Recipe) => string | undefined;
 }) {
   const styles = useMemo(
     () =>
@@ -999,7 +1184,11 @@ function HomeRail({
         data={items}
         keyExtractor={(item) => String(item.id)}
         renderItem={({ item }) => (
-          <HomeCard item={item} hasNote={noteIds.has(item.id)} />
+          <HomeCard
+            item={item}
+            hasNote={noteIds.has(item.id)}
+            caption={captionFor?.(item)}
+          />
         )}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.railContent}
