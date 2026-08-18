@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { router, Stack } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import axios from "axios";
-import Constants from "expo-constants";
+import Constants, { ExecutionEnvironment } from "expo-constants";
 import * as Google from "expo-auth-session/providers/google";
 import {
   getRedirectUrl,
@@ -48,8 +48,7 @@ function resolveGoogleClientId(): string | null {
  */
 function resolveAuthRedirectUri(): string | null {
   const isStandalone =
-    Constants.executionEnvironment !==
-    Constants.ExecutionEnvironment.StoreClient;
+    Constants.executionEnvironment !== ExecutionEnvironment.StoreClient;
   if (isStandalone) {
     return `${API_BASE_URL}/auth/callback`;
   }
@@ -176,8 +175,7 @@ export default function LoginScreen() {
         request.url ?? (await request.makeAuthUrlAsync(Google.discovery));
 
       const isStandalone =
-        Constants.executionEnvironment !==
-        Constants.ExecutionEnvironment.StoreClient;
+        Constants.executionEnvironment !== ExecutionEnvironment.StoreClient;
 
       // The return always targets the /login ROUTE (this screen — its mount
       // effect calls maybeCompleteAuthSession() to hand the result back to

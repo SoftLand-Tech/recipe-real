@@ -16,3 +16,6 @@ Thumbs.db
 # Local-only: raw Food.com dataset (1.5GB) + tool artifacts
 recipes-dataset/
 .freebuff/
+
+# Unrelated local projects (never commit)
+ads-campaign3/
