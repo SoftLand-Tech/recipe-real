@@ -159,9 +159,32 @@ function NavigationFrame() {
               headerTintColor: colors.ink,
             }}
           />
+          {/*
+            The signed-in user's profile (avatar, editable display name,
+            counters, own recipes). Pushed from the Community header button
+            and the Settings account section; renders its own header.
+          */}
+          <Stack.Screen
+            name="profile"
+            options={{ title: t("stack.profile"), headerShown: false }}
+          />
           <Stack.Screen
             name="recipe/[id]"
             options={{ title: t("stack.recipe"), headerShown: false }}
+          />
+          {/*
+            Recipe composer (create/edit a user-submitted recipe). The header
+            title ("New recipe" / "Edit recipe") is finalized by the screen
+            itself via its own <Stack.Screen options> once it knows the mode.
+          */}
+          <Stack.Screen
+            name="recipe-composer"
+            options={{
+              title: t("stack.newRecipe"),
+              headerShown: true,
+              headerStyle: { backgroundColor: colors.canvas },
+              headerTintColor: colors.ink,
+            }}
           />
           <Stack.Screen
             name="cook/[id]"

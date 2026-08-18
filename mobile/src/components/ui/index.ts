@@ -1,6 +1,9 @@
 export { Card } from "./Card";
 export type { CardProps } from "./Card";
 
+export { Avatar } from "./Avatar";
+export type { AvatarProps } from "./Avatar";
+
 export { Chip } from "./Chip";
 export type { ChipProps } from "./Chip";
 

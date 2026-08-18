@@ -1435,7 +1435,18 @@ export default function BrowseScreen() {
 
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      <ScreenHeader title={t("tabs.browse")} />
+      <ScreenHeader
+        title={t("tabs.browse")}
+        right={
+          <IconPressable
+            onPress={() => router.push("/recipe-composer")}
+            accessibilityLabel={t("browse.addRecipe")}
+            hitSlop={Space.xs}
+          >
+            <Ionicons name="add" size={24} color={colors.accent} />
+          </IconPressable>
+        }
+      />
       <SearchBar
         search={search}
         onChangeSearch={setSearch}

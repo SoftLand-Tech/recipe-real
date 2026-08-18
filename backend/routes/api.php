@@ -7,10 +7,16 @@ use App\Http\Controllers\Api\BillingController;
 use App\Http\Controllers\Api\CookSessionController;
 use App\Http\Controllers\Api\HomeController;
 use App\Http\Controllers\Api\PaceCalibrationController;
+use App\Http\Controllers\Api\PostCommentController;
+use App\Http\Controllers\Api\PostController;
+use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RecipeController;
+use App\Http\Controllers\Api\RecipeNoteController;
 use App\Http\Controllers\Api\RealityController;
+use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\Api\UsageController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\UserRecipeController;
 use App\Http\Controllers\Api\WebhookController;
 use Illuminate\Support\Facades\Route;
 
@@ -32,6 +38,13 @@ Route::middleware('throttle:240,1')->group(function (): void {
     Route::get('/recipes/categories', [RecipeController::class, 'categories']);
     Route::get('/recipes/seed', [RecipeController::class, 'seed']);
     Route::get('/recipes/{recipe}', [RecipeController::class, 'show']);
+
+    // Community: public reads. Notes, the post feed and comment threads
+    // are browsable signed-out; PostController::index resolves the sanctum
+    // user from an optional bearer token for liked_by_me.
+    Route::get('/recipes/{recipe}/notes', [RecipeNoteController::class, 'index']);
+    Route::get('/posts', [PostController::class, 'index']);
+    Route::get('/posts/{post}/comments', [PostCommentController::class, 'index']);
 
     // Home-screen rails (curated, cached, light).
     Route::get('/home', HomeController::class);
@@ -64,6 +77,30 @@ Route::middleware(['throttle:60,1', 'auth:sanctum'])->group(function (): void {
     Route::post('/recipes/{recipe}/quick-time', [CookSessionController::class, 'quickTime']);
 
     Route::get('/pace-calibrations', PaceCalibrationController::class);
+
+    // Community platform: user-created recipes (owner-scoped writes; the
+    // PATCH/DELETE ownership check lives in UserRecipeController).
+    Route::post('/recipes', [UserRecipeController::class, 'store']);
+    Route::patch('/recipes/{recipe}', [UserRecipeController::class, 'update']);
+    Route::delete('/recipes/{recipe}', [UserRecipeController::class, 'destroy']);
+    Route::get('/users/me/recipes', [UserRecipeController::class, 'mine']);
+
+    // Own profile: public identity + contribution counts.
+    Route::get('/users/me/profile', [ProfileController::class, 'show']);
+    Route::patch('/users/me/profile', [ProfileController::class, 'update']);
+
+    // Community writes: notes on recipes, posts, likes, comments. All
+    // halal-gated server-side (see App\Support\HalalGate).
+    Route::post('/recipes/{recipe}/notes', [RecipeNoteController::class, 'store']);
+    Route::post('/posts', [PostController::class, 'store']);
+    Route::post('/posts/{post}/like', [PostController::class, 'like']);
+    Route::post('/posts/{post}/comments', [PostCommentController::class, 'store']);
+});
+
+// Image uploads (authed, halal-safe by construction — binary images), with
+// a tighter throttle than the general API: 20/min per user+IP.
+Route::middleware(['throttle:20,1', 'auth:sanctum'])->group(function (): void {
+    Route::post('/uploads', UploadController::class);
 });
 
 // Protected billing + usage routes.

@@ -425,6 +425,18 @@ export default function SettingsScreen() {
                 {t("settings.signedIn")}
               </Text>
             ) : null}
+            {/* Profile entry to the signed-in user's profile screen. */}
+            <Button
+              title={t("profile.title")}
+              variant="ghost"
+              onPress={() => router.push("/profile")}
+            />
+            {/* Profile entry to the recipe composer (user-submitted recipes). */}
+            <Button
+              title={t("settings.newRecipe")}
+              variant="ghost"
+              onPress={() => router.push("/recipe-composer")}
+            />
             <Button
               title={t("common.signOut")}
               variant="ghost"

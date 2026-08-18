@@ -180,10 +180,18 @@ export function normalizeRecipe(r: any): Recipe {
     : undefined;
   return {
     ...r,
+    // User-submitted recipes may be Arabic-only (title null): keep the type
+    // non-optional by defaulting to "" — the localized getter falls back to
+    // title_ar for display.
+    title: r?.title ?? "",
     image_url:
       r?.image_url && String(r.image_url).trim()
         ? String(r.image_url).trim()
         : null,
+    // Ownership metadata (user-submitted vs. imported foodcom rows): the id
+    // may serialize as a string; source_type passes through defensively.
+    owner_id: r?.owner_id == null ? null : Number(r.owner_id),
+    source_type: r?.source_type != null ? String(r.source_type) : null,
     // Arabic content columns: always present, null when untranslated. The
     // API passes ingredients_ar/steps_ar through as RAW JSON STRINGS (the
     // DB columns are json text), so parse them HERE — accepting either a

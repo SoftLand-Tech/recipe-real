@@ -75,6 +75,19 @@ class WipeUnreviewed extends Command
             DB::table('keep_ids')->insert(array_map(fn ($id) => ['id' => $id], $chunk));
         }
 
+        // SAFETY: user-created recipes (source_type='user') are ALWAYS kept,
+        // regardless of the keep files — their content exists only in this
+        // database, so wiping one on a re-run would be unrecoverable data
+        // loss. Junk flags cannot opt them out either.
+        $userRecipesKept = (int) DB::selectOne(
+            "SELECT COUNT(*) AS c FROM recipes WHERE source_type = 'user'"
+        )->c;
+        if ($userRecipesKept > 0) {
+            DB::statement(
+                "INSERT OR IGNORE INTO keep_ids (id) SELECT id FROM recipes WHERE source_type = 'user'"
+            );
+        }
+
         $totalRecipes = $this->countTable('recipes');
         $keptExisting = (int) DB::selectOne(
             'SELECT COUNT(*) AS c FROM recipes r WHERE EXISTS (SELECT 1 FROM keep_ids k WHERE k.id = r.id)'
@@ -92,11 +105,12 @@ class WipeUnreviewed extends Command
         $timingToGo = $this->countOrphans('timing_submissions', 'recipe_step_id', 'recipe_steps', 'recipe_id');
 
         $this->info(sprintf(
-            'Keep set: %d distinct id(s) (%d junk-flagged excluded, %d malformed line(s) ignored); %d exist in the database.',
+            'Keep set: %d distinct id(s) (%d junk-flagged excluded, %d malformed line(s) ignored); %d exist in the database; %d user-created recipe(s) always kept.',
             $keepCount,
             $junkCount,
             $malformed,
             $keptExisting,
+            $userRecipesKept,
         ));
 
         if (! $this->option('apply')) {

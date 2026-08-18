@@ -117,12 +117,14 @@ export function useFmtMinutes(): (m: number) => string {
 }
 
 // ---- Localized recipe content --------------------------------------------------
-// Arabic columns arrive as `*_ar` fields (null when untranslated); every getter
-// falls back to the English content.
+// Arabic columns arrive as `*_ar` fields (null when untranslated). Getters
+// prefer the APP language but fall back to WHICHEVER language exists, so an
+// Arabic-only user recipe still displays Arabic in the English UI (and
+// vice-versa) instead of blanking the field.
 
 export interface LocalizedRecipeText {
   lang: Lang;
-  /** Localized recipe title (Arabic when present, else English). */
+  /** Localized recipe title (app language first, other language as fallback). */
   title: (recipe: Recipe) => string;
   /** Localized ingredient list. */
   ingredients: (recipe: Recipe) => string[];
@@ -132,23 +134,40 @@ export interface LocalizedRecipeText {
   stepDescription: (step: RecipeStep) => string;
 }
 
+/** First non-empty array of the pair (an empty array counts as "missing"). */
+function firstPresentArray(
+  primary: string[] | null | undefined,
+  fallback: string[] | null | undefined,
+): string[] {
+  if (primary && primary.length > 0) return primary;
+  if (fallback && fallback.length > 0) return fallback;
+  return [];
+}
+
 /** Localized getters for recipe content in the current language. */
 export function useLocalizedRecipe(): LocalizedRecipeText {
   const { lang } = useLang();
   return useMemo(
     () => ({
       lang,
-      title: (r) => (lang === "ar" && r.title_ar ? r.title_ar : r.title),
+      title: (r) =>
+        lang === "ar"
+          ? (r.title_ar ?? r.title ?? "")
+          : (r.title ?? r.title_ar ?? ""),
       ingredients: (r) =>
-        lang === "ar" && r.ingredients_ar && r.ingredients_ar.length > 0
-          ? r.ingredients_ar
-          : r.ingredients,
+        firstPresentArray(
+          lang === "ar" ? r.ingredients_ar : r.ingredients,
+          lang === "ar" ? r.ingredients : r.ingredients_ar,
+        ),
       steps: (r) =>
-        lang === "ar" && r.steps_ar && r.steps_ar.length > 0
-          ? r.steps_ar
-          : r.steps,
+        firstPresentArray(
+          lang === "ar" ? r.steps_ar : r.steps,
+          lang === "ar" ? r.steps : r.steps_ar,
+        ),
       stepDescription: (s) =>
-        lang === "ar" && s.description_ar ? s.description_ar : s.description,
+        lang === "ar"
+          ? (s.description_ar ?? s.description ?? "")
+          : (s.description ?? s.description_ar ?? ""),
     }),
     [lang],
   );

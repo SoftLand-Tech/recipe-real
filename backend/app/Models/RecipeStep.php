@@ -12,9 +12,13 @@ class RecipeStep extends Model
         'recipe_id',
         'step_number',
         'description',
+        'description_ar',
         'step_type',
         'publisher_minutes',
         'community_avg_minutes',
+        // User recipes store their per-step estimate here; the AI pipeline
+        // (recipereal:ai-apply) writes the same column for imported rows.
+        'ai_minutes',
     ];
 
     protected function casts(): array
@@ -23,6 +27,7 @@ class RecipeStep extends Model
             'step_number' => 'integer',
             'publisher_minutes' => 'decimal:2',
             'community_avg_minutes' => 'decimal:2',
+            'ai_minutes' => 'decimal:2',
         ];
     }
 

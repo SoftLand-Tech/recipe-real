@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\DB;
 
@@ -13,6 +14,17 @@ class Recipe extends Model
         'title',
         'source_url',
         'image_url',
+        // Community platform: user-created recipes (owner_id + 'user';
+        // imported rows keep owner_id null / 'foodcom'). The *_ar values
+        // for user recipes are written as raw JSON strings
+        // (ingredients_ar/steps_ar) and plain text (title_ar), exactly how
+        // the import/translate pipelines store them — no array cast, so
+        // RecipeResource's raw passthrough stays consistent for both.
+        'owner_id',
+        'source_type',
+        'title_ar',
+        'ingredients_ar',
+        'steps_ar',
         'ingredients',
         'steps',
         'publisher_time_minutes',
@@ -180,5 +192,27 @@ class Recipe extends Model
     public function cookSessions(): HasMany
     {
         return $this->hasMany(CookSession::class);
+    }
+
+    /**
+     * The user who created this recipe (null for imported Food.com rows).
+     */
+    public function owner(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'owner_id');
+    }
+
+    public function notes(): HasMany
+    {
+        return $this->hasMany(RecipeNote::class);
+    }
+
+    /**
+     * True when this recipe was authored by a user in the app (community
+     * platform). Such recipes are always kept by recipereal:wipe-unreviewed.
+     */
+    public function isUserAuthored(): bool
+    {
+        return $this->source_type === 'user';
     }
 }

@@ -7,17 +7,24 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
+  fetchRecipeNotes,
   getRecipe,
   hasToken,
+  HalalRejectionError,
   isPaywallError,
+  postRecipeNote,
   QuickTimeUnauthorizedError,
+  RecipeNoteUnauthorizedError,
   submitQuickTime,
 } from "@/api/client";
 import { track } from "@/analytics";
@@ -34,6 +41,7 @@ import type {
   CleanupFactors,
   PaceCalibration,
   Recipe,
+  RecipeNote,
   RecipeStep,
 } from "@/types";
 import {
@@ -98,6 +106,40 @@ function formatClock(date: Date): string {
     const m = String(date.getMinutes()).padStart(2, "0");
     return `${h}:${m} ${hours < 12 ? "AM" : "PM"}`;
   }
+}
+
+/** AsyncStorage key persisting the "Make public" note toggle default. */
+const NOTE_PUBLIC_PREF_KEY = "recipereal.notePublicDefault";
+
+/**
+ * Compact relative timestamp for community notes ("just now", "3h ago",
+ * "2d ago", …). Falls back to a local date string past a year; an unparsable
+ * timestamp renders as "" (the caption row simply hides it).
+ */
+function relativeDate(t: TranslateFn, iso: string): string {
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return "";
+  const mins = Math.floor((Date.now() - then) / 60000);
+  if (mins < 1) return t("rel.now");
+  if (mins < 60) return t("rel.minutesAgo", { n: mins });
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return t("rel.hoursAgo", { n: hours });
+  const days = Math.floor(hours / 24);
+  if (days < 7) return t("rel.daysAgo", { n: days });
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return t("rel.weeksAgo", { n: weeks });
+  const months = Math.floor(days / 30);
+  if (months < 12) return t("rel.monthsAgo", { n: months });
+  try {
+    return new Date(then).toLocaleDateString();
+  } catch {
+    return "";
+  }
+}
+
+/** Display name of a note author: display_name, else the account name. */
+function noteAuthorName(user: RecipeNote["user"]): string {
+  return (user.display_name ?? user.name ?? "").trim();
 }
 
 /**
@@ -213,6 +255,27 @@ export default function RecipeDetailScreen() {
   const [note, setNote] = useState("");
   const [savedNote, setSavedNote] = useState("");
   const [noteJustSaved, setNoteJustSaved] = useState(false);
+  // "Make public" toggle under the note editor: when on, saving the local note
+  // ALSO posts it as a public community note. Persisted as the default.
+  const [notePublic, setNotePublic] = useState(false);
+  // Sign-in state for the owner Edit control + note compose row (read once).
+  const [signedIn, setSignedIn] = useState(false);
+
+  // ---- Community notes (public, paginated 20/page) -----------------------------
+  const [notes, setNotes] = useState<RecipeNote[]>([]);
+  const [notesLoading, setNotesLoading] = useState(true);
+  const [notesHasMore, setNotesHasMore] = useState(false);
+  const [notesPage, setNotesPage] = useState(1);
+  const [notesError, setNotesError] = useState<string | null>(null);
+  // Once-only guard for the community_notes_viewed analytics event (ref: no
+  // re-render needed — see the tracking effect below).
+  const notesTrackedRef = useRef(false);
+  // Compose row state (signed-in users only).
+  const [noteDraft, setNoteDraft] = useState("");
+  const [notePosting, setNotePosting] = useState(false);
+  const [notePostError, setNotePostError] = useState<string | null>(null);
+  const [noteHalalTerms, setNoteHalalTerms] = useState<string[] | null>(null);
+  const [noteNeedsAuth, setNoteNeedsAuth] = useState(false);
 
   // Quick-time contribution: honest-breakdown form ("did you make this?"):
   // plates made, hands-on minutes, total minutes (required) and cleanup
@@ -640,6 +703,123 @@ export default function RecipeDetailScreen() {
           fontWeight: "600",
           marginBottom: Space.xs,
         },
+        // "Make public" toggle row under the note editor.
+        publicToggleRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.md,
+          marginTop: Space.sm,
+        },
+        publicToggleText: {
+          flex: 1,
+          gap: 2,
+        },
+        publicToggleLabel: {
+          ...Type.bodySm,
+          color: colors.ink,
+          fontWeight: "600",
+        },
+        publicToggleCaption: {
+          ...Type.caption,
+          color: colors.inkSecondary,
+        },
+        // ---- Community notes ----
+        notesList: {
+          gap: Space.md,
+        },
+        noteRow: {
+          flexDirection: "row",
+          gap: Space.sm,
+          alignItems: "flex-start",
+        },
+        avatar: {
+          width: 34,
+          height: 34,
+          borderRadius: Radius.pill,
+          backgroundColor: colors.accentSoft,
+          alignItems: "center",
+          justifyContent: "center",
+          overflow: "hidden",
+        },
+        avatarText: {
+          fontSize: 14,
+          fontWeight: "700",
+          color: colors.accent,
+        },
+        avatarImage: {
+          width: "100%",
+          height: "100%",
+        },
+        noteInfo: {
+          flex: 1,
+          gap: Space.xs,
+        },
+        noteHeadRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+          flexWrap: "wrap",
+        },
+        noteAuthor: {
+          ...Type.bodySm,
+          color: colors.ink,
+          fontWeight: "700",
+        },
+        noteDate: {
+          ...Type.caption,
+          color: colors.inkFaint,
+        },
+        noteBody: {
+          ...Type.bodySm,
+          color: colors.ink,
+        },
+        // Compose row (signed-in): single-line input + send button.
+        noteCompose: {
+          gap: Space.xs,
+          marginTop: Space.md,
+        },
+        noteComposeRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+        },
+        noteComposeInput: {
+          ...Type.body,
+          color: colors.ink,
+          backgroundColor: colors.surfaceSoft,
+          borderWidth: 1,
+          borderColor: colors.hairline,
+          borderRadius: Radius.md,
+          paddingVertical: Space.md,
+          paddingHorizontal: Space.md,
+          flex: 1,
+        },
+        noteError: {
+          ...Type.caption,
+          color: colors.danger,
+        },
+        noteSignIn: {
+          ...Type.caption,
+          color: colors.accent,
+          fontWeight: "700",
+        },
+        notesLoadMore: {
+          alignSelf: "center",
+          marginTop: Space.xs,
+        },
+        notesMuted: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+        },
+        notesCenter: {
+          paddingVertical: Space.lg,
+          alignItems: "center",
+        },
+        // Owner "Edit" ghost button above the stat grid.
+        ownerEditBtn: {
+          alignSelf: "flex-start",
+          marginBottom: Space.sm,
+        },
         cookFooter: {
           position: "absolute",
           bottom: 0,
@@ -790,7 +970,50 @@ export default function RecipeDetailScreen() {
     }
   }, [id]);
 
-  /** Saves the personal note locally, then flashes a "Saved ✓" confirmation. */
+  /**
+   * Post a public community note. Returns true on success. Maps failures to
+   * the compose-row inline states: 401 → sign-in prompt, halal 422 → the
+   * offending terms, anything else → the generic error string.
+   */
+  const postPublicNote = useCallback(
+    async (body: string): Promise<boolean> => {
+      const recipeId = Number(id);
+      if (!Number.isFinite(recipeId) || body.trim() === "") return false;
+      setNotePosting(true);
+      setNotePostError(null);
+      setNoteHalalTerms(null);
+      setNoteNeedsAuth(false);
+      try {
+        const created = await postRecipeNote(recipeId, body.trim());
+        setNotes((prev) => [created, ...prev.filter((n) => n.id !== created.id)]);
+        track("recipe_note_posted", { recipe_id: recipeId });
+        return true;
+      } catch (error) {
+        console.warn("[RecipeReal] note post failed:", error);
+        if (error instanceof RecipeNoteUnauthorizedError) {
+          setNoteNeedsAuth(true);
+        } else if (error instanceof HalalRejectionError) {
+          setNoteHalalTerms(error.terms);
+          setNotePostError(
+            t("detail.noteHalalBlocked", { terms: error.terms.join(", ") }),
+          );
+        } else {
+          setNotePostError(t("detail.notePostFailed"));
+        }
+        return false;
+      } finally {
+        setNotePosting(false);
+      }
+    },
+    [id, t],
+  );
+
+  /**
+   * Saves the personal note locally, then flashes a "Saved ✓" confirmation.
+   * When the "Make public" toggle is on (and there is text to share), the same
+   * note is ALSO posted as a public community note — a 401 surfaces the
+   * sign-in prompt on the compose row while the local save still succeeds.
+   */
   const onSaveNote = useCallback(async () => {
     try {
       await saveNote(Number(id), note);
@@ -801,10 +1024,13 @@ export default function RecipeDetailScreen() {
       noteSavedTimerRef.current = setTimeout(() => {
         setNoteJustSaved(false);
       }, 3000);
+      if (notePublic && note.trim() !== "") {
+        await postPublicNote(note);
+      }
     } catch {
       // Notes are best-effort; never crash the detail screen.
     }
-  }, [id, note]);
+  }, [id, note, notePublic, postPublicNote]);
 
   /**
    * Submit the quick-time breakdown. Total minutes are required (1..1440);
@@ -1152,6 +1378,88 @@ export default function RecipeDetailScreen() {
     };
   }, [ready, id]);
 
+  // Sign-in state for the owner Edit control + note compose row (read once),
+  // plus the persisted "Make public" note toggle default.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [ok, pref] = await Promise.all([
+        hasToken(),
+        AsyncStorage.getItem(NOTE_PUBLIC_PREF_KEY).catch(() => null),
+      ]);
+      if (cancelled) return;
+      setSignedIn(ok);
+      setNotePublic(pref === "on");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ---- Community notes loading ---------------------------------------------------
+
+  /** Reset + fetch page 1 of the public notes for the current recipe. */
+  const loadNotes = useCallback(async () => {
+    const recipeId = Number(id);
+    if (!Number.isFinite(recipeId)) return;
+    setNotesLoading(true);
+    setNotesError(null);
+    try {
+      const page = await fetchRecipeNotes(recipeId, 1);
+      setNotes(page.notes);
+      setNotesHasMore(page.hasMore);
+      setNotesPage(1);
+    } catch (error) {
+      console.warn("[RecipeReal] notes load failed:", error);
+      setNotes([]);
+      setNotesHasMore(false);
+      setNotesError(t("detail.notesLoadFailed"));
+    } finally {
+      setNotesLoading(false);
+    }
+  }, [id, t]);
+
+  // Load the first notes page once the recipe is ready (per recipe id).
+  useEffect(() => {
+    if (!ready) return;
+    void loadNotes();
+  }, [ready, id, loadNotes]);
+
+  // Fire the community-notes analytics event once per screen entry, after the
+  // section has actually rendered with content (or a definitive empty list).
+  // A ref (not state) guards the once-only semantics without re-rendering.
+  useEffect(() => {
+    if (!ready || notesLoading || notesTrackedRef.current) return;
+    notesTrackedRef.current = true;
+    track("community_notes_viewed", { recipe_id: Number(id) });
+  }, [ready, notesLoading, id]);
+
+  /** Fetch the next notes page and append (deduped by id). */
+  const loadMoreNotes = useCallback(async () => {
+    const recipeId = Number(id);
+    if (!Number.isFinite(recipeId) || notesLoading) return;
+    setNotesLoading(true);
+    try {
+      const page = await fetchRecipeNotes(recipeId, notesPage + 1);
+      setNotes((prev) => {
+        const seen = new Set(prev.map((n) => n.id));
+        return [...prev, ...page.notes.filter((n) => !seen.has(n.id))];
+      });
+      setNotesHasMore(page.hasMore);
+      setNotesPage((p) => p + 1);
+    } catch (error) {
+      console.warn("[RecipeReal] notes load-more failed:", error);
+    } finally {
+      setNotesLoading(false);
+    }
+  }, [id, notesPage, notesLoading]);
+
+  /** Send button of the compose row: post the draft, clear it on success. */
+  const onSendNote = useCallback(async () => {
+    const ok = await postPublicNote(noteDraft);
+    if (ok) setNoteDraft("");
+  }, [noteDraft, postPublicNote]);
+
   return (
     <View style={styles.screen}>
       <ScrollView
@@ -1257,6 +1565,18 @@ export default function RecipeDetailScreen() {
 
               {/* RISING CONTENT CARD overlapping the hero. */}
               <View style={styles.contentCard}>
+                {/* 0. OWNER CONTROLS — user-submitted recipe + signed in: a
+                    small ghost "Edit" button jumps to the composer prefilled
+                    with this recipe (?id=). */}
+                {recipe.source_type === "user" && signedIn ? (
+                  <Button
+                    variant="ghost"
+                    title={t("detail.editRecipe")}
+                    onPress={() => router.push(`/recipe-composer?id=${recipe.id}`)}
+                    style={styles.ownerEditBtn}
+                  />
+                ) : null}
+
                 {/* 1. STAT GRID — publisher claim vs. cooks average (+ total). */}
                 <View style={styles.statGrid}>
                   <View style={styles.statCell}>
@@ -1688,6 +2008,155 @@ export default function RecipeDetailScreen() {
                       <Text style={styles.noteSaved}>{t("detail.saved")}</Text>
                     ) : null}
                   </View>
+                  {/* "Make public": when on, saving the note also posts it as a
+                      community note. The choice persists as the default. */}
+                  <View style={styles.publicToggleRow}>
+                    <View style={styles.publicToggleText}>
+                      <Text style={styles.publicToggleLabel}>
+                        {t("detail.notePublicToggle")}
+                      </Text>
+                      <Text style={styles.publicToggleCaption}>
+                        {t("detail.notePublicHint")}
+                      </Text>
+                    </View>
+                    <Switch
+                      value={notePublic}
+                      onValueChange={(value) => {
+                        setNotePublic(value);
+                        AsyncStorage.setItem(
+                          NOTE_PUBLIC_PREF_KEY,
+                          value ? "on" : "off",
+                        ).catch(() => {
+                          // Best-effort persistence.
+                        });
+                      }}
+                      trackColor={{ false: colors.hairline, true: colors.accent }}
+                      thumbColor={colors.surface}
+                    />
+                  </View>
+                </View>
+
+                {/* 8. COMMUNITY NOTES — public tips from other cooks, paginated
+                    20/page with a "load more" ghost button. Signed-in users get
+                    a compose row; a 401 there shows a sign-in prompt instead. */}
+                <View style={styles.section}>
+                  <SectionHeader title={t("detail.communityNotes")} />
+                  {notesError != null ? (
+                    <View style={styles.notesCenter}>
+                      <Text style={styles.notesMuted}>{notesError}</Text>
+                      <Button
+                        variant="ghost"
+                        title={t("common.retry")}
+                        onPress={loadNotes}
+                      />
+                    </View>
+                  ) : notesLoading && notes.length === 0 ? (
+                    <View style={styles.notesCenter}>
+                      <ActivityIndicator color={colors.accent} size="small" />
+                    </View>
+                  ) : notes.length === 0 ? (
+                    <Text style={styles.notesMuted}>
+                      {t("detail.notesEmpty")}
+                    </Text>
+                  ) : (
+                    <View style={styles.notesList}>
+                      {notes.map((item) => {
+                        const author = noteAuthorName(item.user);
+                        const initial = author.charAt(0).toUpperCase() || "?";
+                        const rel = relativeDate(t, item.created_at);
+                        return (
+                          <View key={`note-${item.id}`} style={styles.noteRow}>
+                            <View style={styles.avatar}>
+                              {item.user.avatar_url ? (
+                                <Image
+                                  source={{ uri: item.user.avatar_url }}
+                                  style={styles.avatarImage}
+                                  contentFit="cover"
+                                  transition={0}
+                                  cachePolicy="memory-disk"
+                                />
+                              ) : (
+                                <Text style={styles.avatarText}>{initial}</Text>
+                              )}
+                            </View>
+                            <View style={styles.noteInfo}>
+                              <View style={styles.noteHeadRow}>
+                                <Text style={styles.noteAuthor}>
+                                  {author}
+                                </Text>
+                                {rel !== "" ? (
+                                  <Text style={styles.noteDate}>{rel}</Text>
+                                ) : null}
+                              </View>
+                              <Text style={styles.noteBody}>{item.body}</Text>
+                            </View>
+                          </View>
+                        );
+                      })}
+                      {notesHasMore ? (
+                        <Button
+                          variant="ghost"
+                          title={t("detail.loadMoreNotes")}
+                          loading={notesLoading}
+                          disabled={notesLoading}
+                          onPress={loadMoreNotes}
+                          style={styles.notesLoadMore}
+                        />
+                      ) : null}
+                    </View>
+                  )}
+                  {/* Compose row: signed-in users post a public note directly;
+                      unauthenticated users see a sign-in prompt instead. */}
+                  {signedIn ? (
+                    <View style={styles.noteCompose}>
+                      <View style={styles.noteComposeRow}>
+                        <TextInput
+                          style={styles.noteComposeInput}
+                          value={noteDraft}
+                          onChangeText={setNoteDraft}
+                          placeholder={t("detail.noteComposePlaceholder")}
+                          placeholderTextColor={colors.inkFaint}
+                          maxLength={1000}
+                          editable={!notePosting}
+                        />
+                        <Button
+                          variant="primary"
+                          title={t("detail.noteSend")}
+                          loading={notePosting}
+                          disabled={notePosting || noteDraft.trim().length === 0}
+                          onPress={onSendNote}
+                        />
+                      </View>
+                      {noteHalalTerms != null ? (
+                        <Text style={styles.noteError}>
+                          {noteHalalTerms.join(", ")}
+                        </Text>
+                      ) : null}
+                      {notePostError != null && noteHalalTerms == null ? (
+                        <Text style={styles.noteError}>{notePostError}</Text>
+                      ) : null}
+                      {noteNeedsAuth ? (
+                        <Pressable
+                          onPress={() => router.push("/login")}
+                          hitSlop={Space.sm}
+                        >
+                          <Text style={styles.noteSignIn}>
+                            {t("detail.notesSignIn")}
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  ) : (
+                    <Pressable
+                      onPress={() => router.push("/login")}
+                      hitSlop={Space.sm}
+                      style={styles.noteCompose}
+                    >
+                      <Text style={styles.noteSignIn}>
+                        {t("detail.notesSignIn")}
+                      </Text>
+                    </Pressable>
+                  )}
                 </View>
               </View>
             </>

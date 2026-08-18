@@ -73,6 +73,12 @@ class AuthController extends Controller
         $user = User::where('google_sub', $googleSub)->first()
             ?? User::where('email', $email)->first();
 
+        // Community identity from the Google profile: the picture (capped at
+        // 500 chars, the users.avatar_url column width) seeds avatar_url.
+        $avatarUrl = isset($claims->picture) && is_string($claims->picture)
+            ? mb_substr($claims->picture, 0, 500)
+            : null;
+
         if ($user === null) {
             try {
                 $user = User::create([
@@ -82,6 +88,10 @@ class AuthController extends Controller
                     // nullable. The hashed cast encrypts it like any other.
                     'password' => Str::random(40),
                     'google_sub' => $googleSub,
+                    // display_name only seeds on first creation; afterwards
+                    // the user owns it (PATCH /api/users/me/profile).
+                    'display_name' => $claims->name ?? null,
+                    'avatar_url' => $avatarUrl,
                 ]);
 
                 // Reload so DB-applied defaults (e.g. skill_level) are reflected.
@@ -99,7 +109,13 @@ class AuthController extends Controller
                 }
             }
         } else {
-            $user->forceFill(['google_sub' => $googleSub])->save();
+            // Keep the avatar in sync with the Google profile on later
+            // sign-ins (display_name is deliberately untouched — the user
+            // may have customized it).
+            $user->forceFill(array_filter([
+                'google_sub' => $googleSub,
+                'avatar_url' => $avatarUrl,
+            ], fn ($value) => $value !== null))->save();
         }
 
         $token = $user->createToken('mobile')->plainTextToken;

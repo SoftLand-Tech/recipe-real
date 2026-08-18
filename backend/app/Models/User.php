@@ -14,7 +14,7 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Cashier\Billable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'password', 'skill_level', 'google_sub'])]
+#[Fillable(['name', 'email', 'password', 'skill_level', 'google_sub', 'avatar_url', 'display_name'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -64,6 +64,24 @@ class User extends Authenticatable
     public function paceCalibrations(): HasMany
     {
         return $this->hasMany(PaceCalibration::class);
+    }
+
+    /**
+     * Recipes authored by this user (community platform, source_type='user').
+     */
+    public function recipes(): HasMany
+    {
+        return $this->hasMany(Recipe::class, 'owner_id');
+    }
+
+    public function recipeNotes(): HasMany
+    {
+        return $this->hasMany(RecipeNote::class);
+    }
+
+    public function posts(): HasMany
+    {
+        return $this->hasMany(Post::class);
     }
 
     /**

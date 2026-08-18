@@ -24,6 +24,38 @@ export interface RecipeStep {
   community_minutes: number | null;
 }
 
+/** One step row of a user-submitted recipe (POST/PATCH /api/recipes). */
+export interface UserRecipeStepInput {
+  /** English description — required, ≤2000 chars. */
+  description: string;
+  /** Arabic description — optional. */
+  description_ar?: string;
+  /** Estimated minutes for this step (0..1440, optional). */
+  minutes_estimated?: number;
+  /** active | passive | cleanup (defaults server-side to active). */
+  step_type?: "active" | "passive" | "cleanup";
+}
+
+/** Payload for creating/patching a user-submitted recipe. */
+export interface UserRecipeInput {
+  /** English title — required. */
+  title: string;
+  /** Arabic title — optional. */
+  title_ar?: string;
+  /** Free-text description — optional. */
+  description?: string;
+  /** Uploaded image URL (POST /api/uploads) — optional; null clears it. */
+  image_url?: string | null;
+  /** Servings hint — validated but not stored by the server. */
+  servings?: number;
+  /** Total estimated minutes — required, 1..1440. */
+  estimated_minutes: number;
+  /** Ingredient strings — 1..60 entries, ≤300 chars each. */
+  ingredients: string[];
+  /** Step rows — 1..40 entries. */
+  steps: UserRecipeStepInput[];
+}
+
 export interface CleanupFactors {
   dish_count: number | null;
   grease_level: string | null;
@@ -80,6 +112,14 @@ export interface Recipe {
   fat_g?: number | null;
   /** Present on the detail / seed payloads. */
   recipe_steps?: RecipeStep[];
+  /**
+   * Owning user id for user-submitted recipes; null for imported
+   * (Food.com) rows. Present on current backend rows, optional on
+   * SQLite-cached copies.
+   */
+  owner_id?: number | null;
+  /** Where the row came from: "foodcom" (imported) or "user" (submitted). */
+  source_type?: "foodcom" | "user" | string | null;
 }
 
 export interface Paginated<T> {
@@ -184,4 +224,125 @@ export interface Usage {
   premium: boolean;
   views_this_month: number;
   limit: number;
+}
+
+// ---- User recipes, notes & profile -------------------------------------------
+
+/** Author block attached to each community recipe note. */
+export interface RecipeNoteUser {
+  id: number;
+  display_name: string | null;
+  name: string | null;
+  avatar_url: string | null;
+}
+
+/** One community note row (GET /api/recipes/{id}/notes). */
+export interface RecipeNote {
+  id: number;
+  body: string;
+  created_at: string;
+  user: RecipeNoteUser;
+}
+
+/** The signed-in user's public profile (GET /api/users/me/profile). */
+export interface PublicProfile {
+  id: number;
+  name: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+}
+
+/** One page of community notes: rows plus whether more pages exist. */
+export interface RecipeNotesPage {
+  notes: RecipeNote[];
+  hasMore: boolean;
+}
+
+// ---- Community posts --------------------------------------------------------
+
+/** Post kinds served by GET /api/posts?kind=. */
+export type PostKind = "try" | "fail" | "question";
+
+/** Author block attached to each community post / comment. */
+export interface PostUser {
+  id: number;
+  display_name: string | null;
+  name: string | null;
+  avatar_url: string | null;
+}
+
+/** Light recipe reference attached to a post (null when the post is standalone). */
+export interface PostRecipe {
+  id: number;
+  title: string;
+  title_ar: string | null;
+  image_url: string | null;
+}
+
+/** One community post row (GET /api/posts, 20/page newest-first). */
+export interface Post {
+  id: number;
+  kind: PostKind;
+  body: string;
+  image_url: string | null;
+  created_at: string;
+  user: PostUser;
+  recipe: PostRecipe | null;
+  likes_count: number;
+  comments_count: number;
+  liked_by_me: boolean;
+}
+
+/** One comment row of a post (GET /api/posts/{id}/comments, oldest-first). */
+export interface PostComment {
+  id: number;
+  body: string;
+  created_at: string;
+  user: PostUser;
+}
+
+/** Toggle result of POST /api/posts/{id}/like. */
+export interface PostLikeResult {
+  liked: boolean;
+  likes_count: number;
+}
+
+/** Payload for POST /api/posts. */
+export interface PostInput {
+  kind: PostKind;
+  body: string;
+  recipe_id?: number;
+  image_url?: string;
+}
+
+/** One page of community posts: rows plus whether more pages exist. */
+export interface PostsPage {
+  posts: Post[];
+  hasMore: boolean;
+}
+
+/** One page of post comments: rows plus whether more pages exist. */
+export interface PostCommentsPage {
+  comments: PostComment[];
+  hasMore: boolean;
+}
+
+/** Counters block of GET /api/users/me/profile. */
+export interface ProfileCounts {
+  recipes: number;
+  public_notes: number;
+  posts: number;
+  likes_received: number;
+}
+
+/** The signed-in user's full profile (user + counters). */
+export interface MyProfile {
+  user: {
+    id: number;
+    display_name: string | null;
+    name: string | null;
+    avatar_url: string | null;
+    created_at: string;
+  };
+  counts: ProfileCounts;
 }

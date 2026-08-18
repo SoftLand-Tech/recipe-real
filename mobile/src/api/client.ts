@@ -34,10 +34,23 @@ import type {
   CookSessionSummary,
   GetRecipesParams,
   HomeRails,
+  MyProfile,
   Paginated,
+  Post,
+  PostComment,
+  PostCommentsPage,
+  PostInput,
+  PostKind,
+  PostLikeResult,
+  PostUser,
+  PostsPage,
+  PublicProfile,
   Recipe,
+  RecipeNote,
+  RecipeNotesPage,
   SearchParams,
   Usage,
+  UserRecipeInput,
 } from "@/types";
 
 // `toNum` and `normalizeRecipe` are imported from `@/api/http` (see above).
@@ -494,5 +507,409 @@ export async function getUsage(): Promise<Usage> {
     premium: Boolean(data?.premium),
     views_this_month: Number(data?.views_this_month) || 0,
     limit: Number(data?.limit) || 0,
+  };
+}
+
+// ---- User-submitted recipes, notes & profile ----------------------------------
+
+/**
+ * Thrown when the server REJECTS user content (recipe or note) because it
+ * contains non-halal terms. The 422 body is
+ * `{message, errors: {halal: ["wine", ...]}}` — the offending terms are
+ * surfaced to the user so they can edit the text.
+ */
+export class HalalRejectionError extends Error {
+  /** The offending terms reported by the server. */
+  readonly terms: string[];
+
+  constructor(terms: string[]) {
+    super(`Blocked non-halal terms: ${terms.join(", ")}`);
+    this.name = "HalalRejectionError";
+    this.terms = terms;
+  }
+}
+
+/** Thrown when posting a community note hits a 401 (no/expired token). */
+export class RecipeNoteUnauthorizedError extends Error {
+  constructor() {
+    super("Sign in to post a note");
+    this.name = "RecipeNoteUnauthorizedError";
+  }
+}
+
+/** Extract the halal term list from a Laravel 422 `{errors: {halal: [...]}}`. */
+function extractHalalTerms(error: unknown): string[] | null {
+  if (!axios.isAxiosError(error) || error.response?.status !== 422) {
+    return null;
+  }
+  const body = error.response.data as
+    | { errors?: Record<string, unknown> }
+    | undefined;
+  const halal = body?.errors?.halal;
+  if (!Array.isArray(halal)) return null;
+  const terms = halal.filter(
+    (term): term is string => typeof term === "string" && term.length > 0,
+  );
+  return terms.length > 0 ? terms : null;
+}
+
+/** Run `fn`, converting a halal 422 into a HalalRejectionError. */
+async function rethrowHalal<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    const terms = extractHalalTerms(error);
+    if (terms) throw new HalalRejectionError(terms);
+    throw error;
+  }
+}
+
+/** Unwrap a RecipeResource response (`{data: {...}}`, or the raw resource). */
+function unwrapRecipeResource(payload: unknown): Recipe {
+  const body = payload as { data?: unknown } | undefined;
+  return normalizeRecipe(body?.data ?? payload);
+}
+
+/** Create a user-submitted recipe (POST /api/recipes, authed) → the recipe. */
+export async function createUserRecipe(
+  input: UserRecipeInput,
+): Promise<Recipe> {
+  return rethrowHalal(async () => {
+    const { data } = await api.post("/api/recipes", input);
+    return unwrapRecipeResource(data);
+  });
+}
+
+/** Update the signed-in user's recipe (PATCH /api/recipes/{id}, owner-only). */
+export async function updateUserRecipe(
+  id: number,
+  input: UserRecipeInput,
+): Promise<Recipe> {
+  return rethrowHalal(async () => {
+    const { data } = await api.patch(`/api/recipes/${id}`, input);
+    return unwrapRecipeResource(data);
+  });
+}
+
+/** Delete the signed-in user's recipe (DELETE /api/recipes/{id}) → 204. */
+export async function deleteUserRecipe(id: number): Promise<void> {
+  await api.delete(`/api/recipes/${id}`);
+}
+
+/** One page of the signed-in user's light recipe rows (GET /api/users/me/recipes). */
+export async function fetchMyRecipes(
+  page = 1,
+): Promise<Paginated<Recipe>> {
+  const { data } = await api.get<Paginated<Recipe>>(
+    "/api/users/me/recipes",
+    { params: { page } },
+  );
+  return {
+    ...data,
+    data: Array.isArray(data?.data) ? data.data.map(normalizeRecipe) : [],
+  };
+}
+
+/**
+ * Upload an image (POST /api/uploads, authed, multipart `image`,
+ * jpg/png/webp ≤4MB) and return its public URL. React Native's FormData takes
+ * a `{uri, name, type}` file blob; the type defaults to jpeg and is inferred
+ * from the uri extension when possible. The Content-Type header is set per
+ * request so axios lets the native layer add the multipart boundary.
+ */
+export async function uploadImage(uri: string): Promise<string> {
+  const ext = uri.split("?")[0].split(".").pop()?.toLowerCase();
+  const type =
+    ext === "png"
+      ? "image/png"
+      : ext === "webp"
+        ? "image/webp"
+        : "image/jpeg";
+  const name = `photo.${ext === "png" || ext === "webp" ? ext : "jpg"}`;
+  const form = new FormData();
+  // React Native's FormData accepts `{uri, name, type}` file parts at runtime;
+  // the DOM lib types only know Blob, hence the cast.
+  form.append("image", { uri, name, type } as unknown as Blob);
+  const { data } = await api.post<{ url?: string }>("/api/uploads", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  const url = data?.url;
+  if (typeof url !== "string" || url.length === 0) {
+    throw new Error("Upload failed: no URL returned");
+  }
+  return url;
+}
+
+/** Page size of the public notes endpoint (server-fixed at 20). */
+const NOTES_PER_PAGE = 20;
+
+/** Normalize one note row defensively (user block may be partial in dev). */
+function normalizeNote(n: any): RecipeNote {
+  return {
+    id: Number(n?.id),
+    body: typeof n?.body === "string" ? n.body : "",
+    created_at: typeof n?.created_at === "string" ? n.created_at : "",
+    user: {
+      id: Number(n?.user?.id),
+      display_name: n?.user?.display_name ?? null,
+      name: n?.user?.name ?? null,
+      avatar_url: n?.user?.avatar_url ?? null,
+    },
+  };
+}
+
+/**
+ * One page of a recipe's PUBLIC community notes (GET /api/recipes/{id}/notes,
+ * 20/page). `hasMore` prefers the paginator meta, falling back to a full page
+ * heuristic when meta is missing.
+ */
+export async function fetchRecipeNotes(
+  recipeId: number,
+  page = 1,
+): Promise<RecipeNotesPage> {
+  const { data } = await api.get<{ data?: unknown; meta?: {
+    current_page?: unknown;
+    last_page?: unknown;
+  } }>(`/api/recipes/${recipeId}/notes`, { params: { page } });
+  const rows = Array.isArray(data?.data) ? data.data : [];
+  const notes = rows.map(normalizeNote);
+  const current = Number(data?.meta?.current_page) || page;
+  const last = Number(data?.meta?.last_page) || current;
+  return { notes, hasMore: current < last || notes.length >= NOTES_PER_PAGE };
+}
+
+/**
+ * Post a community note (POST /api/recipes/{id}/notes, authed,
+ * body 1..1000) → the created note. A 401 maps to
+ * RecipeNoteUnauthorizedError; a halal 422 maps to HalalRejectionError.
+ */
+export async function postRecipeNote(
+  recipeId: number,
+  body: string,
+): Promise<RecipeNote> {
+  try {
+    const { data } = await api.post(`/api/recipes/${recipeId}/notes`, { body });
+    return normalizeNote((data as { data?: unknown })?.data ?? data);
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new RecipeNoteUnauthorizedError();
+    }
+    const terms = extractHalalTerms(error);
+    if (terms) throw new HalalRejectionError(terms);
+    throw error;
+  }
+}
+
+/** The signed-in user's public profile (GET /api/users/me/profile). */
+export async function fetchMyProfile(): Promise<PublicProfile> {
+  const { data } = await api.get<PublicProfile>("/api/users/me/profile");
+  const body = (data as { data?: PublicProfile } | undefined)?.data ?? data;
+  return {
+    id: Number(body?.id),
+    name: body?.name ?? null,
+    display_name: body?.display_name ?? null,
+    avatar_url: body?.avatar_url ?? null,
+  };
+}
+
+/** Update the signed-in user's display name (PATCH /api/users/me/profile). */
+export async function updateDisplayName(name: string): Promise<PublicProfile> {
+  const { data } = await api.patch("/api/users/me/profile", {
+    display_name: name,
+  });
+  const body = (data as { data?: PublicProfile } | undefined)?.data ?? data;
+  return {
+    id: Number(body?.id),
+    name: body?.name ?? null,
+    display_name: body?.display_name ?? null,
+    avatar_url: body?.avatar_url ?? null,
+  };
+}
+
+// ---- Community posts ----------------------------------------------------------
+
+/** Thrown when a community post/comment/like action hits a 401 (no/expired token). */
+export class PostUnauthorizedError extends Error {
+  constructor() {
+    super("Sign in to join the community");
+    this.name = "PostUnauthorizedError";
+  }
+}
+
+/** Page size of the public posts + comments endpoints (server-fixed at 20). */
+const POSTS_PER_PAGE = 20;
+
+/** Normalize a post/comment author block defensively (dev payloads are partial). */
+function normalizePostUser(u: any): PostUser {
+  return {
+    id: Number(u?.id),
+    display_name: u?.display_name ?? null,
+    name: u?.name ?? null,
+    avatar_url: u?.avatar_url ?? null,
+  };
+}
+
+/** Normalize one post row defensively (recipe block may be null/partial). */
+function normalizePost(p: any): Post {
+  return {
+    id: Number(p?.id),
+    kind: p?.kind === "fail" || p?.kind === "question" ? p.kind : "try",
+    body: typeof p?.body === "string" ? p.body : "",
+    image_url: p?.image_url ?? null,
+    created_at: typeof p?.created_at === "string" ? p.created_at : "",
+    user: normalizePostUser(p?.user),
+    recipe:
+      p?.recipe != null
+        ? {
+            id: Number(p.recipe.id),
+            title: typeof p.recipe.title === "string" ? p.recipe.title : "",
+            title_ar: p.recipe.title_ar ?? null,
+            image_url: p.recipe.image_url ?? null,
+          }
+        : null,
+    likes_count: toNum(p?.likes_count) ?? 0,
+    comments_count: toNum(p?.comments_count) ?? 0,
+    liked_by_me: Boolean(p?.liked_by_me),
+  };
+}
+
+/** Normalize one comment row defensively. */
+function normalizePostComment(c: any): PostComment {
+  return {
+    id: Number(c?.id),
+    body: typeof c?.body === "string" ? c.body : "",
+    created_at: typeof c?.created_at === "string" ? c.created_at : "",
+    user: normalizePostUser(c?.user),
+  };
+}
+
+/** Whether more pages exist: prefer paginator meta, else a full-page heuristic. */
+function morePages(body: any, page: number, rows: number): boolean {
+  const current = Number(body?.meta?.current_page) || page;
+  const last = Number(body?.meta?.last_page) || current;
+  return current < last || rows >= POSTS_PER_PAGE;
+}
+
+/**
+ * One page of the public community feed (GET /api/posts, 20/page
+ * newest-first). `kind` filters to try|fail|question; omit it for all posts.
+ */
+export async function fetchPosts(
+  kind?: PostKind,
+  page = 1,
+): Promise<PostsPage> {
+  const { data } = await api.get<{ data?: unknown }>(`/api/posts`, {
+    params: { ...(kind ? { kind } : {}), page },
+  });
+  const rows = Array.isArray(data?.data) ? data.data.map(normalizePost) : [];
+  return { posts: rows, hasMore: morePages(data, page, rows.length) };
+}
+
+/**
+ * Publish a community post (POST /api/posts, authed, body 1..2000) → the
+ * created post. A 401 maps to PostUnauthorizedError; a halal 422 maps to
+ * HalalRejectionError.
+ */
+export async function createPost(input: PostInput): Promise<Post> {
+  try {
+    const { data } = await api.post("/api/posts", input);
+    return normalizePost((data as { data?: unknown })?.data ?? data);
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new PostUnauthorizedError();
+    }
+    const terms = extractHalalTerms(error);
+    if (terms) throw new HalalRejectionError(terms);
+    throw error;
+  }
+}
+
+/**
+ * Toggle the signed-in user's like on a post (POST /api/posts/{id}/like,
+ * authed) → the new {liked, likes_count}. A 401 maps to
+ * PostUnauthorizedError.
+ */
+export async function togglePostLike(
+  postId: number,
+): Promise<PostLikeResult> {
+  try {
+    const { data } = await api.post<{ liked?: unknown; likes_count?: unknown }>(
+      `/api/posts/${postId}/like`,
+    );
+    return {
+      liked: Boolean(data?.liked),
+      likes_count: toNum(data?.likes_count) ?? 0,
+    };
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new PostUnauthorizedError();
+    }
+    throw error;
+  }
+}
+
+/**
+ * One page of a post's comments (GET /api/posts/{id}/comments, public,
+ * 20/page oldest-first).
+ */
+export async function fetchPostComments(
+  postId: number,
+  page = 1,
+): Promise<PostCommentsPage> {
+  const { data } = await api.get<{ data?: unknown }>(
+    `/api/posts/${postId}/comments`,
+    { params: { page } },
+  );
+  const rows = Array.isArray(data?.data)
+    ? data.data.map(normalizePostComment)
+    : [];
+  return { comments: rows, hasMore: morePages(data, page, rows.length) };
+}
+
+/**
+ * Comment on a post (POST /api/posts/{id}/comments, authed, body 1..1000) →
+ * the created comment. A 401 maps to PostUnauthorizedError; a halal 422 maps
+ * to HalalRejectionError.
+ */
+export async function createPostComment(
+  postId: number,
+  body: string,
+): Promise<PostComment> {
+  try {
+    const { data } = await api.post(`/api/posts/${postId}/comments`, { body });
+    return normalizePostComment((data as { data?: unknown })?.data ?? data);
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new PostUnauthorizedError();
+    }
+    const terms = extractHalalTerms(error);
+    if (terms) throw new HalalRejectionError(terms);
+    throw error;
+  }
+}
+
+/**
+ * The signed-in user's full profile incl. counters
+ * (GET /api/users/me/profile → {user, counts}). Numeric counters are
+ * normalized defensively; an envelope `data` wrapper is tolerated.
+ */
+export async function fetchMyProfileFull(): Promise<MyProfile> {
+  const { data } = await api.get("/api/users/me/profile");
+  const body = (data as { data?: any } | undefined)?.data ?? data;
+  return {
+    user: {
+      id: Number(body?.user?.id),
+      display_name: body?.user?.display_name ?? null,
+      name: body?.user?.name ?? null,
+      avatar_url: body?.user?.avatar_url ?? null,
+      created_at:
+        typeof body?.user?.created_at === "string" ? body.user.created_at : "",
+    },
+    counts: {
+      recipes: toNum(body?.counts?.recipes) ?? 0,
+      public_notes: toNum(body?.counts?.public_notes) ?? 0,
+      posts: toNum(body?.counts?.posts) ?? 0,
+      likes_received: toNum(body?.counts?.likes_received) ?? 0,
+    },
   };
 }
