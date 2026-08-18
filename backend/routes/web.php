@@ -6,6 +6,11 @@ Route::get('/', function () {
     return view('welcome');
 });
 
+// Privacy policy (Play Store requirement): linked from the landing footer.
+Route::get('/privacy', function () {
+    return view('privacy');
+});
+
 /*
  | Google OAuth return endpoint (registered as an Authorized Redirect URI).
  | Google's implicit id_token flow delivers the token in the URL FRAGMENT,

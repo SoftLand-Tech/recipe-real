@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import {
   Alert,
+  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -16,7 +17,7 @@ import {
   requestNotificationsPermission,
 } from "@/utils/notifications";
 
-import { hasToken, logout } from "@/api/client";
+import { deleteAccount, hasToken, logout } from "@/api/client";
 import {
   clearRecipeCache,
   seedCacheFirstPage,
@@ -77,6 +78,10 @@ export default function SettingsScreen() {
   const [syncDone, setSyncDone] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [clearDone, setClearDone] = useState(false);
+  /** Account deletion in flight (disables the danger row). */
+  const [deleting, setDeleting] = useState(false);
+  /** Whether the last account-deletion attempt failed (inline caption). */
+  const [deleteFailed, setDeleteFailed] = useState(false);
 
   const styles = useMemo(
     () =>
@@ -128,6 +133,23 @@ export default function SettingsScreen() {
           ...Type.caption,
           color: colors.inkSecondary,
         },
+        // Danger row: a plain Pressable (not a ghost Button) so the label can
+        // carry the danger color — visually distinct from "Sign out" above it.
+        deleteRow: {
+          alignSelf: "stretch",
+          paddingVertical: Space.sm,
+        },
+        deleteDisabled: {
+          opacity: 0.5,
+        },
+        deleteLabel: {
+          ...Type.title,
+          color: colors.danger,
+        },
+        deleteCaption: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+        },
         aboutText: {
           ...Type.caption,
           color: colors.inkFaint,
@@ -169,6 +191,44 @@ export default function SettingsScreen() {
     clearPaceCache();
     await refreshAuth();
   }, [refreshAuth]);
+
+  /** Delete the account server-side, then drop all local auth state. */
+  const handleDeleteAccount = useCallback(async () => {
+    if (deleting) return;
+    setDeleting(true);
+    setDeleteFailed(false);
+    try {
+      await deleteAccount();
+      clearPaceCache();
+      await refreshAuth();
+    } catch (error) {
+      console.warn("[RecipeReal] account deletion failed:", error);
+      setDeleteFailed(true);
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleting, refreshAuth]);
+
+  /**
+   * Single destructive confirmation for account deletion — Play requires
+   * discoverability, not friction, so one confirm alert is enough.
+   */
+  const confirmDeleteAccount = useCallback(() => {
+    Alert.alert(
+      t("settings.deleteConfirmTitle"),
+      t("settings.deleteConfirmMessage"),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: t("settings.deleteConfirmBtn"),
+          style: "destructive",
+          onPress: () => {
+            void handleDeleteAccount();
+          },
+        },
+      ],
+    );
+  }, [t, handleDeleteAccount]);
 
   const handleNudgeToggle = useCallback(async (value: boolean) => {
     setNudgeOn(value);
@@ -371,6 +431,30 @@ export default function SettingsScreen() {
               onPress={handleSignOut}
               disabled={authed === null}
             />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("settings.deleteAccount")}
+              onPress={confirmDeleteAccount}
+              disabled={deleting || authed === null}
+              style={[
+                styles.deleteRow,
+                deleting ? styles.deleteDisabled : null,
+              ]}
+            >
+              <View style={styles.rowText}>
+                <Text style={styles.deleteLabel}>
+                  {t("settings.deleteAccount")}
+                </Text>
+                <Text style={styles.deleteCaption}>
+                  {t("settings.deleteAccountHint")}
+                </Text>
+              </View>
+            </Pressable>
+            {deleteFailed ? (
+              <Text style={styles.blockedCaption}>
+                {t("settings.deleteFailed")}
+              </Text>
+            ) : null}
           </>
         )}
       </Card>

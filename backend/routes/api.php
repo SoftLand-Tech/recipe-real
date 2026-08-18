@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BillingController;
@@ -45,6 +46,10 @@ Route::middleware(['throttle:60,1', 'auth:sanctum'])->group(function (): void {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
 
     Route::get('/user', UserController::class);
+
+    // Account deletion (Play Store policy): removes the user, their tokens
+    // and all their contributions. 204 on success.
+    Route::delete('/account', AccountController::class);
 
     Route::post('/cook-sessions', [CookSessionController::class, 'store']);
     Route::get('/cook-sessions', [CookSessionController::class, 'index']);

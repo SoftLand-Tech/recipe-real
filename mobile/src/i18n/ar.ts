@@ -249,6 +249,13 @@ export const ar: Record<string, string> = {
     "سيتم حذف الوصفات المحفوظة للاستخدام دون اتصال. تبقى المفضلة والملاحظات كما هي. أعِد المزامنة لتنزيلها من جديد.",
   "settings.account": "الحساب",
   "settings.signedIn": "مسجّل الدخول",
+  "settings.deleteAccount": "حذف الحساب",
+  "settings.deleteAccountHint": "يحذف حسابك وكل سجل طهيك نهائيًا.",
+  "settings.deleteConfirmTitle": "حذف الحساب",
+  "settings.deleteConfirmMessage":
+    "سيحذف هذا حسابك وأوقات طهيك وسجل وتيرتك نهائيًا. لا يمكن التراجع عن هذا الإجراء.",
+  "settings.deleteConfirmBtn": "حذف",
+  "settings.deleteFailed": "تعذّر حذف حسابك. حاول من جديد.",
   "settings.about": "RecipeReal v{version}",
 
   // ---- تسجيل الدخول -------------------------------------------------------------

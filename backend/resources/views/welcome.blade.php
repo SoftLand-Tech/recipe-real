@@ -328,7 +328,7 @@
         <footer class="rr-footer">
             <div class="rr-container rr-footer-inner">
                 <div>© RecipeReal</div>
-                <div><a href="#">Privacy Policy</a></div>
+                <div><a href="/privacy">Privacy Policy</a></div>
             </div>
         </footer>
     </body>

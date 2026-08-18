@@ -68,6 +68,26 @@ export async function logout(): Promise<void> {
 }
 
 /**
+ * Permanently delete the signed-in account: DELETE /api/account (authed,
+ * Sanctum bearer) → 204 on success, after which the local token is cleared
+ * like logout(). A 401 means the token is already gone or invalid — the
+ * account is unreachable either way — so it is treated as success and the
+ * token is still cleared. Any other failure rethrows (token stays put).
+ */
+export async function deleteAccount(): Promise<void> {
+  try {
+    await api.delete("/api/account");
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      await SecureStore.deleteItemAsync(AUTH_TOKEN_KEY);
+      return;
+    }
+    throw error;
+  }
+  await SecureStore.deleteItemAsync(AUTH_TOKEN_KEY);
+}
+
+/**
  * Whether a bearer token is currently stored in SecureStore. Used by screens
  * to decide whether to attempt authenticated-only calls (e.g. pace data).
  * Best-effort: any SecureStore failure resolves to false.

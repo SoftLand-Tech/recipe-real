@@ -249,6 +249,14 @@ export const en: Record<string, string> = {
     "This removes the offline recipes. Favorites and notes are kept. Sync again to re-download them.",
   "settings.account": "Account",
   "settings.signedIn": "Signed in",
+  "settings.deleteAccount": "Delete account",
+  "settings.deleteAccountHint":
+    "Permanently deletes your account and all cook history.",
+  "settings.deleteConfirmTitle": "Delete account",
+  "settings.deleteConfirmMessage":
+    "This permanently deletes your account, cook times, and pace history. This cannot be undone.",
+  "settings.deleteConfirmBtn": "Delete",
+  "settings.deleteFailed": "Couldn't delete your account. Please try again.",
   "settings.about": "RecipeReal v{version}",
 
   // ---- Login ----------------------------------------------------------------
