@@ -201,9 +201,27 @@ export default function LoginScreen() {
         openUrl,
         returnUrl,
       );
+      console.log("[RecipeReal] auth session result:", JSON.stringify({
+        type: result.type,
+        url: (result as { url?: string }).url,
+      }));
 
       // Cancelled/dismissed by the user — no error banner needed.
       if (result.type !== "success") {
+        return;
+      }
+      // A "success" carrying NO params is the Android fragment-drop
+      // signature (token lost in the custom-scheme redirect) — surface it
+      // instead of failing silently back to the sign-in screen.
+      if (
+        !result.url ||
+        !result.url.includes("id_token")
+      ) {
+        console.warn(
+          "[RecipeReal] auth returned success with no id_token:",
+          result.url,
+        );
+        setError(t("login.errNoToken"));
         return;
       }
 

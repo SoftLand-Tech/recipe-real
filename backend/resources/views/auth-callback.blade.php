@@ -24,10 +24,16 @@
     <p>Finishing sign-in&hellip;</p>
   </div>
   <script>
-    // Forward the OAuth response (query AND fragment — the id_token lives in
-    // the fragment for Google's implicit flow) to the app's deep link.
-    var rest = window.location.search + window.location.hash;
-    window.location.replace('recipereal:///login' + rest);
+    // Forward the OAuth response to the app's deep link — with the FRAGMENT
+    // CONVERTED TO A QUERY. Google's implicit id_token flow delivers its
+    // params after '#', but Android strips fragments from custom-scheme
+    // redirects, which left the app opening with no token at all (silent
+    // sign-in failure). Merging search + hash into a single '?params' query
+    // survives the trip.
+    var q = window.location.search ? window.location.search.substring(1) : '';
+    var h = window.location.hash ? window.location.hash.substring(1) : '';
+    var params = [q, h].filter(Boolean).join('&');
+    window.location.replace('recipereal:///login' + (params ? '?' + params : ''));
   </script>
 </body>
 </html>
