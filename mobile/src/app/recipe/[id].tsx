@@ -588,13 +588,6 @@ export default function RecipeDetailScreen() {
         timelineRowPassive: {
           backgroundColor: colors.successSoft,
         },
-        timelineClock: {
-          ...Type.bodySm,
-          color: colors.inkSecondary,
-          fontVariant: ["tabular-nums"] as ("tabular-nums")[],
-          fontWeight: "600",
-          width: 64,
-        },
         timelineDot: {
           width: 8,
           height: 8,
@@ -1787,7 +1780,7 @@ export default function RecipeDetailScreen() {
                       </Text>
                     ) : null}
                     <View style={styles.timelineList}>
-                      {timelineRows.map(({ step, at }) => {
+                      {timelineRows.map(({ step }) => {
                         const passive = step.step_type === "passive";
                         const adjusted = adjustedForStep(step);
                         return (
@@ -1798,9 +1791,6 @@ export default function RecipeDetailScreen() {
                               passive && styles.timelineRowPassive,
                             ]}
                           >
-                            <Text style={styles.timelineClock}>
-                              {formatClock(at)}
-                            </Text>
                             <View
                               style={[
                                 styles.timelineDot,
