@@ -18,17 +18,14 @@ export function StepDots({ count, current, done, onJump }: StepDotsProps) {
         row: {
           flexDirection: "row",
           alignItems: "center",
-          gap: Space.md,
+          gap: Space.sm,
         },
-        // Generous hit padding + hitSlop keeps each dot's tappable area ≥40px
-        // (dot 10 + 2×8 padding + 2×8 hitSlop = 42) even though the visible
-        // dot stays small.
         hit: {
-          padding: Space.sm,
+          padding: Space.xs,
         },
         dot: {
-          width: 10,
-          height: 10,
+          width: 8,
+          height: 8,
           borderRadius: 999,
           backgroundColor: colors.surface,
           borderWidth: 1,
@@ -39,8 +36,8 @@ export function StepDots({ count, current, done, onJump }: StepDotsProps) {
           borderColor: colors.accent,
         },
         dotCurrent: {
-          width: 14,
-          height: 14,
+          width: 12,
+          height: 12,
           backgroundColor: colors.accent,
           borderColor: colors.accent,
           // The slightly larger bordered wrapper = the "ring".

@@ -92,20 +92,16 @@ export default function SettingsScreen() {
         },
         content: {
           paddingHorizontal: Space.lg,
-          gap: Space.xl,
+          gap: Space.lg,
         },
         section: {
           gap: Space.sm,
         },
-        // 56px-min rows (with vertical padding) so every setting is a
-        // comfortable touch target for elderly / low-tech users.
         row: {
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
           gap: Space.md,
-          minHeight: 56,
-          paddingVertical: Space.sm,
         },
         rowText: {
           flex: 1,
@@ -126,22 +122,21 @@ export default function SettingsScreen() {
           marginTop: Space.xs,
         },
         blockedCaption: {
-          ...Type.bodySm,
+          ...Type.caption,
           color: colors.danger,
         },
         doneCaption: {
-          ...Type.bodySm,
+          ...Type.caption,
           color: colors.success,
         },
         signedInCaption: {
-          ...Type.bodySm,
+          ...Type.caption,
           color: colors.inkSecondary,
         },
         // Danger row: a plain Pressable (not a ghost Button) so the label can
         // carry the danger color — visually distinct from "Sign out" above it.
         deleteRow: {
           alignSelf: "stretch",
-          minHeight: 56,
           paddingVertical: Space.sm,
         },
         deleteDisabled: {
@@ -156,7 +151,7 @@ export default function SettingsScreen() {
           color: colors.inkSecondary,
         },
         aboutText: {
-          ...Type.bodySm,
+          ...Type.caption,
           color: colors.inkFaint,
           textAlign: "center",
         },
@@ -381,8 +376,6 @@ export default function SettingsScreen() {
       <Card style={styles.section}>
         <SectionHeader title={t("settings.dataStorage")} />
         <Text style={styles.rowLabel}>{t("settings.offlineLibrary")}</Text>
-        {/* Full-width rows (not inline pills): one clear action per line is
-            easier to read and tap for elderly / low-tech users. */}
         <Button
           title={
             syncingOption === "quick"
@@ -390,7 +383,6 @@ export default function SettingsScreen() {
               : t("settings.syncTop200")
           }
           variant="ghost"
-          fullWidth
           onPress={() => handleSync(200)}
           disabled={syncingOption != null || clearing}
         />
@@ -401,14 +393,12 @@ export default function SettingsScreen() {
               : t("settings.syncDeep")
           }
           variant="ghost"
-          fullWidth
           onPress={() => handleSync(1000)}
           disabled={syncingOption != null || clearing}
         />
         <Button
           title={clearing ? t("settings.clearing") : t("settings.clearCache")}
           variant="ghost"
-          fullWidth
           onPress={confirmClearCache}
           disabled={clearing || syncingOption != null}
         />
@@ -426,7 +416,6 @@ export default function SettingsScreen() {
         {authed === false ? (
           <Button
             title={t("common.signIn")}
-            fullWidth
             onPress={() => router.push("/login")}
           />
         ) : (
@@ -440,20 +429,17 @@ export default function SettingsScreen() {
             <Button
               title={t("profile.title")}
               variant="ghost"
-              fullWidth
               onPress={() => router.push("/profile")}
             />
             {/* Profile entry to the recipe composer (user-submitted recipes). */}
             <Button
               title={t("settings.newRecipe")}
               variant="ghost"
-              fullWidth
               onPress={() => router.push("/recipe-composer")}
             />
             <Button
               title={t("common.signOut")}
               variant="ghost"
-              fullWidth
               onPress={handleSignOut}
               disabled={authed === null}
             />

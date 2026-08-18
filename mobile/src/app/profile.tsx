@@ -232,8 +232,6 @@ export default function ProfileScreen() {
           borderRadius: Radius.md,
           paddingHorizontal: Space.md,
           paddingVertical: Space.sm,
-          // Comfortable 56px-min touch-and-read target (search-field parity).
-          minHeight: 56,
         },
         savedCaption: {
           ...Type.caption,
@@ -271,10 +269,7 @@ export default function ProfileScreen() {
           gap: 2,
         },
         recipeTitle: {
-          // Row title at body size (17) with weight — dense list rows read
-          // cleaner than card-sized titles here.
-          fontSize: Type.body.fontSize,
-          fontWeight: "600",
+          ...Type.title,
           color: colors.ink,
         },
         recipesList: {

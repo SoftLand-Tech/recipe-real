@@ -119,7 +119,7 @@ export default function LoginScreen() {
           gap: Space.md,
         },
         caption: {
-          ...Type.bodySm,
+          ...Type.caption,
           color: colors.inkFaint,
           textAlign: "center",
         },

@@ -10,7 +10,7 @@ export interface GoogleLogoProps {
  * logo geometry) for sign-in buttons — rendered as SVG so it scales
  * crisply and keeps the brand colors in light and dark mode.
  */
-export function GoogleLogo({ size = 20 }: GoogleLogoProps) {
+export function GoogleLogo({ size = 18 }: GoogleLogoProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 48 48">
       <Path

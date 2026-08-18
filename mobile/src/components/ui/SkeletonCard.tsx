@@ -33,9 +33,7 @@ export function SkeletonCard({ hasImage = true }: SkeletonCardProps) {
         line: {
           backgroundColor: colors.surfaceSoft,
           borderRadius: Radius.sm,
-          // Taller bars to match the enlarged (19/17pt) card text they stand
-          // in for.
-          height: 18,
+          height: 14,
         },
         lineTitle: {
           width: "70%",

@@ -45,8 +45,8 @@ export function Chip({ label, tone = "neutral", icon, size = "md" }: ChipProps) 
         label: {
           fontWeight: "600",
         },
-        labelSm: { fontSize: Type.bodySm.fontSize },
-        labelMd: { fontSize: 15 },
+        labelSm: { fontSize: Type.caption.fontSize },
+        labelMd: { fontSize: Type.bodySm.fontSize },
       }),
     [],
   );
@@ -56,12 +56,8 @@ export function Chip({ label, tone = "neutral", icon, size = "md" }: ChipProps) 
         styles.base,
         {
           backgroundColor: toneColors.bg,
-          // md chips double as tappable filters, so they get a 44px-min
-          // touch target (guaranteed by minHeight, icon or not); sm chips
-          // stay informational at a 38px-min.
-          paddingVertical: small ? 6 : Space.sm,
-          paddingHorizontal: small ? Space.sm : 14,
-          minHeight: small ? 38 : 44,
+          paddingVertical: small ? Space.xs / 2 : Space.xs + 2,
+          paddingHorizontal: small ? Space.sm : Space.md,
         },
       ]}
     >

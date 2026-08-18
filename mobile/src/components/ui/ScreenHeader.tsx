@@ -7,7 +7,7 @@ import { Space, Type, useThemeColors } from "@/theme";
 export interface ScreenHeaderProps {
   /** Big on-screen title (Type.h1, ink). */
   title: string;
-  /** Optional supporting line under the title (Type.body, inkSecondary). */
+  /** Optional supporting line under the title (Type.bodySm, inkSecondary). */
   subtitle?: string;
   /** Optional trailing action (e.g. a "+" icon button) aligned to the title. */
   right?: ReactNode;
@@ -25,7 +25,7 @@ export function ScreenHeader({ title, subtitle, right }: ScreenHeaderProps) {
     () =>
       StyleSheet.create({
         header: {
-          paddingTop: insets.top + Space.lg,
+          paddingTop: insets.top + Space.md,
           paddingHorizontal: Space.lg,
           paddingBottom: Space.sm,
           gap: Space.xs,
@@ -41,15 +41,14 @@ export function ScreenHeader({ title, subtitle, right }: ScreenHeaderProps) {
           flex: 1,
         },
         subtitle: {
-          ...Type.body,
+          ...Type.bodySm,
           color: colors.inkSecondary,
         },
         right: {
           // Static style only (Android paint rules) — IconPressable provides
-          // the pressed feedback. 48px = the design-system touch-target
-          // floor for the header's icon action.
-          width: 48,
-          height: 48,
+          // the pressed feedback.
+          width: 40,
+          height: 40,
           borderRadius: 999,
           backgroundColor: colors.surfaceSoft,
           borderWidth: 1,

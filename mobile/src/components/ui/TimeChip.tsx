@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 
 import { useFmtMinutes } from "@/i18n";
-import { Radius, Space, useThemeColors } from "@/theme";
+import { Radius, Space, Type, useThemeColors } from "@/theme";
 
 // The pure formatter now lives in `@/i18n` (so screens and this chip share one
 // implementation); re-exported here to keep the `@/components/ui` barrel path
@@ -28,10 +28,9 @@ export function TimeChip({ minutes, label }: TimeChipProps) {
           paddingVertical: Space.xs,
           paddingHorizontal: Space.sm,
           alignSelf: "flex-start",
-          minHeight: 36,
         },
         text: {
-          fontSize: 15,
+          ...Type.caption,
           color: colors.inkSecondary,
           fontWeight: "600",
         },

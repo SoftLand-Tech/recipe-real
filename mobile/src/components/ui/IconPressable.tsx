@@ -15,11 +15,6 @@ export interface IconPressableProps {
 /**
  * A Pressable with reliable pressed feedback for icon/glyph buttons.
  *
- * TOUCH-TARGET EXPECTATION (accessibility-first design system): interactive
- * glyphs must present at least a 48px hit area. This component adds no
- * dimensions of its own — size the child visual ≥44px, or pass `hitSlop` (or
- * wrap in padding) so the tappable area reaches the 48px floor.
- *
  * Static style only (no Pressable style function, no width:"100%"/flex —
  * Android paint rules, see commit c0be039). Feedback is an opacity dim set
  * from onPressIn/onPressOut state: opacity is GPU-composited and always

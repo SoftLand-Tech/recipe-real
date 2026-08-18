@@ -21,7 +21,7 @@ export function Badge({ label, stepType }: BadgeProps) {
           textTransform: "uppercase",
           fontWeight: "700",
           letterSpacing: 1,
-          fontSize: 13,
+          fontSize: 11,
           paddingVertical: Space.xs,
           paddingHorizontal: Space.sm,
           borderRadius: Radius.sm,

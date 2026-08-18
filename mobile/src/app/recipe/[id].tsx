@@ -584,7 +584,7 @@ export default function RecipeDetailScreen() {
           alignItems: "flex-start",
           gap: Space.sm,
           paddingHorizontal: Space.sm,
-          paddingVertical: Space.md,
+          paddingVertical: Space.sm,
           borderRadius: Radius.md,
         },
         timelineRowPassive: {
@@ -624,7 +624,7 @@ export default function RecipeDetailScreen() {
           marginTop: Space.xxl,
         },
         bulletList: {
-          gap: Space.sm,
+          gap: Space.xs,
         },
         bulletRow: {
           flexDirection: "row",

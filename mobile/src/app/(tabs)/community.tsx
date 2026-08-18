@@ -280,10 +280,7 @@ const PostCard = memo(function PostCard({
           gap: 1,
         },
         author: {
-          // 17/600: prominent but not headline-sized (kind chip + body carry
-          // the rest of the card hierarchy).
-          fontSize: Type.body.fontSize,
-          fontWeight: "600",
+          ...Type.title,
           color: colors.ink,
         },
         relTime: {
@@ -432,7 +429,7 @@ const PostCard = memo(function PostCard({
           ) : null}
         </View>
         <Chip
-          size="md"
+          size="sm"
           tone={kindTone(post.kind)}
           label={t(kindLabelKey(post.kind))}
         />
@@ -488,18 +485,17 @@ const PostCard = memo(function PostCard({
         </IconPressable>
       ) : null}
 
-      {/* Like / comment footer. 24px icons + hitSlop 8 keep each control at a
-          ≥48px touch target (accessibility-first floor). */}
+      {/* Like / comment footer. */}
       <View style={styles.actionsRow}>
         <IconPressable
           onPress={handleLike}
           disabled={likeBusy}
           style={styles.action}
-          hitSlop={8}
+          hitSlop={Space.xs}
         >
           <Ionicons
             name={liked ? "heart" : "heart-outline"}
-            size={24}
+            size={22}
             color={liked ? colors.accent : colors.inkSecondary}
           />
           <Text style={styles.actionCount}>{likesCount}</Text>
@@ -507,11 +503,11 @@ const PostCard = memo(function PostCard({
         <IconPressable
           onPress={toggleComments}
           style={styles.action}
-          hitSlop={8}
+          hitSlop={Space.xs}
         >
           <Ionicons
             name="chatbubble-outline"
-            size={24}
+            size={20}
             color={expanded ? colors.accent : colors.inkSecondary}
           />
           <Text style={styles.actionCount}>{post.comments_count}</Text>
@@ -764,8 +760,7 @@ function ComposeCard({ onClose, onCreated }: ComposeCardProps) {
           backgroundColor: colors.surfaceSoft,
           borderRadius: Radius.md,
           padding: Space.md,
-          // Roomy multiline target for elderly typists (17px body text).
-          minHeight: 120,
+          minHeight: 96,
           textAlignVertical: "top",
         },
         errorText: {
@@ -844,7 +839,7 @@ function ComposeCard({ onClose, onCreated }: ComposeCardProps) {
             <Chip
               label={t(kindLabelKey(option))}
               tone={kind === option ? kindTone(option) : "neutral"}
-              size="md"
+              size="sm"
             />
           </IconPressable>
         ))}
@@ -1264,7 +1259,7 @@ export default function CommunityScreen() {
               <Chip
                 label={t(labelKey)}
                 tone={filter === value ? "accent" : "neutral"}
-                size="md"
+                size="sm"
               />
             </IconPressable>
           ))}

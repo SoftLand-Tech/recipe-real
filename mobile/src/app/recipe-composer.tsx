@@ -116,11 +116,9 @@ export default function RecipeComposerScreen() {
           gap: Space.sm,
         },
         fieldLabel: {
-          // Title-size row labels: easier anchors for elderly eyes scanning
-          // the form top-to-bottom.
-          fontSize: Type.title.fontSize,
-          fontWeight: "600",
+          ...Type.bodySm,
           color: colors.inkSecondary,
+          fontWeight: "600",
         },
         fieldOptional: {
           ...Type.caption,
@@ -136,11 +134,9 @@ export default function RecipeComposerScreen() {
           borderRadius: Radius.md,
           paddingVertical: Space.md,
           paddingHorizontal: Space.md,
-          // 56px-min touch-and-read target for every field.
-          minHeight: 56,
         },
         inputMultiline: {
-          minHeight: 120,
+          minHeight: 80,
           textAlignVertical: "top",
         },
         twoCol: {
@@ -191,10 +187,8 @@ export default function RecipeComposerScreen() {
           flex: 1,
         },
         removeBtn: {
-          // 44px visual + hitSlop 4 → 52px tap area (≥48 floor). A round,
-          // distinct "remove this row" control.
-          width: 44,
-          height: 44,
+          width: 34,
+          height: 34,
           borderRadius: Radius.pill,
           backgroundColor: colors.surfaceSoft,
           borderWidth: 1,
@@ -798,10 +792,9 @@ export default function RecipeComposerScreen() {
                   style={styles.removeBtn}
                   onPress={() => removeIngredientAt(index)}
                   accessibilityLabel={t("composer.removeRow")}
-                  hitSlop={Space.xs}
                   disabled={ingredients.length === 1}
                 >
-                  <Ionicons name="close" size={20} color={colors.inkSecondary} />
+                  <Ionicons name="close" size={18} color={colors.inkSecondary} />
                 </IconPressable>
               </View>
             ))}
@@ -812,7 +805,7 @@ export default function RecipeComposerScreen() {
               variant="ghost"
               style={styles.addRow}
               leftIcon={
-                <Ionicons name="add" size={20} color={colors.accent} />
+                <Ionicons name="add" size={18} color={colors.accent} />
               }
               onPress={() => setIngredients((rows) => [...rows, ""])}
             />
@@ -835,10 +828,9 @@ export default function RecipeComposerScreen() {
                     style={styles.removeBtn}
                     onPress={() => removeStepAt(index)}
                     accessibilityLabel={t("composer.removeRow")}
-                    hitSlop={Space.xs}
                     disabled={steps.length === 1}
                   >
-                    <Ionicons name="close" size={20} color={colors.inkSecondary} />
+                    <Ionicons name="close" size={18} color={colors.inkSecondary} />
                   </IconPressable>
                 </View>
                 <TextInput
@@ -889,7 +881,7 @@ export default function RecipeComposerScreen() {
               variant="ghost"
               style={styles.addRow}
               leftIcon={
-                <Ionicons name="add" size={20} color={colors.accent} />
+                <Ionicons name="add" size={18} color={colors.accent} />
               }
               onPress={() =>
                 setSteps((rows) => [

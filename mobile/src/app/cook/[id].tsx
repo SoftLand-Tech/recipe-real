@@ -201,7 +201,6 @@ export default function CookModeScreen() {
         },
         statusHint: {
           ...Type.caption,
-          fontSize: 15,
           color: colors.inkSecondary,
           textAlign: "center",
         },
@@ -211,7 +210,7 @@ export default function CookModeScreen() {
         stepDescription: {
           ...Type.body,
           fontSize: 17,
-          lineHeight: 26,
+          lineHeight: 24,
           color: colors.ink,
           // Default "auto" alignment follows the layout direction.
           textAlign: "auto",
@@ -1000,7 +999,7 @@ export default function CookModeScreen() {
             >
               <Chip
                 tone={alarmArmedHere ? "accent" : "amber"}
-                size="md"
+                size="sm"
                 label={
                   alarmArmedHere
                     ? `${t("cook.alarmArmed")} · ${t("cook.alarmCancel")}`

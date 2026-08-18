@@ -270,11 +270,9 @@ function createStyles(colors: ThemeColors) {
       borderColor: colors.hairline,
       borderRadius: Radius.pill,
       paddingHorizontal: Space.md,
-      // Taller touch-and-read target for elderly / low-tech users.
-      minHeight: 56,
     },
     searchGlyph: {
-      fontSize: 18,
+      fontSize: 16,
       color: colors.inkFaint,
       // marginEnd so the gap follows the layout direction in RTL.
       marginEnd: Space.xs,

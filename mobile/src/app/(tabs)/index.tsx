@@ -189,7 +189,7 @@ export default function HomeScreen() {
           fontWeight: "700",
         },
         skeletonCard: {
-          width: 170,
+          width: 160,
         },
       }),
     [colors],
@@ -581,14 +581,15 @@ function HomeCard({ item, hasNote }: { item: Recipe; hasNote: boolean }) {
     () =>
       StyleSheet.create({
         card: {
-          width: 170,
+          width: 160,
         },
         body: {
-          padding: Space.md,
-          gap: Space.sm,
+          padding: Space.sm,
+          gap: Space.xs,
         },
         title: {
-          ...Type.title,
+          ...Type.bodySm,
+          fontWeight: "600",
           color: colors.ink,
         },
         chips: {
@@ -622,7 +623,7 @@ function HomeCard({ item, hasNote }: { item: Recipe; hasNote: boolean }) {
       style={styles.card}
     >
       <View>
-        <HeroImage uri={item.image_url} height={120} rounded={Radius.lg} />
+        <HeroImage uri={item.image_url} height={110} rounded={Radius.lg} />
         <NoteBadge show={hasNote} />
         {realityGap != null ? (
           <View style={styles.realityChip} pointerEvents="none">
@@ -674,7 +675,7 @@ function HomeRail({
     () =>
       StyleSheet.create({
         section: {
-          marginBottom: Space.lg,
+          marginBottom: Space.md,
         },
         sectionHeaderPad: {
           paddingHorizontal: Space.lg,
@@ -728,7 +729,7 @@ function CategoryRail({
     () =>
       StyleSheet.create({
         section: {
-          marginBottom: Space.lg,
+          marginBottom: Space.md,
         },
         sectionHeaderPad: {
           paddingHorizontal: Space.lg,
@@ -771,7 +772,7 @@ function SkeletonRail() {
     () =>
       StyleSheet.create({
         section: {
-          marginBottom: Space.lg,
+          marginBottom: Space.md,
         },
         sectionHeaderPad: {
           paddingHorizontal: Space.lg,
@@ -781,7 +782,7 @@ function SkeletonRail() {
           gap: Space.md,
         },
         card: {
-          width: 170,
+          width: 160,
         },
       }),
     [],
