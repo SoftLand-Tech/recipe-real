@@ -567,7 +567,7 @@ const PostCard = memo(function PostCard({
             accessibilityLabel={t("community.shareA11y")}
           >
             <Ionicons
-              name="share-social-outline"
+              name="arrow-redo-outline"
               size={20}
               color={colors.inkSecondary}
             />

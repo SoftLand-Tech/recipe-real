@@ -1895,7 +1895,7 @@ export default function RecipeDetailScreen() {
                 hitSlop={Space.sm}
                 accessibilityLabel={t("detail.shareA11y")}
               >
-                <Ionicons name="share-social" size={18} color="#FFFFFF" />
+                <Ionicons name="arrow-redo" size={18} color="#FFFFFF" />
               </IconPressable>
 
               {/* RISING CONTENT CARD overlapping the hero. */}
