@@ -87,11 +87,9 @@ const ViewerCardPage = memo(function ViewerCardPage({
   }, []);
 
   // Compute safe boundaries taking notch, chrome row, and margins into account
-  // Top: just the notch inset + margin (no chrome up there anymore).
-  // Bottom: reserve the bottom chrome band (✕ button + counter) so the
-  // card never extends under the controls.
-  const safeTop = insets.top;
-  const safeBottom = insets.bottom + 64;
+  // Top: reserve the ✕ band again; bottom: reserve the counter band.
+  const safeTop = insets.top + 56;
+  const safeBottom = insets.bottom + 44;
   const maxImageW = Math.max(100, SCREEN_W - 2 * CARD_MARGIN_H - 2 * CARD_PADDING);
   const maxImageH = Math.max(100, SCREEN_H - safeTop - safeBottom - 2 * CARD_MARGIN_V - 2 * CARD_PADDING);
 
@@ -262,9 +260,10 @@ export const ImageViewerModal = memo(function ImageViewerModal({
 
   const viewabilityConfig = { viewAreaCoveragePercentThreshold: 50 };
 
-  // Bottom chrome band: clear of the gesture bar (seeable) and reserved in
-  // the card's max height so neither control ever overlaps the photo card.
-  const chromeBottom = insets.bottom + 20;
+  // Chrome: ✕ top-start (clear of the notch), counter bottom-center — each
+  // on the scrim; the card reserves bands for both so nothing overlaps it.
+  const chromeTop = insets.top + 16;
+  const counterBottom = insets.bottom + 20;
 
   return (
     <Modal
@@ -279,9 +278,8 @@ export const ImageViewerModal = memo(function ImageViewerModal({
         <Animated.View style={[styles.scrim, { opacity: scrimOpacity }]} />
       </TouchableWithoutFeedback>
 
-      {/* Bottom chrome: close ✕ at the start corner, "N / M" counter
-          centered — both on the scrim, never on top of the card. */}
-      <View style={[styles.chromeRow, { bottom: chromeBottom }]} pointerEvents="box-none">
+      {/* Close ✕ — top-start corner, below the notch. */}
+      <View style={[styles.closeRow, { top: chromeTop }]} pointerEvents="box-none">
         <Pressable
           onPress={onClose}
           style={styles.closePressable}
@@ -290,16 +288,16 @@ export const ImageViewerModal = memo(function ImageViewerModal({
         >
           <Ionicons name="close" size={24} color="#fff" />
         </Pressable>
-        {images.length > 1 ? (
+      </View>
+
+      {/* Photo counter — exact bottom-center. */}
+      {images.length > 1 ? (
+        <View style={[styles.counterRow, { bottom: counterBottom }]} pointerEvents="none">
           <Text style={styles.counter}>
             {currentIndex + 1} / {images.length}
           </Text>
-        ) : (
-          <View style={styles.counterSpacer} />
-        )}
-        {/* Trailing spacer keeps the counter truly centered. */}
-        <View style={styles.counterSpacer} />
-      </View>
+        </View>
+      ) : null}
 
       {/* Paged photos — zoom in on open, track vertical drags, contained in floating cards. */}
       <Animated.View
@@ -845,9 +843,8 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     backgroundColor: "#000",
   },
-  // Bottom chrome row: close ✕ at the start corner, "N / M" counter truly
-  // centered (equal flex spacers flank it).
-  chromeRow: {
+  // Close ✕ row — top-start corner.
+  closeRow: {
     position: "absolute",
     left: 16,
     right: 16,
@@ -855,8 +852,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     zIndex: 10,
   },
-  counterSpacer: {
-    flex: 1,
+  // Counter row — exact bottom-center.
+  counterRow: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    zIndex: 10,
   },
   closePressable: {
     padding: 8,
