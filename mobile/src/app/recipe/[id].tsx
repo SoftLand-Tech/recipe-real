@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   fetchRecipeNotes,
+  fetchRecipePosts,
   getRecipe,
   hasToken,
   HalalRejectionError,
@@ -39,6 +40,8 @@ import {
 import type {
   CleanupFactors,
   PaceCalibration,
+  Post,
+  PostKind,
   Recipe,
   RecipeNote,
   RecipeStep,
@@ -60,6 +63,7 @@ import {
   type TranslateFn,
 } from "@/i18n";
 import {
+  Avatar,
   Button,
   Card,
   Chip,
@@ -147,6 +151,28 @@ function relativeDate(t: TranslateFn, iso: string): string {
 function noteAuthorName(user: RecipeNote["user"]): string {
   return (user.display_name ?? user.name ?? "").trim();
 }
+
+/** Display name of a post author: display_name, else the account name. */
+function postAuthorName(user: Post["user"]): string {
+  return (user.display_name ?? user.name ?? "").trim();
+}
+
+/** Chip tone per post kind (try=success / fail=danger / question=amber). */
+function postKindTone(kind: PostKind): "success" | "danger" | "amber" {
+  if (kind === "fail") return "danger";
+  if (kind === "question") return "amber";
+  return "success";
+}
+
+/** i18n key of the post kind chip label (community.kindTry etc.). */
+function postKindLabelKey(kind: PostKind): string {
+  if (kind === "fail") return "community.kindFail";
+  if (kind === "question") return "community.kindQuestion";
+  return "community.kindTry";
+}
+
+/** Rows shown before "Show all" expands the recipe's community-tries list. */
+const TRIES_PREVIEW_COUNT = 3;
 
 /**
  * Cap on scheduled planner notifications (one per step boundary): the OS
@@ -319,6 +345,15 @@ export default function RecipeDetailScreen() {
   const [notePostError, setNotePostError] = useState<string | null>(null);
   const [noteHalalTerms, setNoteHalalTerms] = useState<string[] | null>(null);
   const [noteNeedsAuth, setNoteNeedsAuth] = useState(false);
+
+  // ---- Community tries (posts attached to this recipe) -----------------------
+  // null = not loaded yet (or the load failed silently) → the section stays
+  // hidden; an empty array = loaded + no posts → the empty state shows.
+  const [tries, setTries] = useState<Post[] | null>(null);
+  // Paginator total from the server (the true count even past the 20-row page).
+  const [triesTotal, setTriesTotal] = useState(0);
+  // "Show all" expands the compact 3-row preview to every loaded row.
+  const [triesExpanded, setTriesExpanded] = useState(false);
 
   // Quick-time contribution: honest-breakdown form ("did you make this?"):
   // plates made, hands-on minutes, total minutes (required) and cleanup
@@ -878,6 +913,63 @@ export default function RecipeDetailScreen() {
         notesCenter: {
           paddingVertical: Space.lg,
           alignItems: "center",
+        },
+        // ---- Community tries (posts attached to this recipe) ----
+        triesList: {
+          gap: Space.md,
+        },
+        // One compact row: avatar | (name + kind chip / 2-line snippet /
+        // up to 3 tiny image squares). Static style only — IconPressable
+        // adds the pressed opacity feedback (Android paint rules).
+        tryRow: {
+          flexDirection: "row",
+          alignItems: "flex-start",
+          gap: Space.sm,
+        },
+        tryMain: {
+          flex: 1,
+          gap: Space.xs,
+        },
+        tryHeadRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+        },
+        tryAuthor: {
+          ...Type.bodySm,
+          color: colors.ink,
+          fontWeight: "700",
+          flex: 1,
+        },
+        tryBody: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+        },
+        // Tiny image preview: up to 3 small squares (NOT the full
+        // PostImageGrid — too heavy inline on this page).
+        tryThumbs: {
+          flexDirection: "row",
+          gap: Space.xs,
+          marginTop: Space.xs,
+        },
+        tryThumb: {
+          width: 44,
+          height: 44,
+          borderRadius: Radius.sm,
+          backgroundColor: colors.hairline,
+          overflow: "hidden",
+        },
+        triesEmptyText: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+        },
+        triesEmptyCta: {
+          alignSelf: "flex-start",
+          marginTop: Space.xs,
+        },
+        triesShowAll: {
+          alignSelf: "flex-start",
+          marginTop: Space.xs,
         },
         // Owner "Edit" ghost button above the stat grid.
         ownerEditBtn: {
@@ -1557,6 +1649,51 @@ export default function RecipeDetailScreen() {
     if (!ready) return;
     void loadNotes();
   }, [ready, id, loadNotes]);
+
+  // ---- Community tries loading ---------------------------------------------------
+
+  /**
+   * Load page 1 of the community posts attached to this recipe
+   * (GET /api/posts?recipe_id=). Non-blocking: fires once the recipe is
+   * ready alongside the other best-effort loads, and a silent failure keeps
+   * the section hidden instead of erroring an otherwise healthy screen.
+   */
+  useEffect(() => {
+    if (!ready) return;
+    const recipeId = Number(id);
+    if (!Number.isFinite(recipeId)) return;
+    let cancelled = false;
+    setTries(null);
+    setTriesTotal(0);
+    setTriesExpanded(false);
+    fetchRecipePosts(recipeId, 1)
+      .then((page) => {
+        if (cancelled) return;
+        setTries(page.posts);
+        setTriesTotal(page.total ?? page.posts.length);
+      })
+      .catch((error) => {
+        // Silent failure: the section stays hidden (tries === null).
+        console.warn("[RecipeReal] community tries load failed:", error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, id]);
+
+  /**
+   * "Share your try" ghost button of the empty community-tries state —
+   * mirrors the community tab's compose entry: signed-out users land on
+   * /login, everyone else on /post-composer (which has no recipe-prefill
+   * param; attaching happens via its own recipe search).
+   */
+  const startShareTry = useCallback(() => {
+    if (signedIn === false) {
+      router.push("/login");
+      return;
+    }
+    router.push("/post-composer");
+  }, [signedIn]);
 
   // Fire the community-notes analytics event once per screen entry, after the
   // section has actually rendered with content (or a definitive empty list).
@@ -2334,6 +2471,103 @@ export default function RecipeDetailScreen() {
                     )}
                   </Card>
                 </View>
+
+                {/* 6. COMMUNITY TRIES — community posts attached to this
+                    recipe (GET /api/posts?recipe_id=), loaded non-blocking
+                    once the recipe is ready; a silent failure keeps the
+                    section hidden. Compact vertical rows (avatar + name +
+                    kind chip, 2-line body snippet, up to 3 tiny image
+                    squares); at most 3 rows up front with "Show all"
+                    expanding in place. Tapping a row opens the post. */}
+                {tries != null ? (
+                  <View style={styles.section}>
+                    <SectionHeader
+                      title={
+                        triesTotal > 0
+                          ? t("detail.communityTriesCount", { n: triesTotal })
+                          : t("detail.communityTries")
+                      }
+                    />
+                    {tries.length === 0 ? (
+                      <>
+                        <Text style={styles.triesEmptyText}>
+                          {t("detail.triesEmpty")}
+                        </Text>
+                        <Button
+                          variant="ghost"
+                          title={t("detail.shareYourTry")}
+                          onPress={startShareTry}
+                          style={styles.triesEmptyCta}
+                        />
+                      </>
+                    ) : (
+                      <View style={styles.triesList}>
+                        {(triesExpanded
+                          ? tries
+                          : tries.slice(0, TRIES_PREVIEW_COUNT)
+                        ).map((item) => {
+                          const author = postAuthorName(item.user);
+                          return (
+                            <IconPressable
+                              key={`try-${item.id}`}
+                              onPress={() => router.push(`/post/${item.id}`)}
+                              style={styles.tryRow}
+                            >
+                              <Avatar
+                                name={author}
+                                uri={item.user.avatar_url}
+                                size={32}
+                              />
+                              <View style={styles.tryMain}>
+                                <View style={styles.tryHeadRow}>
+                                  <Text
+                                    style={styles.tryAuthor}
+                                    numberOfLines={1}
+                                  >
+                                    {author}
+                                  </Text>
+                                  <Chip
+                                    size="sm"
+                                    tone={postKindTone(item.kind)}
+                                    label={t(postKindLabelKey(item.kind))}
+                                  />
+                                </View>
+                                <Text style={styles.tryBody} numberOfLines={2}>
+                                  {item.body}
+                                </Text>
+                                {item.images.length > 0 ? (
+                                  <View style={styles.tryThumbs}>
+                                    {item.images
+                                      .slice(0, 3)
+                                      .map((uri, index) => (
+                                        <Image
+                                          key={`try-${item.id}-img-${index}`}
+                                          source={{ uri }}
+                                          style={styles.tryThumb}
+                                          contentFit="cover"
+                                          transition={0}
+                                          cachePolicy="memory-disk"
+                                          recyclingKey={uri}
+                                        />
+                                      ))}
+                                  </View>
+                                ) : null}
+                              </View>
+                            </IconPressable>
+                          );
+                        })}
+                        {!triesExpanded && tries.length > TRIES_PREVIEW_COUNT ? (
+                          <Button
+                            variant="ghost"
+                            title={t("detail.showAllTries")}
+                            onPress={() => setTriesExpanded(true)}
+                            style={styles.triesShowAll}
+                          />
+                        ) : null}
+                      </View>
+                    )}
+                  </View>
+                ) : null}
               </View>
             </>
           )}

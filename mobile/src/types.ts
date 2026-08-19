@@ -300,6 +300,18 @@ export interface PostRecipe {
   image_url: string | null;
 }
 
+/**
+ * Newest-comment embed served on post rows (feed + detail): drives the
+ * latest-comment preview without a per-post comments fetch. Lighter than
+ * PostComment (no post_id / edited).
+ */
+export interface PostLatestComment {
+  id: number;
+  body: string;
+  created_at: string;
+  user: PostUser;
+}
+
 /** One community post row (GET /api/posts, 20/page newest-first). */
 export interface Post {
   id: number;
@@ -314,6 +326,11 @@ export interface Post {
   likes_count: number;
   comments_count: number;
   liked_by_me: boolean;
+  /**
+   * Newest comment embed (nullable). Present on feed rows and post detail;
+   * omitted payloads (e.g. store responses) normalize to null.
+   */
+  latest_comment: PostLatestComment | null;
   /** Author edited the body after publishing (updated_at > created_at). */
   edited: boolean;
 }
@@ -348,6 +365,8 @@ export interface PostInput {
 export interface PostsPage {
   posts: Post[];
   hasMore: boolean;
+  /** Paginator meta total, when the caller surfaced it (else rows.length). */
+  total?: number;
 }
 
 /** One page of post comments: rows plus whether more pages exist. */

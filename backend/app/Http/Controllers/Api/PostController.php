@@ -29,7 +29,9 @@ class PostController extends Controller
      * ?kind=try|fail|question filters by kind, ?recipe_id= by attachment.
      * liked_by_me is resolved from the sanctum user when a token is given
      * (false for guests). Posts authored by users the sanctum user blocks
-     * are excluded.
+     * are excluded. Each row also embeds its newest comment
+     * (`latest_comment`, null when none) so clients can render the preview
+     * without a per-post comments fetch.
      */
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -37,6 +39,7 @@ class PostController extends Controller
             ->with([
                 'user:id,display_name,name,avatar_url',
                 'recipe:id,title,title_ar,image_url',
+                'latestComment.user:id,display_name,name,avatar_url',
             ])
             ->withCount(['likes', 'comments']);
 
@@ -81,7 +84,8 @@ class PostController extends Controller
 
     /**
      * Single-post detail (public). Same shape as the index rows, including
-     * like/comment counts and liked_by_me for the optional sanctum user.
+     * like/comment counts, liked_by_me for the optional sanctum user and the
+     * embedded `latest_comment` (null when the post has none).
      * Registered at GET /posts/{post} (see api.php). A post authored by a
      * user the sanctum user blocks 404s for the blocker.
      */
@@ -100,6 +104,7 @@ class PostController extends Controller
         $post->load([
             'user:id,display_name,name,avatar_url',
             'recipe:id,title,title_ar,image_url',
+            'latestComment.user:id,display_name,name,avatar_url',
         ]);
         $post->loadCount(['likes', 'comments']);
 

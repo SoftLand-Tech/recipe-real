@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Post extends Model
 {
@@ -47,5 +48,16 @@ class Post extends Model
     public function comments(): HasMany
     {
         return $this->hasMany(PostComment::class);
+    }
+
+    /**
+     * The newest comment on this post (hasOne ordered by id desc). Eager-
+     * loaded by PostController::index/show so feed rows can embed a
+     * latest-comment preview in ONE extra query per page instead of an
+     * N+1 of per-post comment fetches on the client.
+     */
+    public function latestComment(): HasOne
+    {
+        return $this->hasOne(PostComment::class)->latest('id');
     }
 }

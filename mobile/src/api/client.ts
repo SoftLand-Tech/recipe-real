@@ -785,6 +785,23 @@ function normalizePost(p: any): Post {
     likes_count: toNum(p?.likes_count) ?? 0,
     comments_count: toNum(p?.comments_count) ?? 0,
     liked_by_me: Boolean(p?.liked_by_me),
+    // Newest-comment embed (feed/detail rows); payloads that omit it
+    // (e.g. store responses) normalize to null.
+    latest_comment:
+      p?.latest_comment != null
+        ? {
+            id: Number(p.latest_comment.id),
+            body:
+              typeof p.latest_comment.body === "string"
+                ? p.latest_comment.body
+                : "",
+            created_at:
+              typeof p.latest_comment.created_at === "string"
+                ? p.latest_comment.created_at
+                : "",
+            user: normalizePostUser(p.latest_comment.user),
+          }
+        : null,
     edited: Boolean(p?.edited),
   };
 }
@@ -820,6 +837,30 @@ export async function fetchPosts(
   });
   const rows = Array.isArray(data?.data) ? data.data.map(normalizePost) : [];
   return { posts: rows, hasMore: morePages(data, page, rows.length) };
+}
+
+/**
+ * One page of the community posts attached to a recipe
+ * (GET /api/posts?recipe_id=, 20/page newest-first, same PostResource rows
+ * as the main feed). Unlike fetchPosts it also surfaces the paginator
+ * `total` (falls back to the row count) so the recipe page's "Community
+ * tries" header can show the true count even when more pages exist.
+ */
+export async function fetchRecipePosts(
+  recipeId: number,
+  page = 1,
+): Promise<PostsPage> {
+  const { data } = await api.get<{ data?: unknown; meta?: {
+    total?: unknown;
+  } }>(`/api/posts`, {
+    params: { recipe_id: recipeId, page },
+  });
+  const rows = Array.isArray(data?.data) ? data.data.map(normalizePost) : [];
+  return {
+    posts: rows,
+    hasMore: morePages(data, page, rows.length),
+    total: toNum(data?.meta?.total) ?? rows.length,
+  };
 }
 
 /**

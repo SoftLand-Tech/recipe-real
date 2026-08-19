@@ -15,13 +15,12 @@ import { router, useFocusEffect } from "expo-router";
 
 import {
   fetchNotifications,
-  fetchPostComments,
   fetchPosts,
   hasToken,
   PostUnauthorizedError,
   togglePostLike,
 } from "@/api/client";
-import type { Post, PostComment, PostKind, PostRecipe } from "@/types";
+import type { Post, PostKind, PostRecipe } from "@/types";
 import { useLang, useT, type Lang, type TranslateFn } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 import {
@@ -210,24 +209,11 @@ const PostCard = memo(function PostCard({
     setViewerOpen(true);
   }, []);
 
-  // ---- Latest comment preview (loaded once on render, best-effort) ----------
-  const [latestComment, setLatestComment] = useState<PostComment | null>(null);
-  useEffect(() => {
-    if (post.comments_count === 0) return;
-    let cancelled = false;
-    fetchPostComments(post.id, 1)
-      .then((page) => {
-        if (!cancelled && page.comments.length > 0) {
-          setLatestComment(page.comments[page.comments.length - 1] ?? null);
-        }
-      })
-      .catch(() => {
-        // Non-fatal: preview just doesn't show.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [post.id, post.comments_count]);
+  // ---- Latest comment preview ------------------------------------------------
+  // Embedded in the feed row by the server (PostResource `latest_comment`,
+  // eager-loaded per page) — no per-card comments fetch anymore. Null when
+  // the post has no comments (the preview row simply hides).
+  const latestComment = post.latest_comment;
 
   const styles = useMemo(
     () =>

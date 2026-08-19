@@ -163,6 +163,12 @@ export const ar: Record<string, string> = {
   "detail.notesSignIn": "سجّل الدخول للمشاركة في النقاش.",
   "detail.notePostFailed": "تعذّر نشر ملاحظتك. حاول مرة أخرى.",
   "detail.noteHalalBlocked": "يرجى إزالة هذه المصطلحات: {terms}",
+  // ---- تجارب المجتمع (منشورات مرتبطة بهذه الوصفة) ----
+  "detail.communityTries": "تجارب المجتمع",
+  "detail.communityTriesCount": "تجارب المجتمع · {n}",
+  "detail.triesEmpty": "لا تجارب بعد — كن أول من يجرّب",
+  "detail.shareYourTry": "شارك تجربتك",
+  "detail.showAllTries": "عرض الكل",
 
   // ---- محرر الوصفات ------------------------------------------------------------
   "composer.basics": "الأساسيات",
