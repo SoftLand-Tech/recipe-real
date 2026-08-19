@@ -123,6 +123,14 @@ interface PostCardProps {
   signedIn: boolean | null;
   lang: Lang;
   onCommented: (postId: number) => void;
+  /**
+   * Reports like changes to the FEED's post state. Without this, the like
+   * lived only in the card's local state — any remount (tab switch, list
+   * recycling, failed silent refresh) re-initialized from the stale parent
+   * row: the heart came back blank while the server still counted you, and
+   * the next tap "toggled" your existing like away (red flash → unliked).
+   */
+  onLiked: (postId: number, liked: boolean, likesCount: number) => void;
 }
 
 /**
@@ -141,6 +149,7 @@ const PostCard = memo(function PostCard({
   signedIn,
   lang,
   onCommented,
+  onLiked,
 }: PostCardProps) {
   const colors = useThemeColors();
   const t = useT();
@@ -165,21 +174,27 @@ const PostCard = memo(function PostCard({
       return;
     }
     setLikeBusy(true);
-    // Optimistic toggle; the server's answer is authoritative.
-    setLiked((v) => !v);
-    setLikesCount((c) => c + (liked ? -1 : 1));
+    // Optimistic toggle; the server's answer is authoritative. Both are
+    // mirrored into the FEED state so a remount can never lose the like.
+    const nextLiked = !liked;
+    const nextCount = likesCount + (liked ? -1 : 1);
+    setLiked(nextLiked);
+    setLikesCount(nextCount);
+    onLiked(post.id, nextLiked, nextCount);
     try {
       const result = await togglePostLike(post.id);
       setLiked(result.liked);
       setLikesCount(result.likes_count);
+      onLiked(post.id, result.liked, result.likes_count);
     } catch (error) {
       setLiked(post.liked_by_me);
       setLikesCount(post.likes_count);
+      onLiked(post.id, post.liked_by_me, post.likes_count);
       if (error instanceof PostUnauthorizedError) setNeedsAuth(true);
     } finally {
       setLikeBusy(false);
     }
-  }, [likeBusy, signedIn, liked, post.id, post.liked_by_me, post.likes_count]);
+  }, [likeBusy, signedIn, liked, likesCount, post.id, post.liked_by_me, post.likes_count, onLiked]);
 
   // ---- Image viewer ----------------------------------------------------------
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -632,6 +647,21 @@ export default function CommunityScreen() {
     );
   }, []);
 
+  /**
+   * Mirrors like changes into the feed's post rows (see PostCardProps).
+   * Identity-stable so the memoized cards don't re-render needlessly.
+   */
+  const applyLikeState = useCallback(
+    (postId: number, liked: boolean, likesCount: number) => {
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId ? { ...p, liked_by_me: liked, likes_count: likesCount } : p,
+        ),
+      );
+    },
+    [],
+  );
+
   const startCompose = useCallback(() => {
     if (signedIn === false) {
       router.push("/login");
@@ -766,6 +796,7 @@ export default function CommunityScreen() {
             signedIn={signedIn}
             lang={lang}
             onCommented={bumpCommentCount}
+            onLiked={applyLikeState}
           />
         )}
         contentContainerStyle={styles.listContent}
