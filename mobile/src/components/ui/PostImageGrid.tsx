@@ -87,8 +87,11 @@ const ViewerCardPage = memo(function ViewerCardPage({
   }, []);
 
   // Compute safe boundaries taking notch, chrome row, and margins into account
-  const safeTop = insets.top + 56;
-  const safeBottom = Math.max(insets.bottom, 16);
+  // Top: just the notch inset + margin (no chrome up there anymore).
+  // Bottom: reserve the bottom chrome band (✕ button + counter) so the
+  // card never extends under the controls.
+  const safeTop = insets.top;
+  const safeBottom = insets.bottom + 64;
   const maxImageW = Math.max(100, SCREEN_W - 2 * CARD_MARGIN_H - 2 * CARD_PADDING);
   const maxImageH = Math.max(100, SCREEN_H - safeTop - safeBottom - 2 * CARD_MARGIN_V - 2 * CARD_PADDING);
 
@@ -259,8 +262,9 @@ export const ImageViewerModal = memo(function ImageViewerModal({
 
   const viewabilityConfig = { viewAreaCoveragePercentThreshold: 50 };
 
-  // Chrome top: safe-area inset + 16 pt so it clears the notch/cutout.
-  const chromeTop = insets.top + 16;
+  // Bottom chrome band: clear of the gesture bar (seeable) and reserved in
+  // the card's max height so neither control ever overlaps the photo card.
+  const chromeBottom = insets.bottom + 20;
 
   return (
     <Modal
@@ -275,8 +279,9 @@ export const ImageViewerModal = memo(function ImageViewerModal({
         <Animated.View style={[styles.scrim, { opacity: scrimOpacity }]} />
       </TouchableWithoutFeedback>
 
-      {/* Chrome: close ✕ at start, "N / M" counter at end — below the notch. */}
-      <View style={[styles.chromeRow, { top: chromeTop }]} pointerEvents="box-none">
+      {/* Bottom chrome: close ✕ at the start corner, "N / M" counter
+          centered — both on the scrim, never on top of the card. */}
+      <View style={[styles.chromeRow, { bottom: chromeBottom }]} pointerEvents="box-none">
         <Pressable
           onPress={onClose}
           style={styles.closePressable}
@@ -289,7 +294,11 @@ export const ImageViewerModal = memo(function ImageViewerModal({
           <Text style={styles.counter}>
             {currentIndex + 1} / {images.length}
           </Text>
-        ) : null}
+        ) : (
+          <View style={styles.counterSpacer} />
+        )}
+        {/* Trailing spacer keeps the counter truly centered. */}
+        <View style={styles.counterSpacer} />
       </View>
 
       {/* Paged photos — zoom in on open, track vertical drags, contained in floating cards. */}
@@ -836,15 +845,18 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     backgroundColor: "#000",
   },
-  // Chrome row: close ✕ at start, "N / M" counter at end (Facebook style).
+  // Bottom chrome row: close ✕ at the start corner, "N / M" counter truly
+  // centered (equal flex spacers flank it).
   chromeRow: {
     position: "absolute",
     left: 16,
     right: 16,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     zIndex: 10,
+  },
+  counterSpacer: {
+    flex: 1,
   },
   closePressable: {
     padding: 8,
