@@ -32,6 +32,7 @@ import {
   seedCacheFirstPage,
   seedCacheRemainingPages,
   toggleFavorite,
+  upsertRecipes,
 } from "@/db/database";
 import type { CookSessionSummary, HomeRails, Recipe } from "@/types";
 import { useLang, useLocalizedRecipe, useT, type TranslateFn } from "@/i18n";
@@ -436,6 +437,27 @@ export default function HomeScreen() {
         fetchRealityRail(),
       ]);
       const rails: HomeRails = { ...fetched, most_underestimated: mostUnderestimated };
+      // Anything the user saw on Home is openable offline: mirror every rail
+      // recipe into the local cache (light, no steps). This runs AFTER the
+      // fetch resolves, outside any other serialized section — upsertRecipes
+      // takes the write mutex itself. Deduped by id (rails overlap). An
+      // all-empty payload dedupes to [] and upsertRecipes no-ops. Fire and
+      // forget: a cache write failure must never disturb the rails paint.
+      const seenRailIds = new Set<number>();
+      const railRecipes = [
+        ...rails.top_rated,
+        ...rails.easy_wins,
+        ...rails.most_loved,
+        ...rails.hands_off,
+        ...rails.most_underestimated,
+      ].filter((r) => {
+        if (seenRailIds.has(r.id)) return false;
+        seenRailIds.add(r.id);
+        return true;
+      });
+      upsertRecipes(railRecipes, { withSteps: false }).catch(() => {
+        // Best-effort offline mirror.
+      });
       const any =
         rails.top_rated.length > 0 ||
         rails.easy_wins.length > 0 ||
