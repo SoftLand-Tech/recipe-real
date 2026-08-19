@@ -1,6 +1,7 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ComponentProps, type ReactNode } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
-import { ActivityIndicator, Pressable, StyleSheet, Text } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
 import { Space, Type, useThemeColors, type ThemeColors } from "@/theme";
 
@@ -13,6 +14,18 @@ export interface ButtonProps {
   disabled?: boolean;
   loading?: boolean;
   fullWidth?: boolean;
+  /**
+   * Leading glyph BY NAME — the Button renders it tinted to the variant's
+   * label color (white on primary in BOTH schemes, ink on ghost/secondary).
+   * Prefer this over leftIcon whenever a stock Ionicon will do.
+   */
+  icon?: ComponentProps<typeof Ionicons>["name"];
+  iconSize?: number;
+  /**
+   * Custom leading element (e.g. the multicolor Google logo). The CALLER
+   * controls its colors — nothing here can recolor an arbitrary node, so
+   * make sure it reads on this variant's background in both themes.
+   */
   leftIcon?: ReactNode;
   style?: StyleProp<ViewStyle>;
 }
@@ -51,6 +64,8 @@ export function Button({
   disabled = false,
   loading = false,
   fullWidth = false,
+  icon,
+  iconSize,
   leftIcon,
   style,
 }: ButtonProps) {
@@ -99,6 +114,10 @@ export function Button({
         },
         labelMd: { fontSize: Type.body.fontSize },
         labelLg: { fontSize: Type.title.fontSize },
+        // Breathing room between the glyph and the label.
+        iconGap: {
+          marginEnd: Space.sm,
+        },
       }),
     [],
   );
@@ -133,7 +152,15 @@ export function Button({
         />
       ) : (
         <>
-          {leftIcon ? <>{leftIcon}</> : null}
+          {leftIcon ? <View style={styles.iconGap}>{leftIcon}</View> : null}
+          {icon ? (
+            <Ionicons
+              name={icon}
+              size={iconSize ?? (large ? 20 : 16)}
+              color={tone.fg}
+              style={styles.iconGap}
+            />
+          ) : null}
           <Text
             style={[
               styles.label,

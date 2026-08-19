@@ -1174,9 +1174,6 @@ export default function CommunityScreen() {
         filterScrollInner: {
           flexGrow: 1,
         },
-        composeIcon: {
-          marginEnd: Space.xs,
-        },
         listContent: {
           paddingHorizontal: Space.lg,
           gap: Space.lg,
@@ -1267,14 +1264,7 @@ export default function CommunityScreen() {
         <Button
           title={t("community.compose")}
           onPress={startCompose}
-          leftIcon={
-            <Ionicons
-              name="create"
-              size={16}
-              color={colors.surface}
-              style={styles.composeIcon}
-            />
-          }
+          icon="create"
         />
       </View>
 
