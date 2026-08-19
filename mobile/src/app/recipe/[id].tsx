@@ -1019,7 +1019,9 @@ export default function RecipeDetailScreen() {
   /** Toggles the favorite state; storage failures are silently ignored. */
   const onToggleFavorite = useCallback(async () => {
     try {
-      const now = await toggleFavorite(Number(id));
+      // Full recipe: hearting may happen before any cache write of this row
+      // (deep-linked detail), and the db layer upserts it so the FK holds.
+      const now = await toggleFavorite(recipe ?? Number(id));
       setFavorited(now);
       track("favorite_toggled", {
         recipe_id: Number(id),
@@ -1028,7 +1030,7 @@ export default function RecipeDetailScreen() {
     } catch {
       // Favorites are best-effort; never crash the detail screen.
     }
-  }, [id]);
+  }, [id, recipe]);
 
   /**
    * Post a public community note. Returns true on success. Maps failures to
