@@ -84,6 +84,17 @@ export default function LoginScreen() {
   const googleClientId = resolveGoogleClientId();
   const proxyRedirectUri = resolveAuthRedirectUri();
 
+  // Standalone builds (preview APK / store) must send OUR DOMAIN trampoline
+  // as the OAuth redirect — the trampoline forwards the result to the
+  // recipereal:/// scheme. The auth.expo.io proxy redirect only works inside
+  // Expo Go; sending it in a standalone build bounces the user back into
+  // Expo Go (or nowhere) after the Google consent screen.
+  const isStandalone =
+    Constants.executionEnvironment !== ExecutionEnvironment.StoreClient;
+  const oauthRedirectUri = isStandalone
+    ? "https://recipe-real.softland.tech/auth/callback"
+    : proxyRedirectUri;
+
   const styles = useMemo(
     () =>
       StyleSheet.create({
@@ -139,7 +150,7 @@ export default function LoginScreen() {
   const [request] = Google.useAuthRequest({
     clientId: googleClientId ?? GOOGLE_CLIENT_ID_PLACEHOLDER,
     responseType: ResponseType.IdToken,
-    redirectUri: proxyRedirectUri ?? undefined,
+    redirectUri: oauthRedirectUri ?? undefined,
   });
 
   // Close any lingering auth popup on web; no-op on native.
@@ -163,7 +174,7 @@ export default function LoginScreen() {
       setError(t("login.errNotConfigured"));
       return;
     }
-    if (!request || !proxyRedirectUri) {
+    if (!request || !oauthRedirectUri) {
       setError(t("login.errNotReady"));
       return;
     }
@@ -172,9 +183,6 @@ export default function LoginScreen() {
     try {
       const authUrl =
         request.url ?? (await request.makeAuthUrlAsync(Google.discovery));
-
-      const isStandalone =
-        Constants.executionEnvironment !== ExecutionEnvironment.StoreClient;
 
       // The return always targets the /login ROUTE (this screen — its mount
       // effect calls maybeCompleteAuthSession() to hand the result back to
