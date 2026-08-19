@@ -23,5 +23,26 @@ return [
 
     // Comma-separated MyMemory contact emails (quota rotation pool).
     'translate_emails' => env('TRANSLATE_EMAILS', 'mamounprogrammer@gmail.com,imnotchoun@gmail.com,kohg60416@gmail.com'),
+    /*
+    |--------------------------------------------------------------------------
+    | Android App Links + Play Store
+    |--------------------------------------------------------------------------
+    |
+    | app_links_sha256: comma-separated SHA-256 cert fingerprints of every
+    |   keystore that signs release/preview builds (served in
+    |   /.well-known/assetlinks.json for Android domain verification).
+    | android_package: the applicationId of the app.
+    | play_store_url: when set AND the visitor is an Android browser (not a
+    |   link-preview crawler, not desktop/iOS), the share pages /r and /p
+    |   302-redirect here — the store-first fallback for users without the
+    |   app. Empty until the Play listing exists.
+    |
+    */
+
+    'app_links_sha256' => env('APP_LINKS_SHA256', ''),
+
+    'android_package' => env('ANDROID_PACKAGE', 'com.recipereal.app'),
+
+    'play_store_url' => env('PLAY_STORE_URL', ''),
 
 ];
