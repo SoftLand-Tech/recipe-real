@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { router, Stack } from "expo-router";
+import { router, Stack, useLocalSearchParams } from "expo-router";
 import axios from "axios";
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import * as Google from "expo-auth-session/providers/google";
@@ -158,6 +158,55 @@ export default function LoginScreen() {
     WebBrowser.maybeCompleteAuthSession();
   }, []);
 
+  /**
+   * DEEP-LINK COMPLETION (standalone Android): when the domain trampoline
+   * fires recipereal:///login?id_token=…, the OS opens this route as a deep
+   * link while the pending openAuthSessionAsync promise often resolves as
+   * "dismissed" (the custom-scheme navigation tears down the custom tab).
+   * maybeCompleteAuthSession is web-only, so NOTHING else would claim the
+   * token from the URL — the app opened "signed out" with the token sitting
+   * in the address. Complete the sign-in from the route params here.
+   */
+  const deepParams = useLocalSearchParams<{
+    id_token?: string;
+    error?: string;
+  }>();
+  const completedRef = useRef(false);
+  const deepIdToken =
+    typeof deepParams.id_token === "string" && deepParams.id_token.length > 0
+      ? deepParams.id_token
+      : null;
+  const deepError =
+    typeof deepParams.error === "string" && deepParams.error.length > 0
+      ? deepParams.error
+      : null;
+  useEffect(() => {
+    if (completedRef.current) return;
+    if (!deepIdToken && !deepError) return;
+    completedRef.current = true;
+    // Strip the credentials from this route entry (setParams with
+    // undefined removes the keys) so they can never replay on a later
+    // /login mount — the sign-in continues in THIS component instance.
+    router.setParams({ id_token: undefined, error: undefined });
+    if (!deepIdToken) {
+      setError(t("login.errNotComplete"));
+      return;
+    }
+    (async () => {
+      try {
+        setGoogleBusy(true);
+        await loginWithGoogle(deepIdToken);
+        track("signed_in", { method: "google" });
+        navigateAfterAuth();
+      } catch (e) {
+        setError(friendlyError(e, t));
+      } finally {
+        setGoogleBusy(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepIdToken, deepError]);
+
   function navigateAfterAuth() {
     if (router.canGoBack()) {
       router.back();
@@ -249,6 +298,12 @@ export default function LoginScreen() {
         setError(t("login.errNoToken"));
         return;
       }
+
+      // The deep-link completion effect may have already claimed this
+      // sign-in (Android resolves the session as dismissed while the deep
+      // link carries the token) — never submit twice.
+      if (completedRef.current) return;
+      completedRef.current = true;
 
       await loginWithGoogle(idToken);
       track("signed_in", { method: "google" });
