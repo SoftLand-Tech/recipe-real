@@ -428,6 +428,17 @@ export const en: Record<string, string> = {
   "community.commentFailed": "Couldn't post your comment. Please try again.",
   "community.commentsLoadFailed": "Couldn't load the comments.",
   "community.halalBlocked": "Please remove these terms: {terms}",
+  // ---- Multi-image compose & viewer -------------------------------------------
+  "community.addImages": "Add photos",
+  "community.addMoreImages": "Add more",
+  "community.uploadingImages": "Uploading {n} photo(s)…",
+  "community.errImageUpload": "One or more photos failed to upload. Please try again.",
+  "community.removeImage": "Remove photo",
+  // ---- Post detail screen ------------------------------------------------------
+  "community.postDetail": "Post",
+  "community.detailLoadFailed": "Couldn't load this post.",
+  "community.viewAllComments": "View all {n} comments",
+  "community.latestComment": "Latest comment",
 
   // ---- Profile ----------------------------------------------------------------
   "profile.title": "Your profile",

@@ -751,11 +751,24 @@ function normalizePostUser(u: any): PostUser {
 
 /** Normalize one post row defensively (recipe block may be null/partial). */
 function normalizePost(p: any): Post {
+  // Effective image list: prefer the server's `images` array when non-empty,
+  // otherwise fall back to wrapping the legacy image_url in an array.
+  const serverImages: string[] = Array.isArray(p?.images)
+    ? (p.images as unknown[]).filter((v): v is string => typeof v === "string")
+    : [];
+  const images =
+    serverImages.length > 0
+      ? serverImages
+      : p?.image_url
+        ? [p.image_url as string]
+        : [];
+
   return {
     id: Number(p?.id),
     kind: p?.kind === "fail" || p?.kind === "question" ? p.kind : "try",
     body: typeof p?.body === "string" ? p.body : "",
     image_url: p?.image_url ?? null,
+    images,
     created_at: typeof p?.created_at === "string" ? p.created_at : "",
     user: normalizePostUser(p?.user),
     recipe:
@@ -803,6 +816,15 @@ export async function fetchPosts(
   });
   const rows = Array.isArray(data?.data) ? data.data.map(normalizePost) : [];
   return { posts: rows, hasMore: morePages(data, page, rows.length) };
+}
+
+/**
+ * Fetch a single community post by id (GET /api/posts/{id}, public).
+ * Returns the same shape as the index feed rows. Throws on network / 404.
+ */
+export async function fetchPost(id: number): Promise<Post> {
+  const { data } = await api.get<{ data?: unknown }>(`/api/posts/${id}`);
+  return normalizePost((data as { data?: unknown })?.data ?? data);
 }
 
 /**

@@ -36,7 +36,10 @@ import {
   Button,
   Card,
   Chip,
+  ComposeImageGrid,
   IconPressable,
+  ImageViewerModal,
+  PostImageGrid,
   ScreenHeader,
 } from "@/components/ui";
 
@@ -60,14 +63,14 @@ const COMMENT_BODY_MAX = 1000;
 const RECIPE_PICK_RESULTS = 5;
 const RECIPE_SEARCH_DEBOUNCE_MS = 350;
 
+/** Max images per post. */
+const MAX_IMAGES = 6;
+
 /**
  * Safety cap for the pull-to-refresh spinner: it must never outlive ~10s
  * whatever the network does (force-cleared by a setTimeout guard).
  */
 const REFRESH_SPINNER_MAX_MS = 10_000;
-
-/** Height of a post's attached photo (maxHeight per the feed spec). */
-const POST_IMAGE_HEIGHT = 220;
 
 /**
  * Compact relative timestamp ("just now", "3h ago", …) — shared shape with
@@ -135,10 +138,15 @@ interface PostCardProps {
 }
 
 /**
- * One community post: author row + kind chip, body, optional photo and
- * attached recipe, like/comment footer, and an expandable inline comments
- * section (list + compose). Like/comment state lives here so the parent's
- * feed array only changes on data events (refresh / pagination / counts).
+ * One community post: author row + kind chip, body, optional image grid and
+ * attached recipe, like/comment footer, and a lightweight comment preview.
+ *
+ * The card is tappable (routes to /post/[id]) EXCEPT:
+ *   - the like button (keeps its own handler)
+ *   - image cells (open the fullscreen viewer)
+ *
+ * Comment thread has moved to the post detail screen; the card shows a
+ * lightweight preview (comment count + latest comment body) instead.
  */
 const PostCard = memo(function PostCard({
   post,
@@ -185,84 +193,33 @@ const PostCard = memo(function PostCard({
     }
   }, [likeBusy, signedIn, liked, post.id, post.liked_by_me, post.likes_count]);
 
-  // ---- Comments (inline, oldest-first, paginated 20/page) --------------------
-  const [expanded, setExpanded] = useState(false);
-  const [comments, setComments] = useState<PostComment[]>([]);
-  const [commentsPage, setCommentsPage] = useState(0);
-  const [commentsHasMore, setCommentsHasMore] = useState(false);
-  const [commentsLoading, setCommentsLoading] = useState(false);
-  const [commentsError, setCommentsError] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-  const [posting, setPosting] = useState(false);
-  const [commentFailed, setCommentFailed] = useState(false);
-  const [halalTerms, setHalalTerms] = useState<string[] | null>(null);
+  // ---- Image viewer ----------------------------------------------------------
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerStartIndex, setViewerStartIndex] = useState(0);
 
-  const loadComments = useCallback(
-    async (targetPage: number) => {
-      setCommentsLoading(true);
-      setCommentsError(null);
-      try {
-        const page = await fetchPostComments(post.id, targetPage);
-        setComments((prev) =>
-          targetPage === 1
-            ? page.comments
-            : [
-                ...prev,
-                ...page.comments.filter(
-                  (c) => !prev.some((p) => p.id === c.id),
-                ),
-              ],
-        );
-        setCommentsPage(targetPage);
-        setCommentsHasMore(page.hasMore);
-      } catch (error) {
-        console.warn("[RecipeReal] comments load failed:", error);
-        setCommentsError(t("community.commentsLoadFailed"));
-      } finally {
-        setCommentsLoading(false);
-      }
-    },
-    [post.id, t],
-  );
+  const openViewer = useCallback((index: number) => {
+    setViewerStartIndex(index);
+    setViewerOpen(true);
+  }, []);
 
-  const toggleComments = useCallback(() => {
-    setExpanded((v) => {
-      const next = !v;
-      if (next && commentsPage === 0 && !commentsLoading) {
-        void loadComments(1);
-      }
-      return next;
-    });
-  }, [commentsPage, commentsLoading, loadComments]);
-
-  const sendComment = useCallback(async () => {
-    const body = draft.trim();
-    if (body.length === 0 || posting) return;
-    if (signedIn === false) {
-      setNeedsAuth(true);
-      return;
-    }
-    setPosting(true);
-    setCommentFailed(false);
-    setHalalTerms(null);
-    try {
-      const created = await createPostComment(post.id, body);
-      setComments((prev) => [...prev, created]);
-      setDraft("");
-      onCommented(post.id);
-    } catch (error) {
-      if (error instanceof PostUnauthorizedError) {
-        setNeedsAuth(true);
-      } else if (error instanceof HalalRejectionError) {
-        setHalalTerms(error.terms);
-      } else {
-        console.warn("[RecipeReal] comment post failed:", error);
-        setCommentFailed(true);
-      }
-    } finally {
-      setPosting(false);
-    }
-  }, [draft, posting, signedIn, post.id, onCommented]);
+  // ---- Latest comment preview (loaded once on render, best-effort) ----------
+  const [latestComment, setLatestComment] = useState<PostComment | null>(null);
+  useEffect(() => {
+    if (post.comments_count === 0) return;
+    let cancelled = false;
+    fetchPostComments(post.id, 1)
+      .then((page) => {
+        if (!cancelled && page.comments.length > 0) {
+          setLatestComment(page.comments[page.comments.length - 1] ?? null);
+        }
+      })
+      .catch(() => {
+        // Non-fatal: preview just doesn't show.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [post.id, post.comments_count]);
 
   const styles = useMemo(
     () =>
@@ -290,13 +247,6 @@ const PostCard = memo(function PostCard({
         body: {
           ...Type.body,
           color: colors.ink,
-        },
-        photo: {
-          width: "100%",
-          height: POST_IMAGE_HEIGHT,
-          borderRadius: Radius.md,
-          backgroundColor: colors.surfaceSoft,
-          overflow: "hidden",
         },
         recipeRow: {
           flexDirection: "row",
@@ -346,62 +296,22 @@ const PostCard = memo(function PostCard({
           color: colors.inkSecondary,
           flex: 1,
         },
-        commentsSection: {
-          gap: Space.md,
+        previewRow: {
+          flexDirection: "row",
+          alignItems: "flex-start",
+          gap: Space.xs,
           borderTopWidth: StyleSheet.hairlineWidth,
           borderTopColor: colors.hairline,
-          paddingTop: Space.md,
+          paddingTop: Space.sm,
         },
-        commentRow: {
-          flexDirection: "row",
-          gap: Space.sm,
-        },
-        commentMain: {
-          flex: 1,
-          gap: 2,
-        },
-        commentHead: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.sm,
-        },
-        commentAuthor: {
-          ...Type.bodySm,
-          fontWeight: "600",
-          color: colors.ink,
-        },
-        commentTime: {
-          ...Type.caption,
-          color: colors.inkFaint,
-        },
-        commentBody: {
-          ...Type.bodySm,
-          color: colors.ink,
-        },
-        commentMuted: {
+        previewText: {
           ...Type.bodySm,
           color: colors.inkSecondary,
-        },
-        commentError: {
-          ...Type.bodySm,
-          color: colors.danger,
-        },
-        composeRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.sm,
-        },
-        composeInput: {
           flex: 1,
-          ...Type.bodySm,
-          color: colors.ink,
-          backgroundColor: colors.surfaceSoft,
-          borderRadius: Radius.pill,
-          paddingHorizontal: Space.md,
-          paddingVertical: Space.sm,
         },
-        loadMore: {
-          alignSelf: "flex-start",
+        viewThread: {
+          ...Type.bodySm,
+          color: colors.accent,
         },
       }),
     [colors],
@@ -412,208 +322,150 @@ const PostCard = memo(function PostCard({
   const title = recipeRel ? postRecipeTitle(lang, recipeRel) : "";
 
   return (
-    <Card style={styles.card}>
-      {/* Author row + kind chip. */}
-      <View style={styles.headRow}>
-        <Avatar
-          name={authorName(post.user)}
-          uri={post.user.avatar_url}
-          size={36}
-        />
-        <View style={styles.headMain}>
-          <Text style={styles.author} numberOfLines={1}>
-            {authorName(post.user)}
-          </Text>
-          {rel !== "" ? (
-            <Text style={styles.relTime}>{rel}</Text>
-          ) : null}
-        </View>
-        <Chip
-          size="sm"
-          tone={kindTone(post.kind)}
-          label={t(kindLabelKey(post.kind))}
-        />
-      </View>
-
-      {/* Body — full text (posts are capped at 2000 chars server-side). */}
-      <Text style={styles.body}>{post.body}</Text>
-
-      {/* Optional photo. */}
-      {post.image_url ? (
-        <Image
-          source={{ uri: post.image_url }}
-          style={styles.photo}
-          contentFit="cover"
-          transition={0}
-          cachePolicy="memory-disk"
-          recyclingKey={post.image_url}
-        />
-      ) : null}
-
-      {/* Optional attached recipe. */}
-      {recipeRel ? (
-        <IconPressable
-          onPress={() => router.push(`/recipe/${recipeRel.id}`)}
-          style={styles.recipeRow}
-        >
-          <View style={styles.recipeThumb}>
-            {recipeRel.image_url ? (
-              <Image
-                source={{ uri: recipeRel.image_url }}
-                style={StyleSheet.absoluteFill}
-                contentFit="cover"
-                transition={0}
-                cachePolicy="memory-disk"
-                recyclingKey={recipeRel.image_url}
-              />
-            ) : (
-              <Ionicons
-                name="restaurant-outline"
-                size={16}
-                color={colors.inkFaint}
-              />
-            )}
-          </View>
-          <Text style={styles.recipeTitle} numberOfLines={1}>
-            {title}
-          </Text>
-          <Ionicons
-            name={dir === "rtl" ? "chevron-back" : "chevron-forward"}
-            size={16}
-            color={colors.inkFaint}
-          />
-        </IconPressable>
-      ) : null}
-
-      {/* Like / comment footer. */}
-      <View style={styles.actionsRow}>
-        <IconPressable
-          onPress={handleLike}
-          disabled={likeBusy}
-          style={styles.action}
-          hitSlop={Space.xs}
-        >
-          <Ionicons
-            name={liked ? "heart" : "heart-outline"}
-            size={22}
-            color={liked ? colors.accent : colors.inkSecondary}
-          />
-          <Text style={styles.actionCount}>{likesCount}</Text>
-        </IconPressable>
-        <IconPressable
-          onPress={toggleComments}
-          style={styles.action}
-          hitSlop={Space.xs}
-        >
-          <Ionicons
-            name="chatbubble-outline"
-            size={20}
-            color={expanded ? colors.accent : colors.inkSecondary}
-          />
-          <Text style={styles.actionCount}>{post.comments_count}</Text>
-        </IconPressable>
-      </View>
-
-      {/* Sign-in prompt (401 / signed-out like or comment attempt). */}
-      {needsAuth ? (
-        <View style={styles.authPrompt}>
-          <Text style={styles.authText}>{t("community.signInPrompt")}</Text>
-          <Button
-            title={t("common.signIn")}
-            variant="ghost"
-            onPress={() => router.push("/login")}
-          />
-        </View>
-      ) : null}
-
-      {/* Inline comments (oldest-first). */}
-      {expanded ? (
-        <View style={styles.commentsSection}>
-          {commentsError != null ? (
-            <View style={styles.authPrompt}>
-              <Text style={styles.commentError}>{commentsError}</Text>
-              <Button
-                title={t("common.retry")}
-                variant="ghost"
-                onPress={() => void loadComments(1)}
-              />
-            </View>
-          ) : commentsLoading && comments.length === 0 ? (
-            <ActivityIndicator color={colors.accent} size="small" />
-          ) : comments.length === 0 ? (
-            <Text style={styles.commentMuted}>
-              {t("community.commentsEmpty")}
-            </Text>
-          ) : (
-            <View style={{ gap: Space.md }}>
-              {comments.map((comment) => {
-                const commentRel = relativeDate(t, comment.created_at);
-                return (
-                  <View key={`c-${comment.id}`} style={styles.commentRow}>
-                    <Avatar
-                      name={authorName(comment.user)}
-                      uri={comment.user.avatar_url}
-                      size={24}
-                    />
-                    <View style={styles.commentMain}>
-                      <View style={styles.commentHead}>
-                        <Text style={styles.commentAuthor} numberOfLines={1}>
-                          {authorName(comment.user)}
-                        </Text>
-                        {commentRel !== "" ? (
-                          <Text style={styles.commentTime}>{commentRel}</Text>
-                        ) : null}
-                      </View>
-                      <Text style={styles.commentBody}>{comment.body}</Text>
-                    </View>
-                  </View>
-                );
-              })}
-              {commentsHasMore ? (
-                <Button
-                  title={t("detail.loadMoreNotes")}
-                  variant="ghost"
-                  loading={commentsLoading}
-                  disabled={commentsLoading}
-                  onPress={() => void loadComments(commentsPage + 1)}
-                  style={styles.loadMore}
-                />
+    <>
+      <Card style={styles.card}>
+        {/* Author row + kind chip. */}
+        <IconPressable onPress={() => router.push(`/post/${post.id}`)}>
+          <View style={styles.headRow}>
+            <Avatar
+              name={authorName(post.user)}
+              uri={post.user.avatar_url}
+              size={36}
+            />
+            <View style={styles.headMain}>
+              <Text style={styles.author} numberOfLines={1}>
+                {authorName(post.user)}
+              </Text>
+              {rel !== "" ? (
+                <Text style={styles.relTime}>{rel}</Text>
               ) : null}
             </View>
-          )}
-
-          {/* Compose row. */}
-          <View style={styles.composeRow}>
-            <TextInput
-              style={styles.composeInput}
-              value={draft}
-              onChangeText={setDraft}
-              placeholder={t("community.commentPlaceholder")}
-              placeholderTextColor={colors.inkFaint}
-              maxLength={COMMENT_BODY_MAX}
-              editable={!posting}
-            />
-            <Button
-              variant="primary"
-              title={t("community.commentSend")}
-              loading={posting}
-              disabled={posting || draft.trim().length === 0}
-              onPress={() => void sendComment()}
+            <Chip
+              size="sm"
+              tone={kindTone(post.kind)}
+              label={t(kindLabelKey(post.kind))}
             />
           </View>
-          {halalTerms != null ? (
-            <Text style={styles.commentError}>
-              {t("community.halalBlocked", { terms: halalTerms.join(", ") })}
+        </IconPressable>
+
+        {/* Body — full text (posts are capped at 2000 chars server-side). */}
+        <IconPressable onPress={() => router.push(`/post/${post.id}`)}>
+          <Text style={styles.body}>{post.body}</Text>
+        </IconPressable>
+
+        {/* Optional multi-image grid (cells are NOT wrapped in the card tappable). */}
+        {post.images.length > 0 ? (
+          <PostImageGrid images={post.images} onImagePress={openViewer} />
+        ) : null}
+
+        {/* Optional attached recipe. */}
+        {recipeRel ? (
+          <IconPressable
+            onPress={() => router.push(`/recipe/${recipeRel.id}`)}
+            style={styles.recipeRow}
+          >
+            <View style={styles.recipeThumb}>
+              {recipeRel.image_url ? (
+                <Image
+                  source={{ uri: recipeRel.image_url }}
+                  style={StyleSheet.absoluteFill}
+                  contentFit="cover"
+                  transition={0}
+                  cachePolicy="memory-disk"
+                  recyclingKey={recipeRel.image_url}
+                />
+              ) : (
+                <Ionicons
+                  name="restaurant-outline"
+                  size={16}
+                  color={colors.inkFaint}
+                />
+              )}
+            </View>
+            <Text style={styles.recipeTitle} numberOfLines={1}>
+              {title}
             </Text>
-          ) : null}
-          {commentFailed ? (
-            <Text style={styles.commentError}>
-              {t("community.commentFailed")}
-            </Text>
-          ) : null}
+            <Ionicons
+              name={dir === "rtl" ? "chevron-back" : "chevron-forward"}
+              size={16}
+              color={colors.inkFaint}
+            />
+          </IconPressable>
+        ) : null}
+
+        {/* Like / comment footer. */}
+        <View style={styles.actionsRow}>
+          {/* Like button — NOT wrapped in the card pressable. */}
+          <IconPressable
+            onPress={handleLike}
+            disabled={likeBusy}
+            style={styles.action}
+            hitSlop={Space.xs}
+          >
+            <Ionicons
+              name={liked ? "heart" : "heart-outline"}
+              size={22}
+              color={liked ? colors.accent : colors.inkSecondary}
+            />
+            <Text style={styles.actionCount}>{likesCount}</Text>
+          </IconPressable>
+          {/* Comment tap → post detail. */}
+          <IconPressable
+            onPress={() => router.push(`/post/${post.id}`)}
+            style={styles.action}
+            hitSlop={Space.xs}
+          >
+            <Ionicons
+              name="chatbubble-outline"
+              size={20}
+              color={colors.inkSecondary}
+            />
+            <Text style={styles.actionCount}>{post.comments_count}</Text>
+          </IconPressable>
         </View>
+
+        {/* Sign-in prompt (401 / signed-out like attempt). */}
+        {needsAuth ? (
+          <View style={styles.authPrompt}>
+            <Text style={styles.authText}>{t("community.signInPrompt")}</Text>
+            <Button
+              title={t("common.signIn")}
+              variant="ghost"
+              onPress={() => router.push("/login")}
+            />
+          </View>
+        ) : null}
+
+        {/* Lightweight comment preview: latest comment + count. */}
+        {latestComment != null ? (
+          <IconPressable
+            onPress={() => router.push(`/post/${post.id}`)}
+            style={styles.previewRow}
+          >
+            <Text style={styles.previewText} numberOfLines={2}>
+              <Text style={{ fontWeight: "600" }}>
+                {authorName(latestComment.user)}{" "}
+              </Text>
+              {latestComment.body}
+            </Text>
+            {post.comments_count > 1 ? (
+              <Text style={styles.viewThread}>
+                {t("community.viewAllComments", { n: post.comments_count })}
+              </Text>
+            ) : null}
+          </IconPressable>
+        ) : null}
+      </Card>
+
+      {/* Fullscreen image viewer (rendered outside Card to avoid clip). */}
+      {viewerOpen && post.images.length > 0 ? (
+        <ImageViewerModal
+          images={post.images}
+          startIndex={viewerStartIndex}
+          onClose={() => setViewerOpen(false)}
+        />
       ) : null}
-    </Card>
+    </>
   );
 });
 
@@ -626,8 +478,10 @@ interface ComposeCardProps {
 
 /**
  * Inline compose card rendered at the top of the feed: kind chips, body,
- * optional recipe attach (search-as-you-type mini picker) and photo, and the
- * Post action. Uploads the photo during submit (composer pattern).
+ * optional recipe attach (search-as-you-type mini picker) and up to 6 photos
+ * (sequential upload per file during submit). Preview grid while composing:
+ * 1 image full-width 4:3; 2 images side-by-side; 3+ a 2-column grid.
+ * Submit sends `images` (array of uploaded URLs) to createPost.
  */
 function ComposeCard({ onClose, onCreated }: ComposeCardProps) {
   const colors = useThemeColors();
@@ -636,7 +490,8 @@ function ComposeCard({ onClose, onCreated }: ComposeCardProps) {
 
   const [kind, setKind] = useState<PostKind>("try");
   const [body, setBody] = useState("");
-  const [pickedUri, setPickedUri] = useState<string | null>(null);
+  // Multi-image: array of local device URIs.
+  const [pickedUris, setPickedUris] = useState<string[]>([]);
 
   // Recipe attach: query + debounced top-5 results + the selected row.
   const [recipeQuery, setRecipeQuery] = useState("");
@@ -645,6 +500,7 @@ function ComposeCard({ onClose, onCreated }: ComposeCardProps) {
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
 
   const [posting, setPosting] = useState(false);
+  const [uploadCaption, setUploadCaption] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [halalTerms, setHalalTerms] = useState<string[] | null>(null);
 
@@ -673,20 +529,32 @@ function ComposeCard({ onClose, onCreated }: ComposeCardProps) {
     return () => clearTimeout(timer);
   }, [recipeQuery, selectedRecipe]);
 
-  const pickImage = useCallback(async () => {
+  /** Pick up to MAX_IMAGES images from the library. */
+  const pickImages = useCallback(async () => {
+    const remaining = MAX_IMAGES - pickedUris.length;
+    if (remaining <= 0) return;
     try {
+      // expo-image-picker supports allowsMultipleSelection on iOS 14+/Android.
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.7,
-        allowsEditing: true,
-        aspect: [4, 3],
+        quality: 0.8,
+        allowsMultipleSelection: true,
+        selectionLimit: remaining,
       });
-      if (!result.canceled && result.assets[0]?.uri) {
-        setPickedUri(result.assets[0].uri);
+      if (!result.canceled && result.assets.length > 0) {
+        const newUris = result.assets
+          .map((a) => a.uri)
+          .filter(Boolean)
+          .slice(0, remaining);
+        setPickedUris((prev) => [...prev, ...newUris].slice(0, MAX_IMAGES));
       }
-    } catch (error) {
-      console.warn("[RecipeReal] image pick failed:", error);
+    } catch (err) {
+      console.warn("[RecipeReal] image pick failed:", err);
     }
+  }, [pickedUris]);
+
+  const removeImage = useCallback((index: number) => {
+    setPickedUris((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
   const submit = useCallback(async () => {
@@ -703,25 +571,39 @@ function ComposeCard({ onClose, onCreated }: ComposeCardProps) {
     setPosting(true);
     setError(null);
     setHalalTerms(null);
+    setUploadCaption(null);
     try {
-      let imageUrl: string | undefined;
-      if (pickedUri) {
-        try {
-          imageUrl = await uploadImage(pickedUri);
-        } catch {
-          setError(t("composer.errImageUpload"));
-          return;
+      // Upload each picked image sequentially, reporting progress.
+      const uploadedUrls: string[] = [];
+      if (pickedUris.length > 0) {
+        for (let i = 0; i < pickedUris.length; i++) {
+          setUploadCaption(
+            t("community.uploadingImages", { n: pickedUris.length }) +
+              ` (${i + 1}/${pickedUris.length})`,
+          );
+          try {
+            const url = await uploadImage(pickedUris[i]);
+            uploadedUrls.push(url);
+          } catch {
+            setError(t("community.errImageUpload"));
+            return;
+          }
         }
       }
+      setUploadCaption(null);
+
       const created = await createPost({
         kind,
         body: text,
         ...(selectedRecipe ? { recipe_id: selectedRecipe.id } : {}),
-        ...(imageUrl ? { image_url: imageUrl } : {}),
+        // Always send `images` when we have any; image_url is set server-side
+        // to images[0] for backward compat.
+        ...(uploadedUrls.length > 0 ? { images: uploadedUrls } : {}),
       });
       track("post_created", {
         kind,
-        has_image: imageUrl != null,
+        has_image: uploadedUrls.length > 0,
+        image_count: uploadedUrls.length,
         has_recipe: selectedRecipe != null,
       });
       onCreated(created);
@@ -734,8 +616,9 @@ function ComposeCard({ onClose, onCreated }: ComposeCardProps) {
       }
     } finally {
       setPosting(false);
+      setUploadCaption(null);
     }
-  }, [body, posting, pickedUri, kind, selectedRecipe, t, onCreated]);
+  }, [body, posting, pickedUris, kind, selectedRecipe, t, onCreated]);
 
   const styles = useMemo(
     () =>
@@ -776,12 +659,6 @@ function ComposeCard({ onClose, onCreated }: ComposeCardProps) {
           flexDirection: "row",
           alignItems: "center",
         },
-        photoPreview: {
-          width: "100%",
-          height: 140,
-          borderRadius: Radius.md,
-          backgroundColor: colors.surfaceSoft,
-        },
         photoActions: {
           flexDirection: "row",
           flexWrap: "wrap",
@@ -818,6 +695,10 @@ function ComposeCard({ onClose, onCreated }: ComposeCardProps) {
         actions: {
           flexDirection: "row",
           gap: Space.sm,
+        },
+        uploadCaption: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
         },
       }),
     [colors],
@@ -857,35 +738,35 @@ function ComposeCard({ onClose, onCreated }: ComposeCardProps) {
         editable={!posting}
       />
 
-      {/* Optional photo. */}
-      {pickedUri ? (
-        <Image
-          source={{ uri: pickedUri }}
-          style={styles.photoPreview}
-          contentFit="cover"
-          transition={0}
-        />
-      ) : null}
-      <View style={styles.photoActions}>
-        <Button
-          title={
-            pickedUri
-              ? t("composer.changeImage")
-              : t("composer.addImage")
-          }
-          variant="ghost"
-          onPress={() => void pickImage()}
+      {/* Multi-image preview grid (with remove buttons). */}
+      {pickedUris.length > 0 ? (
+        <ComposeImageGrid
+          uris={pickedUris}
+          onRemove={removeImage}
           disabled={posting}
         />
-        {pickedUri ? (
+      ) : null}
+
+      {/* Photo action buttons. */}
+      <View style={styles.photoActions}>
+        {pickedUris.length < MAX_IMAGES ? (
           <Button
-            title={t("composer.removeImage")}
+            title={
+              pickedUris.length === 0
+                ? t("community.addImages")
+                : t("community.addMoreImages")
+            }
             variant="ghost"
-            onPress={() => setPickedUri(null)}
+            onPress={() => void pickImages()}
             disabled={posting}
           />
         ) : null}
       </View>
+
+      {/* Upload progress caption. */}
+      {uploadCaption != null ? (
+        <Text style={styles.uploadCaption}>{uploadCaption}</Text>
+      ) : null}
 
       {/* Optional recipe attach: selected chip or search mini picker. */}
       {selectedRecipe ? (
@@ -1007,10 +888,11 @@ function useLocalizedTitle(): (recipe: Recipe) => string {
 
 /**
  * The Community tab: the public post feed (tries / fails / questions) with
- * kind filter chips, an inline compose card, per-post likes and inline
- * comments. Viewing is public; composing, liking and commenting require
- * sign-in (a 401 shows an inline sign-in prompt). Signed-in users also get
- * the header avatar button into /profile.
+ * kind filter chips, an inline compose card, per-post likes and a lightweight
+ * comment preview. Tapping a post card navigates to the post detail screen
+ * (/post/[id]) where the full comment thread lives. Viewing is public;
+ * composing and liking require sign-in (a 401 shows an inline sign-in prompt).
+ * Signed-in users also get the header avatar button into /profile.
  */
 export default function CommunityScreen() {
   const insets = useSafeAreaInsets();

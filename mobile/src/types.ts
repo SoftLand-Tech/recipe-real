@@ -306,6 +306,8 @@ export interface Post {
   kind: PostKind;
   body: string;
   image_url: string | null;
+  /** Effective image list (1–6 URLs). New-client field; always present. */
+  images: string[];
   created_at: string;
   user: PostUser;
   recipe: PostRecipe | null;
@@ -334,6 +336,8 @@ export interface PostInput {
   body: string;
   recipe_id?: number;
   image_url?: string;
+  /** Multi-image upload: up to 6 public URLs. Supersedes image_url when set. */
+  images?: string[];
 }
 
 /** One page of community posts: rows plus whether more pages exist. */

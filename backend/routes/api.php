@@ -44,6 +44,7 @@ Route::middleware('throttle:240,1')->group(function (): void {
     // user from an optional bearer token for liked_by_me.
     Route::get('/recipes/{recipe}/notes', [RecipeNoteController::class, 'index']);
     Route::get('/posts', [PostController::class, 'index']);
+    Route::get('/posts/{post}', [PostController::class, 'show']);
     Route::get('/posts/{post}/comments', [PostCommentController::class, 'index']);
 
     // Home-screen rails (curated, cached, light).

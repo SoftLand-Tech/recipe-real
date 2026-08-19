@@ -12,27 +12,37 @@ class PostResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        // Effective image list: `images` JSON column when non-empty, else
+        // fall back to the legacy `image_url` single column when set.
+        $jsonImages = is_array($this->images) ? array_values(array_filter($this->images)) : [];
+        $effectiveImages = count($jsonImages) > 0
+            ? $jsonImages
+            : ($this->image_url ? [$this->image_url] : []);
+
         return [
-            'id' => $this->id,
-            'kind' => $this->kind,
-            'body' => $this->body,
-            'image_url' => $this->image_url,
-            'user' => new UserPublicResource($this->whenLoaded('user')),
+            'id'             => $this->id,
+            'kind'           => $this->kind,
+            'body'           => $this->body,
+            'image_url'      => $this->image_url,
+            // Array of image URLs (1–6 entries, or empty). New clients use
+            // this; old clients keep reading image_url (first image).
+            'images'         => $effectiveImages,
+            'user'           => new UserPublicResource($this->whenLoaded('user')),
             // Light recipe card (id/title/title_ar/image_url), null when the
             // post is not attached to one. Controllers constrain the eager
             // load to exactly those columns.
-            'recipe' => $this->whenLoaded('recipe', fn () => $this->recipe !== null ? [
-                'id' => $this->recipe->id,
-                'title' => $this->recipe->title,
+            'recipe'         => $this->whenLoaded('recipe', fn () => $this->recipe !== null ? [
+                'id'       => $this->recipe->id,
+                'title'    => $this->recipe->title,
                 'title_ar' => $this->recipe->title_ar,
                 'image_url' => $this->recipe->image_url,
             ] : null),
-            'likes_count' => (int) ($this->likes_count ?? $this->likes()->count()),
+            'likes_count'    => (int) ($this->likes_count ?? $this->likes()->count()),
             'comments_count' => (int) ($this->comments_count ?? $this->comments()->count()),
             // Marked on the model by PostController::index for the resolved
             // sanctum user; false for guests.
-            'liked_by_me' => (bool) ($this->liked_by_me ?? false),
-            'created_at' => $this->created_at?->toIso8601String(),
+            'liked_by_me'    => (bool) ($this->liked_by_me ?? false),
+            'created_at'     => $this->created_at?->toIso8601String(),
         ];
     }
 }

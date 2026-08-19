@@ -200,6 +200,14 @@ function NavigationFrame() {
             name="cook/[id]"
             options={{ title: t("stack.cookMode"), headerShown: false }}
           />
+          {/*
+            Post detail: full post body + image grid + comments thread.
+            Pushed from the community feed when a post card is tapped.
+          */}
+          <Stack.Screen
+            name="post/[id]"
+            options={{ title: t("community.postDetail"), headerShown: false }}
+          />
         </Stack>
       </SafeAreaProvider>
     </ThemeProvider>

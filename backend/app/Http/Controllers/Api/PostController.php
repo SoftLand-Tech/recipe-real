@@ -66,7 +66,39 @@ class PostController extends Controller
     }
 
     /**
+     * Single-post detail (public). Same shape as the index rows, including
+     * like/comment counts and liked_by_me for the optional sanctum user.
+     * Registered at GET /posts/{post} (see api.php).
+     */
+    public function show(Request $request, Post $post): PostResource
+    {
+        $post->load([
+            'user:id,display_name,name,avatar_url',
+            'recipe:id,title,title_ar,image_url',
+        ]);
+        $post->loadCount(['likes', 'comments']);
+
+        $user = $request->user('sanctum');
+        if ($user !== null) {
+            $post->liked_by_me = DB::table('post_likes')
+                ->where('post_id', $post->id)
+                ->where('user_id', $user->id)
+                ->exists();
+        } else {
+            $post->liked_by_me = false;
+        }
+
+        return new PostResource($post);
+    }
+
+    /**
      * Create a post (authed). Halal-gated like all community text.
+     *
+     * Multi-image: if `images` is provided (array of uploaded URLs, max 6),
+     * it is stored as JSON in the `images` column and `image_url` is set to
+     * the first entry for backward compatibility with old clients. If only
+     * the legacy `image_url` is provided, it is stored as-is with no `images`
+     * column data.
      */
     public function store(StorePostRequest $request): JsonResponse
     {
@@ -74,20 +106,34 @@ class PostController extends Controller
 
         $this->assertHalal($body);
 
+        // Resolve the effective image list from the request.
+        $imagesInput = $request->input('images');
+        $images      = is_array($imagesInput) && count($imagesInput) > 0
+            ? array_values(array_filter($imagesInput, fn ($v) => is_string($v) && $v !== ''))
+            : [];
+
+        // Legacy image_url: only used when no images array was sent.
+        $legacyImageUrl = $request->input('image_url');
+
+        // `image_url` is always the first image (backward compat).
+        $firstImageUrl = count($images) > 0 ? $images[0] : $legacyImageUrl;
+
         $post = Post::create([
-            'user_id' => $request->user()->id,
-            'kind' => $request->string('kind')->toString(),
-            'body' => $body,
+            'user_id'   => $request->user()->id,
+            'kind'      => $request->string('kind')->toString(),
+            'body'      => $body,
             'recipe_id' => $request->input('recipe_id'),
-            'image_url' => $request->input('image_url'),
+            'image_url' => $firstImageUrl,
+            // Eloquent's 'array' cast handles json_encode automatically.
+            'images'    => count($images) > 0 ? $images : null,
         ]);
         $post->load([
             'user:id,display_name,name,avatar_url',
             'recipe:id,title,title_ar,image_url',
         ]);
-        $post->likes_count = 0;
+        $post->likes_count    = 0;
         $post->comments_count = 0;
-        $post->liked_by_me = false;
+        $post->liked_by_me    = false;
 
         return (new PostResource($post))
             ->response()
@@ -125,7 +171,7 @@ class PostController extends Controller
             ->count();
 
         return response()->json([
-            'liked' => $liked,
+            'liked'       => $liked,
             'likes_count' => $likesCount,
         ]);
     }
@@ -140,7 +186,7 @@ class PostController extends Controller
         if ($terms !== []) {
             throw new HttpResponseException(response()->json([
                 'message' => 'Posts cannot contain haram ingredients or alcohol references.',
-                'terms' => $terms,
+                'terms'   => $terms,
             ], 422));
         }
     }

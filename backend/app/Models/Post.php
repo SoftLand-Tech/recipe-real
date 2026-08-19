@@ -17,6 +17,16 @@ class Post extends Model
         'body',
         'recipe_id',
         'image_url',
+        'images',
+    ];
+
+    /**
+     * Cast the JSON `images` column to/from a PHP array automatically.
+     *
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'images' => 'array',
     ];
 
     public function user(): BelongsTo

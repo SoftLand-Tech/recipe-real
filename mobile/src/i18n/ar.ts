@@ -422,6 +422,17 @@ export const ar: Record<string, string> = {
   "community.commentFailed": "تعذّر نشر تعليقك. حاول مجددًا.",
   "community.commentsLoadFailed": "تعذّر تحميل التعليقات.",
   "community.halalBlocked": "يرجى إزالة هذه المصطلحات: {terms}",
+  // ---- صور متعددة في المشاركات & عارض الصور -----------------------------------
+  "community.addImages": "إضافة صور",
+  "community.addMoreImages": "إضافة المزيد",
+  "community.uploadingImages": "جارٍ رفع {n} صورة(صور)…",
+  "community.errImageUpload": "فشل رفع صورة أو أكثر. حاول مجددًا.",
+  "community.removeImage": "إزالة الصورة",
+  // ---- شاشة تفاصيل المنشور -----------------------------------------------------
+  "community.postDetail": "المنشور",
+  "community.detailLoadFailed": "تعذّر تحميل هذا المنشور.",
+  "community.viewAllComments": "عرض جميع التعليقات ({n})",
+  "community.latestComment": "أحدث تعليق",
 
   // ---- الملف الشخصي ------------------------------------------------------------
   "profile.title": "ملفك الشخصي",

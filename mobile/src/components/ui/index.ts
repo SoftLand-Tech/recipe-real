@@ -45,3 +45,9 @@ export type { NoteBadgeProps } from "./NoteBadge";
 
 export { GoogleLogo } from "./GoogleLogo";
 export type { GoogleLogoProps } from "./GoogleLogo";
+
+export {
+  PostImageGrid,
+  ComposeImageGrid,
+  ImageViewerModal,
+} from "./PostImageGrid";
