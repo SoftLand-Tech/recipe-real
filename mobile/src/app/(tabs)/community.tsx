@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   RefreshControl,
   ScrollView,
@@ -15,10 +16,14 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, useFocusEffect } from "expo-router";
 
 import {
+  blockUser,
+  deletePost,
+  fetchMyProfile,
   fetchNotifications,
   fetchPosts,
   hasToken,
   PostUnauthorizedError,
+  reportPost,
   togglePostLike,
 } from "@/api/client";
 import type { Post, PostKind, PostRecipe, PostSort } from "@/types";
@@ -147,6 +152,10 @@ interface PostCardProps {
    * the next tap "toggled" your existing like away (red flash → unliked).
    */
   onLiked: (postId: number, liked: boolean, likesCount: number) => void;
+  /** The signed-in user's id (null while resolving) — drives the ⋯ menu. */
+  myUserId: number | null;
+  /** Drops the post from the feed (own delete / author blocked). */
+  onRemove: (postId: number) => void;
 }
 
 /**
@@ -166,6 +175,8 @@ const PostCard = memo(function PostCard({
   lang,
   onCommented,
   onLiked,
+  myUserId,
+  onRemove,
 }: PostCardProps) {
   const colors = useThemeColors();
   const t = useT();
@@ -220,6 +231,80 @@ const PostCard = memo(function PostCard({
   const [bodyExpanded, setBodyExpanded] = useState(false);
   const [bodyOverflows, setBodyOverflows] = useState(false);
 
+  // ---- ⋯ menu (own: delete / others: report + block) ------------------------
+  const [reported, setReported] = useState(false);
+  const isMine = myUserId != null && post.user.id === myUserId;
+
+  const confirmDelete = useCallback(() => {
+    Alert.alert(t("community.deletePost"), t("community.deletePostConfirm"), [
+      { text: t("common.cancel"), style: "cancel" },
+      {
+        text: t("common.delete"),
+        style: "destructive",
+        onPress: () => {
+          deletePost(post.id)
+            .then(() => onRemove(post.id))
+            .catch(() => {
+              // Non-fatal: the focus refresh will reconcile with the server.
+            });
+        },
+      },
+    ]);
+  }, [post.id, onRemove, t]);
+
+  const confirmBlock = useCallback(() => {
+    Alert.alert(
+      t("community.blockUser"),
+      t("community.blockConfirm", { name: authorName(post.user) }),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: t("community.blockBtn"),
+          style: "destructive",
+          onPress: () => {
+            blockUser(post.user.id)
+              .then(() => onRemove(post.id))
+              .catch(() => {
+                // Non-fatal.
+              });
+          },
+        },
+      ],
+    );
+  }, [post.user.id, post.id, onRemove, t]);
+
+  const openMenu = useCallback(() => {
+    if (isMine) {
+      Alert.alert(t("community.postActions"), undefined, [
+        { text: t("common.cancel"), style: "cancel" },
+        { text: t("community.deletePost"), style: "destructive", onPress: confirmDelete },
+      ]);
+      return;
+    }
+    Alert.alert(t("community.postActions"), undefined, [
+      { text: t("common.cancel"), style: "cancel" },
+      {
+        text: t("community.reportPost"),
+        onPress: () => {
+          Alert.alert(t("community.reportPost"), t("community.reportConfirm"), [
+            { text: t("common.cancel"), style: "cancel" },
+            {
+              text: t("community.reportPost"),
+              onPress: () => {
+                reportPost(post.id)
+                  .then(() => setReported(true))
+                  .catch(() => {
+                    // Non-fatal.
+                  });
+              },
+            },
+          ]);
+        },
+      },
+      { text: t("community.blockUser"), style: "destructive", onPress: confirmBlock },
+    ]);
+  }, [isMine, confirmDelete, confirmBlock, post.id, t]);
+
   const openViewer = useCallback((index: number) => {
     setViewerStartIndex(index);
     setViewerOpen(true);
@@ -253,6 +338,12 @@ const PostCard = memo(function PostCard({
         relTime: {
           ...Type.caption,
           color: colors.inkFaint,
+        },
+        reportedCaption: {
+          ...Type.caption,
+          color: colors.success,
+          marginTop: -Space.xs,
+          marginStart: Space.xs,
         },
         body: {
           ...Type.body,
@@ -360,8 +451,25 @@ const PostCard = memo(function PostCard({
               tone={kindTone(post.kind)}
               label={t(kindLabelKey(post.kind))}
             />
+            <IconPressable
+              onPress={openMenu}
+              accessibilityLabel={t("community.postActions")}
+              accessibilityRole="button"
+              hitSlop={Space.xs}
+            >
+              <Ionicons
+                name="ellipsis-horizontal"
+                size={18}
+                color={reported ? colors.success : colors.inkSecondary}
+              />
+            </IconPressable>
           </View>
         </IconPressable>
+        {reported ? (
+          <Text style={styles.reportedCaption}>
+            {t("community.reported")} ✓
+          </Text>
+        ) : null}
 
         {/* Body — clamped to 3 lines; "See more" expands inline.
             We use a hidden unclamped Text for line-count measurement (onTextLayout
@@ -538,6 +646,8 @@ export default function CommunityScreen() {
   const { lang } = useLang();
 
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  // Signed-in user's id — resolves own-vs-other for the per-card ⋯ menu.
+  const [myUserId, setMyUserId] = useState<number | null>(null);
   const [filter, setFilter] = useState<FeedFilter>("all");
   // Feed ordering: "latest" (default) or "trending"; persisted in
   // AsyncStorage and restored on mount.
@@ -655,6 +765,18 @@ export default function CommunityScreen() {
       (async () => {
         const ok = await hasToken();
         if (!cancelled) setSignedIn(ok);
+        // The signed-in user's id drives the per-card ⋯ menu (own vs other).
+        if (ok) {
+          fetchMyProfile()
+            .then((me) => {
+              if (!cancelled) setMyUserId(me.id);
+            })
+            .catch(() => {
+              // Non-fatal: cards just won't show the own-post menu.
+            });
+        } else if (!cancelled) {
+          setMyUserId(null);
+        }
         // Cheap inbox page 1 fetch: only the meta.unread_count is used.
         if (ok) {
           fetchNotifications(1)
@@ -749,6 +871,11 @@ export default function CommunityScreen() {
     },
     [],
   );
+
+  /** Drops a post from the feed after its own deletion or an author block. */
+  const removePost = useCallback((postId: number) => {
+    setPosts((prev) => prev.filter((p) => p.id !== postId));
+  }, []);
 
   const startCompose = useCallback(() => {
     if (signedIn === false) {
@@ -985,6 +1112,8 @@ export default function CommunityScreen() {
             lang={lang}
             onCommented={bumpCommentCount}
             onLiked={applyLikeState}
+            myUserId={myUserId}
+            onRemove={removePost}
           />
         )}
         contentContainerStyle={styles.listContent}
