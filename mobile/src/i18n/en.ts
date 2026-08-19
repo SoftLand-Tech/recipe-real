@@ -458,7 +458,12 @@ export const en: Record<string, string> = {
   "profile.statPosts": "Posts",
   "profile.statLikes": "Likes received",
   "profile.statNotes": "Public notes",
+  "profile.activityGroup": "Activity",
+  "profile.editName": "Edit display name",
+  "profile.saveNameA11y": "Save name",
+  "profile.cancelEditName": "Cancel editing",
   "profile.myRecipes": "My recipes",
+  "profile.myRecipesCount": "My recipes · {n}",
   "profile.noRecipes": "You haven't published a recipe yet.",
 
   // ---- Recipe detail (declutter additions; appended at the end) -------------

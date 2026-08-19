@@ -452,7 +452,12 @@ export const ar: Record<string, string> = {
   "profile.statPosts": "المنشورات",
   "profile.statLikes": "الإعجابات",
   "profile.statNotes": "ملاحظات عامة",
+  "profile.activityGroup": "النشاط",
+  "profile.editName": "تعديل الاسم المعروض",
+  "profile.saveNameA11y": "حفظ الاسم",
+  "profile.cancelEditName": "إلغاء التعديل",
   "profile.myRecipes": "وصفاتي",
+  "profile.myRecipesCount": "وصفاتي · {n}",
   "profile.noRecipes": "لم تنشر أي وصفة بعد.",
 
   // ---- إضافات صفحة الوصفة (التقليل من العناصر؛ تُضاف في النهاية) -------------
