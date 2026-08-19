@@ -783,6 +783,7 @@ function normalizePost(p: any): Post {
     likes_count: toNum(p?.likes_count) ?? 0,
     comments_count: toNum(p?.comments_count) ?? 0,
     liked_by_me: Boolean(p?.liked_by_me),
+    edited: Boolean(p?.edited),
   };
 }
 
@@ -793,6 +794,7 @@ function normalizePostComment(c: any): PostComment {
     body: typeof c?.body === "string" ? c.body : "",
     created_at: typeof c?.created_at === "string" ? c.created_at : "",
     user: normalizePostUser(c?.user),
+    edited: Boolean(c?.edited),
   };
 }
 
@@ -906,6 +908,162 @@ export async function createPostComment(
     }
     const terms = extractHalalTerms(error);
     if (terms) throw new HalalRejectionError(terms);
+    throw error;
+  }
+}
+
+/**
+ * Edit your own post's body (PATCH /api/posts/{id}, authed, owner-only;
+ * body 1..2000) → the updated post (edited: true once the text changes).
+ * A 401 maps to PostUnauthorizedError; a halal 422 maps to
+ * HalalRejectionError.
+ */
+export async function updatePost(
+  id: number,
+  body: string,
+): Promise<Post> {
+  try {
+    const { data } = await api.patch(`/api/posts/${id}`, { body });
+    return normalizePost((data as { data?: unknown })?.data ?? data);
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new PostUnauthorizedError();
+    }
+    const terms = extractHalalTerms(error);
+    if (terms) throw new HalalRejectionError(terms);
+    throw error;
+  }
+}
+
+/**
+ * Delete your own post (DELETE /api/posts/{id}, authed, owner-only) → 204.
+ * Likes, comments and reports cascade server-side.
+ */
+export async function deletePost(id: number): Promise<void> {
+  try {
+    await api.delete(`/api/posts/${id}`);
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new PostUnauthorizedError();
+    }
+    throw error;
+  }
+}
+
+/**
+ * Edit your own comment (PATCH /api/posts/{postId}/comments/{commentId},
+ * authed, author-only; body 1..1000) → the updated comment (edited: true
+ * once the text changes). 401 → PostUnauthorizedError; halal 422 →
+ * HalalRejectionError.
+ */
+export async function updatePostComment(
+  postId: number,
+  commentId: number,
+  body: string,
+): Promise<PostComment> {
+  try {
+    const { data } = await api.patch(
+      `/api/posts/${postId}/comments/${commentId}`,
+      { body },
+    );
+    return normalizePostComment((data as { data?: unknown })?.data ?? data);
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new PostUnauthorizedError();
+    }
+    const terms = extractHalalTerms(error);
+    if (terms) throw new HalalRejectionError(terms);
+    throw error;
+  }
+}
+
+/**
+ * Delete your own comment (DELETE /api/posts/{postId}/comments/{commentId},
+ * authed, author-only) → 204.
+ */
+export async function deletePostComment(
+  postId: number,
+  commentId: number,
+): Promise<void> {
+  try {
+    await api.delete(`/api/posts/${postId}/comments/${commentId}`);
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new PostUnauthorizedError();
+    }
+    throw error;
+  }
+}
+
+/**
+ * Report a post (POST /api/posts/{id}/report, authed). Idempotent
+ * server-side (unique per post+user); the optional free-text reason goes to
+ * the moderators. 401 → PostUnauthorizedError.
+ */
+export async function reportPost(
+  postId: number,
+  reason?: string,
+): Promise<void> {
+  try {
+    await api.post(`/api/posts/${postId}/report`, {
+      ...(reason ? { reason } : {}),
+    });
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new PostUnauthorizedError();
+    }
+    throw error;
+  }
+}
+
+/**
+ * Report a comment (POST /api/posts/{postId}/comments/{commentId}/report,
+ * authed, idempotent). 401 → PostUnauthorizedError.
+ */
+export async function reportComment(
+  postId: number,
+  commentId: number,
+  reason?: string,
+): Promise<void> {
+  try {
+    await api.post(`/api/posts/${postId}/comments/${commentId}/report`, {
+      ...(reason ? { reason } : {}),
+    });
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new PostUnauthorizedError();
+    }
+    throw error;
+  }
+}
+
+/**
+ * Block a user (POST /api/users/{id}/block, authed, idempotent). Their
+ * posts and comments disappear from the signed-in user's feeds. 401 →
+ * PostUnauthorizedError.
+ */
+export async function blockUser(userId: number): Promise<void> {
+  try {
+    await api.post(`/api/users/${userId}/block`);
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new PostUnauthorizedError();
+    }
+    throw error;
+  }
+}
+
+/**
+ * Unblock a user (DELETE /api/users/{id}/block, authed) → 204 whether or
+ * not a block existed. 401 → PostUnauthorizedError.
+ */
+export async function unblockUser(userId: number): Promise<void> {
+  try {
+    await api.delete(`/api/users/${userId}/block`);
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new PostUnauthorizedError();
+    }
     throw error;
   }
 }

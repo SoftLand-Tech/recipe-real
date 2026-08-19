@@ -314,6 +314,8 @@ export interface Post {
   likes_count: number;
   comments_count: number;
   liked_by_me: boolean;
+  /** Author edited the body after publishing (updated_at > created_at). */
+  edited: boolean;
 }
 
 /** One comment row of a post (GET /api/posts/{id}/comments, oldest-first). */
@@ -322,6 +324,8 @@ export interface PostComment {
   body: string;
   created_at: string;
   user: PostUser;
+  /** Author edited the body after posting (updated_at > created_at). */
+  edited: boolean;
 }
 
 /** Toggle result of POST /api/posts/{id}/like. */

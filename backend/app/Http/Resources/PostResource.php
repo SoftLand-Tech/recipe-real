@@ -42,6 +42,9 @@ class PostResource extends JsonResource
             // Marked on the model by PostController::index for the resolved
             // sanctum user; false for guests.
             'liked_by_me'    => (bool) ($this->liked_by_me ?? false),
+            // Author edited the body after publishing (update bumps
+            // updated_at past created_at).
+            'edited'         => (bool) ($this->updated_at?->ne($this->created_at) ?? false),
             'created_at'     => $this->created_at?->toIso8601String(),
         ];
     }

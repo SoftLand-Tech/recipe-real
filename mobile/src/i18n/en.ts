@@ -41,6 +41,8 @@ export const en: Record<string, string> = {
   "common.loadFailedRecipe": "Failed to load recipe.",
   "common.ratingChip": "★ {rating}",
   "common.cancel": "Cancel",
+  "common.delete": "Delete",
+  "common.ok": "OK",
 
   // ---- Home ---------------------------------------------------------------
   "home.tagline": "Know your time before you start.",
@@ -442,6 +444,32 @@ export const en: Record<string, string> = {
   "community.latestComment": "Latest comment",
   "community.seeMore": "See more",
   "community.seeLess": "See less",
+  // ---- Content ownership + moderation (edit/delete/report/block) ---------------
+  "community.postActions": "Post actions",
+  "community.editPost": "Edit post",
+  "community.deletePost": "Delete post",
+  "community.deletePostConfirm":
+    "This permanently deletes your post with its likes and comments. This cannot be undone.",
+  "community.saveEdit": "Save",
+  "community.edited": "edited",
+  "community.editFailed": "Couldn't save your edit. Please try again.",
+  "community.deleteFailed": "Couldn't delete. Please try again.",
+  "community.editCommentA11y": "Edit comment",
+  "community.deleteCommentA11y": "Delete comment",
+  "community.deleteCommentConfirm":
+    "This permanently deletes your comment. This cannot be undone.",
+  "community.reportPost": "Report post",
+  "community.reportComment": "Report comment",
+  "community.reportConfirm":
+    "Report this content to our moderators for review?",
+  "community.reported": "Reported",
+  "community.reportFailed": "Couldn't send your report. Please try again.",
+  "community.blockUser": "Block user",
+  "community.blockConfirm":
+    "Block {name}? Their posts and comments will be hidden from you.",
+  "community.blockBtn": "Block",
+  "community.blocked": "Blocked",
+  "community.blockFailed": "Couldn't block this user. Please try again.",
 
   // ---- Profile ----------------------------------------------------------------
   "profile.title": "Your profile",

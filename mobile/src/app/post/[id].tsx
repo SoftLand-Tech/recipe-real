@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   StyleSheet,
   Text,
@@ -13,13 +14,21 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, useLocalSearchParams } from "expo-router";
 
 import {
+  blockUser,
   createPostComment,
+  deletePost,
+  deletePostComment,
+  fetchMyProfile,
   fetchPost,
   fetchPostComments,
   hasToken,
   HalalRejectionError,
   PostUnauthorizedError,
+  reportComment,
+  reportPost,
   togglePostLike,
+  updatePost,
+  updatePostComment,
 } from "@/api/client";
 import type { Post, PostComment, PostRecipe } from "@/types";
 import { useLang, useT, type Lang, type TranslateFn } from "@/i18n";
@@ -81,17 +90,68 @@ function postRecipeTitle(lang: Lang, recipe: PostRecipe): string {
 }
 
 const COMMENT_BODY_MAX = 1000;
+const POST_BODY_MAX = 2000;
 
-// ---- Comment row (stateless) ------------------------------------------------
+// ---- Comment row -------------------------------------------------------------
+
+interface CommentRowProps {
+  comment: PostComment;
+  /** Whether the signed-in user authored this comment (edit/delete). */
+  mine: boolean;
+  /** Local-only "already reported" marker (no server echo). */
+  reported: boolean;
+  /** Persist an edit; resolves true on success (row exits edit mode). */
+  onSave: (comment: PostComment, body: string) => Promise<boolean>;
+  /** Destructive-confirm + delete flow (owned by the screen). */
+  onDelete: (comment: PostComment) => void;
+  /** Confirm + report flow (owned by the screen). */
+  onReport: (comment: PostComment) => void;
+}
 
 const CommentRow = memo(function CommentRow({
   comment,
-}: {
-  comment: PostComment;
-}) {
+  mine,
+  reported,
+  onSave,
+  onDelete,
+  onReport,
+}: CommentRowProps) {
   const colors = useThemeColors();
   const t = useT();
+
+  // ---- Inline edit state -----------------------------------------------------
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(comment.body);
+  const [busy, setBusy] = useState(false);
+
+  const startEdit = useCallback(() => {
+    setDraft(comment.body);
+    setEditing(true);
+  }, [comment.body]);
+
+  const cancelEdit = useCallback(() => {
+    setDraft(comment.body);
+    setEditing(false);
+  }, [comment.body]);
+
+  const save = useCallback(async () => {
+    const body = draft.trim();
+    if (body.length === 0 || busy) return;
+    setBusy(true);
+    try {
+      // The screen handles API errors (halal / 401) and state updates; a
+      // `true` result exits edit mode.
+      if (await onSave(comment, body)) setEditing(false);
+    } finally {
+      setBusy(false);
+    }
+  }, [draft, busy, comment, onSave]);
+
   const rel = relativeDate(t, comment.created_at);
+  const caption = [
+    rel,
+    comment.edited ? t("community.edited") : null,
+  ].filter((part): part is string => part != null && part !== "");
 
   const s = useMemo(
     () =>
@@ -102,6 +162,23 @@ const CommentRow = memo(function CommentRow({
         author: { ...Type.bodySm, fontWeight: "600", color: colors.ink },
         time: { ...Type.caption, color: colors.inkFaint },
         body: { ...Type.bodySm, color: colors.ink },
+        actions: { flexDirection: "row", alignItems: "center", gap: Space.xs },
+        editWrap: { gap: Space.xs },
+        editInput: {
+          ...Type.bodySm,
+          color: colors.ink,
+          backgroundColor: colors.surfaceSoft,
+          borderRadius: Radius.md,
+          paddingHorizontal: Space.md,
+          paddingVertical: Space.sm,
+          minHeight: 40,
+          textAlignVertical: "top",
+        },
+        editRow: {
+          flexDirection: "row",
+          gap: Space.sm,
+          alignSelf: "flex-start",
+        },
       }),
     [colors],
   );
@@ -118,9 +195,83 @@ const CommentRow = memo(function CommentRow({
           <Text style={s.author} numberOfLines={1}>
             {authorName(comment.user)}
           </Text>
-          {rel !== "" ? <Text style={s.time}>{rel}</Text> : null}
+          {caption.length > 0 ? (
+            <Text style={s.time}>{caption.join(" · ")}</Text>
+          ) : null}
+          {!editing && mine ? (
+            <View style={s.actions}>
+              <IconPressable
+                onPress={startEdit}
+                accessibilityLabel={t("community.editCommentA11y")}
+                hitSlop={Space.xs}
+              >
+                <Ionicons
+                  name="pencil"
+                  size={14}
+                  color={colors.inkFaint}
+                />
+              </IconPressable>
+              <IconPressable
+                onPress={() => onDelete(comment)}
+                accessibilityLabel={t("community.deleteCommentA11y")}
+                hitSlop={Space.xs}
+              >
+                <Ionicons
+                  name="trash-outline"
+                  size={14}
+                  color={colors.inkFaint}
+                />
+              </IconPressable>
+            </View>
+          ) : null}
+          {!mine && reported ? (
+            <Ionicons name="flag" size={14} color={colors.inkFaint} />
+          ) : null}
+          {!mine && !reported ? (
+            <IconPressable
+              onPress={() => onReport(comment)}
+              accessibilityLabel={t("community.reportComment")}
+              hitSlop={Space.xs}
+            >
+              <Ionicons
+                name="flag-outline"
+                size={14}
+                color={colors.inkFaint}
+              />
+            </IconPressable>
+          ) : null}
         </View>
-        <Text style={s.body}>{comment.body}</Text>
+        {editing ? (
+          <View style={s.editWrap}>
+            <TextInput
+              style={s.editInput}
+              value={draft}
+              onChangeText={setDraft}
+              placeholderTextColor={colors.inkFaint}
+              maxLength={COMMENT_BODY_MAX}
+              multiline
+              editable={!busy}
+              autoFocus
+            />
+            <View style={s.editRow}>
+              <Button
+                variant="primary"
+                title={t("community.saveEdit")}
+                loading={busy}
+                disabled={busy || draft.trim().length === 0}
+                onPress={() => void save()}
+              />
+              <Button
+                variant="ghost"
+                title={t("common.cancel")}
+                disabled={busy}
+                onPress={cancelEdit}
+              />
+            </View>
+          </View>
+        ) : (
+          <Text style={s.body}>{comment.body}</Text>
+        )}
       </View>
     </View>
   );
@@ -142,6 +293,9 @@ export default function PostDetailScreen() {
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [post, setPost] = useState<Post | null>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  // Own-content affordances (edit/delete) need the signed-in user's id —
+  // best-effort: while null, the screen only offers report/block actions.
+  const [myUserId, setMyUserId] = useState<number | null>(null);
 
   // ---- Like state -----------------------------------------------------------
   const [liked, setLiked] = useState(false);
@@ -159,6 +313,17 @@ export default function PostDetailScreen() {
   const [posting, setPosting] = useState(false);
   const [commentFailed, setCommentFailed] = useState(false);
   const [halalTerms, setHalalTerms] = useState<string[] | null>(null);
+
+  // ---- Moderation state (own edit / report markers) --------------------------
+  const [editingPost, setEditingPost] = useState(false);
+  const [postDraft, setPostDraft] = useState("");
+  const [savingPost, setSavingPost] = useState(false);
+  const [deletingPost, setDeletingPost] = useState(false);
+  const [postHalalTerms, setPostHalalTerms] = useState<string[] | null>(null);
+  // Local-only reported markers (no server echo): once set, the flag icon
+  // fills and the report affordance disappears.
+  const [reportedPost, setReportedPost] = useState(false);
+  const [reportedCommentIds, setReportedCommentIds] = useState<number[]>([]);
 
   // ---- Image viewer ---------------------------------------------------------
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -216,6 +381,14 @@ export default function PostDetailScreen() {
     (async () => {
       const ok = await hasToken();
       if (!cancelled) setSignedIn(ok);
+      if (!ok) return;
+      // Best-effort id for the own-content affordances.
+      try {
+        const profile = await fetchMyProfile();
+        if (!cancelled) setMyUserId(profile.id);
+      } catch {
+        // Non-fatal: edit/delete stay hidden, report/block still work.
+      }
     })();
     return () => {
       cancelled = true;
@@ -276,6 +449,280 @@ export default function PostDetailScreen() {
     }
   }, [draft, posting, post, signedIn]);
 
+  // ---- Moderation: post edit --------------------------------------------------
+
+  const startEditPost = useCallback(() => {
+    if (!post) return;
+    setPostDraft(post.body);
+    setPostHalalTerms(null);
+    setEditingPost(true);
+  }, [post]);
+
+  const cancelEditPost = useCallback(() => {
+    setEditingPost(false);
+    setPostHalalTerms(null);
+  }, []);
+
+  const savePostEdit = useCallback(async () => {
+    if (!post) return;
+    const body = postDraft.trim();
+    if (body.length === 0 || savingPost) return;
+    if (signedIn === false) {
+      setNeedsAuth(true);
+      return;
+    }
+    setSavingPost(true);
+    setPostHalalTerms(null);
+    try {
+      const updated = await updatePost(post.id, body);
+      setPost((p) =>
+        p ? { ...p, body: updated.body, edited: updated.edited } : p,
+      );
+      setEditingPost(false);
+    } catch (error) {
+      if (error instanceof PostUnauthorizedError) {
+        setNeedsAuth(true);
+      } else if (error instanceof HalalRejectionError) {
+        setPostHalalTerms(error.terms);
+      } else {
+        Alert.alert(t("community.editFailed"));
+      }
+    } finally {
+      setSavingPost(false);
+    }
+  }, [post, postDraft, savingPost, signedIn, t]);
+
+  // ---- Moderation: post delete -------------------------------------------------
+
+  const deletePostNow = useCallback(async () => {
+    if (!post || deletingPost) return;
+    setDeletingPost(true);
+    try {
+      await deletePost(post.id);
+      // Back to the feed — its focus effect silently reloads page 1, so the
+      // deleted post is gone by the time the list is visible again.
+      router.back();
+    } catch (error) {
+      setDeletingPost(false);
+      if (error instanceof PostUnauthorizedError) setNeedsAuth(true);
+      else Alert.alert(t("community.deleteFailed"));
+    }
+  }, [post, deletingPost, t]);
+
+  const confirmDeletePost = useCallback(() => {
+    Alert.alert(
+      t("community.deletePost"),
+      t("community.deletePostConfirm"),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: t("common.delete"),
+          style: "destructive",
+          onPress: () => {
+            void deletePostNow();
+          },
+        },
+      ],
+    );
+  }, [t, deletePostNow]);
+
+  // ---- Moderation: report post ---------------------------------------------------
+
+  const reportPostNow = useCallback(async () => {
+    if (!post) return;
+    try {
+      await reportPost(post.id);
+      setReportedPost(true);
+    } catch (error) {
+      if (error instanceof PostUnauthorizedError) setNeedsAuth(true);
+      else Alert.alert(t("community.reportFailed"));
+    }
+  }, [post, t]);
+
+  const confirmReportPost = useCallback(() => {
+    Alert.alert(
+      t("community.reportPost"),
+      t("community.reportConfirm"),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: t("community.reportPost"),
+          onPress: () => {
+            void reportPostNow();
+          },
+        },
+      ],
+    );
+  }, [t, reportPostNow]);
+
+  // ---- Moderation: block the post author -----------------------------------------
+
+  const blockAuthorNow = useCallback(async () => {
+    if (!post) return;
+    try {
+      await blockUser(post.user.id);
+      // Confirm the block, then leave the (now hidden) post behind.
+      Alert.alert(t("community.blocked"), undefined, [
+        { text: t("common.ok"), onPress: () => router.back() },
+      ]);
+    } catch (error) {
+      if (error instanceof PostUnauthorizedError) setNeedsAuth(true);
+      else Alert.alert(t("community.blockFailed"));
+    }
+  }, [post, t]);
+
+  const confirmBlockAuthor = useCallback(() => {
+    if (!post) return;
+    Alert.alert(
+      t("community.blockUser"),
+      t("community.blockConfirm", { name: authorName(post.user) }),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: t("community.blockBtn"),
+          style: "destructive",
+          onPress: () => {
+            void blockAuthorNow();
+          },
+        },
+      ],
+    );
+  }, [t, post, blockAuthorNow]);
+
+  // ---- Moderation: post actions menu (⋯) ------------------------------------------
+
+  const isMyPost = post != null && myUserId != null && post.user.id === myUserId;
+
+  const openPostMenu = useCallback(() => {
+    if (isMyPost) {
+      Alert.alert(t("community.postActions"), undefined, [
+        { text: t("community.editPost"), onPress: startEditPost },
+        {
+          text: t("community.deletePost"),
+          style: "destructive",
+          onPress: confirmDeletePost,
+        },
+        { text: t("common.cancel"), style: "cancel" },
+      ]);
+    } else {
+      Alert.alert(t("community.postActions"), undefined, [
+        { text: t("community.reportPost"), onPress: confirmReportPost },
+        {
+          text: t("community.blockUser"),
+          style: "destructive",
+          onPress: confirmBlockAuthor,
+        },
+        { text: t("common.cancel"), style: "cancel" },
+      ]);
+    }
+  }, [
+    isMyPost,
+    t,
+    startEditPost,
+    confirmDeletePost,
+    confirmReportPost,
+    confirmBlockAuthor,
+  ]);
+
+  // ---- Moderation: comment flows ----------------------------------------------
+
+  const saveCommentEdit = useCallback(
+    async (comment: PostComment, body: string): Promise<boolean> => {
+      if (!post) return false;
+      try {
+        const updated = await updatePostComment(post.id, comment.id, body);
+        setComments((prev) =>
+          prev.map((c) => (c.id === updated.id ? updated : c)),
+        );
+        return true;
+      } catch (error) {
+        if (error instanceof PostUnauthorizedError) {
+          setNeedsAuth(true);
+        } else if (error instanceof HalalRejectionError) {
+          Alert.alert(
+            t("community.halalBlocked", { terms: error.terms.join(", ") }),
+          );
+        } else {
+          Alert.alert(t("community.editFailed"));
+        }
+        return false;
+      }
+    },
+    [post, t],
+  );
+
+  const deleteCommentNow = useCallback(
+    async (comment: PostComment) => {
+      if (!post) return;
+      try {
+        await deletePostComment(post.id, comment.id);
+        setComments((prev) => prev.filter((c) => c.id !== comment.id));
+        setPost((p) =>
+          p
+            ? { ...p, comments_count: Math.max(0, p.comments_count - 1) }
+            : p,
+        );
+      } catch (error) {
+        if (error instanceof PostUnauthorizedError) setNeedsAuth(true);
+        else Alert.alert(t("community.deleteFailed"));
+      }
+    },
+    [post, t],
+  );
+
+  const confirmDeleteComment = useCallback(
+    (comment: PostComment) => {
+      Alert.alert(
+        t("community.deleteCommentA11y"),
+        t("community.deleteCommentConfirm"),
+        [
+          { text: t("common.cancel"), style: "cancel" },
+          {
+            text: t("common.delete"),
+            style: "destructive",
+            onPress: () => {
+              void deleteCommentNow(comment);
+            },
+          },
+        ],
+      );
+    },
+    [t, deleteCommentNow],
+  );
+
+  const reportCommentNow = useCallback(
+    async (comment: PostComment) => {
+      if (!post) return;
+      try {
+        await reportComment(post.id, comment.id);
+        setReportedCommentIds((prev) => [...prev, comment.id]);
+      } catch (error) {
+        if (error instanceof PostUnauthorizedError) setNeedsAuth(true);
+        else Alert.alert(t("community.reportFailed"));
+      }
+    },
+    [post, t],
+  );
+
+  const confirmReportComment = useCallback(
+    (comment: PostComment) => {
+      Alert.alert(
+        t("community.reportComment"),
+        t("community.reportConfirm"),
+        [
+          { text: t("common.cancel"), style: "cancel" },
+          {
+            text: t("community.reportComment"),
+            onPress: () => {
+              void reportCommentNow(comment);
+            },
+          },
+        ],
+      );
+    },
+    [t, reportCommentNow],
+  );
+
   const openViewer = useCallback((index: number) => {
     setViewerStartIndex(index);
     setViewerOpen(true);
@@ -304,7 +751,29 @@ export default function PostDetailScreen() {
         headMain: { flex: 1, gap: 1 },
         author: { ...Type.title, color: colors.ink },
         relTime: { ...Type.caption, color: colors.inkFaint },
+        reportedRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.xs,
+        },
+        reportedText: { ...Type.caption, color: colors.inkFaint },
         body: { ...Type.body, color: colors.ink },
+        editWrap: { gap: Space.xs },
+        editInput: {
+          ...Type.body,
+          color: colors.ink,
+          backgroundColor: colors.surfaceSoft,
+          borderRadius: Radius.md,
+          paddingHorizontal: Space.md,
+          paddingVertical: Space.sm,
+          minHeight: 72,
+          textAlignVertical: "top",
+        },
+        editRow: {
+          flexDirection: "row",
+          gap: Space.sm,
+          alignSelf: "flex-start",
+        },
         recipeRow: {
           flexDirection: "row",
           alignItems: "center",
@@ -397,13 +866,17 @@ export default function PostDetailScreen() {
   const rel = relativeDate(t, post.created_at);
   const recipeRel = post.recipe;
   const recipeTitle = recipeRel ? postRecipeTitle(lang, recipeRel) : "";
+  const caption = [
+    rel,
+    post.edited ? t("community.edited") : null,
+  ].filter((part): part is string => part != null && part !== "");
 
   // The post body + recipe + images + action row rendered as the header of
   // the comments FlatList so the whole screen scrolls together.
   const ListHeader = (
     <View style={{ gap: Space.lg }}>
       <Card style={styles.card}>
-        {/* Author row */}
+        {/* Author row + kind chip + moderation menu */}
         <View style={styles.headRow}>
           <Avatar
             name={authorName(post.user)}
@@ -414,17 +887,76 @@ export default function PostDetailScreen() {
             <Text style={styles.author} numberOfLines={1}>
               {authorName(post.user)}
             </Text>
-            {rel !== "" ? <Text style={styles.relTime}>{rel}</Text> : null}
+            {caption.length > 0 ? (
+              <Text style={styles.relTime}>{caption.join(" · ")}</Text>
+            ) : null}
+            {reportedPost ? (
+              <View style={styles.reportedRow}>
+                <Ionicons name="flag" size={12} color={colors.inkFaint} />
+                <Text style={styles.reportedText}>
+                  {t("community.reported")}
+                </Text>
+              </View>
+            ) : null}
           </View>
           <Chip
             size="sm"
             tone={kindTone(post.kind)}
             label={t(kindLabelKey(post.kind))}
           />
+          <IconPressable
+            onPress={openPostMenu}
+            disabled={deletingPost}
+            accessibilityLabel={t("community.postActions")}
+            hitSlop={Space.xs}
+          >
+            <Ionicons
+              name="ellipsis-horizontal"
+              size={20}
+              color={colors.inkSecondary}
+            />
+          </IconPressable>
         </View>
 
-        {/* Body */}
-        <Text style={styles.body}>{post.body}</Text>
+        {/* Body (own post: inline edit with save/cancel) */}
+        {editingPost ? (
+          <View style={styles.editWrap}>
+            <TextInput
+              style={styles.editInput}
+              value={postDraft}
+              onChangeText={setPostDraft}
+              placeholderTextColor={colors.inkFaint}
+              maxLength={POST_BODY_MAX}
+              multiline
+              editable={!savingPost}
+              autoFocus
+            />
+            <View style={styles.editRow}>
+              <Button
+                variant="primary"
+                title={t("community.saveEdit")}
+                loading={savingPost}
+                disabled={savingPost || postDraft.trim().length === 0}
+                onPress={() => void savePostEdit()}
+              />
+              <Button
+                variant="ghost"
+                title={t("common.cancel")}
+                disabled={savingPost}
+                onPress={cancelEditPost}
+              />
+            </View>
+            {postHalalTerms != null ? (
+              <Text style={styles.commentError}>
+                {t("community.halalBlocked", {
+                  terms: postHalalTerms.join(", "),
+                })}
+              </Text>
+            ) : null}
+          </View>
+        ) : (
+          <Text style={styles.body}>{post.body}</Text>
+        )}
 
         {/* Image grid */}
         {post.images.length > 0 ? (
@@ -562,7 +1094,16 @@ export default function PostDetailScreen() {
       <FlatList
         data={comments}
         keyExtractor={(c) => String(c.id)}
-        renderItem={({ item }) => <CommentRow comment={item} />}
+        renderItem={({ item }) => (
+          <CommentRow
+            comment={item}
+            mine={myUserId != null && item.user.id === myUserId}
+            reported={reportedCommentIds.includes(item.id)}
+            onSave={saveCommentEdit}
+            onDelete={confirmDeleteComment}
+            onReport={confirmReportComment}
+          />
+        )}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={ListHeader}
         ListEmptyComponent={ListEmpty}

@@ -42,6 +42,8 @@ export const ar: Record<string, string> = {
   "common.loadFailedRecipe": "فشل تحميل الوصفة.",
   "common.ratingChip": "★ {rating}",
   "common.cancel": "إلغاء",
+  "common.delete": "حذف",
+  "common.ok": "حسنًا",
 
   // ---- الرئيسية -----------------------------------------------------------
   "home.tagline": "اعرف وقتك قبل أن تبدأ.",
@@ -436,6 +438,30 @@ export const ar: Record<string, string> = {
   "community.latestComment": "أحدث تعليق",
   "community.seeMore": "عرض المزيد",
   "community.seeLess": "عرض أقل",
+  // ---- ملكية المحتوى والإشراف (تعديل/حذف/إبلاغ/حجب) ------------------------------
+  "community.postActions": "إجراءات المنشور",
+  "community.editPost": "تعديل المنشور",
+  "community.deletePost": "حذف المنشور",
+  "community.deletePostConfirm":
+    "سيُحذف منشورك نهائيًا مع إعجاباته وتعليقاته، ولا يمكن التراجع عن ذلك.",
+  "community.saveEdit": "حفظ",
+  "community.edited": "تم تعديله",
+  "community.editFailed": "تعذّر حفظ التعديل. حاول مجددًا.",
+  "community.deleteFailed": "تعذّر الحذف. حاول مجددًا.",
+  "community.editCommentA11y": "تعديل التعليق",
+  "community.deleteCommentA11y": "حذف التعليق",
+  "community.deleteCommentConfirm":
+    "سيُحذف تعليقك نهائيًا ولا يمكن التراجع عن ذلك.",
+  "community.reportPost": "الإبلاغ عن المنشور",
+  "community.reportComment": "الإبلاغ عن التعليق",
+  "community.reportConfirm": "هل تريد الإبلاغ عن هذا المحتوى ليراجعه المشرفون؟",
+  "community.reported": "تم الإبلاغ",
+  "community.reportFailed": "تعذّر إرسال الإبلاغ. حاول مجددًا.",
+  "community.blockUser": "حجب المستخدم",
+  "community.blockConfirm": "هل تريد حجب {name}؟ ستُخفى منشوراته وتعليقاته عنك.",
+  "community.blockBtn": "حجب",
+  "community.blocked": "تم الحجب",
+  "community.blockFailed": "تعذّر حجب هذا المستخدم. حاول مجددًا.",
 
   // ---- الملف الشخصي ------------------------------------------------------------
   "profile.title": "ملفك الشخصي",

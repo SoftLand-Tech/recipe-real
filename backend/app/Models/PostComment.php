@@ -7,9 +7,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PostComment extends Model
 {
-    /** Append-only: the table has created_at but no updated_at (000026). */
-    public const UPDATED_AT = null;
-
     protected $fillable = [
         'post_id',
         'user_id',
@@ -20,6 +17,9 @@ class PostComment extends Model
     {
         return [
             'created_at' => 'datetime',
+            // Editable since migration 000029 (updated_at added; legacy rows
+            // keep null and therefore never read as "edited").
+            'updated_at' => 'datetime',
         ];
     }
 

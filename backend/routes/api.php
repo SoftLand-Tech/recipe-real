@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\RecipeNoteController;
 use App\Http\Controllers\Api\RealityController;
 use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\Api\UsageController;
+use App\Http\Controllers\Api\UserBlockController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserRecipeController;
 use App\Http\Controllers\Api\WebhookController;
@@ -96,6 +97,18 @@ Route::middleware(['throttle:60,1', 'auth:sanctum'])->group(function (): void {
     Route::post('/posts', [PostController::class, 'store']);
     Route::post('/posts/{post}/like', [PostController::class, 'like']);
     Route::post('/posts/{post}/comments', [PostCommentController::class, 'store']);
+
+    // Content ownership + moderation: edit/delete your own posts and
+    // comments, report content (idempotent), block/unblock users. Blocked
+    // authors' content is filtered out of the blocker's feeds.
+    Route::patch('/posts/{post}', [PostController::class, 'update']);
+    Route::delete('/posts/{post}', [PostController::class, 'destroy']);
+    Route::post('/posts/{post}/report', [PostController::class, 'report']);
+    Route::patch('/posts/{post}/comments/{comment}', [PostCommentController::class, 'update']);
+    Route::delete('/posts/{post}/comments/{comment}', [PostCommentController::class, 'destroy']);
+    Route::post('/posts/{post}/comments/{comment}/report', [PostCommentController::class, 'report']);
+    Route::post('/users/{user}/block', [UserBlockController::class, 'store']);
+    Route::delete('/users/{user}/block', [UserBlockController::class, 'destroy']);
 });
 
 // Image uploads (authed, halal-safe by construction — binary images), with

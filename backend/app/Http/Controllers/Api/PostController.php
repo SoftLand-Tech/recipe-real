@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StorePostRequest;
 use App\Http\Resources\PostResource;
 use App\Models\Post;
+use App\Models\PostReport;
+use App\Models\UserBlock;
 use App\Support\HalalGate;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
@@ -16,6 +18,8 @@ use Illuminate\Support\Facades\DB;
 /**
  * Community feed posts: "I tried it" / "I failed it" / "I have a question",
  * optionally attached to a recipe, with toggleable likes and comments.
+ * Authors can edit/delete their own posts; any signed-in user can report a
+ * post, and blocking an author removes their posts from the blocker's feed.
  */
 class PostController extends Controller
 {
@@ -23,7 +27,8 @@ class PostController extends Controller
      * Paginated feed (20/page, newest first), public read.
      * ?kind=try|fail|question filters by kind, ?recipe_id= by attachment.
      * liked_by_me is resolved from the sanctum user when a token is given
-     * (false for guests).
+     * (false for guests). Posts authored by users the sanctum user blocks
+     * are excluded.
      */
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -45,11 +50,19 @@ class PostController extends Controller
             $query->where('recipe_id', $request->integer('recipe_id'));
         }
 
+        // Moderation: hide posts from authors the current user blocks.
+        $user = $request->user('sanctum');
+        if ($user !== null) {
+            $blockedIds = $this->blockedAuthorIds($user->id);
+            if ($blockedIds !== []) {
+                $query->whereNotIn('user_id', $blockedIds);
+            }
+        }
+
         $posts = $query->latest('id')->paginate(20);
 
         // Mark liked_by_me on the page's models (one extra query instead
         // of N+1 through the resource).
-        $user = $request->user('sanctum');
         if ($user !== null && $posts->isNotEmpty()) {
             $likedIds = DB::table('post_likes')
                 ->where('user_id', $user->id)
@@ -68,17 +81,27 @@ class PostController extends Controller
     /**
      * Single-post detail (public). Same shape as the index rows, including
      * like/comment counts and liked_by_me for the optional sanctum user.
-     * Registered at GET /posts/{post} (see api.php).
+     * Registered at GET /posts/{post} (see api.php). A post authored by a
+     * user the sanctum user blocks 404s for the blocker.
      */
     public function show(Request $request, Post $post): PostResource
     {
+        $user = $request->user('sanctum');
+
+        // Moderation: a blocked author's post does not exist for the blocker.
+        if (
+            $user !== null
+            && in_array($post->user_id, $this->blockedAuthorIds($user->id), true)
+        ) {
+            abort(404);
+        }
+
         $post->load([
             'user:id,display_name,name,avatar_url',
             'recipe:id,title,title_ar,image_url',
         ]);
         $post->loadCount(['likes', 'comments']);
 
-        $user = $request->user('sanctum');
         if ($user !== null) {
             $post->liked_by_me = DB::table('post_likes')
                 ->where('post_id', $post->id)
@@ -141,6 +164,74 @@ class PostController extends Controller
     }
 
     /**
+     * Update the post's body (author-only). Validates like store and re-runs
+     * the halal gate whenever the text changes. Responds with the same
+     * PostResource shape as show() (updated_at > created_at → edited: true).
+     */
+    public function update(Request $request, Post $post): PostResource
+    {
+        $this->assertAuthor($request, $post);
+
+        $validated = $request->validate([
+            'body' => ['required', 'string', 'min:1', 'max:2000'],
+        ]);
+
+        $body = (string) $validated['body'];
+
+        if ($body !== $post->body) {
+            $this->assertHalal($body);
+        }
+
+        $post->body = $body;
+        $post->save();
+
+        // Same shape as show(): relations, counts and liked_by_me.
+        $post->load([
+            'user:id,display_name,name,avatar_url',
+            'recipe:id,title,title_ar,image_url',
+        ]);
+        $post->loadCount(['likes', 'comments']);
+        $post->liked_by_me = DB::table('post_likes')
+            ->where('post_id', $post->id)
+            ->where('user_id', $request->user()->id)
+            ->exists();
+
+        return new PostResource($post);
+    }
+
+    /**
+     * Delete the author's own post (author-only) → 204. Likes, comments and
+     * reports disappear via their cascade FKs (000026 + 000029).
+     */
+    public function destroy(Request $request, Post $post): JsonResponse
+    {
+        $this->assertAuthor($request, $post);
+
+        $post->delete();
+
+        return response()->json(null, 204);
+    }
+
+    /**
+     * Report a post (authed). Idempotent: firstOrCreate on the unique
+     * (post, user) pair, so reporting twice still answers 201 {ok:true}
+     * with a single row. `reason` is optional free text for moderators.
+     */
+    public function report(Request $request, Post $post): JsonResponse
+    {
+        $validated = $request->validate([
+            'reason' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        PostReport::firstOrCreate(
+            ['post_id' => $post->id, 'user_id' => $request->user()->id],
+            ['reason' => $validated['reason'] ?? null],
+        );
+
+        return response()->json(['ok' => true], 201);
+    }
+
+    /**
      * Toggle the authed user's like on a post → {liked, likes_count}.
      */
     public function like(Request $request, Post $post): JsonResponse
@@ -189,5 +280,32 @@ class PostController extends Controller
                 'terms'   => $terms,
             ], 422));
         }
+    }
+
+    /**
+     * Author check: only the creating user may edit/delete a post. Returns
+     * a JSON 403 (the mobile client always expects JSON).
+     */
+    private function assertAuthor(Request $request, Post $post): void
+    {
+        if ($post->user_id !== $request->user()->id) {
+            throw new HttpResponseException(response()->json([
+                'message' => 'You do not own this post.',
+            ], 403));
+        }
+    }
+
+    /**
+     * Ids of authors the given user blocks (one query; callers apply
+     * whereNotIn / in_array on it).
+     *
+     * @return list<int>
+     */
+    private function blockedAuthorIds(int $userId): array
+    {
+        return UserBlock::query()
+            ->where('blocker_id', $userId)
+            ->pluck('blocked_id')
+            ->all();
     }
 }
