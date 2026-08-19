@@ -34,7 +34,7 @@ class AdminPanelProvider extends PanelProvider
             // "Continue with Google" under the login form (allowlisted
             // emails only; see AdminGoogleController + routes/web.php).
             ->renderHook(
-                'panels::auth.login-form.after',
+                'panels::auth.login.form.after',
                 fn () => view('admin-google-button'),
             )
             ->colors([
