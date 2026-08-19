@@ -786,6 +786,7 @@ export default function RecipeDetailScreen() {
           alignItems: "center",
           gap: Space.xs,
           marginTop: Space.sm,
+          marginBottom: Space.sm,
         },
         noteInput: {
           ...Type.body,
