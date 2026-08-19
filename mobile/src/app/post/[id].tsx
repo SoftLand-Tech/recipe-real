@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -33,6 +32,7 @@ import {
 } from "@/api/client";
 import { track } from "@/analytics";
 import { WEB_BASE_URL } from "@/config";
+import { shareLink } from "@/utils/share";
 import type { Post, PostComment, PostRecipe } from "@/types";
 import { useLang, useT, type Lang, type TranslateFn } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
@@ -432,10 +432,7 @@ export default function PostDetailScreen() {
     if (!p) return;
     track("post_shared", { post_id: p.id });
     try {
-      await Share.share({
-        url: `${WEB_BASE_URL}/p/${p.id}`,
-        message: p.body.slice(0, 120),
-      });
+      await shareLink(`${WEB_BASE_URL}/p/${p.id}`, p.body.slice(0, 120));
     } catch {
       // The user dismissed the sheet (or the platform errored) — best-effort.
     }

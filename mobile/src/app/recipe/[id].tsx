@@ -6,7 +6,6 @@ import {
   Animated,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Switch,
   Text,
@@ -84,6 +83,7 @@ import {
   requestNotificationsPermission,
   scheduleAtNotification,
 } from "@/utils/notifications";
+import { shareLink } from "@/utils/share";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -1194,10 +1194,7 @@ export default function RecipeDetailScreen() {
     if (!recipe) return;
     track("recipe_shared", { recipe_id: recipe.id });
     try {
-      await Share.share({
-        url: `${WEB_BASE_URL}/r/${recipe.id}`,
-        message: lr.title(recipe),
-      });
+      await shareLink(`${WEB_BASE_URL}/r/${recipe.id}`, lr.title(recipe));
     } catch {
       // The user dismissed the sheet (or the platform errored) — best-effort.
     }

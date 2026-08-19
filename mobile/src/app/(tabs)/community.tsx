@@ -4,7 +4,6 @@ import {
   FlatList,
   RefreshControl,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   View,
@@ -26,6 +25,7 @@ import {
   reportPost,
   togglePostLike,
 } from "@/api/client";
+import { shareLink } from "@/utils/share";
 import { track } from "@/analytics";
 import { WEB_BASE_URL } from "@/config";
 import type { Post, PostKind, PostRecipe, PostSort } from "@/types";
@@ -238,10 +238,7 @@ const PostCard = memo(function PostCard({
   const handleShare = useCallback(async () => {
     track("post_shared", { post_id: post.id });
     try {
-      await Share.share({
-        url: `${WEB_BASE_URL}/p/${post.id}`,
-        message: post.body.slice(0, 120),
-      });
+      await shareLink(`${WEB_BASE_URL}/p/${post.id}`, post.body.slice(0, 120));
     } catch {
       // The user dismissed the sheet (or the platform errored) — best-effort.
     }
