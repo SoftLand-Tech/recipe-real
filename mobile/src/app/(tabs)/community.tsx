@@ -1,7 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   RefreshControl,
   ScrollView,
@@ -30,6 +29,7 @@ import type { Post, PostKind, PostRecipe, PostSort } from "@/types";
 import { useLang, useT, type Lang, type TranslateFn } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 import {
+  ActionSheet,
   Avatar,
   Button,
   Card,
@@ -235,75 +235,16 @@ const PostCard = memo(function PostCard({
   const [reported, setReported] = useState(false);
   const isMine = myUserId != null && post.user.id === myUserId;
 
-  const confirmDelete = useCallback(() => {
-    Alert.alert(t("community.deletePost"), t("community.deletePostConfirm"), [
-      { text: t("common.cancel"), style: "cancel" },
-      {
-        text: t("common.delete"),
-        style: "destructive",
-        onPress: () => {
-          deletePost(post.id)
-            .then(() => onRemove(post.id))
-            .catch(() => {
-              // Non-fatal: the focus refresh will reconcile with the server.
-            });
-        },
-      },
-    ]);
-  }, [post.id, onRemove, t]);
+  /**
+   * Bottom action-sheet state machine (replaces the old native Alerts):
+   *   menu → delete | report | block (confirm sheets; the action runs after
+   *   the sheet has fully dismissed). The ⋯ button opens "menu".
+   */
+  const [sheet, setSheet] = useState<null | "menu" | "delete" | "report" | "block">(
+    null,
+  );
 
-  const confirmBlock = useCallback(() => {
-    Alert.alert(
-      t("community.blockUser"),
-      t("community.blockConfirm", { name: authorName(post.user) }),
-      [
-        { text: t("common.cancel"), style: "cancel" },
-        {
-          text: t("community.blockBtn"),
-          style: "destructive",
-          onPress: () => {
-            blockUser(post.user.id)
-              .then(() => onRemove(post.id))
-              .catch(() => {
-                // Non-fatal.
-              });
-          },
-        },
-      ],
-    );
-  }, [post.user.id, post.id, onRemove, t]);
-
-  const openMenu = useCallback(() => {
-    if (isMine) {
-      Alert.alert(t("community.postActions"), undefined, [
-        { text: t("common.cancel"), style: "cancel" },
-        { text: t("community.deletePost"), style: "destructive", onPress: confirmDelete },
-      ]);
-      return;
-    }
-    Alert.alert(t("community.postActions"), undefined, [
-      { text: t("common.cancel"), style: "cancel" },
-      {
-        text: t("community.reportPost"),
-        onPress: () => {
-          Alert.alert(t("community.reportPost"), t("community.reportConfirm"), [
-            { text: t("common.cancel"), style: "cancel" },
-            {
-              text: t("community.reportPost"),
-              onPress: () => {
-                reportPost(post.id)
-                  .then(() => setReported(true))
-                  .catch(() => {
-                    // Non-fatal.
-                  });
-              },
-            },
-          ]);
-        },
-      },
-      { text: t("community.blockUser"), style: "destructive", onPress: confirmBlock },
-    ]);
-  }, [isMine, confirmDelete, confirmBlock, post.id, t]);
+  const openMenu = useCallback(() => setSheet("menu"), []);
 
   const openViewer = useCallback((index: number) => {
     setViewerStartIndex(index);
@@ -633,6 +574,118 @@ const PostCard = memo(function PostCard({
           images={post.images}
           startIndex={viewerStartIndex}
           onClose={() => setViewerOpen(false)}
+        />
+      ) : null}
+
+      {/* Post actions bottom sheet — one step of the state machine at a
+          time. The key remounts the sheet per step, so each one plays its
+          own enter animation after the previous one dropped away. */}
+      {sheet === "menu" ? (
+        <ActionSheet
+          key="menu"
+          visible
+          onClose={() => setSheet(null)}
+          title={t("community.postActions")}
+          actions={
+            isMine
+              ? [
+                  {
+                    key: "delete",
+                    label: t("community.deletePost"),
+                    icon: "trash-outline",
+                    tone: "destructive",
+                    onPress: () => setSheet("delete"),
+                  },
+                ]
+              : [
+                  {
+                    key: "report",
+                    label: t("community.reportPost"),
+                    icon: "flag-outline",
+                    onPress: () => setSheet("report"),
+                  },
+                  {
+                    key: "block",
+                    label: t("community.blockUser"),
+                    icon: "ban-outline",
+                    tone: "destructive",
+                    onPress: () => setSheet("block"),
+                  },
+                ]
+          }
+        />
+      ) : null}
+      {sheet === "delete" ? (
+        <ActionSheet
+          key="delete"
+          visible
+          onClose={() => setSheet(null)}
+          title={t("community.deletePost")}
+          message={t("community.deletePostConfirm")}
+          actions={[
+            {
+              key: "confirm",
+              label: t("common.delete"),
+              icon: "trash-outline",
+              tone: "destructive",
+              onPress: () => {
+                deletePost(post.id)
+                  .then(() => onRemove(post.id))
+                  .catch(() => {
+                    // Non-fatal: the focus refresh will reconcile with the server.
+                  });
+              },
+            },
+          ]}
+        />
+      ) : null}
+      {sheet === "report" ? (
+        <ActionSheet
+          key="report"
+          visible
+          onClose={() => setSheet(null)}
+          title={t("community.reportPost")}
+          message={t("community.reportConfirm")}
+          actions={[
+            {
+              key: "confirm",
+              label: t("community.reportPost"),
+              icon: "flag-outline",
+              onPress: () => {
+                reportPost(post.id)
+                  .then(() => setReported(true))
+                  .catch(() => {
+                    // Non-fatal.
+                  });
+              },
+            },
+          ]}
+        />
+      ) : null}
+      {sheet === "block" ? (
+        <ActionSheet
+          key="block"
+          visible
+          onClose={() => setSheet(null)}
+          title={t("community.blockUser")}
+          message={t("community.blockConfirm", {
+            name: authorName(post.user),
+          })}
+          actions={[
+            {
+              key: "confirm",
+              label: t("community.blockBtn"),
+              icon: "ban-outline",
+              tone: "destructive",
+              onPress: () => {
+                blockUser(post.user.id)
+                  .then(() => onRemove(post.id))
+                  .catch(() => {
+                    // Non-fatal.
+                  });
+              },
+            },
+          ]}
         />
       ) : null}
     </>

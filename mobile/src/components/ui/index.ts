@@ -51,3 +51,6 @@ export {
   ComposeImageGrid,
   ImageViewerModal,
 } from "./PostImageGrid";
+
+export { ActionSheet } from "./ActionSheet";
+export type { SheetAction, ActionSheetProps } from "./ActionSheet";

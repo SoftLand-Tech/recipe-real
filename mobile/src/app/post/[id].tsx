@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -37,6 +37,7 @@ import type { Post, PostComment, PostRecipe } from "@/types";
 import { useLang, useT, type Lang, type TranslateFn } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 import {
+  ActionSheet,
   Avatar,
   Button,
   Card,
@@ -284,6 +285,23 @@ const CommentRow = memo(function CommentRow({
 
 type LoadState = "loading" | "ready" | "error";
 
+/**
+ * One bottom action sheet at a time — the moderation state machine that
+ * replaced the native Alerts:
+ *   menu (⋯) → deletePost | reportPost | blockAuthor → confirm sheets;
+ *   comment icons → deleteComment | reportComment confirm sheets (the
+ *   variant carries the target comment);
+ *   blocked — the post-block success sheet (OK → back).
+ */
+type DetailSheet =
+  | { kind: "menu" }
+  | { kind: "deletePost" }
+  | { kind: "reportPost" }
+  | { kind: "blockAuthor" }
+  | { kind: "blocked" }
+  | { kind: "deleteComment"; comment: PostComment }
+  | { kind: "reportComment"; comment: PostComment };
+
 export default function PostDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const postId = Number(id);
@@ -327,6 +345,11 @@ export default function PostDetailScreen() {
   // fills and the report affordance disappears.
   const [reportedPost, setReportedPost] = useState(false);
   const [reportedCommentIds, setReportedCommentIds] = useState<number[]>([]);
+
+  // ---- Moderation bottom sheet (see DetailSheet) ------------------------------
+  const [sheet, setSheet] = useState<DetailSheet | null>(null);
+
+  const closeSheet = useCallback(() => setSheet(null), []);
 
   // ---- Image viewer ---------------------------------------------------------
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -522,6 +545,7 @@ export default function PostDetailScreen() {
   }, [post, postDraft, savingPost, signedIn, t]);
 
   // ---- Moderation: post delete -------------------------------------------------
+  // (The confirm sheet's action calls this after the sheet dismissed.)
 
   const deletePostNow = useCallback(async () => {
     if (!post || deletingPost) return;
@@ -538,23 +562,6 @@ export default function PostDetailScreen() {
     }
   }, [post, deletingPost, t]);
 
-  const confirmDeletePost = useCallback(() => {
-    Alert.alert(
-      t("community.deletePost"),
-      t("community.deletePostConfirm"),
-      [
-        { text: t("common.cancel"), style: "cancel" },
-        {
-          text: t("common.delete"),
-          style: "destructive",
-          onPress: () => {
-            void deletePostNow();
-          },
-        },
-      ],
-    );
-  }, [t, deletePostNow]);
-
   // ---- Moderation: report post ---------------------------------------------------
 
   const reportPostNow = useCallback(async () => {
@@ -568,90 +575,27 @@ export default function PostDetailScreen() {
     }
   }, [post, t]);
 
-  const confirmReportPost = useCallback(() => {
-    Alert.alert(
-      t("community.reportPost"),
-      t("community.reportConfirm"),
-      [
-        { text: t("common.cancel"), style: "cancel" },
-        {
-          text: t("community.reportPost"),
-          onPress: () => {
-            void reportPostNow();
-          },
-        },
-      ],
-    );
-  }, [t, reportPostNow]);
-
   // ---- Moderation: block the post author -----------------------------------------
 
   const blockAuthorNow = useCallback(async () => {
     if (!post) return;
     try {
       await blockUser(post.user.id);
-      // Confirm the block, then leave the (now hidden) post behind.
-      Alert.alert(t("community.blocked"), undefined, [
-        { text: t("common.ok"), onPress: () => router.back() },
-      ]);
+      // Confirm the block with a sheet; OK leaves the (now hidden) post.
+      setSheet({ kind: "blocked" });
     } catch (error) {
       if (error instanceof PostUnauthorizedError) setNeedsAuth(true);
       else Alert.alert(t("community.blockFailed"));
     }
   }, [post, t]);
 
-  const confirmBlockAuthor = useCallback(() => {
-    if (!post) return;
-    Alert.alert(
-      t("community.blockUser"),
-      t("community.blockConfirm", { name: authorName(post.user) }),
-      [
-        { text: t("common.cancel"), style: "cancel" },
-        {
-          text: t("community.blockBtn"),
-          style: "destructive",
-          onPress: () => {
-            void blockAuthorNow();
-          },
-        },
-      ],
-    );
-  }, [t, post, blockAuthorNow]);
-
   // ---- Moderation: post actions menu (⋯) ------------------------------------------
 
   const isMyPost = post != null && myUserId != null && post.user.id === myUserId;
 
   const openPostMenu = useCallback(() => {
-    if (isMyPost) {
-      Alert.alert(t("community.postActions"), undefined, [
-        { text: t("community.editPost"), onPress: startEditPost },
-        {
-          text: t("community.deletePost"),
-          style: "destructive",
-          onPress: confirmDeletePost,
-        },
-        { text: t("common.cancel"), style: "cancel" },
-      ]);
-    } else {
-      Alert.alert(t("community.postActions"), undefined, [
-        { text: t("community.reportPost"), onPress: confirmReportPost },
-        {
-          text: t("community.blockUser"),
-          style: "destructive",
-          onPress: confirmBlockAuthor,
-        },
-        { text: t("common.cancel"), style: "cancel" },
-      ]);
-    }
-  }, [
-    isMyPost,
-    t,
-    startEditPost,
-    confirmDeletePost,
-    confirmReportPost,
-    confirmBlockAuthor,
-  ]);
+    setSheet({ kind: "menu" });
+  }, []);
 
   // ---- Moderation: comment flows ----------------------------------------------
 
@@ -699,25 +643,13 @@ export default function PostDetailScreen() {
     [post, t],
   );
 
-  const confirmDeleteComment = useCallback(
-    (comment: PostComment) => {
-      Alert.alert(
-        t("community.deleteCommentA11y"),
-        t("community.deleteCommentConfirm"),
-        [
-          { text: t("common.cancel"), style: "cancel" },
-          {
-            text: t("common.delete"),
-            style: "destructive",
-            onPress: () => {
-              void deleteCommentNow(comment);
-            },
-          },
-        ],
-      );
-    },
-    [t, deleteCommentNow],
-  );
+  /**
+   * Opens the delete-comment confirm sheet for a specific comment (the
+   * sheet variant carries the target).
+   */
+  const requestDeleteComment = useCallback((comment: PostComment) => {
+    setSheet({ kind: "deleteComment", comment });
+  }, []);
 
   const reportCommentNow = useCallback(
     async (comment: PostComment) => {
@@ -733,24 +665,10 @@ export default function PostDetailScreen() {
     [post, t],
   );
 
-  const confirmReportComment = useCallback(
-    (comment: PostComment) => {
-      Alert.alert(
-        t("community.reportComment"),
-        t("community.reportConfirm"),
-        [
-          { text: t("common.cancel"), style: "cancel" },
-          {
-            text: t("community.reportComment"),
-            onPress: () => {
-              void reportCommentNow(comment);
-            },
-          },
-        ],
-      );
-    },
-    [t, reportCommentNow],
-  );
+  /** Opens the report-comment confirm sheet for a specific comment. */
+  const requestReportComment = useCallback((comment: PostComment) => {
+    setSheet({ kind: "reportComment", comment });
+  }, []);
 
   const openViewer = useCallback((index: number) => {
     setViewerStartIndex(index);
@@ -1135,6 +1053,169 @@ export default function PostDetailScreen() {
     <Text style={styles.commentMuted}>{t("community.commentsEmpty")}</Text>
   );
 
+  // ---- Moderation bottom sheets (one step of the state machine at a time).
+  // Each variant gets a stable key — moving between steps remounts the sheet
+  // so every one plays its own enter animation after the previous dropped.
+  let sheetNode: ReactNode = null;
+  if (sheet?.kind === "menu") {
+    sheetNode = (
+      <ActionSheet
+        key="menu"
+        visible
+        onClose={closeSheet}
+        title={t("community.postActions")}
+        actions={
+          isMyPost
+            ? [
+                {
+                  key: "edit",
+                  label: t("community.editPost"),
+                  icon: "create-outline",
+                  onPress: startEditPost,
+                },
+                {
+                  key: "delete",
+                  label: t("community.deletePost"),
+                  icon: "trash-outline",
+                  tone: "destructive",
+                  onPress: () => setSheet({ kind: "deletePost" }),
+                },
+              ]
+            : [
+                {
+                  key: "report",
+                  label: t("community.reportPost"),
+                  icon: "flag-outline",
+                  onPress: () => setSheet({ kind: "reportPost" }),
+                },
+                {
+                  key: "block",
+                  label: t("community.blockUser"),
+                  icon: "ban-outline",
+                  tone: "destructive",
+                  onPress: () => setSheet({ kind: "blockAuthor" }),
+                },
+              ]
+        }
+      />
+    );
+  } else if (sheet?.kind === "deletePost") {
+    sheetNode = (
+      <ActionSheet
+        key="deletePost"
+        visible
+        onClose={closeSheet}
+        title={t("community.deletePost")}
+        message={t("community.deletePostConfirm")}
+        actions={[
+          {
+            key: "confirm",
+            label: t("common.delete"),
+            icon: "trash-outline",
+            tone: "destructive",
+            onPress: () => void deletePostNow(),
+          },
+        ]}
+      />
+    );
+  } else if (sheet?.kind === "reportPost") {
+    sheetNode = (
+      <ActionSheet
+        key="reportPost"
+        visible
+        onClose={closeSheet}
+        title={t("community.reportPost")}
+        message={t("community.reportConfirm")}
+        actions={[
+          {
+            key: "confirm",
+            label: t("community.reportPost"),
+            icon: "flag-outline",
+            onPress: () => void reportPostNow(),
+          },
+        ]}
+      />
+    );
+  } else if (sheet?.kind === "blockAuthor") {
+    sheetNode = (
+      <ActionSheet
+        key="blockAuthor"
+        visible
+        onClose={closeSheet}
+        title={t("community.blockUser")}
+        message={t("community.blockConfirm", {
+          name: post != null ? authorName(post.user) : "",
+        })}
+        actions={[
+          {
+            key: "confirm",
+            label: t("community.blockBtn"),
+            icon: "ban-outline",
+            tone: "destructive",
+            onPress: () => void blockAuthorNow(),
+          },
+        ]}
+      />
+    );
+  } else if (sheet?.kind === "blocked") {
+    // Post-block success: OK (or dismiss) leaves the now-hidden post behind.
+    sheetNode = (
+      <ActionSheet
+        key="blocked"
+        visible
+        onClose={closeSheet}
+        title={t("community.blocked")}
+        actions={[
+          {
+            key: "ok",
+            label: t("common.ok"),
+            icon: "checkmark-circle-outline",
+            onPress: () => router.back(),
+          },
+        ]}
+      />
+    );
+  } else if (sheet?.kind === "deleteComment") {
+    const comment = sheet.comment;
+    sheetNode = (
+      <ActionSheet
+        key={`deleteComment:${comment.id}`}
+        visible
+        onClose={closeSheet}
+        title={t("community.deleteCommentA11y")}
+        message={t("community.deleteCommentConfirm")}
+        actions={[
+          {
+            key: "confirm",
+            label: t("common.delete"),
+            icon: "trash-outline",
+            tone: "destructive",
+            onPress: () => void deleteCommentNow(comment),
+          },
+        ]}
+      />
+    );
+  } else if (sheet?.kind === "reportComment") {
+    const comment = sheet.comment;
+    sheetNode = (
+      <ActionSheet
+        key={`reportComment:${comment.id}`}
+        visible
+        onClose={closeSheet}
+        title={t("community.reportComment")}
+        message={t("community.reportConfirm")}
+        actions={[
+          {
+            key: "confirm",
+            label: t("community.reportComment"),
+            icon: "flag-outline",
+            onPress: () => void reportCommentNow(comment),
+          },
+        ]}
+      />
+    );
+  }
+
   return (
     <View style={styles.container}>
       <ScreenHeader title={t("community.postDetail")} />
@@ -1148,8 +1229,8 @@ export default function PostDetailScreen() {
             mine={myUserId != null && item.user.id === myUserId}
             reported={reportedCommentIds.includes(item.id)}
             onSave={saveCommentEdit}
-            onDelete={confirmDeleteComment}
-            onReport={confirmReportComment}
+            onDelete={requestDeleteComment}
+            onReport={requestReportComment}
           />
         )}
         contentContainerStyle={styles.listContent}
@@ -1182,6 +1263,9 @@ export default function PostDetailScreen() {
           onClose={() => setViewerOpen(false)}
         />
       ) : null}
+
+      {/* Moderation bottom sheet (menu / confirm steps / blocked). */}
+      {sheetNode}
     </View>
   );
 }
