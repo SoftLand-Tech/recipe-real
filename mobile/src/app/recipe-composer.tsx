@@ -388,7 +388,7 @@ export default function RecipeComposerScreen() {
   const pickImage = useCallback(async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ["images"],
         quality: 0.7,
         allowsEditing: true,
         aspect: [4, 3],

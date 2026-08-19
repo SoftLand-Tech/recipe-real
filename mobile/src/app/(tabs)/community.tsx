@@ -536,7 +536,7 @@ function ComposeCard({ onClose, onCreated }: ComposeCardProps) {
     try {
       // expo-image-picker supports allowsMultipleSelection on iOS 14+/Android.
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ["images"],
         quality: 0.8,
         allowsMultipleSelection: true,
         selectionLimit: remaining,
