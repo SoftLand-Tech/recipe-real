@@ -11,9 +11,7 @@ import { router, useFocusEffect } from "expo-router";
 
 import {
   getCookSessions,
-  getUsage,
   hasToken,
-  isPaywallError,
   logout,
 } from "@/api/client";
 import { track } from "@/analytics";
@@ -32,7 +30,7 @@ import {
 } from "@/components/ui";
 import { computeStreak, summarizeHistory } from "@/utils/streaks";
 
-type LoadState = "loading" | "ready" | "error" | "locked";
+type LoadState = "loading" | "ready" | "error";
 
 /** History rows visible before the "Show all" toggle expands the list. */
 const HISTORY_PREVIEW_COUNT = 10;
@@ -162,15 +160,6 @@ export default function PaceScreen() {
         return;
       }
 
-      // Usage is the authoritative premium signal. Pace calibration is a
-      // Premium feature: if the user is not premium, surface the upgrade CTA
-      // instead of the multipliers.
-      const usage = await getUsage().catch(() => null);
-      if (usage && usage.premium === false) {
-        setState("locked");
-        return;
-      }
-
       // The cook-session history paginates (up to 5 pages) — start it now in
       // parallel, but DON'T let it gate the UI below.
       const sessionsPromise = getCookSessions().catch(() => null);
@@ -210,11 +199,6 @@ export default function PaceScreen() {
         lastCookCount = sessions.meta?.total ?? sessions.data.length ?? 0;
       }
     } catch (error) {
-      // A 402 from the pace fetch is also a paywall state.
-      if (isPaywallError(error)) {
-        setState("locked");
-        return;
-      }
       console.warn("[RecipeReal] pace screen load failed:", error);
       setState("error");
     } finally {
@@ -382,16 +366,8 @@ export default function PaceScreen() {
           color: colors.ink,
           textAlign: "center",
         },
-        lockedTitle: {
-          ...Type.title,
-          color: colors.accent,
-          fontWeight: "700",
-        },
         cta: {
           marginTop: Space.sm,
-        },
-        secondaryCta: {
-          marginTop: Space.xs,
         },
         listSignOut: {
           marginTop: Space.xl,
@@ -439,29 +415,6 @@ export default function PaceScreen() {
           <Text style={styles.errorTitle}>{t("common.somethingWentWrong")}</Text>
           <Text style={styles.muted}>{t("pace.couldNotLoad")}</Text>
           <Button title={t("common.retry")} onPress={load} style={styles.cta} />
-        </View>
-      </View>
-    );
-  }
-
-  if (state === "locked") {
-    return (
-      <View style={styles.container}>
-        <ScreenHeader title={t("tabs.pace")} />
-        <View style={styles.center}>
-          <Text style={styles.lockedTitle}>{t("pace.premiumTitle")}</Text>
-          <Text style={styles.muted}>{t("pace.premiumBody")}</Text>
-          <Button
-            title={t("common.upgrade")}
-            onPress={() => router.push("/upgrade")}
-            style={styles.cta}
-          />
-          <Button
-            title={t("common.signOut")}
-            variant="ghost"
-            onPress={handleSignOut}
-            style={styles.secondaryCta}
-          />
         </View>
       </View>
     );

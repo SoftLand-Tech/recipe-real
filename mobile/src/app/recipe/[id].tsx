@@ -21,7 +21,6 @@ import {
   getRecipe,
   hasToken,
   HalalRejectionError,
-  isPaywallError,
   postRecipeNote,
   QuickTimeUnauthorizedError,
   RecipeNoteUnauthorizedError,
@@ -70,8 +69,8 @@ import {
   StatPill,
 } from "@/components/ui";
 import {
+  bestMinutes,
   estimateStepMinutes,
-  recipeMinutes,
   stepMinutes,
 } from "@/utils/recipeTime";
 import {
@@ -80,7 +79,7 @@ import {
   scheduleAtNotification,
 } from "@/utils/notifications";
 
-type LoadState = "loading" | "ready" | "error" | "paywall";
+type LoadState = "loading" | "ready" | "error";
 
 /** Rounds a nullable minute value, returning null when absent. */
 function roundMin(value: number | null | undefined): number | null {
@@ -110,6 +109,13 @@ function formatClock(date: Date): string {
 
 /** AsyncStorage key persisting the "Make public" note toggle default. */
 const NOTE_PUBLIC_PREF_KEY = "recipereal.notePublicDefault";
+
+/**
+ * AsyncStorage key flagged by the detail screen right after a successful
+ * quick-time submit; the browse list checks it on focus and re-syncs its
+ * server-driven grid once, so the list and detail stop disagreeing.
+ */
+const QUICK_TIME_STALE_KEY = "recipereal.quickTimeStale";
 
 /**
  * Compact relative timestamp for community notes ("just now", "3h ago",
@@ -320,11 +326,6 @@ export default function RecipeDetailScreen() {
       });
     };
   }, []);
-
-  // Mirror of `recipe` for use inside `loadRecipe`'s catch block without
-  // forcing `recipe` into the callback's dependency array (which would
-  // re-fire the load effect on every successful fetch -> infinite loop).
-  const recipeRef = useRef<Recipe | null>(null);
 
   // Hides the "Saved ✓" confirmation a few seconds after a successful save.
   const noteSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -868,10 +869,6 @@ export default function RecipeDetailScreen() {
           ...Type.h3,
           color: colors.danger,
         },
-        paywallTitle: {
-          ...Type.h3,
-          color: colors.accent,
-        },
         retry: {
           marginTop: Space.sm,
           paddingHorizontal: Space.xl,
@@ -887,10 +884,14 @@ export default function RecipeDetailScreen() {
     [colors, dir],
   );
 
+  // Monotonic load id: only the LATEST loadRecipe may commit state, so a
+  // background revalidation or a retry can never clobber a newer recipe.
+  const loadRequestIdRef = useRef(0);
+
   const loadRecipe = useCallback(async () => {
+    const requestId = ++loadRequestIdRef.current;
     setState("loading");
     setErrorMessage(null);
-    recipeRef.current = null;
     // Reset the quick-time contribution + planner state for the (new) recipe;
     // any notifications armed for the previous recipe are cancelled.
     cancelPlannedNotifications(planIdsRef.current).catch(() => {});
@@ -912,8 +913,11 @@ export default function RecipeDetailScreen() {
     quickFadeRef.current.setValue(0);
     try {
       const numericId = Number(id);
+      // 1. Serve the cached copy immediately (fast paint + offline support).
       let result = await getCachedRecipe(numericId);
-      if (!result || (result.recipe_steps?.length ?? 0) === 0) {
+      const servedFromCache =
+        result != null && (result.recipe_steps?.length ?? 0) > 0;
+      if (!servedFromCache) {
         // Not in cache OR cached copy lost its steps (damaged cache): fetch
         // live and re-cache so the step library self-heals recipe by recipe.
         try {
@@ -924,12 +928,17 @@ export default function RecipeDetailScreen() {
           result = fetched;
         } catch (error) {
           // Network failed. When a cached copy exists, show it anyway;
-          // otherwise surface the original error (incl. 402 paywall).
+          // otherwise surface the original error.
           if (!result) throw error;
         }
       }
+      if (requestId !== loadRequestIdRef.current) return;
+      // Unreachable in practice: a null result here means the cache miss and
+      // the live fetch both failed, and the catch above already rethrew. The
+      // guard exists for TypeScript's benefit (narrowing is reset across the
+      // try/catch) and doubles as a last-resort error surface.
+      if (!result) throw new Error("No recipe data");
       setRecipe(result);
-      recipeRef.current = result;
       setState("ready");
       // Fire-and-forget analytics once the recipe is successfully loaded.
       track("recipe_viewed", { recipe_id: result.id });
@@ -937,15 +946,24 @@ export default function RecipeDetailScreen() {
       isFavorite(numericId)
         .then(setFavorited)
         .catch(() => {});
+      // 2. Revalidate in the background when we served the cached copy, so a
+      // stale cache (community averages, reality, per-step minutes) never
+      // pins this screen forever — the fresh copy swaps in when it lands.
+      // Only the LATEST loadRecipe may commit (request-id guard).
+      if (servedFromCache) {
+        getRecipe(id)
+          .then((fetched) => {
+            if (requestId !== loadRequestIdRef.current) return;
+            upsertRecipes([fetched], { withSteps: true }).catch(() => {});
+            setRecipe(fetched);
+          })
+          .catch((error) => {
+            // Offline: the cached copy stays — it's already on screen.
+            console.warn("[RecipeReal] detail revalidation failed:", error);
+          });
+      }
     } catch (error) {
       console.warn("[RecipeReal] loadRecipe failed:", error);
-      // A 402 means the free-tier recipe limit is reached. Only surface the
-      // paywall when we have no cached copy to fall back on; the cache path
-      // above would have resolved before reaching the network fetch.
-      if (recipeRef.current == null && isPaywallError(error)) {
-        setState("paywall");
-        return;
-      }
       setErrorMessage(
         error instanceof Error ? error.message : t("common.loadFailedRecipe"),
       );
@@ -1082,6 +1100,25 @@ export default function RecipeDetailScreen() {
       setQuickAvg(result.community_avg_minutes);
       setQuickCleanupAvg(result.cleanup_avg_minutes);
       setQuickDone(true);
+      // Persist the server-recomputed averages into the cache immediately so
+      // the favorites rail, home rails and the next detail open read the new
+      // figure instead of the stale one; flag the browse list as stale so it
+      // re-syncs its grid on the next focus.
+      if (recipe) {
+        upsertRecipes(
+          [
+            {
+              ...recipe,
+              community_avg_minutes: result.community_avg_minutes,
+              cleanup_avg_minutes: result.cleanup_avg_minutes,
+            },
+          ],
+          { withSteps: false },
+        ).catch(() => {});
+      }
+      AsyncStorage.setItem(QUICK_TIME_STALE_KEY, String(Date.now())).catch(
+        () => {},
+      );
       quickFadeRef.current.setValue(0);
       Animated.timing(quickFadeRef.current, {
         toValue: 1,
@@ -1099,7 +1136,7 @@ export default function RecipeDetailScreen() {
     } finally {
       setQuickSubmitting(false);
     }
-  }, [quickTotal, quickHandsOn, quickCleanup, quickPlates, id, t]);
+  }, [quickTotal, quickHandsOn, quickCleanup, quickPlates, id, t, recipe]);
 
   /**
    * Reveal the inline quick-time form under the stat grid and focus the
@@ -1136,9 +1173,10 @@ export default function RecipeDetailScreen() {
   const cleanupEstimate = roundMin(recipe?.cleanup_estimate_minutes);
   // Prefer the model-based cleanup estimate, fall back to community average.
   const cleanup = cleanupEstimate ?? cleanupAvg;
-  // Best-known cook time feeding the "Total incl. cleanup" stat: community
-  // consensus, else the publisher claim (sparse data never blanks the total).
-  const cookMinutes = roundMin(recipe ? recipeMinutes(recipe) : null);
+  // Best-known cook time feeding the "Total incl. cleanup" stat: the same
+  // single display figure every card and the "Really takes" cell lead with
+  // (reality → community consensus → publisher claim).
+  const cookMinutes = roundMin(recipe ? bestMinutes(recipe) : null);
   // Reality-check block (server-maintained best-known real time vs. claim).
   const reality = recipe?.reality ?? null;
   const realityGap = reality?.gap_pct ?? null;
@@ -1508,21 +1546,6 @@ export default function RecipeDetailScreen() {
               </Text>
               <IconPressable style={styles.retry} onPress={loadRecipe}>
                 <Text style={styles.retryText}>{t("common.retry")}</Text>
-              </IconPressable>
-            </View>
-          )}
-
-          {state === "paywall" && (
-            <View style={styles.center}>
-              <Text style={styles.paywallTitle}>
-                {t("detail.freeLimitTitle")}
-              </Text>
-              <Text style={styles.muted}>{t("detail.freeLimitBody")}</Text>
-              <IconPressable
-                style={styles.retry}
-                onPress={() => router.push("/upgrade")}
-              >
-                <Text style={styles.retryText}>{t("common.upgrade")}</Text>
               </IconPressable>
             </View>
           )}

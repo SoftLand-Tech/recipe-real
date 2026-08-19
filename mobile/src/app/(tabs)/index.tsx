@@ -49,7 +49,7 @@ import {
   fmtMinutes,
 } from "@/components/ui";
 import { CATEGORIES } from "@/utils/categorize";
-import { recipeMinutes } from "@/utils/recipeTime";
+import { bestMinutes } from "@/utils/recipeTime";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -103,6 +103,13 @@ function railsWithDefaults(rails: Partial<HomeRails>): HomeRails {
  * whatever the network does (force-cleared by a setTimeout guard).
  */
 const REFRESH_SPINNER_MAX_MS = 10_000;
+
+/**
+ * Maximum time (in ms) to wait for initial server rails when AsyncStorage has
+ * no mirror (first launch) before falling back to rendering the offline SQLite cache.
+ * Avoids hanging on skeletons during flaky network conditions up to the 15s axios timeout.
+ */
+const RAILS_DEADLINE_MS = 2500;
 
 /**
  * Cheap content fingerprint of a recipe list. Background reloads from the
@@ -187,6 +194,11 @@ export default function HomeScreen() {
   // flow painted client-computed rails from the recipe cache first, then
   // swapped to different server rails when loaded ("recipes changed!").
   const [serverRails, setServerRails] = useState<HomeRails | null>(null);
+
+  // Tracks whether the initial server rails fetch has settled (loaded, failed, or timed out).
+  // When no AsyncStorage mirror exists (cold start), skeletons show until this settles
+  // to prevent flashing the offline "Top picks" layout for ~0.5s before server rails arrive.
+  const [initialRailsSettled, setInitialRailsSettled] = useState(false);
 
   // Server category chips for "Browse by craving" (GET /api/recipes/categories,
   // AsyncStorage-cached with a stale fallback in the client — same pattern as
@@ -311,8 +323,12 @@ export default function HomeScreen() {
 
   // Featured recipe of the day: deterministic pick (dayOfYear % length) from
   // the reality "most underestimated" rail, falling back to "Top rated", and
-  // to the offline cached top picks when no server rails ever loaded.
+  // to the offline cached top picks when no server rails ever loaded (and initial
+  // rails fetch has settled).
   const featured = useMemo(() => {
+    if (serverRails == null && !initialRailsSettled) {
+      return null;
+    }
     const pool = (
       serverRails
         ? serverRails.most_underestimated.length > 0
@@ -322,7 +338,7 @@ export default function HomeScreen() {
     ).filter(hasPhoto);
     if (pool.length === 0) return null;
     return pool[dayOfYear() % pool.length];
-  }, [serverRails, topPicks]);
+  }, [serverRails, topPicks, initialRailsSettled]);
 
   // Track the featured impression once per shown recipe.
   const featuredTrackedRef = useRef<number | null>(null);
@@ -402,6 +418,7 @@ export default function HomeScreen() {
           parsed.most_underestimated?.length;
         if (any) {
           setServerRails(railsWithDefaults(parsed));
+          setInitialRailsSettled(true);
           track("home_rails_loaded", { source: "saved" });
         }
       }
@@ -432,6 +449,7 @@ export default function HomeScreen() {
           }
           return rails;
         });
+        setInitialRailsSettled(true);
         track("home_rails_loaded", { source: "server" });
         AsyncStorage.setItem(HOME_RAILS_KEY, JSON.stringify(rails)).catch(
           () => {
@@ -444,11 +462,13 @@ export default function HomeScreen() {
       // Offline / server error: keep whatever is on screen (saved rails
       // or the cached-recipe rails).
       console.warn("[RecipeReal] home rails fetch failed:", error);
+      setInitialRailsSettled(true);
       return;
     }
     // Server answered with an all-empty payload (no data yet anywhere):
     // clear to the cached rails.
     setServerRails(null);
+    setInitialRailsSettled(true);
     track("home_rails_loaded", { source: "cache" });
   }, []);
 
@@ -483,11 +503,23 @@ export default function HomeScreen() {
 
   useEffect(() => {
     track("home_viewed");
+
+    // Race initial server rails fetch against a short deadline to prevent hanging on skeletons.
+    const deadlineTimer = setTimeout(() => {
+      setInitialRailsSettled(true);
+    }, RAILS_DEADLINE_MS);
+
     // Server rails load in parallel with the cache (the cache also backs the
     // fallback rails, favorites, and cook mode).
-    loadRails().catch((error) => {
-      console.warn("[RecipeReal] home rails load failed:", error);
-    });
+    loadRails()
+      .catch((error) => {
+        console.warn("[RecipeReal] home rails load failed:", error);
+      })
+      .finally(() => {
+        clearTimeout(deadlineTimer);
+        setInitialRailsSettled(true);
+      });
+
     loadFromCache().then((hadCachedData) => {
       // Only light-refresh when we showed previously cached data; a cold
       // cache was just (progressively) seeded, so refreshing would re-download
@@ -513,6 +545,10 @@ export default function HomeScreen() {
         console.warn("[RecipeReal] background flush failed:", error);
       });
     });
+
+    return () => {
+      clearTimeout(deadlineTimer);
+    };
     // We intentionally run this only once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -644,10 +680,13 @@ export default function HomeScreen() {
     router.push({ pathname: "/browse", params: { filter: id } });
   }, []);
 
-  // Skeletons only when NEITHER the server rails nor the cached recipes can
-  // paint anything yet (true cold start).
+  // Skeletons show when:
+  // 1. Neither server rails nor cached recipes can paint anything yet (cold start).
+  // 2. OR when server rails are not yet loaded and initial rails fetch has not settled
+  //    (prevents flashing the offline cache layout for ~0.5s on first launch with empty mirror).
   const showSkeletons =
-    serverRails == null && state === "loading" && recipes.length === 0;
+    serverRails == null &&
+    (!initialRailsSettled || (state === "loading" && recipes.length === 0));
 
   // "Recently cooked" rail: shared by both the server-rails and offline
   // layouts (it is auth-backed, not rails-backed), hidden when empty.
@@ -688,7 +727,7 @@ export default function HomeScreen() {
           <SkeletonRail />
         )}
 
-        {state === "error" && serverRails == null && (
+        {state === "error" && serverRails == null && initialRailsSettled && (
           <View style={styles.center}>
             <Text style={styles.emptyGlyph}>🍲</Text>
             <Text style={styles.errorTitle}>{t("common.somethingWentWrong")}</Text>
@@ -703,6 +742,7 @@ export default function HomeScreen() {
 
         {state === "ready" &&
           serverRails == null &&
+          initialRailsSettled &&
           recipes.length === 0 && (
             <View style={styles.center}>
               <Text style={styles.emptyGlyph}>🍳</Text>
@@ -748,7 +788,7 @@ export default function HomeScreen() {
               onCategoryPress={handleCategoryPress}
             />
           </>
-        ) : state === "ready" && recipes.length > 0 ? (
+        ) : state === "ready" && recipes.length > 0 && initialRailsSettled ? (
           // ---- Fallback: rails computed over the offline cache ----
           <>
             <HomeRail title={t("home.topPicks")} items={topPicks} noteIds={noteIds} />
@@ -867,7 +907,8 @@ function HomeHeader({ name }: { name: string | null }) {
  * with "Top rated" as fallback): 16:9 photo with the heart overlay, title,
  * the REAL total in huge timing teal, the active/passive/cleanup breakdown
  * chips (only when the row carries the time contract), the reality source
- * caption, and a "Start cooking" CTA into Cook Mode.
+ * caption, and a "Start cooking" CTA. The whole card and the CTA both land
+ * on the recipe detail screen (which owns the jump into Cook Mode).
  */
 function FeaturedHero({
   recipe,
@@ -928,8 +969,9 @@ function FeaturedHero({
     [colors],
   );
 
-  // REAL total: reality minutes when known, else the recipe's best figure.
-  const total = recipe.reality?.minutes ?? recipeMinutes(recipe);
+  // REAL total: the single best-known display figure (reality → community
+  // → publisher), identical to the detail screen's "Really takes" stat.
+  const total = bestMinutes(recipe);
 
   // Time-contract breakdown: rail rows usually ship no `time` block — then
   // the whole chips row hides. Only the values actually present render.
@@ -939,7 +981,12 @@ function FeaturedHero({
     recipe.cleanup_avg_minutes ?? recipe.cleanup_estimate_minutes ?? 0;
 
   return (
-    <Card padding={0} shadow="card" style={styles.card}>
+    <Card
+      onPress={() => router.push(`/recipe/${recipe.id}`)}
+      padding={0}
+      shadow="card"
+      style={styles.card}
+    >
       <View>
         <HeroImage
           uri={recipe.image_url}
@@ -997,7 +1044,7 @@ function FeaturedHero({
         ) : null}
         <Button
           title={t("cook.startCooking")}
-          onPress={() => router.push(`/cook/${recipe.id}`)}
+          onPress={() => router.push(`/recipe/${recipe.id}`)}
         />
       </View>
     </Card>
@@ -1132,7 +1179,7 @@ function HomeCard({
         ) : null}
         <View style={styles.chips}>
           <TimeChip
-            minutes={recipeMinutes(item)}
+            minutes={bestMinutes(item)}
             label={t("common.focused")}
           />
           {item.aggregated_rating != null ? (

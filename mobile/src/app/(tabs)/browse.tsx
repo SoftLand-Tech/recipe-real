@@ -21,6 +21,7 @@ import {
   type ListRenderItem,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import {
   router,
@@ -70,7 +71,7 @@ import {
   categorizeTitle,
   categoryLabel,
 } from "@/utils/categorize";
-import { recipeMinutes } from "@/utils/recipeTime";
+import { recipeMinutes, bestMinutes } from "@/utils/recipeTime";
 
 // LayoutAnimation works out of the box on the New Architecture (Expo SDK
 // 57+); the legacy setLayoutAnimationEnabledExperimental opt-in is only
@@ -112,6 +113,16 @@ const CATEGORY_CHIP_LIMIT = 8;
 
 /** Debounce for search/filter changes before hitting the server. */
 const SEARCH_DEBOUNCE_MS = 350;
+
+/**
+ * AsyncStorage flag set by the detail screen after a successful quick-time
+ * submit. On the next focus, browse re-syncs its server-driven grid once
+ * (the flag is cleared either way), so the list shows the recomputed
+ * community averages instead of pinning the pre-submit values.
+ */
+const QUICK_TIME_STALE_KEY = "recipereal.quickTimeStale";
+/** How long a quick-time stale flag stays actionable, in ms. */
+const QUICK_TIME_STALE_TTL_MS = 60_000;
 
 /**
  * Safety cap for the pull-to-refresh spinner: it must never outlive ~10s
@@ -630,7 +641,7 @@ const FavoritesRail = memo(function FavoritesRail({
             {lr.title(item)}
           </Text>
           <TimeChip
-            minutes={recipeMinutes(item)}
+            minutes={bestMinutes(item)}
             label={t("common.focused")}
           />
         </View>
@@ -842,7 +853,7 @@ const PhotoCard = memo(function PhotoCard({
 }: PhotoCardProps) {
   const t = useT();
   const lr = useLocalizedRecipe();
-  const minutes = recipeMinutes(item);
+  const minutes = bestMinutes(item);
   const hasImage =
     typeof item.image_url === "string" && item.image_url.trim().length > 0;
   return (
@@ -1426,6 +1437,31 @@ export default function BrowseScreen() {
     await loadFromCache();
     void runSearch();
   }, [loadFromCache, runSearch]);
+
+  // Quick-time staleness: the detail screen flags a fresh submit; on the next
+  // focus, re-run the server search once (silently) so the grid reflects the
+  // recomputed community averages. The flag is cleared regardless of age.
+  useFocusEffect(
+    useCallback(() => {
+      AsyncStorage.getItem(QUICK_TIME_STALE_KEY)
+        .then((raw) => {
+          if (raw == null) return;
+          const flaggedAt = Number(raw);
+          AsyncStorage.removeItem(QUICK_TIME_STALE_KEY).catch(() => {});
+          if (!offline && Number.isFinite(flaggedAt)) {
+            const fresh = Date.now() - flaggedAt < QUICK_TIME_STALE_TTL_MS;
+            if (fresh) {
+              runSearch().catch(() => {
+                // Best-effort background work.
+              });
+            }
+          }
+        })
+        .catch(() => {
+          // Best-effort: a failed read just skips the re-sync.
+        });
+    }, [offline, runSearch]),
+  );
 
   // Deferred apply (OFFLINE/local path only): chip state (and its accent
   // tone) updates synchronously in the press handler; this effect then flags

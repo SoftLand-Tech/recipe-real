@@ -344,6 +344,16 @@ export default function CookModeScreen() {
   /** Re-render tick: only updated while running, to drive the live display. */
   const [now, setNow] = useState(Date.now());
 
+  /**
+   * Ref mirror of `status` so async callbacks (the background recipe
+   * revalidation) can check "is a cook session active?" without subscribing
+   * to every status change. Kept in sync by the effect below.
+   */
+  const statusRef = useRef<CookStatus>("idle");
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
   /** Pause log (closed intervals) — subtracted from each step's segment. */
   const pausesRef = useRef<PauseInterval[]>([]);
   /**
@@ -375,13 +385,20 @@ export default function CookModeScreen() {
   );
 
   // ---- Load recipe ---------------------------------------------------------
+  // Monotonic load id: only the LATEST loadRecipe may commit state, so a
+  // background revalidation or a retry can never clobber a newer recipe.
+  const loadRequestIdRef = useRef(0);
   const loadRecipe = useCallback(async () => {
+    const requestId = ++loadRequestIdRef.current;
     setLoadState("loading");
     setErrorMessage(null);
     try {
       const numericId = Number(id);
+      // 1. Serve the cached copy immediately (fast paint + offline support).
       let result = await getCachedRecipe(numericId);
-      if (!result || (result.recipe_steps?.length ?? 0) === 0) {
+      const servedFromCache =
+        result != null && (result.recipe_steps?.length ?? 0) > 0;
+      if (!servedFromCache) {
         // Cache miss OR cached copy lost its steps (damaged cache): fetch
         // live and re-cache so the step library self-heals recipe by recipe.
         try {
@@ -394,8 +411,27 @@ export default function CookModeScreen() {
           // Network failed (offline / 402): fall back to whatever is cached.
         }
       }
+      if (requestId !== loadRequestIdRef.current) return;
       setRecipe(result);
       setLoadState("ready");
+      // 2. Revalidate in the background when we served the cached copy, so a
+      // stale cache never pins this screen forever. Guard: NEVER swap the
+      // recipe (or its steps) while a cook session is active — a mid-cook
+      // step change would disturb the live stopwatch. Only the LATEST
+      // loadRecipe may commit (request-id guard).
+      if (servedFromCache) {
+        getRecipe(id)
+          .then((fetched) => {
+            if (requestId !== loadRequestIdRef.current) return;
+            if (statusRef.current !== "idle") return;
+            upsertRecipes([fetched], { withSteps: true }).catch(() => {});
+            setRecipe(fetched);
+          })
+          .catch((error) => {
+            // Offline / 402: the cached copy stays — it's already on screen.
+            console.warn("[RecipeReal] cook revalidation failed:", error);
+          });
+      }
     } catch (error) {
       console.warn("[RecipeReal] cook loadRecipe failed:", error);
       setErrorMessage(

@@ -21,6 +21,7 @@ import {
 import type { Recipe } from "@/types";
 import { useLang, useLocalizedRecipe, useT, type Lang } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
+import { bestMinutes } from "@/utils/recipeTime";
 import {
   Button,
   Card,
@@ -340,7 +341,7 @@ export default function FavoritesScreen() {
             </Text>
             <View style={styles.cardChips}>
               <TimeChip
-                minutes={item.community_avg_minutes}
+                minutes={bestMinutes(item)}
                 label={t("common.focused")}
               />
               <TimeChip

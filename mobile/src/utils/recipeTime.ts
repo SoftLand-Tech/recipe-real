@@ -10,9 +10,22 @@ import type { Recipe, RecipeStep } from "@/types";
 /**
  * Best-known total cook minutes: community consensus, else the publisher
  * claim. Accepts null (no recipe loaded yet) for the distribution helpers.
+ * Used for FILTERING and sorting (mirrors the server's COALESCE over the
+ * same two columns, so client and server filter semantics stay identical).
  */
 export function recipeMinutes(recipe: Recipe | null): number | null {
   return recipe?.community_avg_minutes ?? recipe?.publisher_time_minutes ?? null;
+}
+
+/**
+ * Best-known total cook minutes for DISPLAY: the Reality Index figure when
+ * the backend maintains one (real cook sessions or an AI estimate), else the
+ * community consensus, else the publisher claim. This is the single "what
+ * does this recipe really take?" number every card and stat leads with, so
+ * lists and the detail screen can never contradict each other again.
+ */
+export function bestMinutes(recipe: Recipe | null): number | null {
+  return recipe?.reality?.minutes ?? recipeMinutes(recipe);
 }
 
 /** Best-known minutes for a single step: community, else the publisher. */
@@ -42,11 +55,13 @@ const distributionCache = new WeakMap<
 >();
 
 /**
- * Distribute the recipe's best-known total across the steps that lack a
- * per-step time: timed steps keep (and subtract) their own minutes, each
+ * Distribute the recipe's best-known DISPLAY total across the steps that lack
+ * a per-step time: timed steps keep (and subtract) their own minutes, each
  * untimed step gets `pool * (wordCount / totalWordCount)` rounded to whole
  * minutes with a floor of 1. With no recipe total at all, every untimed step
- * falls back to NO_TOTAL_STEP_MINUTES.
+ * falls back to NO_TOTAL_STEP_MINUTES. Pooling from bestMinutes keeps the
+ * timeline walk adding back up to the "Really takes" stat the screen leads
+ * with.
  */
 function computeUntimedDistribution(
   recipe: Recipe | null,
@@ -63,7 +78,7 @@ function computeUntimedDistribution(
       untimed.push({ step, weight: Math.max(1, wordCount(step.description)) });
     }
   }
-  const total = recipeMinutes(recipe);
+  const total = bestMinutes(recipe);
   if (total != null && untimed.length > 0) {
     // Timed steps are subtracted from the pool first; clamp at 0 so a pool
     // already consumed by timed steps still leaves each step the 1-min floor.

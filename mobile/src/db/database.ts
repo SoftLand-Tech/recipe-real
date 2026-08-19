@@ -18,7 +18,7 @@ import type {
 const DB_NAME = "recipereal.db";
 
 /** Current version of the local cache schema. Bump when columns/tables change. */
-const CACHE_SCHEMA_VERSION = 6;
+const CACHE_SCHEMA_VERSION = 7;
 
 /**
  * Memoized ready-promise for the single DB connection.
@@ -97,7 +97,10 @@ const RECIPES_DDL = `
     cleanup_estimate_minutes REAL,
     dish_count INTEGER,
     grease_level TEXT,
-    dishwasher_safe INTEGER
+    dishwasher_safe INTEGER,
+    reality_minutes REAL,
+    reality_source TEXT,
+    reality_samples INTEGER
   );
 `;
 
@@ -111,6 +114,7 @@ const RECIPE_STEPS_DDL = `
     step_type TEXT,
     publisher_minutes REAL,
     community_minutes REAL,
+    literal_minutes REAL,
     FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
   );
 `;
@@ -193,11 +197,19 @@ async function ensureSchema(db: SQLite.SQLiteDatabase): Promise<void> {
 
   if (needsBump) {
     // Drop the recipe cache tables so they get recreated at the current shape.
-    // Favorites are intentionally NOT dropped (IF NOT EXISTS below): rows for
-    // wiped recipes are cascade-deleted by the drop above, and the re-seed
-    // restores the same deterministic ids.
-    await db.execAsync("DROP TABLE IF EXISTS recipe_steps;");
-    await db.execAsync("DROP TABLE IF EXISTS recipes;");
+    // Favorites and notes are INTENTIONALLY kept (IF NOT EXISTS below): with
+    // foreign keys ON, SQLite's DROP TABLE runs an implicit DELETE FROM on
+    // recipes, which would CASCADE-delete every favorite and every saved note
+    // (both reference recipes(id) ON DELETE CASCADE). The FK toggle follows
+    // the same OFF/ON pattern clearRecipeCache uses; orphaned favorite/note
+    // rows re-link when the deterministic re-seed restores the recipe ids.
+    await db.execAsync("PRAGMA foreign_keys = OFF;");
+    try {
+      await db.execAsync("DROP TABLE IF EXISTS recipe_steps;");
+      await db.execAsync("DROP TABLE IF EXISTS recipes;");
+    } finally {
+      await db.execAsync("PRAGMA foreign_keys = ON;");
+    }
     await db.execAsync(RECIPES_DDL);
     await db.execAsync(RECIPE_STEPS_DDL);
     await db.execAsync(RECIPE_STEPS_INDEX_DDL);
@@ -245,6 +257,9 @@ interface RecipeRow {
   dish_count: number | null;
   grease_level: string | null;
   dishwasher_safe: number | null;
+  reality_minutes: number | null;
+  reality_source: string | null;
+  reality_samples: number | null;
 }
 
 interface RecipeStepRow {
@@ -256,6 +271,7 @@ interface RecipeStepRow {
   step_type: string | null;
   publisher_minutes: number | null;
   community_minutes: number | null;
+  literal_minutes: number | null;
 }
 
 /** Parse a cached JSON array-of-strings column; null when absent/invalid. */
@@ -318,6 +334,31 @@ function parseRecipe(row: RecipeRow): Recipe {
     };
   }
 
+  // Reconstruct the reality-check block, mirroring RecipeResource's shape and
+  // math so cached rows read identically to live server payloads: reality is
+  // the honest time, claimed is the publisher's, gap_pct is a whole-number
+  // percent (null when there is no claim to compare against).
+  if (row.reality_minutes != null) {
+    const claimed = row.publisher_time_minutes;
+    recipe.reality = {
+      minutes: row.reality_minutes,
+      source:
+        row.reality_source === "estimate" ? "estimate" : "community",
+      samples: row.reality_samples ?? 0,
+      claimed_minutes: claimed ?? 0,
+      gap_minutes:
+        claimed != null
+          ? Math.round((row.reality_minutes - claimed) * 10) / 10
+          : 0,
+      gap_pct:
+        claimed != null && claimed > 0
+          ? Math.round(
+              ((row.reality_minutes - claimed) / claimed) * 100,
+            )
+          : null,
+    };
+  }
+
   return recipe;
 }
 
@@ -330,6 +371,7 @@ function parseStep(row: RecipeStepRow): RecipeStep {
     step_type: row.step_type ?? "active",
     publisher_minutes: row.publisher_minutes,
     community_minutes: row.community_minutes,
+    literal_minutes: row.literal_minutes ?? null,
   };
 }
 
@@ -370,11 +412,12 @@ export async function upsertRecipes(
     // -- Recipe rows: chunked multi-row INSERT OR REPLACE --------------------
     for (const batch of chunked(recipes, INSERT_CHUNK_SIZE)) {
       const placeholders = batch
-        .map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         .join(", ");
       const params: (string | number | null)[] = [];
       for (const recipe of batch) {
         const factors = recipe.cleanup_factors;
+        const reality = recipe.reality;
         params.push(
           recipe.id,
           recipe.title,
@@ -394,6 +437,9 @@ export async function upsertRecipes(
           factors?.dish_count ?? null,
           factors?.grease_level ?? null,
           factors?.dishwasher_safe == null ? null : factors.dishwasher_safe ? 1 : 0,
+          reality?.minutes ?? null,
+          reality?.source ?? null,
+          reality?.samples ?? null,
         );
       }
       // ON CONFLICT DO UPDATE (not INSERT OR REPLACE): REPLACE deletes the
@@ -404,7 +450,8 @@ export async function upsertRecipes(
           (id, title, source_url, image_url, ingredients, steps,
            title_ar, ingredients_ar, steps_ar,
            publisher_time_minutes, community_avg_minutes, cleanup_avg_minutes,
-           cleanup_estimate_minutes, dish_count, grease_level, dishwasher_safe)
+           cleanup_estimate_minutes, dish_count, grease_level, dishwasher_safe,
+           reality_minutes, reality_source, reality_samples)
          VALUES ${placeholders}
          ON CONFLICT(id) DO UPDATE SET
            title=excluded.title, source_url=excluded.source_url,
@@ -417,7 +464,10 @@ export async function upsertRecipes(
            cleanup_avg_minutes=excluded.cleanup_avg_minutes,
            cleanup_estimate_minutes=excluded.cleanup_estimate_minutes,
            dish_count=excluded.dish_count, grease_level=excluded.grease_level,
-           dishwasher_safe=excluded.dishwasher_safe;`,
+           dishwasher_safe=excluded.dishwasher_safe,
+           reality_minutes=excluded.reality_minutes,
+           reality_source=excluded.reality_source,
+           reality_samples=excluded.reality_samples;`,
         params,
       );
     }
@@ -447,7 +497,7 @@ export async function upsertRecipes(
       }
     }
     for (const batch of chunked(stepRows, INSERT_CHUNK_SIZE)) {
-      const placeholders = batch.map(() => "(?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
+      const placeholders = batch.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
       const params: (string | number | null)[] = [];
       for (const { step, recipeId } of batch) {
         params.push(
@@ -459,12 +509,13 @@ export async function upsertRecipes(
           step.step_type ?? null,
           step.publisher_minutes ?? null,
           step.community_minutes ?? null,
+          step.literal_minutes ?? null,
         );
       }
       await db.runAsync(
         `INSERT OR REPLACE INTO recipe_steps
           (id, recipe_id, step_number, description, description_ar, step_type,
-           publisher_minutes, community_minutes)
+           publisher_minutes, community_minutes, literal_minutes)
          VALUES ${placeholders};`,
         params,
       );
