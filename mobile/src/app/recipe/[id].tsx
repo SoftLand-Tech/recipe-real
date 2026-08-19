@@ -7,7 +7,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
@@ -72,6 +71,7 @@ import {
   IconPressable,
   SectionHeader,
   StatPill,
+  Toggle,
 } from "@/components/ui";
 import {
   bestMinutes,
@@ -2360,7 +2360,7 @@ export default function RecipeDetailScreen() {
                               {t("detail.notePublicHint")}
                             </Text>
                           </View>
-                          <Switch
+                          <Toggle
                             value={notePublic}
                             onValueChange={(value) => {
                               setNotePublic(value);
@@ -2371,11 +2371,6 @@ export default function RecipeDetailScreen() {
                                 // Best-effort persistence.
                               });
                             }}
-                            trackColor={{
-                              false: colors.hairline,
-                              true: colors.accent,
-                            }}
-                            thumbColor={colors.surface}
                           />
                         </View>
                       </>

@@ -6,7 +6,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   View,
 } from "react-native";
@@ -38,7 +37,14 @@ import {
   useThemePrefs,
   type ThemePref,
 } from "@/theme";
-import { Button, Card, Chip, IconPressable, ScreenHeader } from "@/components/ui";
+import {
+  Button,
+  Card,
+  Chip,
+  IconPressable,
+  ScreenHeader,
+  Toggle,
+} from "@/components/ui";
 
 const THEME_OPTIONS: { pref: ThemePref; labelKey: string }[] = [
   { pref: "system", labelKey: "theme.system" },
@@ -188,7 +194,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const t = useT();
-  const { pref: themePref, setPref: setThemePref, langPref, setLangPref, scheme } =
+  const { pref: themePref, setPref: setThemePref, langPref, setLangPref } =
     useThemePrefs();
 
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -477,18 +483,9 @@ export default function SettingsScreen() {
             label={t("settings.nudges")}
             caption={t("settings.nudgesCaption")}
             end={
-              <Switch
+              <Toggle
                 value={nudgeOn}
                 onValueChange={handleNudgeToggle}
-                trackColor={{
-                  // Dark mode: the light hairline is invisible on a dark
-                  // card — brighten the off-track; ON stays accent.
-                  false: scheme === "dark" ? "#5A5148" : colors.hairline,
-                  true: colors.accent,
-                }}
-                // White thumb in BOTH schemes (system-switch convention) —
-                // colors.surface is near-black in dark mode.
-                thumbColor="#FFFFFF"
               />
             }
           />
