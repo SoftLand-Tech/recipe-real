@@ -329,7 +329,10 @@ class ImportFoodcom extends Command
         $image = null;
         $images = RVector::parse((string) ($this->col($row, $header, 'images') ?? ''));
         if ($images !== []) {
-            $image = substr($images[0], 0, 500);
+            // Some CSV rows carry a quoted scalar ("\"https://…\"") whose
+            // quotes survive RVector parsing — strip them or every image
+            // request for that recipe 404s (device shows the no-photo card).
+            $image = substr(trim($images[0], "\"' \t"), 0, 500);
         }
 
         return [
