@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\RecipeResource;
 use App\Models\Recipe;
-use App\Models\RecipeView;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -16,11 +15,6 @@ use Illuminate\Support\Facades\DB;
 
 class RecipeController extends Controller
 {
-    /**
-     * Free-tier monthly distinct-recipe limit.
-     */
-    public const FREE_MONTHLY_LIMIT = 5;
-
     /**
      * Allowed /search sort orders (relevance needs a q, else it degrades).
      */
@@ -253,10 +247,12 @@ class RecipeController extends Controller
     /**
      * Single recipe detail including its steps.
      *
-     * Enforces the free-tier usage limit (5 distinct recipes/month). Premium
-     * users skip the limit entirely.
+     * Free-tier gating is held while the premium plan is paused: every
+     * signed-in user can read any recipe (no 5/month limit). Views are still
+     * recorded in the monthly ledger so usage stats stay accurate if the
+     * limit is ever re-enabled.
      */
-    public function show(Request $request, Recipe $recipe): RecipeResource|JsonResponse
+    public function show(Request $request, Recipe $recipe): RecipeResource
     {
         $recipe->load('recipeSteps');
 
@@ -264,34 +260,13 @@ class RecipeController extends Controller
         // sanctum guard explicitly (no auth:sanctum middleware on this route).
         $user = $request->user('sanctum');
 
-        if ($user && ! $user->isPremium()) {
-            $monthKey = now()->format('Y-m');
-
-            $alreadyViewed = RecipeView::where('user_id', $user->id)
-                ->where('recipe_id', $recipe->id)
-                ->where('month_key', $monthKey)
-                ->exists();
-
-            if (! $alreadyViewed) {
-                $viewedCount = RecipeView::where('user_id', $user->id)
-                    ->where('month_key', $monthKey)
-                    ->count();
-
-                if ($viewedCount >= self::FREE_MONTHLY_LIMIT) {
-                    return response()->json([
-                        'message' => 'Free tier limit reached (5 recipes/month). Upgrade for unlimited.',
-                        'limit' => self::FREE_MONTHLY_LIMIT,
-                        'upgrade' => true,
-                    ], 402);
-                }
-            }
-
+        if ($user) {
             // firstOrCreate so repeat views of the same recipe this month
-            // don't double-count against the limit.
+            // don't double-count (informational only — no limit enforced).
             RecipeView::firstOrCreate([
                 'user_id' => $user->id,
                 'recipe_id' => $recipe->id,
-                'month_key' => $monthKey,
+                'month_key' => now()->format('Y-m'),
             ]);
         }
 

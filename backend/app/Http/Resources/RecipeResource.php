@@ -12,10 +12,6 @@ class RecipeResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        // Recipes are public for browsing, so resolve the user from the
-        // sanctum guard explicitly (default guard is 'web'/session).
-        $premium = auth('sanctum')->user()?->isPremium() ?? false;
-
         return [
             'id' => $this->id,
             'title' => $this->title,
@@ -61,12 +57,14 @@ class RecipeResource extends JsonResource
                     : null,
             ] : null,
             'cleanup_avg_minutes' => $this->cleanup_avg_minutes,
-            'cleanup_estimate_minutes' => $premium ? $this->cleanupEstimateMinutes() : null,
-            'cleanup_factors' => $premium ? [
+            // Cleanup estimate + factors were premium-only; ungated while the
+            // premium plan is held, so every user gets the full breakdown.
+            'cleanup_estimate_minutes' => $this->cleanupEstimateMinutes(),
+            'cleanup_factors' => [
                 'dish_count' => $this->dish_count,
                 'grease_level' => $this->grease_level,
                 'dishwasher_safe' => (bool) $this->dishwasher_safe,
-            ] : null,
+            ],
             // Cooking-mode time contract (2026-08-18): totals derived from
             // the per-step ai_minutes the same way derive_times.py computes
             // them for the JSONL files — total includes every step (cleanup
