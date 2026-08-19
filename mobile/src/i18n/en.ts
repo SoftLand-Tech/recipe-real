@@ -418,8 +418,10 @@ export const en: Record<string, string> = {
   "community.kindQuestion": "Questions",
   "community.loadFailed": "Couldn't load the posts.",
   "community.emptyTitle": "No posts yet",
-  "community.emptyCaption": "Share your first try!",
-  "community.emptyCta": "Share a try",
+  "community.emptyBeFirst": "Be the first to post",
+  "community.sortLatest": "Latest",
+  "community.sortTrending": "Top this week",
+  "community.shareA11y": "Share post",
   "community.compose": "New post",
   "community.signInPrompt": "Sign in to like, comment, and post.",
   "community.composeTitle": "Share with the community",
@@ -502,6 +504,7 @@ export const en: Record<string, string> = {
 
   // ---- Recipe detail (declutter additions; appended at the end) -------------
   "detail.statReally": "Really takes",
+  "detail.shareA11y": "Share recipe",
   "home.heroPrompt": "What do you want to cook?",
   "home.surprise": "Surprise me",
   "home.noResultsMini": "No recipes found",

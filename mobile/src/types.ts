@@ -284,6 +284,9 @@ export interface RecipeNotesPage {
 /** Post kinds served by GET /api/posts?kind=. */
 export type PostKind = "try" | "fail" | "question";
 
+/** Feed sort orders served by GET /api/posts?sort= (default: latest). */
+export type PostSort = "latest" | "trending";
+
 /** Author block attached to each community post / comment. */
 export interface PostUser {
   id: number;

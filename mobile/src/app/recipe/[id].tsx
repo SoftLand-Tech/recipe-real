@@ -6,6 +6,7 @@ import {
   Animated,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Switch,
   Text,
@@ -27,6 +28,7 @@ import {
   RecipeNoteUnauthorizedError,
   submitQuickTime,
 } from "@/api/client";
+import { WEB_BASE_URL } from "@/config";
 import { track } from "@/analytics";
 import {
   getCachedRecipe,
@@ -494,6 +496,19 @@ export default function RecipeDetailScreen() {
         favButton: {
           position: "absolute",
           ...(dir === "rtl" ? { left: Space.lg } : { right: Space.lg }),
+          width: 38,
+          height: 38,
+          borderRadius: Radius.pill,
+          backgroundColor: "rgba(0,0,0,0.35)",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 10,
+        },
+        // Floating share button over the hero — inset one button width from
+        // the favorite (RTL-aware like the other floating buttons).
+        shareButton: {
+          position: "absolute",
+          ...(dir === "rtl" ? { left: Space.lg + 46 } : { right: Space.lg + 46 }),
           width: 38,
           height: 38,
           borderRadius: Radius.pill,
@@ -1167,6 +1182,26 @@ export default function RecipeDetailScreen() {
       // Favorites are best-effort; never crash the detail screen.
     }
   }, [id, recipe]);
+
+  /**
+   * Opens the system share sheet with the recipe's PUBLIC WEB PAGE
+   * (https://recipe-real.softland.tech/r/{id} — a real https link with an
+   * OpenGraph preview, so WhatsApp and friends render a rich card) and the
+   * localized title as the message. Tracked once per press; dismissing the
+   * sheet is not an error.
+   */
+  const onShare = useCallback(async () => {
+    if (!recipe) return;
+    track("recipe_shared", { recipe_id: recipe.id });
+    try {
+      await Share.share({
+        url: `${WEB_BASE_URL}/r/${recipe.id}`,
+        message: lr.title(recipe),
+      });
+    } catch {
+      // The user dismissed the sheet (or the platform errored) — best-effort.
+    }
+  }, [recipe, lr]);
 
   /**
    * Post a public community note. Returns true on success. Maps failures to
@@ -1847,6 +1882,20 @@ export default function RecipeDetailScreen() {
                   size={20}
                   color={favorited ? "#E8384F" : "#FFFFFF"}
                 />
+              </IconPressable>
+
+              {/* Floating share button over the hero (beside the favorite):
+                  opens the system sheet with the public web page URL. */}
+              <IconPressable
+                style={[
+                  styles.shareButton,
+                  { top: insets.top + Space.sm },
+                ]}
+                onPress={onShare}
+                hitSlop={Space.sm}
+                accessibilityLabel={t("detail.shareA11y")}
+              >
+                <Ionicons name="share-social" size={18} color="#FFFFFF" />
               </IconPressable>
 
               {/* RISING CONTENT CARD overlapping the hero. */}

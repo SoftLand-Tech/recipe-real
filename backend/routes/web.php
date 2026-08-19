@@ -1,10 +1,30 @@
 <?php
 
+use App\Models\Recipe;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return view('welcome');
 });
+
+/*
+ | Public web recipe page (GET /r/{recipe}): the share target behind the
+ * app's Share button. A clean, warm, self-contained page (recipe image,
+ | title EN + AR, the Reality badge "Recipe says X min / Really takes Y min",
+ | steps count) plus full OpenGraph meta so WhatsApp/social previews render.
+ | No auth, no user data. Unknown ids 404 via route model binding. The
+ | rendered HTML is cached 5 minutes per recipe id (like the home rails —
+ | the cache stores a plain string, which survives the app's
+ | cache.serializable_classes = false restriction).
+ */
+Route::get('/r/{recipe}', function (Recipe $recipe) {
+    return response(Cache::remember(
+        "recipe:share:{$recipe->id}",
+        now()->addMinutes(5),
+        fn () => view('recipe-share', ['recipe' => $recipe])->render(),
+    ));
+})->name('recipes.share');
 
 // Privacy policy (Play Store requirement): linked from the landing footer.
 Route::get('/privacy', function () {

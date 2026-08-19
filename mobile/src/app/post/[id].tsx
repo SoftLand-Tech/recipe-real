@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -30,6 +31,8 @@ import {
   updatePost,
   updatePostComment,
 } from "@/api/client";
+import { track } from "@/analytics";
+import { WEB_BASE_URL } from "@/config";
 import type { Post, PostComment, PostRecipe } from "@/types";
 import { useLang, useT, type Lang, type TranslateFn } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
@@ -394,6 +397,32 @@ export default function PostDetailScreen() {
       cancelled = true;
     };
   }, []);
+
+  /**
+   * Opens the system share sheet. With an attached recipe it shares the
+   * recipe's PUBLIC WEB PAGE (https://recipe-real.softland.tech/r/{id} —
+   * a real https link with an OpenGraph preview); standalone posts have no
+   * web page yet, so they share a plain text snippet instead. Dismissing
+   * the sheet is not an error.
+   */
+  const handleShare = useCallback(async () => {
+    const p = postRef.current ?? post;
+    if (!p) return;
+    track("post_shared", { post_id: p.id, has_recipe: p.recipe != null });
+    const snippet = `${authorName(p.user)} on RecipeReal: ${p.body.slice(0, 120)}`;
+    try {
+      if (p.recipe != null) {
+        await Share.share({
+          url: `${WEB_BASE_URL}/r/${p.recipe.id}`,
+          message: snippet,
+        });
+      } else {
+        await Share.share({ message: snippet });
+      }
+    } catch {
+      // The user dismissed the sheet (or the platform errored) — best-effort.
+    }
+  }, [post]);
 
   const handleLike = useCallback(async () => {
     if (!post || likeBusy) return;
@@ -904,6 +933,17 @@ export default function PostDetailScreen() {
             tone={kindTone(post.kind)}
             label={t(kindLabelKey(post.kind))}
           />
+          <IconPressable
+            onPress={() => void handleShare()}
+            accessibilityLabel={t("community.shareA11y")}
+            hitSlop={Space.xs}
+          >
+            <Ionicons
+              name="share-social"
+              size={18}
+              color={colors.inkSecondary}
+            />
+          </IconPressable>
           <IconPressable
             onPress={openPostMenu}
             disabled={deletingPost}

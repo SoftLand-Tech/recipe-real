@@ -10,6 +10,8 @@ use App\Models\Post;
 use App\Models\PostReport;
 use App\Models\UserBlock;
 use App\Support\HalalGate;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,11 +29,15 @@ class PostController extends Controller
     /**
      * Paginated feed (20/page, newest first), public read.
      * ?kind=try|fail|question filters by kind, ?recipe_id= by attachment.
-     * liked_by_me is resolved from the sanctum user when a token is given
-     * (false for guests). Posts authored by users the sanctum user blocks
-     * are excluded. Each row also embeds its newest comment
-     * (`latest_comment`, null when none) so clients can render the preview
-     * without a per-post comments fetch.
+     * ?sort=trending ranks posts from the LAST 7 DAYS by engagement
+     * (likes*2 + comments, then id) instead of recency; when the 7-day
+     * window is empty after the filters, it transparently falls back to the
+     * same ranking over the whole catalog so the tab never shows an empty
+     * trending list early on. liked_by_me is resolved from the sanctum user
+     * when a token is given (false for guests). Posts authored by users the
+     * sanctum user blocks are excluded. Each row also embeds its newest
+     * comment (`latest_comment`, null when none) so clients can render the
+     * preview without a per-post comments fetch.
      */
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -63,7 +69,9 @@ class PostController extends Controller
             }
         }
 
-        $posts = $query->latest('id')->paginate(20);
+        $posts = (string) $request->string('sort') === 'trending'
+            ? $this->paginateTrending($query)
+            : $query->latest('id')->paginate(20);
 
         // Mark liked_by_me on the page's models (one extra query instead
         // of N+1 through the resource).
@@ -283,6 +291,37 @@ class PostController extends Controller
             'liked'       => $liked,
             'likes_count' => $likesCount,
         ]);
+    }
+
+    /**
+     * Trending pagination for the already-filtered query: posts from the
+     * last 7 days ranked by engagement (likes*2 + comments) DESC, id DESC.
+     * When the 7-day window is empty after the filters, the same ranking is
+     * transparently applied to the whole (filtered) catalog — a cold
+     * community must never see an empty trending list.
+     *
+     * The score is expressed as correlated subqueries rather than the
+     * withCount aliases: SQLite (the test driver) cannot reference select
+     * aliases inside ORDER BY expressions, so this resolves identically on
+     * the test sqlite and the production database.
+     */
+    private function paginateTrending(Builder $query): LengthAwarePaginator
+    {
+        $score = '(SELECT COUNT(*) FROM post_likes WHERE post_likes.post_id = posts.id) * 2'
+            . ' + (SELECT COUNT(*) FROM post_comments WHERE post_comments.post_id = posts.id)';
+
+        $windowed = (clone $query)
+            ->where('posts.created_at', '>=', now()->subDays(7))
+            ->orderByRaw("{$score} DESC, posts.id DESC")
+            ->paginate(20);
+
+        if ($windowed->isNotEmpty()) {
+            return $windowed;
+        }
+
+        return (clone $query)
+            ->orderByRaw("{$score} DESC, posts.id DESC")
+            ->paginate(20);
     }
 
     /**

@@ -412,8 +412,10 @@ export const ar: Record<string, string> = {
   "community.kindQuestion": "أسئلة",
   "community.loadFailed": "تعذّر تحميل المنشورات.",
   "community.emptyTitle": "لا منشورات بعد",
-  "community.emptyCaption": "شارك محاولتك الأولى!",
-  "community.emptyCta": "شارك محاولة",
+  "community.emptyBeFirst": "كن أول من ينشر",
+  "community.sortLatest": "الأحدث",
+  "community.sortTrending": "الأفضل هذا الأسبوع",
+  "community.shareA11y": "مشاركة المنشور",
   "community.compose": "منشور جديد",
   "community.signInPrompt": "سجّل الدخول للإعجاب والتعليق والنشر.",
   "community.composeTitle": "شارك مع المجتمع",
@@ -494,6 +496,7 @@ export const ar: Record<string, string> = {
 
   // ---- إضافات صفحة الوصفة (التقليل من العناصر؛ تُضاف في النهاية) -------------
   "detail.statReally": "يستغرق فعليًا",
+  "detail.shareA11y": "مشاركة الوصفة",
   "home.heroPrompt": "ماذا تريد أن تطبخ اليوم؟",
   "home.surprise": "افتح لي مفاجأة",
   "home.noResultsMini": "لا توجد نتائج",

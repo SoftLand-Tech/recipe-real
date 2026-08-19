@@ -23,5 +23,12 @@ function resolveBaseUrl(): string {
 
 export const API_BASE_URL = resolveBaseUrl();
 
+/**
+ * Public web app origin (APP_URL of the Laravel backend). The mobile Share
+ * buttons point at its public recipe pages (/r/{id}) so WhatsApp and other
+ * targets render a real https link with an OpenGraph preview.
+ */
+export const WEB_BASE_URL = "https://recipe-real.softland.tech";
+
 /** AsyncStorage key for the persisted auth token. */
 export const AUTH_TOKEN_KEY = "recipereal.token";

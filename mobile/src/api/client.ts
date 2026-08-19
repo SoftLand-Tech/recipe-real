@@ -44,6 +44,7 @@ import type {
   PostInput,
   PostKind,
   PostLikeResult,
+  PostSort,
   PostUser,
   PostsPage,
   PublicProfile,
@@ -825,15 +826,23 @@ function morePages(body: any, page: number, rows: number): boolean {
 }
 
 /**
- * One page of the public community feed (GET /api/posts, 20/page
- * newest-first). `kind` filters to try|fail|question; omit it for all posts.
+ * One page of the public community feed (GET /api/posts, 20/page).
+ * `kind` filters to try|fail|question; omit it for all posts. `sort`
+ * selects the ordering: "latest" (default, newest first) or "trending"
+ * (last 7 days ranked by likes*2 + comments, with a whole-catalog
+ * fallback when the window is empty).
  */
 export async function fetchPosts(
   kind?: PostKind,
   page = 1,
+  sort?: PostSort,
 ): Promise<PostsPage> {
   const { data } = await api.get<{ data?: unknown }>(`/api/posts`, {
-    params: { ...(kind ? { kind } : {}), page },
+    params: {
+      ...(kind ? { kind } : {}),
+      ...(sort && sort !== "latest" ? { sort } : {}),
+      page,
+    },
   });
   const rows = Array.isArray(data?.data) ? data.data.map(normalizePost) : [];
   return { posts: rows, hasMore: morePages(data, page, rows.length) };

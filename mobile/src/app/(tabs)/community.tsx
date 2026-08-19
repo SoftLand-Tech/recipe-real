@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -20,7 +21,7 @@ import {
   PostUnauthorizedError,
   togglePostLike,
 } from "@/api/client";
-import type { Post, PostKind, PostRecipe } from "@/types";
+import type { Post, PostKind, PostRecipe, PostSort } from "@/types";
 import { useLang, useT, type Lang, type TranslateFn } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 import {
@@ -39,6 +40,15 @@ type LoadState = "loading" | "ready" | "error";
 /** Active feed filter: one of the post kinds, or all posts. */
 type FeedFilter = "all" | PostKind;
 
+/** Active feed ordering (see GET /api/posts?sort=). */
+type FeedSort = PostSort;
+
+/**
+ * AsyncStorage key persisting the chosen sort ("latest" | "trending") so
+ * the Community tab reopens the way the user left it.
+ */
+const SORT_PREF_KEY = "recipereal.communitySort";
+
 /**
  * Static style for the hidden measurement Text used by the read-more body.
  * height:0 + overflow:hidden makes it invisible; pointerEvents handled by
@@ -51,6 +61,12 @@ const KIND_FILTERS: { value: FeedFilter; labelKey: string }[] = [
   { value: "try", labelKey: "community.kindTry" },
   { value: "fail", labelKey: "community.kindFail" },
   { value: "question", labelKey: "community.kindQuestion" },
+];
+
+/** The sort pair rendered next to the kind chips (selected = accent). */
+const SORT_OPTIONS: { value: FeedSort; labelKey: string }[] = [
+  { value: "latest", labelKey: "community.sortLatest" },
+  { value: "trending", labelKey: "community.sortTrending" },
 ];
 
 
@@ -523,6 +539,9 @@ export default function CommunityScreen() {
 
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [filter, setFilter] = useState<FeedFilter>("all");
+  // Feed ordering: "latest" (default) or "trending"; persisted in
+  // AsyncStorage and restored on mount.
+  const [sort, setSort] = useState<FeedSort>("latest");
   const [posts, setPosts] = useState<Post[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
@@ -538,46 +557,92 @@ export default function CommunityScreen() {
     postsRef.current = posts;
   }, [posts]);
 
-  /**
-   * Fetch one feed page for an explicit filter (avoids stale-closure races
-   * when switching filters quickly). Page 1 replaces the list; later pages
-   * append deduped by id.
-   */
-  const fetchPage = useCallback(async (target: FeedFilter, targetPage: number) => {
-    if (targetPage === 1) {
-      // Keep current content while silently revalidating (pull-to-refresh);
-      // only a truly empty feed shows the loading state.
-      if (postsRef.current.length === 0) setState("loading");
-    } else {
-      setLoadingMore(true);
-    }
-    try {
-      const result = await fetchPosts(
-        target === "all" ? undefined : target,
-        targetPage,
-      );
-      setPosts((prev) =>
-        targetPage === 1
-          ? result.posts
-          : [
-              ...prev,
-              ...result.posts.filter((p) => !prev.some((q) => q.id === p.id)),
-            ],
-      );
-      setPage(targetPage);
-      setHasMore(result.hasMore);
-      setState("ready");
-    } catch (error) {
-      console.warn("[RecipeReal] community feed load failed:", error);
-      if (postsRef.current.length === 0) setState("error");
-    } finally {
-      setLoadingMore(false);
-    }
-  }, []);
-
-  // Initial load (mount only — pull-to-refresh covers later updates).
+  // Mirrors of `filter`/`sort` readable inside stable closures (the focus
+  // effect's callback identity never changes, so it must read these instead
+  // of capturing stale state).
+  const filterRef = useRef<FeedFilter>("all");
   useEffect(() => {
-    void fetchPage("all", 1);
+    filterRef.current = filter;
+  }, [filter]);
+  const sortRef = useRef<FeedSort>("latest");
+  useEffect(() => {
+    sortRef.current = sort;
+  }, [sort]);
+
+  /**
+   * The (filter, sort) pair of the NEWEST issued fetch. A response landing
+   * after the user switched the filter or the sort is dropped, so a slow
+   * request can never repaint the wrong feed.
+   */
+  const feedKeyRef = useRef("all:latest");
+
+  /**
+   * Fetch one feed page for an explicit filter + sort (avoids stale-closure
+   * races when switching them quickly). Page 1 replaces the list; later
+   * pages append deduped by id.
+   */
+  const fetchPage = useCallback(
+    async (target: FeedFilter, targetPage: number, sortOverride?: FeedSort) => {
+      const activeSort = sortOverride ?? sortRef.current;
+      const feedKey = `${target}:${activeSort}`;
+      feedKeyRef.current = feedKey;
+      if (targetPage === 1) {
+        // Keep current content while silently revalidating (pull-to-refresh);
+        // only a truly empty feed shows the loading state.
+        if (postsRef.current.length === 0) setState("loading");
+      } else {
+        setLoadingMore(true);
+      }
+      try {
+        const result = await fetchPosts(
+          target === "all" ? undefined : target,
+          targetPage,
+          activeSort,
+        );
+        // Stale combo: the user moved on to another filter/sort — drop it.
+        if (feedKeyRef.current !== feedKey) return;
+        setPosts((prev) =>
+          targetPage === 1
+            ? result.posts
+            : [
+                ...prev,
+                ...result.posts.filter((p) => !prev.some((q) => q.id === p.id)),
+              ],
+        );
+        setPage(targetPage);
+        setHasMore(result.hasMore);
+        setState("ready");
+      } catch (error) {
+        if (feedKeyRef.current !== feedKey) return;
+        console.warn("[RecipeReal] community feed load failed:", error);
+        if (postsRef.current.length === 0) setState("error");
+      } finally {
+        setLoadingMore(false);
+      }
+    },
+    [],
+  );
+
+  // Restore the persisted sort preference, then load page 1 with it
+  // (pull-to-refresh and the focus effect cover later updates).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let stored: string | null = null;
+      try {
+        stored = await AsyncStorage.getItem(SORT_PREF_KEY);
+      } catch {
+        // Best-effort: fall through with the default sort.
+      }
+      if (cancelled) return;
+      const initial: FeedSort = stored === "trending" ? "trending" : "latest";
+      sortRef.current = initial;
+      setSort(initial);
+      void fetchPage("all", 1, initial);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [fetchPage]);
 
   // On every focus: refresh auth state, the unread bell count AND silently
@@ -603,8 +668,10 @@ export default function CommunityScreen() {
           setUnreadCount(0);
         }
       })();
-      // Silent feed refresh on re-focus (does not show spinner for non-empty feeds).
-      void fetchPage(filter, 1);
+      // Silent feed refresh on re-focus (does not show spinner for non-empty
+      // feeds). Refs, not captured state: this callback's identity never
+      // changes, so it must read the CURRENT filter + sort.
+      void fetchPage(filterRef.current, 1);
       return () => {
         cancelled = true;
       };
@@ -622,6 +689,25 @@ export default function CommunityScreen() {
       void fetchPage(next, 1);
     },
     [filter, fetchPage],
+  );
+
+  /**
+   * Switch the feed ordering (Latest / Top this week): persists the choice,
+   * clears the list and refetches page 1 with the new sort param.
+   */
+  const changeSort = useCallback(
+    (next: FeedSort) => {
+      if (next === sort) return;
+      setSort(next);
+      AsyncStorage.setItem(SORT_PREF_KEY, next).catch(() => {
+        // Best-effort persistence.
+      });
+      setPosts([]);
+      postsRef.current = [];
+      setState("loading");
+      void fetchPage(filterRef.current, 1, next);
+    },
+    [sort, fetchPage],
   );
 
   const handleRefresh = useCallback(async () => {
@@ -695,6 +781,13 @@ export default function CommunityScreen() {
         filterScrollInner: {
           flexGrow: 1,
         },
+        // Hairline separator between the kind chips and the sort pair
+        // (stretches to the row height; chips align flex-start).
+        filterDivider: {
+          width: StyleSheet.hairlineWidth,
+          alignSelf: "stretch",
+          backgroundColor: colors.hairline,
+        },
         listContent: {
           paddingHorizontal: Space.lg,
           gap: Space.lg,
@@ -724,13 +817,31 @@ export default function CommunityScreen() {
           ...Type.h3,
           color: colors.ink,
         },
-        emptyCaption: {
+        // Cold-start explainer: the three post kinds as small rows.
+        emptyKinds: {
+          gap: Space.xs,
+          marginTop: Space.sm,
+          alignSelf: "stretch",
+        },
+        emptyKindRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+          backgroundColor: colors.surfaceSoft,
+          borderRadius: Radius.md,
+          paddingHorizontal: Space.md,
+          paddingVertical: Space.sm,
+        },
+        emptyKindGlyph: {
+          fontSize: 16,
+        },
+        emptyKindLabel: {
           ...Type.bodySm,
-          color: colors.inkSecondary,
-          textAlign: "center",
+          fontWeight: "600",
+          flex: 1,
         },
         cta: {
-          marginTop: Space.sm,
+          marginTop: Space.md,
         },
         footer: {
           paddingVertical: Space.lg,
@@ -841,6 +952,21 @@ export default function CommunityScreen() {
               />
             </IconPressable>
           ))}
+          {/* Sort pair (Latest / Top this week) after a hairline divider. */}
+          <View style={styles.filterDivider} />
+          {SORT_OPTIONS.map(({ value, labelKey }) => (
+            <IconPressable
+              key={value}
+              onPress={() => changeSort(value)}
+              hitSlop={Space.xs}
+            >
+              <Chip
+                label={t(labelKey)}
+                tone={sort === value ? "accent" : "neutral"}
+                size="sm"
+              />
+            </IconPressable>
+          ))}
         </ScrollView>
         <Button
           title={t("community.compose")}
@@ -906,11 +1032,26 @@ export default function CommunityScreen() {
             <View style={styles.center}>
               <Text style={styles.emptyGlyph}>💬</Text>
               <Text style={styles.emptyTitle}>{t("community.emptyTitle")}</Text>
-              <Text style={styles.emptyCaption}>
-                {t("community.emptyCaption")}
-              </Text>
+              {/* Cold-start explainer: the three kinds of post, tone-matched
+                  to their chips, so newcomers know what belongs here. */}
+              <View style={styles.emptyKinds}>
+                {(
+                  [
+                    { glyph: "✅", labelKey: "community.kindTry", tone: colors.success },
+                    { glyph: "❌", labelKey: "community.kindFail", tone: colors.danger },
+                    { glyph: "❓", labelKey: "community.kindQuestion", tone: colors.amber },
+                  ] as const
+                ).map(({ glyph, labelKey, tone }) => (
+                  <View key={labelKey} style={styles.emptyKindRow}>
+                    <Text style={styles.emptyKindGlyph}>{glyph}</Text>
+                    <Text style={[styles.emptyKindLabel, { color: tone }]}>
+                      {t(labelKey)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
               <Button
-                title={t("community.emptyCta")}
+                title={t("community.emptyBeFirst")}
                 onPress={startCompose}
                 style={styles.cta}
               />
