@@ -81,13 +81,29 @@ class AdminGoogleController extends Controller
         }
 
         // Same linking rule as the API login: google_sub first, verified
-        // email second (identifier per Google's guidance).
+        // email second. Allowlisted emails with no account yet get one
+        // created (mirroring the mobile app's first-Google-sign-in) — the
+        // allowlist is the trust boundary, not prior account existence.
         $user = User::where('google_sub', $googleSub)->first();
         if ($user === null && ! empty($claims->email_verified ?? false)) {
             $user = User::where('email', $email)->first();
         }
         if ($user === null) {
-            return $this->reject($request, 'no_account');
+            if (empty($claims->email_verified ?? false)) {
+                return $this->reject($request, 'email_unverified');
+            }
+
+            $user = User::create([
+                'name' => $claims->name ?? explode('@', $email)[0],
+                'email' => $email,
+                // Random password; never usable, but the column is not
+                // nullable. The hashed cast encrypts it like any other.
+                'password' => Str::random(40),
+                'google_sub' => $googleSub,
+                'display_name' => $claims->name ?? null,
+                'avatar_url' => $claims->picture ?? null,
+            ]);
+            $user->refresh();
         }
 
         Auth::login($user);
