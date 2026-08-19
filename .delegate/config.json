@@ -1,0 +1,17 @@
+{
+  "version": "delegate-fleet.v1",
+  "lanes": {
+    "bulk": {
+      "implementer": "opencode",
+      "model": "opencode/deepseek-v4-flash-free"
+    },
+    "feature": {
+      "implementer": "opencode",
+      "model": "opencode/deepseek-v4-flash-free"
+    },
+    "strong": {
+      "implementer": "agy",
+      "model": "claude-sonnet-4-6"
+    }
+  }
+}
