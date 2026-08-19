@@ -34,7 +34,7 @@ function variantContent(
   colors: ThemeColors,
 ): Record<
   NonNullable<ButtonProps["variant"]>,
-  { bg: string; fg: string; pressedBg: string }
+  { bg: string; fg: string; pressedBg: string; border?: string }
 > {
   return {
     // fg is LITERAL white, never colors.surface: the primary background is
@@ -51,7 +51,15 @@ function variantContent(
       fg: colors.ink,
       pressedBg: colors.hairlineStrong,
     },
-    ghost: { bg: "transparent", fg: colors.ink, pressedBg: colors.surfaceSoft },
+    // Ghost = the quiet action, but NEVER transparent: a bare-text button
+    // reads as a label and users don't tap it. Soft tinted fill + hairline
+    // border in both schemes (the pill style of the search/filter controls).
+    ghost: {
+      bg: colors.surfaceSoft,
+      fg: colors.ink,
+      pressedBg: colors.hairlineStrong,
+      border: colors.hairline,
+    },
   };
 }
 
@@ -137,6 +145,9 @@ export function Button({
       style={[
         styles.base,
         { backgroundColor: tone.bg },
+        tone.border != null
+          ? { borderWidth: 1, borderColor: tone.border }
+          : null,
         large ? styles.sizeLg : styles.sizeMd,
         fullWidth ? styles.fullWidth : null,
         disabled ? styles.disabled : null,
