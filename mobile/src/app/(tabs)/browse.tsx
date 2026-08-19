@@ -362,16 +362,37 @@ function createStyles(colors: ThemeColors) {
     photoFallbackBody: {
       aspectRatio: 3 / 4,
       backgroundColor: colors.surfaceSoft,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      borderRadius: Radius.lg,
       alignItems: "center",
       justifyContent: "center",
       padding: Space.md,
       gap: Space.sm,
     },
+    photoGlyph: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: colors.accentSoft,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     photoFallbackTitle: {
-      ...Type.body,
+      ...Type.bodySm,
       fontWeight: "600",
       color: colors.ink,
       textAlign: "center",
+    },
+    photoFallbackMeta: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Space.sm,
+    },
+    photoFallbackRating: {
+      ...Type.caption,
+      fontWeight: "600",
+      color: colors.inkSecondary,
     },
     skeletonBlock: {
       flex: 1,
@@ -745,8 +766,9 @@ const FilterPanel = memo(function FilterPanel({
  * and stable callbacks. The photo fills the 3:4 cell edge-to-edge with a
  * bottom scrim; title + a one-line meta row (time via recipeMinutes →
  * fmtMinutes, ★ rating when present) overlay it in white. Recipes without an
- * image render a surfaceSoft placeholder cell — the same grid shape — with a
- * centered title + time chip.
+ * image render a designed placeholder cell — the same 3:4 grid shape, no
+ * scrim — with a soft accent glyph circle, centered title and the same
+ * TimeChip + rating row, so imageless recipes keep appearing intentionally.
  */
 interface PhotoCardProps {
   item: Recipe;
@@ -767,6 +789,7 @@ const PhotoCard = memo(function PhotoCard({
   styles,
 }: PhotoCardProps) {
   const t = useT();
+  const colors = useThemeColors();
   const lr = useLocalizedRecipe();
   const minutes = bestMinutes(item);
   const hasImage =
@@ -811,10 +834,24 @@ const PhotoCard = memo(function PhotoCard({
         </HeroImage>
       ) : (
         <View style={styles.photoFallbackBody}>
+          <View style={styles.photoGlyph}>
+            <Ionicons
+              name="restaurant-outline"
+              size={24}
+              color={colors.accent}
+            />
+          </View>
           <Text style={styles.photoFallbackTitle} numberOfLines={3}>
             {lr.title(item)}
           </Text>
-          <TimeChip minutes={minutes} label={t("common.focused")} />
+          <View style={styles.photoFallbackMeta}>
+            <TimeChip minutes={minutes} label={t("common.focused")} />
+            {item.aggregated_rating != null ? (
+              <Text style={styles.photoFallbackRating}>
+                {ratingLabel(item.aggregated_rating)}
+              </Text>
+            ) : null}
+          </View>
         </View>
       )}
       {/* Overlays anchor to the physical top corners of the photo-sized

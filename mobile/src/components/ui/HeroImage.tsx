@@ -103,16 +103,19 @@ export function HeroImage({
 /**
  * Smooth bottom legibility gradient behind overlaid text. A real linear
  * gradient (replaces the old five stacked opacity bars, which rendered as
- * visible bands). Black-based in both schemes on purpose — it overlays
- * photos, so it must darken, not tint.
+ * visible bands). Three stops keep the top clean while ramping to a strong
+ * dark base, so white overlay text stays readable on bright food photos
+ * (bright yellow/white dishes are the known failure case). Black-based in
+ * both schemes on purpose — it overlays photos, so it must darken, not tint.
  */
 function Scrim() {
   return (
     <LinearGradient
       style={StyleSheet.absoluteFill}
-      colors={["rgba(0,0,0,0)", "rgba(0,0,0,0.55)"]}
-      // Transparent over the top ~45%, darkening to the bottom edge.
-      locations={[0.45, 1]}
+      colors={["rgba(0,0,0,0)", "rgba(0,0,0,0.3)", "rgba(0,0,0,0.82)"]}
+      // Transparent over the top ~30%, then a smooth ramp to a strong dark
+      // bottom edge (0.82) that anchors the overlaid title/meta.
+      locations={[0, 0.3, 1]}
       pointerEvents="none"
     />
   );
