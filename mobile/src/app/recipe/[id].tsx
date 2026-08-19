@@ -1733,17 +1733,25 @@ export default function RecipeDetailScreen() {
 
   /**
    * "Share your try" ghost button of the empty community-tries state —
-   * mirrors the community tab's compose entry: signed-out users land on
-   * /login, everyone else on /post-composer (which has no recipe-prefill
-   * param; attaching happens via its own recipe search).
+   * signed-out users land on /login; everyone else on /post-composer with
+   * THIS recipe pre-attached (recipeId + display title params).
    */
   const startShareTry = useCallback(() => {
     if (signedIn === false) {
       router.push("/login");
       return;
     }
-    router.push("/post-composer");
-  }, [signedIn]);
+    // Prefill the composer with THIS recipe so the try post is attached
+    // automatically (title passed for instant display; id is the source of
+    // truth for recipe_id).
+    router.push({
+      pathname: "/post-composer",
+      params: {
+        recipeId: String(recipe?.id ?? ""),
+        recipeTitle: recipe ? lr.title(recipe) : "",
+      },
+    });
+  }, [signedIn, recipe, lr]);
 
   // Fire the community-notes analytics event once per screen entry, after the
   // section has actually rendered with content (or a definitive empty list).

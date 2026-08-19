@@ -12,7 +12,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as ImagePicker from "expo-image-picker";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 
 import {
   createPost,
@@ -82,6 +82,12 @@ export default function PostComposerScreen() {
   const colors = useThemeColors();
   const t = useT();
   const lr = useLocalizedTitle();
+  // Recipe prefill (e.g. the recipe page's "Share your try"): the id is the
+  // source of truth for recipe_id; the title is display-only.
+  const params = useLocalSearchParams<{
+    recipeId?: string;
+    recipeTitle?: string;
+  }>();
 
   const [kind, setKind] = useState<PostKind>("try");
   const [body, setBody] = useState("");
@@ -91,6 +97,24 @@ export default function PostComposerScreen() {
   const [recipeResults, setRecipeResults] = useState<Recipe[]>([]);
   const [recipeSearching, setRecipeSearching] = useState(false);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+
+  // Prefilled recipe (params): seed the selection without a search.
+  useEffect(() => {
+    const id = Number(params.recipeId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    setSelectedRecipe({
+      id,
+      title: params.recipeTitle ?? "",
+      source_url: null,
+      ingredients: [],
+      steps: [],
+      publisher_time_minutes: null,
+      community_avg_minutes: null,
+      cleanup_avg_minutes: null,
+    });
+    // Run once per param pair — params are stable for this screen's life.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.recipeId, params.recipeTitle]);
 
   const [posting, setPosting] = useState(false);
   const [uploadCaption, setUploadCaption] = useState<string | null>(null);
