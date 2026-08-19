@@ -49,6 +49,7 @@ import {
   fmtMinutes,
 } from "@/components/ui";
 import { CATEGORIES } from "@/utils/categorize";
+import { localizedCategory } from "@/utils/categories";
 import { bestMinutes } from "@/utils/recipeTime";
 
 type LoadState = "loading" | "ready" | "error";
@@ -1273,6 +1274,7 @@ function CategoryRail({
   onCategoryPress: (id: string, label: string) => void;
 }) {
   const t = useT();
+  const { lang } = useLang();
   const styles = useMemo(
     () =>
       StyleSheet.create({
@@ -1305,7 +1307,9 @@ function CategoryRail({
             key={chip.id}
             onPress={() => onCategoryPress(chip.id, chip.label)}
           >
-            <Chip label={chip.label} />
+            {/* Display-only localization: the chip's id (the ?filter= value)
+                still carries the ORIGINAL English string for Browse matching. */}
+            <Chip label={localizedCategory(chip.label, lang)} />
           </Pressable>
         ))}
       </ScrollView>

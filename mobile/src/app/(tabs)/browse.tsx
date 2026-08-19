@@ -45,7 +45,7 @@ import {
   toggleFavorite,
 } from "@/db/database";
 import type { Recipe, SearchParams } from "@/types";
-import { useLocalizedRecipe, useT } from "@/i18n";
+import { useLang, useLocalizedRecipe, useT } from "@/i18n";
 import {
   Radius,
   Space,
@@ -70,6 +70,7 @@ import {
   categorizeTitle,
   categoryLabel,
 } from "@/utils/categorize";
+import { localizedCategory } from "@/utils/categories";
 import { recipeMinutes, bestMinutes } from "@/utils/recipeTime";
 
 // LayoutAnimation works out of the box on the New Architecture (Expo SDK
@@ -610,6 +611,7 @@ const ChipRow = memo(function ChipRow({
   styles,
 }: ChipRowProps) {
   const t = useT();
+  const { lang } = useLang();
   return (
     <ScrollView
       horizontal
@@ -631,7 +633,9 @@ const ChipRow = memo(function ChipRow({
           }
         >
           <Chip
-            label={chip.label}
+            // Display-only localization: the chip's id/label in the filter
+            // still carries the ORIGINAL English string for server matching.
+            label={localizedCategory(chip.label, lang)}
             tone={
               filter.kind === "category" &&
               filter.id.toLowerCase() === chip.id.toLowerCase()
