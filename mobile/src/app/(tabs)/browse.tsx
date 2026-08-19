@@ -37,7 +37,6 @@ import {
   flushPendingCookSessions,
   getCachedRecipes,
   getFavoriteIds,
-  getFavoriteRecipes,
   getNotedRecipeIds,
   refreshCacheLight,
   repairCachedStepsIfNeeded,
@@ -62,7 +61,6 @@ import {
   HeartButton,
   IconPressable,
   NoteBadge,
-  SectionHeader,
   TimeChip,
   fmtMinutes,
 } from "@/components/ui";
@@ -405,28 +403,6 @@ function createStyles(colors: ThemeColors) {
       fontWeight: "600",
       color: colors.accent,
     },
-    favoritesSection: {
-      marginBottom: Space.md,
-    },
-    sectionHeaderPad: {
-      paddingHorizontal: Space.lg,
-    },
-    favoritesContent: {
-      paddingHorizontal: Space.lg,
-      gap: Space.md,
-    },
-    favoriteCard: {
-      width: 150,
-    },
-    favoriteBody: {
-      padding: Space.sm,
-      gap: Space.xs,
-    },
-    favoriteTitle: {
-      ...Type.bodySm,
-      fontWeight: "600",
-      color: colors.ink,
-    },
     filterRow: {
       flexShrink: 0,
       marginBottom: Space.sm,
@@ -610,69 +586,6 @@ const SearchBar = memo(function SearchBar({
 });
 
 /**
- * "Cook again" horizontal favorites rail. Memoized: `favoriteRecipes` keeps a
- * stable identity between unrelated state changes (it is only replaced by
- * reloadFavorites), so the rail is skipped while e.g. the filter panel
- * toggles.
- */
-interface FavoritesRailProps {
-  favoriteRecipes: Recipe[];
-  onOpen: (id: number) => void;
-  styles: BrowseStyles;
-}
-
-const FavoritesRail = memo(function FavoritesRail({
-  favoriteRecipes,
-  onOpen,
-  styles,
-}: FavoritesRailProps) {
-  const t = useT();
-  const lr = useLocalizedRecipe();
-  const renderItem: ListRenderItem<Recipe> = useCallback(
-    ({ item }) => (
-      <Card
-        onPress={() => onOpen(item.id)}
-        padding={0}
-        shadow="card"
-        style={styles.favoriteCard}
-      >
-        <HeroImage uri={item.image_url} height={100} rounded={Radius.lg} />
-        <View style={styles.favoriteBody}>
-          <Text style={styles.favoriteTitle} numberOfLines={1}>
-            {lr.title(item)}
-          </Text>
-          <TimeChip
-            minutes={bestMinutes(item)}
-            label={t("common.focused")}
-          />
-        </View>
-      </Card>
-    ),
-    [onOpen, styles, t, lr],
-  );
-
-  return (
-    <View style={styles.favoritesSection}>
-      <View style={styles.sectionHeaderPad}>
-        <SectionHeader title={t("browse.cookAgain")} />
-      </View>
-      <FlatList
-        horizontal
-        initialNumToRender={4}
-        maxToRenderPerBatch={4}
-        windowSize={5}
-        removeClippedSubviews
-        data={favoriteRecipes}
-        keyExtractor={(item) => String(item.id)}
-        renderItem={renderItem}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.favoritesContent}
-      />
-    </View>
-  );
-});
-
-/**
  * Horizontal category/quick-filter chip row. Memoized: it re-renders only
  * when `filter` or the chip set changes (server categories land once), which
  * is exactly when the chip tones must update. Chip presses send the category
@@ -840,7 +753,8 @@ interface PhotoCardProps {
   favorited: boolean;
   hasNote: boolean;
   onOpen: (id: number) => void;
-  onToggleFavorite: (id: number) => void;
+  /** Full recipe so hearting an uncached search result can cache it. */
+  onToggleFavorite: (recipe: Recipe) => void;
   styles: BrowseStyles;
 }
 
@@ -907,7 +821,7 @@ const PhotoCard = memo(function PhotoCard({
           card: HeartButton owns top-end, NoteBadge top-start. */}
       <HeartButton
         favorited={favorited}
-        onPress={() => onToggleFavorite(item.id)}
+        onPress={() => onToggleFavorite(item)}
       />
       <NoteBadge show={hasNote} />
     </Card>
@@ -926,7 +840,6 @@ export default function BrowseScreen() {
   const [state, setState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
-  const [favoriteRecipes, setFavoriteRecipes] = useState<Recipe[]>([]);
   // Ids of recipes carrying a personal note — drives the pencil badge on cards.
   const [noteIds, setNoteIds] = useState<Set<number>>(new Set());
 
@@ -1035,12 +948,9 @@ export default function BrowseScreen() {
   // previous state rather than blanking the hearts.
   const reloadFavorites = useCallback(async () => {
     try {
-      const [ids, favs] = await Promise.all([
-        getFavoriteIds(),
-        getFavoriteRecipes(),
-      ]);
-      setFavoriteIds(new Set(ids));
-      setFavoriteRecipes(favs);
+      // Ids only — the hearts on cards. Full favorite rows live on the
+      // Favorites tab ("Cook again" rail removed from Browse by request).
+      setFavoriteIds(new Set(await getFavoriteIds()));
     } catch (error) {
       console.warn("[RecipeReal] loading favorites failed:", error);
     }
@@ -1106,10 +1016,12 @@ export default function BrowseScreen() {
   }, [params.focus]);
 
   const handleToggleFavorite = useCallback(
-    async (id: number) => {
+    async (recipe: Recipe) => {
       try {
-        const favorited = await toggleFavorite(id);
-        track("favorite_toggled", { recipe_id: id, favorited });
+        // Pass the full recipe: search results can be uncached locally, and
+        // the db layer upserts a light copy so the favorites FK never fails.
+        const favorited = await toggleFavorite(recipe);
+        track("favorite_toggled", { recipe_id: recipe.id, favorited });
         await reloadFavorites();
       } catch (error) {
         console.warn("[RecipeReal] toggle favorite failed:", error);
@@ -1609,14 +1521,6 @@ export default function BrowseScreen() {
           chips={chips}
           filter={filter}
           onSelect={handleSelectFilter}
-          styles={styles}
-        />
-      )}
-
-      {state === "ready" && favoriteRecipes.length > 0 && (
-        <FavoritesRail
-          favoriteRecipes={favoriteRecipes}
-          onOpen={handleOpenRecipe}
           styles={styles}
         />
       )}

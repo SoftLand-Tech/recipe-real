@@ -705,9 +705,27 @@ export async function isFavorite(id: number): Promise<boolean> {
  * Toggle the favorite state of a recipe. Returns the NEW state (true =
  * favorited). Toggling off deletes the row; toggling on (re-)inserts with a
  * fresh created_at, bumping the recipe to the front of the favorites lists.
+ *
+ * Accepts a full Recipe so server-driven surfaces (search results, rails —
+ * recipes the local cache may never have stored) can pass the object they
+ * already hold: hearting an uncached recipe would otherwise fail the
+ * favorites FOREIGN KEY. A light copy is cached first (BEFORE any serialized
+ * section — upsertRecipes takes the same write mutex, nesting deadlocks).
  */
-export async function toggleFavorite(id: number): Promise<boolean> {
+export async function toggleFavorite(
+  input: number | Recipe,
+): Promise<boolean> {
+  const id = typeof input === "number" ? input : input.id;
   const db = await getDb();
+  if (typeof input !== "number") {
+    const known = await db.getFirstAsync<{ one: number }>(
+      `SELECT 1 AS one FROM recipes WHERE id = ?;`,
+      id,
+    );
+    if (!known) {
+      await upsertRecipes([input], { withSteps: false });
+    }
+  }
   const existing = await db.getFirstAsync<{ recipe_id: number }>(
     `SELECT recipe_id FROM favorites WHERE recipe_id = ?;`,
     id,

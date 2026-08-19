@@ -351,10 +351,12 @@ export default function HomeScreen() {
 
   // Featured hero heart: toggle the local favorite and re-sync the snapshot.
   const handleToggleFavorite = useCallback(
-    async (id: number) => {
+    async (recipe: Recipe) => {
       try {
-        const favorited = await toggleFavorite(id);
-        track("favorite_toggled", { recipe_id: id, favorited });
+        // Full recipe: server rails may reference recipes the local cache
+        // has never stored; the db layer caches a light copy on first heart.
+        const favorited = await toggleFavorite(recipe);
+        track("favorite_toggled", { recipe_id: recipe.id, favorited });
         await reloadFavoriteIds();
       } catch (error) {
         console.warn("[RecipeReal] home toggle favorite failed:", error);
@@ -918,7 +920,7 @@ function FeaturedHero({
 }: {
   recipe: Recipe;
   favorited: boolean;
-  onToggleFavorite: (id: number) => void;
+  onToggleFavorite: (recipe: Recipe) => void;
 }) {
   const colors = useThemeColors();
   const t = useT();
@@ -998,7 +1000,7 @@ function FeaturedHero({
         <HeartButton
           favorited={favorited}
           size="lg"
-          onPress={() => onToggleFavorite(recipe.id)}
+          onPress={() => onToggleFavorite(recipe)}
         />
       </View>
       <View style={styles.body}>
