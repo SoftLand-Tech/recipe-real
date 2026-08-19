@@ -825,18 +825,10 @@ export default function RecipeDetailScreen() {
           gap: Space.md,
           marginTop: Space.sm,
         },
-        publicToggleText: {
-          flex: 1,
-          gap: 2,
-        },
         publicToggleLabel: {
           ...Type.bodySm,
           color: colors.ink,
           fontWeight: "600",
-        },
-        publicToggleCaption: {
-          ...Type.caption,
-          color: colors.inkSecondary,
         },
         // ---- Community notes ----
         notesList: {
@@ -1241,27 +1233,52 @@ export default function RecipeDetailScreen() {
 
   /**
    * Saves the personal note locally, then flashes a "Saved ✓" confirmation.
-   * When the "Make public" toggle is on (and there is text to share), the same
-   * note is ALSO posted as a public community note — a 401 surfaces the
-   * sign-in prompt on the compose row while the local save still succeeds.
+   * When "Make public" is on (or was just flipped on — see the toggle
+   * handler) and there is text to share, the same note is ALSO posted as a
+   * public community note — a 401 surfaces the sign-in prompt on the compose
+   * row while the local save still succeeds.
    */
-  const onSaveNote = useCallback(async () => {
-    try {
-      await saveNote(Number(id), note);
-      setSavedNote(note);
-      track("note_saved", { recipe_id: Number(id) });
-      setNoteJustSaved(true);
-      if (noteSavedTimerRef.current) clearTimeout(noteSavedTimerRef.current);
-      noteSavedTimerRef.current = setTimeout(() => {
-        setNoteJustSaved(false);
-      }, 3000);
-      if (notePublic && note.trim() !== "") {
-        await postPublicNote(note);
+  const onSaveNote = useCallback(
+    async (forcePublic?: boolean) => {
+      try {
+        await saveNote(Number(id), note);
+        setSavedNote(note);
+        track("note_saved", { recipe_id: Number(id) });
+        setNoteJustSaved(true);
+        if (noteSavedTimerRef.current) clearTimeout(noteSavedTimerRef.current);
+        noteSavedTimerRef.current = setTimeout(() => {
+          setNoteJustSaved(false);
+        }, 3000);
+        if ((forcePublic ?? notePublic) && note.trim() !== "") {
+          await postPublicNote(note);
+        }
+      } catch {
+        // Notes are best-effort; never crash the detail screen.
       }
-    } catch {
-      // Notes are best-effort; never crash the detail screen.
-    }
-  }, [id, note, notePublic, postPublicNote]);
+    },
+    [id, note, notePublic, postPublicNote],
+  );
+
+  /**
+   * Flipping "Make public" on with text present publishes IMMEDIATELY (no
+   * separate Save needed); with no text the toggle is disabled — there is
+   * nothing to make public.
+   */
+  const onToggleNotePublic = useCallback(
+    (value: boolean) => {
+      if (value && note.trim() === "") return;
+      setNotePublic(value);
+      AsyncStorage.setItem(NOTE_PUBLIC_PREF_KEY, value ? "on" : "off").catch(
+        () => {
+          // Best-effort persistence.
+        },
+      );
+      if (value) {
+        void onSaveNote(true);
+      }
+    },
+    [note, onSaveNote],
+  );
 
   /**
    * Submit the quick-time breakdown. Total minutes are required (1..1440);
@@ -2349,29 +2366,18 @@ export default function RecipeDetailScreen() {
                             </Text>
                           ) : null}
                         </View>
-                        {/* "Make public": when on, saving the note also posts
-                            it as a community note. The choice persists as the
-                            default. */}
+                        {/* "Make public": flipping it on with text present
+                            publishes the note immediately (save + community
+                            post, no separate Save press); with no text the
+                            toggle is disabled — nothing to make public. */}
                         <View style={styles.publicToggleRow}>
-                          <View style={styles.publicToggleText}>
-                            <Text style={styles.publicToggleLabel}>
-                              {t("detail.notePublicToggle")}
-                            </Text>
-                            <Text style={styles.publicToggleCaption}>
-                              {t("detail.notePublicHint")}
-                            </Text>
-                          </View>
+                          <Text style={styles.publicToggleLabel}>
+                            {t("detail.notePublicToggle")}
+                          </Text>
                           <Toggle
                             value={notePublic}
-                            onValueChange={(value) => {
-                              setNotePublic(value);
-                              AsyncStorage.setItem(
-                                NOTE_PUBLIC_PREF_KEY,
-                                value ? "on" : "off",
-                              ).catch(() => {
-                                // Best-effort persistence.
-                              });
-                            }}
+                            disabled={note.trim() === ""}
+                            onValueChange={onToggleNotePublic}
                           />
                         </View>
                       </>
