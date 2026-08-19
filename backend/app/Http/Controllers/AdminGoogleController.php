@@ -99,10 +99,15 @@ class AdminGoogleController extends Controller
     /** @return list<string> lower-cased allowlist from config('admin.emails') */
     private function allowedEmails(): array
     {
-        return array_values(array_filter(array_map(
-            fn (string $e) => strtolower(trim($e)),
-            (array) config('admin.emails', []),
-        )));
+        // config('admin.emails') is a COMMA-SEPARATED STRING (see
+        // config/admin.php) — split it exactly like User::canAccessPanel;
+        // casting the string to array would keep it as one joined element
+        // and no email would ever match.
+        return collect(explode(',', (string) config('admin.emails')))
+            ->map(fn (string $email): string => strtolower(trim($email)))
+            ->filter()
+            ->values()
+            ->all();
     }
 
     private function reject(Request $request, string $reason): RedirectResponse
