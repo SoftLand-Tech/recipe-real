@@ -135,6 +135,9 @@ export const en: Record<string, string> = {
   "detail.stepCaption": "Step {n}",
   "detail.ingredients": "Ingredients",
   "detail.noIngredients": "No ingredients listed.",
+  "detail.notesTitle": "Notes",
+  "detail.notesTabPersonal": "Your notes",
+  "detail.notesTabCommunity": "Community",
   "detail.yourNotes": "Your notes",
   "detail.notesSubtitle":
     "Tweaks for next time — saved on this device and shown here whenever you open this recipe.",

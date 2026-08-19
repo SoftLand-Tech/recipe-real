@@ -243,6 +243,37 @@ function parseStructuredIngredients(value: unknown): StructuredIngredient[] {
   );
 }
 
+/**
+ * One chip of the merged notes-card tab switcher ("Your notes" / "Community").
+ * Pressed feedback is the state-driven opacity dim (Android paint rules — no
+ * Pressable style function; mirror Card/Button/IconPressable); the selected
+ * chip takes the accent tone, the unselected one stays neutral.
+ */
+function NoteTabChip({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      hitSlop={Space.xs}
+      style={pressed ? { opacity: 0.7 } : null}
+    >
+      <Chip label={label} tone={selected ? "accent" : "neutral"} size="sm" />
+    </Pressable>
+  );
+}
+
 export default function RecipeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
@@ -267,6 +298,11 @@ export default function RecipeDetailScreen() {
   const [notePublic, setNotePublic] = useState(false);
   // Sign-in state for the owner Edit control + note compose row (read once).
   const [signedIn, setSignedIn] = useState(false);
+  // Active tab of the merged notes card ("personal" = device-local note,
+  // "community" = public notes list). Defaults to the personal note.
+  const [notesTab, setNotesTab] = useState<"personal" | "community">(
+    "personal",
+  );
 
   // ---- Community notes (public, paginated 20/page) -----------------------------
   const [notes, setNotes] = useState<RecipeNote[]>([]);
@@ -300,9 +336,12 @@ export default function RecipeDetailScreen() {
   const [quickNeedsAuth, setQuickNeedsAuth] = useState(false);
   // Fade-in for the "Thanks! …" success line (native-driven opacity).
   const quickFadeRef = useRef(new Animated.Value(0));
-  // Inline quick-time form under the stat grid: collapsed to a hint while a
-  // community average already exists, expanded by default when it doesn't.
+  // Quick-time card: ALWAYS collapsed to the trigger row on first paint; the
+  // breakdown form expands inline below it on tap. `quickDone` is separate so
+  // a successful submit collapses the form but keeps the one-line thanks.
   const [quickOpen, setQuickOpen] = useState(false);
+  // Opacity-dim pressed state for the trigger row (Android paint rules).
+  const [quickPressed, setQuickPressed] = useState(false);
   // Focuses the inline total-time input as soon as it mounts.
   const quickInputRef = useRef<TextInput | null>(null);
 
@@ -484,32 +523,24 @@ export default function RecipeDetailScreen() {
           color: colors.inkFaint,
           flexShrink: 1,
         },
-        // ---- Quick-time contribution (inline under the stat grid) ----
-        quickInline: {
-          marginTop: Space.md,
-          gap: Space.xs,
+        // ---- Quick-time contribution (compact card with an inline form) ----
+        // Trigger row: icon + "Did you make this?" + chevron. Tapping the
+        // row expands the breakdown form inline below it.
+        quickTriggerRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
         },
-        // "Cooked it? Add your time" toggle shown while the form is collapsed.
-        quickHint: {
-          marginTop: Space.sm,
-          alignSelf: "flex-start",
-          paddingVertical: Space.xs,
-        },
-        quickHintText: {
-          ...Type.caption,
-          // Quick-time contribution = calibration data → timing teal.
-          color: colors.timing,
-          fontWeight: "600",
-        },
-        quickFormTitle: {
-          ...Type.title,
+        quickTriggerLabel: {
+          ...Type.body,
           color: colors.ink,
           fontWeight: "600",
+          flex: 1,
         },
         // One-column breakdown form: label above each numeric input.
         quickForm: {
           gap: Space.sm,
-          marginTop: Space.sm,
+          marginTop: Space.md,
         },
         quickField: {
           gap: Space.xs,
@@ -692,6 +723,19 @@ export default function RecipeDetailScreen() {
           color: colors.accent,
           fontSize: 13,
           fontWeight: "700",
+        },
+        // ---- Notes card (merged personal + community) ----
+        notesCardTitle: {
+          ...Type.h3,
+          color: colors.ink,
+        },
+        // The two tab chips sit in one row under the card title (row mirrors
+        // automatically in RTL).
+        notesTabsRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.xs,
+          marginTop: Space.sm,
         },
         noteInput: {
           ...Type.body,
@@ -1096,11 +1140,11 @@ export default function RecipeDetailScreen() {
 
   /**
    * Submit the quick-time breakdown. Total minutes are required (1..1440);
-   * plates / hands-on / cleanup are optional add-ons. Success swaps the form
-   * for a faded-in "Thanks! Cooks average ~Xm" line (plus a cleanup-average
-   * line when the server returns one) using the server-recomputed averages. A
-   * 401 shows the sign-in CTA instead; any other failure shows an inline error
-   * and keeps the form usable.
+   * plates / hands-on / cleanup are optional add-ons. Success collapses the
+   * form back to the trigger row and fades in a one-line "Thanks! Cooks
+   * average ~Xm" caption using the server-recomputed average. A 401 shows the
+   * sign-in CTA instead; any other failure shows an inline error and keeps
+   * the form usable.
    */
   const onSubmitQuickTime = useCallback(async () => {
     const minutes = parseIntOrNull(quickTotal);
@@ -1125,6 +1169,9 @@ export default function RecipeDetailScreen() {
       setQuickAvg(result.community_avg_minutes);
       setQuickCleanupAvg(result.cleanup_avg_minutes);
       setQuickDone(true);
+      // Collapse the form back to the compact trigger row; the faded-in
+      // one-line thanks caption takes over below it.
+      setQuickOpen(false);
       // Persist the server-recomputed averages into the cache immediately so
       // the favorites rail, home rails and the next detail open read the new
       // figure instead of the stale one; flag the browse list as stale so it
@@ -1164,9 +1211,9 @@ export default function RecipeDetailScreen() {
   }, [quickTotal, quickHandsOn, quickCleanup, quickPlates, id, t, recipe]);
 
   /**
-   * Reveal the inline quick-time form under the stat grid and focus the
-   * required total-time input. Focus waits one frame so the just-mounted
-   * TextInput exists first.
+   * Reveal the inline quick-time form inside the card and focus the required
+   * total-time input. Focus waits one frame so the just-mounted TextInput
+   * exists first.
    */
   const openQuick = useCallback(() => {
     setQuickOpen(true);
@@ -1949,273 +1996,343 @@ export default function RecipeDetailScreen() {
                   </View>
                 ) : null}
 
-                {/* QUICK-TIME CONTRIBUTION — at the bottom, after the
-                    content: contribute your cook times once you've read
-                    the recipe. Collapsed to a hint once a community average
-                    exists; unauthenticated submits prompt sign-in. */}
-                {quickDone ? (
-                  <Animated.Text
-                    style={[styles.quickSuccess, { opacity: quickFadeRef.current }]}
-                  >
-                    {t("quick.thanksBreakdown", {
-                      time: fmtMin(quickAvg ?? quickTotalValue ?? 0),
-                    })}
-                    {quickCleanupAvg != null
-                      ? `\n${t("quick.thanksCleanup", {
-                          cleanup: fmtMin(quickCleanupAvg),
-                        })}`
-                      : ""}
-                  </Animated.Text>
-                ) : community == null || quickOpen ? (
-                  <View style={styles.quickInline}>
-                    <Text style={styles.quickFormTitle}>
-                      {t("quick.didYouMake")}
-                    </Text>
-                    <View style={styles.quickForm}>
-                      {quickField(t("quick.plates"), quickPlates, setQuickPlates, {
-                        optional: true,
-                      })}
-                      {quickField(
-                        t("quick.handsOn"),
-                        quickHandsOn,
-                        setQuickHandsOn,
-                        { optional: true },
-                      )}
-                      {quickField(t("quick.totalQ"), quickTotal, setQuickTotal, {
-                        focusRef: true,
-                      })}
-                      {quickField(
-                        t("quick.cleanupQ"),
-                        quickCleanup,
-                        setQuickCleanup,
-                        { optional: true },
-                      )}
-                      {quickHandsOnExceeds ? (
-                        <Text style={styles.quickError}>
-                          {t("quick.handsOnTooLong")}
-                        </Text>
-                      ) : null}
-                      <Button
-                        title={t("quick.submit")}
-                        variant="primary"
-                        fullWidth
-                        disabled={!quickValid}
-                        loading={quickSubmitting}
-                        onPress={onSubmitQuickTime}
-                      />
-                    </View>
-                    {quickError != null ? (
-                      <Text style={styles.quickError}>{quickError}</Text>
-                    ) : null}
-                    {quickNeedsAuth ? (
-                      <Pressable
-                        onPress={() => router.push("/login")}
-                        hitSlop={Space.sm}
-                        style={styles.quickSignIn}
-                      >
-                        <Text style={styles.quickSignIn}>
-                          {t("quick.signIn")}
-                        </Text>
-                      </Pressable>
-                    ) : null}
-                  </View>
-                ) : (
-                  <Pressable
-                    onPress={openQuick}
-                    hitSlop={Space.sm}
-                    style={styles.quickHint}
-                  >
-                    <Text style={styles.quickHintText}>
-                      {t("detail.cooksAvgAddHint")}
-                    </Text>
-                  </Pressable>
-                )}
-
-                {/* 5. YOUR NOTES — personal tweaks, kept on this device. */}
+                {/* QUICK-TIME CONTRIBUTION — a compact card: one trigger row
+                    ("Did you make this?" + chevron) that expands the
+                    breakdown form inline below it. After a successful submit
+                    the form collapses back to the row with a one-line thanks
+                    caption. Unauthenticated submits prompt sign-in. */}
                 <View style={styles.section}>
-                  <SectionHeader
-                    title={t("detail.yourNotes")}
-                    subtitle={t("detail.notesSubtitle")}
-                  />
-                  {/* A saved note + a pristine field: show the persistent
-                      "stored here" caption so returning users see their note
-                      is kept before they even read the textarea. */}
-                  {savedNote.length > 0 && !noteDirty ? (
-                    <Text style={styles.noteSavedOnDevice}>
-                      {t("detail.noteSavedOnDevice")}
-                    </Text>
-                  ) : null}
-                  <TextInput
-                    style={styles.noteInput}
-                    value={note}
-                    onChangeText={setNote}
-                    placeholder={t("detail.notesPlaceholder")}
-                    placeholderTextColor={colors.inkFaint}
-                    multiline
-                  />
-                  <View style={styles.noteActions}>
-                    {/* Always primary (ghost + disabled renders nearly
-                        invisible); disabled only dims via opacity until the
-                        note is dirty. */}
-                    <Button
-                      variant="primary"
-                      disabled={!noteDirty}
-                      title={t("detail.saveNote")}
-                      onPress={onSaveNote}
-                    />
-                    {noteJustSaved ? (
-                      <Text style={styles.noteSaved}>{t("detail.saved")}</Text>
+                  <Card padding={Space.lg}>
+                    <Pressable
+                      onPress={
+                        quickOpen ? () => setQuickOpen(false) : openQuick
+                      }
+                      onPressIn={() => setQuickPressed(true)}
+                      onPressOut={() => setQuickPressed(false)}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: quickOpen }}
+                      hitSlop={Space.xs}
+                      style={[
+                        styles.quickTriggerRow,
+                        quickPressed ? { opacity: 0.7 } : null,
+                      ]}
+                    >
+                      <Ionicons
+                        name="stopwatch-outline"
+                        size={20}
+                        color={colors.accent}
+                      />
+                      <Text style={styles.quickTriggerLabel} numberOfLines={1}>
+                        {t("quick.didYouMake")}
+                      </Text>
+                      <Ionicons
+                        name={quickOpen ? "chevron-up" : "chevron-down"}
+                        size={18}
+                        color={colors.inkFaint}
+                      />
+                    </Pressable>
+                    {quickDone && !quickOpen ? (
+                      <Animated.Text
+                        style={[
+                          styles.quickSuccess,
+                          { opacity: quickFadeRef.current },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {t("quick.thanksBreakdown", {
+                          time: fmtMin(quickAvg ?? quickTotalValue ?? 0),
+                        })}
+                        {quickCleanupAvg != null
+                          ? ` · ${t("quick.thanksCleanup", {
+                              cleanup: fmtMin(quickCleanupAvg),
+                            })}`
+                          : ""}
+                      </Animated.Text>
                     ) : null}
-                  </View>
-                  {/* "Make public": when on, saving the note also posts it as a
-                      community note. The choice persists as the default. */}
-                  <View style={styles.publicToggleRow}>
-                    <View style={styles.publicToggleText}>
-                      <Text style={styles.publicToggleLabel}>
-                        {t("detail.notePublicToggle")}
-                      </Text>
-                      <Text style={styles.publicToggleCaption}>
-                        {t("detail.notePublicHint")}
-                      </Text>
-                    </View>
-                    <Switch
-                      value={notePublic}
-                      onValueChange={(value) => {
-                        setNotePublic(value);
-                        AsyncStorage.setItem(
-                          NOTE_PUBLIC_PREF_KEY,
-                          value ? "on" : "off",
-                        ).catch(() => {
-                          // Best-effort persistence.
-                        });
-                      }}
-                      trackColor={{ false: colors.hairline, true: colors.accent }}
-                      thumbColor={colors.surface}
-                    />
-                  </View>
+                    {quickOpen ? (
+                      <View style={styles.quickForm}>
+                        {quickField(
+                          t("quick.plates"),
+                          quickPlates,
+                          setQuickPlates,
+                          { optional: true },
+                        )}
+                        {quickField(
+                          t("quick.handsOn"),
+                          quickHandsOn,
+                          setQuickHandsOn,
+                          { optional: true },
+                        )}
+                        {quickField(
+                          t("quick.totalQ"),
+                          quickTotal,
+                          setQuickTotal,
+                          { focusRef: true },
+                        )}
+                        {quickField(
+                          t("quick.cleanupQ"),
+                          quickCleanup,
+                          setQuickCleanup,
+                          { optional: true },
+                        )}
+                        {quickHandsOnExceeds ? (
+                          <Text style={styles.quickError}>
+                            {t("quick.handsOnTooLong")}
+                          </Text>
+                        ) : null}
+                        <Button
+                          title={t("quick.submit")}
+                          variant="primary"
+                          fullWidth
+                          disabled={!quickValid}
+                          loading={quickSubmitting}
+                          onPress={onSubmitQuickTime}
+                        />
+                        {quickError != null ? (
+                          <Text style={styles.quickError}>{quickError}</Text>
+                        ) : null}
+                        {quickNeedsAuth ? (
+                          <Pressable
+                            onPress={() => router.push("/login")}
+                            hitSlop={Space.sm}
+                            style={styles.quickSignIn}
+                          >
+                            <Text style={styles.quickSignIn}>
+                              {t("quick.signIn")}
+                            </Text>
+                          </Pressable>
+                        ) : null}
+                      </View>
+                    ) : null}
+                  </Card>
                 </View>
 
-                {/* 6. COMMUNITY NOTES — public tips from other cooks, paginated
-                    20/page with a "load more" ghost button. Signed-in users get
-                    a compose row; a 401 there shows a sign-in prompt instead. */}
+                {/* 5. NOTES — the device-local personal note and the public
+                    community notes share ONE card, switched by two light chips
+                    in the header. Default tab: "Your notes"; each tab keeps
+                    its own data flow untouched (personal save/load; community
+                    list/post; the "Make public" toggle stays with the
+                    personal tab exactly as before). */}
                 <View style={styles.section}>
-                  <SectionHeader title={t("detail.communityNotes")} />
-                  {notesError != null ? (
-                    <View style={styles.notesCenter}>
-                      <Text style={styles.notesMuted}>{notesError}</Text>
-                      <Button
-                        variant="ghost"
-                        title={t("common.retry")}
-                        onPress={loadNotes}
+                  <Card padding={Space.lg}>
+                    <Text style={styles.notesCardTitle}>
+                      {t("detail.notesTitle")}
+                    </Text>
+                    <View style={styles.notesTabsRow}>
+                      <NoteTabChip
+                        label={t("detail.notesTabPersonal")}
+                        selected={notesTab === "personal"}
+                        onPress={() => setNotesTab("personal")}
+                      />
+                      <NoteTabChip
+                        label={t("detail.notesTabCommunity")}
+                        selected={notesTab === "community"}
+                        onPress={() => setNotesTab("community")}
                       />
                     </View>
-                  ) : notesLoading && notes.length === 0 ? (
-                    <View style={styles.notesCenter}>
-                      <ActivityIndicator color={colors.accent} size="small" />
-                    </View>
-                  ) : notes.length === 0 ? (
-                    <Text style={styles.notesMuted}>
-                      {t("detail.notesEmpty")}
-                    </Text>
-                  ) : (
-                    <View style={styles.notesList}>
-                      {notes.map((item) => {
-                        const author = noteAuthorName(item.user);
-                        const initial = author.charAt(0).toUpperCase() || "?";
-                        const rel = relativeDate(t, item.created_at);
-                        return (
-                          <View key={`note-${item.id}`} style={styles.noteRow}>
-                            <View style={styles.avatar}>
-                              {item.user.avatar_url ? (
-                                <Image
-                                  source={{ uri: item.user.avatar_url }}
-                                  style={styles.avatarImage}
-                                  contentFit="cover"
-                                  transition={0}
-                                  cachePolicy="memory-disk"
-                                />
-                              ) : (
-                                <Text style={styles.avatarText}>{initial}</Text>
-                              )}
-                            </View>
-                            <View style={styles.noteInfo}>
-                              <View style={styles.noteHeadRow}>
-                                <Text style={styles.noteAuthor}>
-                                  {author}
-                                </Text>
-                                {rel !== "" ? (
-                                  <Text style={styles.noteDate}>{rel}</Text>
-                                ) : null}
-                              </View>
-                              <Text style={styles.noteBody}>{item.body}</Text>
-                            </View>
-                          </View>
-                        );
-                      })}
-                      {notesHasMore ? (
-                        <Button
-                          variant="ghost"
-                          title={t("detail.loadMoreNotes")}
-                          loading={notesLoading}
-                          disabled={notesLoading}
-                          onPress={loadMoreNotes}
-                          style={styles.notesLoadMore}
-                        />
-                      ) : null}
-                    </View>
-                  )}
-                  {/* Compose row: signed-in users post a public note directly;
-                      unauthenticated users see a sign-in prompt instead. */}
-                  {signedIn ? (
-                    <View style={styles.noteCompose}>
-                      <View style={styles.noteComposeRow}>
-                        <TextInput
-                          style={styles.noteComposeInput}
-                          value={noteDraft}
-                          onChangeText={setNoteDraft}
-                          placeholder={t("detail.noteComposePlaceholder")}
-                          placeholderTextColor={colors.inkFaint}
-                          maxLength={1000}
-                          editable={!notePosting}
-                        />
-                        <Button
-                          variant="primary"
-                          title={t("detail.noteSend")}
-                          loading={notePosting}
-                          disabled={notePosting || noteDraft.trim().length === 0}
-                          onPress={onSendNote}
-                        />
-                      </View>
-                      {noteHalalTerms != null ? (
-                        <Text style={styles.noteError}>
-                          {noteHalalTerms.join(", ")}
-                        </Text>
-                      ) : null}
-                      {notePostError != null && noteHalalTerms == null ? (
-                        <Text style={styles.noteError}>{notePostError}</Text>
-                      ) : null}
-                      {noteNeedsAuth ? (
-                        <Pressable
-                          onPress={() => router.push("/login")}
-                          hitSlop={Space.sm}
-                        >
-                          <Text style={styles.noteSignIn}>
-                            {t("detail.notesSignIn")}
+
+                    {notesTab === "personal" ? (
+                      <>
+                        {/* A saved note + a pristine field: show the persistent
+                            "stored here" caption so returning users see their
+                            note is kept before they even read the textarea. */}
+                        {savedNote.length > 0 && !noteDirty ? (
+                          <Text style={styles.noteSavedOnDevice}>
+                            {t("detail.noteSavedOnDevice")}
                           </Text>
-                        </Pressable>
-                      ) : null}
-                    </View>
-                  ) : (
-                    <Pressable
-                      onPress={() => router.push("/login")}
-                      hitSlop={Space.sm}
-                      style={styles.noteCompose}
-                    >
-                      <Text style={styles.noteSignIn}>
-                        {t("detail.notesSignIn")}
-                      </Text>
-                    </Pressable>
-                  )}
+                        ) : null}
+                        <TextInput
+                          style={styles.noteInput}
+                          value={note}
+                          onChangeText={setNote}
+                          placeholder={t("detail.notesPlaceholder")}
+                          placeholderTextColor={colors.inkFaint}
+                          multiline
+                        />
+                        <View style={styles.noteActions}>
+                          {/* Always primary (ghost + disabled renders nearly
+                              invisible); disabled only dims via opacity until
+                              the note is dirty. */}
+                          <Button
+                            variant="primary"
+                            disabled={!noteDirty}
+                            title={t("detail.saveNote")}
+                            onPress={onSaveNote}
+                          />
+                          {noteJustSaved ? (
+                            <Text style={styles.noteSaved}>
+                              {t("detail.saved")}
+                            </Text>
+                          ) : null}
+                        </View>
+                        {/* "Make public": when on, saving the note also posts
+                            it as a community note. The choice persists as the
+                            default. */}
+                        <View style={styles.publicToggleRow}>
+                          <View style={styles.publicToggleText}>
+                            <Text style={styles.publicToggleLabel}>
+                              {t("detail.notePublicToggle")}
+                            </Text>
+                            <Text style={styles.publicToggleCaption}>
+                              {t("detail.notePublicHint")}
+                            </Text>
+                          </View>
+                          <Switch
+                            value={notePublic}
+                            onValueChange={(value) => {
+                              setNotePublic(value);
+                              AsyncStorage.setItem(
+                                NOTE_PUBLIC_PREF_KEY,
+                                value ? "on" : "off",
+                              ).catch(() => {
+                                // Best-effort persistence.
+                              });
+                            }}
+                            trackColor={{
+                              false: colors.hairline,
+                              true: colors.accent,
+                            }}
+                            thumbColor={colors.surface}
+                          />
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                        {notesError != null ? (
+                          <View style={styles.notesCenter}>
+                            <Text style={styles.notesMuted}>{notesError}</Text>
+                            <Button
+                              variant="ghost"
+                              title={t("common.retry")}
+                              onPress={loadNotes}
+                            />
+                          </View>
+                        ) : notesLoading && notes.length === 0 ? (
+                          <View style={styles.notesCenter}>
+                            <ActivityIndicator
+                              color={colors.accent}
+                              size="small"
+                            />
+                          </View>
+                        ) : notes.length === 0 ? (
+                          <Text style={styles.notesMuted}>
+                            {t("detail.notesEmpty")}
+                          </Text>
+                        ) : (
+                          <View style={styles.notesList}>
+                            {notes.map((item) => {
+                              const author = noteAuthorName(item.user);
+                              const initial =
+                                author.charAt(0).toUpperCase() || "?";
+                              const rel = relativeDate(t, item.created_at);
+                              return (
+                                <View
+                                  key={`note-${item.id}`}
+                                  style={styles.noteRow}
+                                >
+                                  <View style={styles.avatar}>
+                                    {item.user.avatar_url ? (
+                                      <Image
+                                        source={{ uri: item.user.avatar_url }}
+                                        style={styles.avatarImage}
+                                        contentFit="cover"
+                                        transition={0}
+                                        cachePolicy="memory-disk"
+                                      />
+                                    ) : (
+                                      <Text style={styles.avatarText}>
+                                        {initial}
+                                      </Text>
+                                    )}
+                                  </View>
+                                  <View style={styles.noteInfo}>
+                                    <View style={styles.noteHeadRow}>
+                                      <Text style={styles.noteAuthor}>
+                                        {author}
+                                      </Text>
+                                      {rel !== "" ? (
+                                        <Text style={styles.noteDate}>{rel}</Text>
+                                      ) : null}
+                                    </View>
+                                    <Text style={styles.noteBody}>
+                                      {item.body}
+                                    </Text>
+                                  </View>
+                                </View>
+                              );
+                            })}
+                            {notesHasMore ? (
+                              <Button
+                                variant="ghost"
+                                title={t("detail.loadMoreNotes")}
+                                loading={notesLoading}
+                                disabled={notesLoading}
+                                onPress={loadMoreNotes}
+                                style={styles.notesLoadMore}
+                              />
+                            ) : null}
+                          </View>
+                        )}
+                        {/* Compose row: signed-in users post a public note
+                            directly; unauthenticated users see a sign-in
+                            prompt instead. */}
+                        {signedIn ? (
+                          <View style={styles.noteCompose}>
+                            <View style={styles.noteComposeRow}>
+                              <TextInput
+                                style={styles.noteComposeInput}
+                                value={noteDraft}
+                                onChangeText={setNoteDraft}
+                                placeholder={t("detail.noteComposePlaceholder")}
+                                placeholderTextColor={colors.inkFaint}
+                                maxLength={1000}
+                                editable={!notePosting}
+                              />
+                              <Button
+                                variant="primary"
+                                title={t("detail.noteSend")}
+                                loading={notePosting}
+                                disabled={
+                                  notePosting || noteDraft.trim().length === 0
+                                }
+                                onPress={onSendNote}
+                              />
+                            </View>
+                            {noteHalalTerms != null ? (
+                              <Text style={styles.noteError}>
+                                {noteHalalTerms.join(", ")}
+                              </Text>
+                            ) : null}
+                            {notePostError != null && noteHalalTerms == null ? (
+                              <Text style={styles.noteError}>
+                                {notePostError}
+                              </Text>
+                            ) : null}
+                            {noteNeedsAuth ? (
+                              <Pressable
+                                onPress={() => router.push("/login")}
+                                hitSlop={Space.sm}
+                              >
+                                <Text style={styles.noteSignIn}>
+                                  {t("detail.notesSignIn")}
+                                </Text>
+                              </Pressable>
+                            ) : null}
+                          </View>
+                        ) : (
+                          <Pressable
+                            onPress={() => router.push("/login")}
+                            hitSlop={Space.sm}
+                            style={styles.noteCompose}
+                          >
+                            <Text style={styles.noteSignIn}>
+                              {t("detail.notesSignIn")}
+                            </Text>
+                          </Pressable>
+                        )}
+                      </>
+                    )}
+                  </Card>
                 </View>
               </View>
             </>

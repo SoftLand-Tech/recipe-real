@@ -136,6 +136,9 @@ export const ar: Record<string, string> = {
   "detail.stepCaption": "الخطوة {n}",
   "detail.ingredients": "المكونات",
   "detail.noIngredients": "لا توجد مكونات مدرجة.",
+  "detail.notesTitle": "الملاحظات",
+  "detail.notesTabPersonal": "ملاحظاتك",
+  "detail.notesTabCommunity": "المجتمع",
   "detail.yourNotes": "ملاحظاتك",
   "detail.notesSubtitle":
     "تعديلاتك للمرة القادمة — تُحفظ على هذا الجهاز وتظهر هنا كلما فتحت هذه الوصفة.",
