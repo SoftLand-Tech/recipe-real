@@ -422,26 +422,20 @@ export default function PostDetailScreen() {
   }, []);
 
   /**
-   * Opens the system share sheet. With an attached recipe it shares the
-   * recipe's PUBLIC WEB PAGE (https://recipe-real.softland.tech/r/{id} —
-   * a real https link with an OpenGraph preview); standalone posts have no
-   * web page yet, so they share a plain text snippet instead. Dismissing
-   * the sheet is not an error.
+   * Opens the system share sheet with the post's PUBLIC WEB PAGE
+   * (https://recipe-real.softland.tech/p/{id} — a real https link with an
+   * OpenGraph preview) plus the first 120 chars of the body as the message.
+   * Dismissing the sheet is not an error.
    */
   const handleShare = useCallback(async () => {
     const p = postRef.current ?? post;
     if (!p) return;
-    track("post_shared", { post_id: p.id, has_recipe: p.recipe != null });
-    const snippet = `${authorName(p.user)} on RecipeReal: ${p.body.slice(0, 120)}`;
+    track("post_shared", { post_id: p.id });
     try {
-      if (p.recipe != null) {
-        await Share.share({
-          url: `${WEB_BASE_URL}/r/${p.recipe.id}`,
-          message: snippet,
-        });
-      } else {
-        await Share.share({ message: snippet });
-      }
+      await Share.share({
+        url: `${WEB_BASE_URL}/p/${p.id}`,
+        message: p.body.slice(0, 120),
+      });
     } catch {
       // The user dismissed the sheet (or the platform errored) — best-effort.
     }
@@ -860,17 +854,6 @@ export default function PostDetailScreen() {
             ) : null}
           </View>
           <IconPressable
-            onPress={() => void handleShare()}
-            accessibilityLabel={t("community.shareA11y")}
-            hitSlop={Space.xs}
-          >
-            <Ionicons
-              name="share-social"
-              size={18}
-              color={colors.inkSecondary}
-            />
-          </IconPressable>
-          <IconPressable
             onPress={openPostMenu}
             disabled={deletingPost}
             accessibilityLabel={t("community.postActions")}
@@ -964,7 +947,8 @@ export default function PostDetailScreen() {
           </IconPressable>
         ) : null}
 
-        {/* Like row */}
+        {/* Like / Comment / Share action row (Facebook style) — same row
+            and styling as the feed card. */}
         <View style={styles.actionsRow}>
           <IconPressable
             onPress={handleLike}
@@ -974,7 +958,7 @@ export default function PostDetailScreen() {
           >
             <Ionicons
               name={liked ? "heart" : "heart-outline"}
-              size={22}
+              size={20}
               color={liked ? colors.accent : colors.inkSecondary}
             />
             <Text style={styles.actionCount}>{likesCount}</Text>
@@ -987,6 +971,19 @@ export default function PostDetailScreen() {
             />
             <Text style={styles.actionCount}>{post.comments_count}</Text>
           </View>
+          {/* Share → system sheet with the public /p/{id} web page. */}
+          <IconPressable
+            onPress={() => void handleShare()}
+            style={styles.action}
+            hitSlop={Space.xs}
+            accessibilityLabel={t("community.shareA11y")}
+          >
+            <Ionicons
+              name="share-social-outline"
+              size={20}
+              color={colors.inkSecondary}
+            />
+          </IconPressable>
         </View>
 
         {/* Auth prompt */}

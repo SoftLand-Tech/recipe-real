@@ -4,6 +4,7 @@ import {
   FlatList,
   RefreshControl,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -25,6 +26,8 @@ import {
   reportPost,
   togglePostLike,
 } from "@/api/client";
+import { track } from "@/analytics";
+import { WEB_BASE_URL } from "@/config";
 import type { Post, PostKind, PostRecipe, PostSort } from "@/types";
 import { useLang, useT, type Lang, type TranslateFn } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
@@ -160,10 +163,12 @@ interface PostCardProps {
 
 /**
  * One community post: author row + kind chip, body, optional image grid and
- * attached recipe, like/comment footer, and a lightweight comment preview.
+ * attached recipe, a Facebook-style Like/Comment/Share action row, and a
+ * lightweight comment preview.
  *
  * The card is tappable (routes to /post/[id]) EXCEPT:
- *   - the like button (keeps its own handler)
+ *   - the action row (like keeps its own handler, comment routes to the
+ *     detail screen, share opens the system sheet)
  *   - image cells (open the fullscreen viewer)
  *
  * Comment thread has moved to the post detail screen; the card shows a
@@ -222,6 +227,25 @@ const PostCard = memo(function PostCard({
       setLikeBusy(false);
     }
   }, [likeBusy, signedIn, liked, likesCount, post.id, post.liked_by_me, post.likes_count, onLiked]);
+
+  // ---- Share (system sheet → public /p/{id} web page) ------------------------
+  /**
+   * Opens the system share sheet with the post's PUBLIC WEB PAGE
+   * (https://recipe-real.softland.tech/p/{id} — a real https link with an
+   * OpenGraph preview) plus the first 120 chars of the body as the message.
+   * Dismissing the sheet is not an error.
+   */
+  const handleShare = useCallback(async () => {
+    track("post_shared", { post_id: post.id });
+    try {
+      await Share.share({
+        url: `${WEB_BASE_URL}/p/${post.id}`,
+        message: post.body.slice(0, 120),
+      });
+    } catch {
+      // The user dismissed the sheet (or the platform errored) — best-effort.
+    }
+  }, [post.id, post.body]);
 
   // ---- Image viewer ----------------------------------------------------------
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -504,9 +528,11 @@ const PostCard = memo(function PostCard({
           </IconPressable>
         ) : null}
 
-        {/* Like / comment footer. */}
+        {/* Like / Comment / Share action row (Facebook style) — one row at
+            the card bottom, spacing between the three segments. */}
         <View style={styles.actionsRow}>
-          {/* Like button — NOT wrapped in the card pressable. */}
+          {/* Like — NOT wrapped in the card pressable; the optimistic state
+              machine (handleLike + onLiked wiring) is untouched. */}
           <IconPressable
             onPress={handleLike}
             disabled={likeBusy}
@@ -515,7 +541,7 @@ const PostCard = memo(function PostCard({
           >
             <Ionicons
               name={liked ? "heart" : "heart-outline"}
-              size={22}
+              size={20}
               color={liked ? colors.accent : colors.inkSecondary}
             />
             <Text style={styles.actionCount}>{likesCount}</Text>
@@ -532,6 +558,19 @@ const PostCard = memo(function PostCard({
               color={colors.inkSecondary}
             />
             <Text style={styles.actionCount}>{post.comments_count}</Text>
+          </IconPressable>
+          {/* Share → system sheet with the public /p/{id} web page. */}
+          <IconPressable
+            onPress={() => void handleShare()}
+            style={styles.action}
+            hitSlop={Space.xs}
+            accessibilityLabel={t("community.shareA11y")}
+          >
+            <Ionicons
+              name="share-social-outline"
+              size={20}
+              color={colors.inkSecondary}
+            />
           </IconPressable>
         </View>
 

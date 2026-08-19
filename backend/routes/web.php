@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Post;
 use App\Models\Recipe;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Route;
@@ -25,6 +26,25 @@ Route::get('/r/{recipe}', function (Recipe $recipe) {
         fn () => view('recipe-share', ['recipe' => $recipe])->render(),
     ));
 })->name('recipes.share');
+
+/*
+ | Public web post page (GET /p/{post}): the share target behind the app's
+ * post Share buttons (feed card + post detail). Shows PUBLIC data only —
+ * author display name/avatar, kind chip (Try/Fail/Question), the full body,
+ * up to 4 images, and the attached recipe as a small card linking to
+ * /r/{recipe}. No auth, no counts, no comments. Unknown ids 404 via route
+ * model binding. Rendered HTML cached 5 minutes per post id (same plain-
+ * string pattern as the recipe page above).
+ */
+Route::get('/p/{post}', function (Post $post) {
+    $post->loadMissing(['user', 'recipe']);
+
+    return response(Cache::remember(
+        "post:share:{$post->id}",
+        now()->addMinutes(5),
+        fn () => view('post-share', ['post' => $post])->render(),
+    ));
+})->name('posts.share');
 
 // Privacy policy (Play Store requirement): linked from the landing footer.
 Route::get('/privacy', function () {
