@@ -192,7 +192,7 @@ export default function SettingsScreen() {
     useThemePrefs();
 
   const [authed, setAuthed] = useState<boolean | null>(null);
-  const [nudgeOn, setNudgeOn] = useState(true);
+  const [nudgeOn, setNudgeOn] = useState(false);
   const [nudgeBlocked, setNudgeBlocked] = useState(false);
   const [nudgeUnavailable, setNudgeUnavailable] = useState(false);
   /** Recipes in the local offline cache (null while the count loads). */
