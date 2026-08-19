@@ -35,6 +35,8 @@ import type {
   GetRecipesParams,
   HomeRails,
   MyProfile,
+  NotificationRow,
+  NotificationsPage,
   Paginated,
   Post,
   PostComment,
@@ -1092,4 +1094,94 @@ export async function fetchMyProfileFull(): Promise<MyProfile> {
       likes_received: toNum(body?.counts?.likes_received) ?? 0,
     },
   };
+}
+
+// ---- Notifications ----------------------------------------------------------
+
+/** Page size of the inbox endpoint (server-fixed at 20). */
+const NOTIFICATIONS_PER_PAGE = 20;
+
+/** Thrown when the notification endpoints hit a 401 (no/expired token). */
+export class NotificationUnauthorizedError extends Error {
+  constructor() {
+    super("Sign in to see your notifications");
+    this.name = "NotificationUnauthorizedError";
+  }
+}
+
+/** Normalize one inbox row defensively (actor/post blocks may be null). */
+function normalizeNotification(n: any): NotificationRow {
+  return {
+    id: Number(n?.id),
+    type: n?.type === "comment" ? "comment" : "like",
+    read_at: typeof n?.read_at === "string" ? n.read_at : null,
+    created_at: typeof n?.created_at === "string" ? n.created_at : "",
+    actor:
+      n?.actor != null
+        ? {
+            id: Number(n.actor.id),
+            display_name: n.actor.display_name ?? null,
+            name: n.actor.name ?? null,
+            avatar_url: n.actor.avatar_url ?? null,
+          }
+        : null,
+    post:
+      n?.post != null
+        ? {
+            id: Number(n.post.id),
+            kind: typeof n.post.kind === "string" ? n.post.kind : null,
+            body: typeof n.post.body === "string" ? n.post.body : "",
+          }
+        : null,
+  };
+}
+
+/**
+ * One page of the signed-in user's notification inbox
+ * (GET /api/notifications, 20/page newest-first) plus the unread count from
+ * the response meta (drives the community header bell badge). `hasMore`
+ * prefers the paginator meta, falling back to a full-page heuristic. A 401
+ * maps to NotificationUnauthorizedError.
+ */
+export async function fetchNotifications(page = 1): Promise<NotificationsPage> {
+  let data: any;
+  try {
+    const response = await api.get<{ data?: unknown; meta?: any }>(
+      "/api/notifications",
+      { params: { page } },
+    );
+    data = response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new NotificationUnauthorizedError();
+    }
+    throw error;
+  }
+  const rows = Array.isArray(data?.data)
+    ? data.data.map(normalizeNotification)
+    : [];
+  const current = Number(data?.meta?.current_page) || page;
+  const last = Number(data?.meta?.last_page) || current;
+  return {
+    items: rows,
+    unreadCount: toNum(data?.meta?.unread_count) ?? 0,
+    hasMore: current < last || rows.length >= NOTIFICATIONS_PER_PAGE,
+  };
+}
+
+/**
+ * Mark notifications read (POST /api/notifications/read, authed). With `ids`
+ * only those rows are marked (the server ignores rows the caller does not
+ * own); without it, EVERYTHING unread in the caller's inbox. Only rows still
+ * unread are stamped. A 401 maps to NotificationUnauthorizedError.
+ */
+export async function markNotificationsRead(ids?: number[]): Promise<void> {
+  try {
+    await api.post("/api/notifications/read", ids ? { ids } : {});
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new NotificationUnauthorizedError();
+    }
+    throw error;
+  }
 }

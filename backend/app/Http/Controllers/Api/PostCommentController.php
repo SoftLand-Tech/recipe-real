@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StorePostCommentRequest;
 use App\Http\Resources\PostCommentResource;
 use App\Models\CommentReport;
+use App\Models\Notification;
 use App\Models\Post;
 use App\Models\PostComment;
 use App\Models\UserBlock;
@@ -71,6 +72,17 @@ class PostCommentController extends Controller
             'body' => $body,
         ]);
         $comment->load('user:id,display_name,name,avatar_url');
+
+        // Inline notification event: someone else's comment notifies the post
+        // author (self-comments never notify).
+        if ($post->user_id !== $request->user()->id) {
+            Notification::create([
+                'user_id'  => $post->user_id,
+                'type'     => 'comment',
+                'actor_id' => $request->user()->id,
+                'post_id'  => $post->id,
+            ]);
+        }
 
         return (new PostCommentResource($comment))
             ->response()

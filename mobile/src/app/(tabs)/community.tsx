@@ -14,6 +14,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, useFocusEffect } from "expo-router";
 
 import {
+  fetchNotifications,
   fetchPostComments,
   fetchPosts,
   hasToken,
@@ -542,6 +543,8 @@ export default function CommunityScreen() {
   const [state, setState] = useState<LoadState>("loading");
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  // Header-bell badge: unread likes/comments on the user's own posts.
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // Mirror of `posts` readable inside async closures without re-creating them.
   const postsRef = useRef<Post[]>([]);
@@ -591,15 +594,28 @@ export default function CommunityScreen() {
     void fetchPage("all", 1);
   }, [fetchPage]);
 
-  // On every focus: refresh auth state AND silently reload feed page 1.
-  // This covers returning from /post-composer (new post visible at top) and
-  // from /login (compose affordance unlocks) without extra event coupling.
+  // On every focus: refresh auth state, the unread bell count AND silently
+  // reload feed page 1. This covers returning from /post-composer (new post
+  // visible at top), /notifications (badge re-syncs after mark-read) and
+  // /login (compose affordance unlocks) without extra event coupling.
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       (async () => {
         const ok = await hasToken();
         if (!cancelled) setSignedIn(ok);
+        // Cheap inbox page 1 fetch: only the meta.unread_count is used.
+        if (ok) {
+          fetchNotifications(1)
+            .then((inbox) => {
+              if (!cancelled) setUnreadCount(inbox.unreadCount);
+            })
+            .catch(() => {
+              // Non-fatal: the badge just stays at its last value.
+            });
+        } else if (!cancelled) {
+          setUnreadCount(0);
+        }
       })();
       // Silent feed refresh on re-focus (does not show spinner for non-empty feeds).
       void fetchPage(filter, 1);
@@ -733,6 +749,35 @@ export default function CommunityScreen() {
         footer: {
           paddingVertical: Space.lg,
         },
+        // ---- Header bell + unread badge ------------------------------------
+        bellWrap: {
+          // Sized box so the absolutely-positioned badge anchors to the
+          // glyph, not the 40dp header circle.
+          width: 26,
+          height: 26,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        badge: {
+          // Logical `end`/`top` keep the badge on the correct corner in RTL.
+          position: "absolute",
+          top: -3,
+          end: -7,
+          minWidth: 16,
+          height: 16,
+          borderRadius: 8,
+          backgroundColor: colors.danger,
+          alignItems: "center",
+          justifyContent: "center",
+          paddingHorizontal: 3,
+        },
+        badgeText: {
+          // White on the danger red reads in both light and dark themes.
+          fontSize: 10,
+          fontWeight: "700",
+          color: "#FFFFFF",
+          letterSpacing: 0,
+        },
       }),
     [colors, insets.bottom],
   );
@@ -741,20 +786,51 @@ export default function CommunityScreen() {
     <View style={styles.container}>
       <ScreenHeader
         title={t("community.title")}
-        right={
-          signedIn === false ? null : (
-            <IconPressable
-              onPress={() => router.push("/profile")}
-              accessibilityLabel={t("profile.title")}
-              hitSlop={Space.xs}
-            >
-              <Ionicons
-                name="person-circle-outline"
-                size={26}
-                color={colors.inkSecondary}
-              />
-            </IconPressable>
-          )
+        rights={
+          signedIn === false
+            ? undefined
+            : [
+                // Notification bell → /notifications. The little red badge
+                // shows the unread count (capped at 99+).
+                <IconPressable
+                  key="bell"
+                  onPress={() => router.push("/notifications")}
+                  accessibilityLabel={
+                    unreadCount > 0
+                      ? `${t("notif.bellA11y")} · ${t("notif.unreadA11y", { n: unreadCount })}`
+                      : t("notif.bellA11y")
+                  }
+                  hitSlop={Space.xs}
+                >
+                  <View style={styles.bellWrap}>
+                    <Ionicons
+                      name="notifications-outline"
+                      size={24}
+                      color={colors.inkSecondary}
+                    />
+                    {unreadCount > 0 ? (
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText} numberOfLines={1}>
+                          {unreadCount > 99 ? "99+" : unreadCount}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </IconPressable>,
+                // Profile → /profile (kept from before; bell sits before it).
+                <IconPressable
+                  key="profile"
+                  onPress={() => router.push("/profile")}
+                  accessibilityLabel={t("profile.title")}
+                  hitSlop={Space.xs}
+                >
+                  <Ionicons
+                    name="person-circle-outline"
+                    size={26}
+                    color={colors.inkSecondary}
+                  />
+                </IconPressable>,
+              ]
         }
       />
 

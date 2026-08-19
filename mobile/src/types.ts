@@ -375,3 +375,44 @@ export interface MyProfile {
   };
   counts: ProfileCounts;
 }
+
+// ---- Notifications ------------------------------------------------------------
+
+/** Notification kinds: someone liked or commented on one of your posts. */
+export type NotificationType = "like" | "comment";
+
+/** Who triggered the notification; null once the actor deleted their account. */
+export interface NotificationActor {
+  id: number;
+  display_name: string | null;
+  name: string | null;
+  avatar_url: string | null;
+}
+
+/**
+ * Light post reference on a notification row: id + kind + an 80-char body
+ * snippet. Null once the post was deleted (the row survives as history).
+ */
+export interface NotificationPostRef {
+  id: number;
+  kind: string | null;
+  body: string;
+}
+
+/** One inbox row (GET /api/notifications, 20/page newest-first). */
+export interface NotificationRow {
+  id: number;
+  type: NotificationType;
+  /** ISO timestamp once marked read; null while unread. */
+  read_at: string | null;
+  created_at: string;
+  actor: NotificationActor | null;
+  post: NotificationPostRef | null;
+}
+
+/** One page of the notification inbox. */
+export interface NotificationsPage {
+  items: NotificationRow[];
+  unreadCount: number;
+  hasMore: boolean;
+}

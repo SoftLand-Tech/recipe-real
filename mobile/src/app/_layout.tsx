@@ -217,6 +217,15 @@ function NavigationFrame() {
             name="post-composer"
             options={{ title: t("community.composeTitle"), headerShown: false }}
           />
+          {/*
+            Notification center: likes/comments on the signed-in user's
+            posts. Pushed from the Community tab bell; renders its own
+            header with the close affordance.
+          */}
+          <Stack.Screen
+            name="notifications"
+            options={{ title: t("notif.title"), headerShown: false }}
+          />
         </Stack>
       </SafeAreaProvider>
     </ThemeProvider>

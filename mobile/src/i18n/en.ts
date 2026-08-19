@@ -508,4 +508,18 @@ export const en: Record<string, string> = {
   "home.forYourPace": "For your pace",
   "home.forYourPaceSub": "Adjusted with your cooking times",
   "home.recentlyCooked": "Recently cooked",
+
+  // ---- Notification center ------------------------------------------------------
+  "notif.title": "Notifications",
+  "notif.likedYourPost": "{name} liked your post",
+  "notif.commented": "{name} commented: {snippet}",
+  "notif.commentedYourPost": "{name} commented on your post",
+  "notif.someone": "Someone",
+  "notif.markAllRead": "Mark all read",
+  "notif.empty": "No notifications yet",
+  "notif.emptyCaption": "Likes and comments on your posts will show up here.",
+  "notif.loadFailed": "Couldn't load the notifications.",
+  "notif.signInPrompt": "Sign in to see your notifications.",
+  "notif.bellA11y": "Notifications",
+  "notif.unreadA11y": "{n} unread",
 };

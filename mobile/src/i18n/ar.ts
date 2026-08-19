@@ -500,4 +500,18 @@ export const ar: Record<string, string> = {
   "home.forYourPace": "على خلفية سرعتك",
   "home.forYourPaceSub": "مُعدّلة حسب أوقات طهيك",
   "home.recentlyCooked": "طبختها مؤخرًا",
+
+  // ---- مركز الإشعارات ----------------------------------------------------------
+  "notif.title": "الإشعارات",
+  "notif.likedYourPost": "أعجب {name} بمنشورك",
+  "notif.commented": "علّق {name}: {snippet}",
+  "notif.commentedYourPost": "علّق {name} على منشورك",
+  "notif.someone": "شخص ما",
+  "notif.markAllRead": "تحديد الكل كمقروء",
+  "notif.empty": "لا إشعارات بعد",
+  "notif.emptyCaption": "الإعجابات والتعليقات على منشوراتك ستظهر هنا.",
+  "notif.loadFailed": "تعذّر تحميل الإشعارات.",
+  "notif.signInPrompt": "سجّل الدخول لعرض إشعاراتك.",
+  "notif.bellA11y": "الإشعارات",
+  "notif.unreadA11y": "{n} غير مقروء",
 };

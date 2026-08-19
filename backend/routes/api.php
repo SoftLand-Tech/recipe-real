@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BillingController;
 use App\Http\Controllers\Api\CookSessionController;
 use App\Http\Controllers\Api\HomeController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PaceCalibrationController;
 use App\Http\Controllers\Api\PostCommentController;
 use App\Http\Controllers\Api\PostController;
@@ -109,6 +110,13 @@ Route::middleware(['throttle:60,1', 'auth:sanctum'])->group(function (): void {
     Route::post('/posts/{post}/comments/{comment}/report', [PostCommentController::class, 'report']);
     Route::post('/users/{user}/block', [UserBlockController::class, 'store']);
     Route::delete('/users/{user}/block', [UserBlockController::class, 'destroy']);
+
+    // Notification center: the signed-in user's inbox of likes/comments on
+    // their posts (20/page, unread_count in meta) + mark-read (ids optional;
+    // omitted = mark ALL read). Rows are created inline by the like/comment
+    // endpoints above.
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications/read', [NotificationController::class, 'read']);
 });
 
 // Image uploads (authed, halal-safe by construction — binary images), with

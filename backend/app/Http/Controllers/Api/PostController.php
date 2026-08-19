@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StorePostRequest;
 use App\Http\Resources\PostResource;
+use App\Models\Notification;
 use App\Models\Post;
 use App\Models\PostReport;
 use App\Models\UserBlock;
@@ -260,6 +261,18 @@ class PostController extends Controller
         $likesCount = (int) DB::table('post_likes')
             ->where('post_id', $post->id)
             ->count();
+
+        // Inline notification event: a fresh LIKE by someone other than the
+        // author notifies the author. Un-liking creates nothing and leaves
+        // any earlier notification rows alone (v1 keeps them).
+        if ($liked && $post->user_id !== $request->user()->id) {
+            Notification::create([
+                'user_id'  => $post->user_id,
+                'type'     => 'like',
+                'actor_id' => $request->user()->id,
+                'post_id'  => $post->id,
+            ]);
+        }
 
         return response()->json([
             'liked'       => $liked,

@@ -11,6 +11,12 @@ export interface ScreenHeaderProps {
   subtitle?: string;
   /** Optional trailing action (e.g. a "+" icon button) aligned to the title. */
   right?: ReactNode;
+  /**
+   * Multiple trailing actions, each rendered in its own circle slot and
+   * ordered along the row (flips with RTL) — e.g. [bell, profile] on the
+   * Community tab. Takes precedence over `right` when both are given.
+   */
+  rights?: ReactNode[];
 }
 
 /**
@@ -18,7 +24,7 @@ export interface ScreenHeaderProps {
  * headers are off). Sits directly on the canvas background — no card/surface
  * behind it — and handles its own top safe-area inset.
  */
-export function ScreenHeader({ title, subtitle, right }: ScreenHeaderProps) {
+export function ScreenHeader({ title, subtitle, right, rights }: ScreenHeaderProps) {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const styles = useMemo(
@@ -44,6 +50,12 @@ export function ScreenHeader({ title, subtitle, right }: ScreenHeaderProps) {
           ...Type.bodySm,
           color: colors.inkSecondary,
         },
+        rightRow: {
+          // Static style only (Android paint rules). flexDirection "row"
+          // follows the layout direction, so the slot order flips in RTL.
+          flexDirection: "row",
+          gap: Space.xs,
+        },
         right: {
           // Static style only (Android paint rules) — IconPressable provides
           // the pressed feedback.
@@ -59,11 +71,20 @@ export function ScreenHeader({ title, subtitle, right }: ScreenHeaderProps) {
       }),
     [colors, insets.top],
   );
+  const trailing = rights ?? (right != null ? [right] : []);
   return (
     <View style={styles.header}>
       <View style={styles.titleRow}>
         <Text style={styles.title}>{title}</Text>
-        {right ? <View style={styles.right}>{right}</View> : null}
+        {trailing.length > 0 ? (
+          <View style={styles.rightRow}>
+            {trailing.map((node, index) => (
+              <View key={index} style={styles.right}>
+                {node}
+              </View>
+            ))}
+          </View>
+        ) : null}
       </View>
       {subtitle ? (
         <Text style={styles.subtitle} numberOfLines={2}>
