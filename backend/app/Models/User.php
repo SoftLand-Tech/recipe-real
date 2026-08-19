@@ -7,6 +7,8 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Filament\Models\Contracts\FilamentUser;
+use Filament\Panel;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -16,7 +18,7 @@ use Laravel\Sanctum\HasApiTokens;
 
 #[Fillable(['name', 'email', 'password', 'skill_level', 'google_sub', 'avatar_url', 'display_name'])]
 #[Hidden(['password', 'remember_token'])]
-class User extends Authenticatable
+class User extends Authenticatable implements FilamentUser
 {
     /** @use HasFactory<UserFactory> */
     use Billable, HasApiTokens, HasFactory, Notifiable;
@@ -90,5 +92,28 @@ class User extends Authenticatable
     public function isPremium(): bool
     {
         return $this->subscribed('default');
+    }
+
+    /**
+     * Filament panel access: only emails listed in ADMIN_EMAILS (comma-
+     * separated, case-insensitive) may enter; an empty list locks everyone
+     * out. Read from config() so it survives `php artisan config:cache`.
+     */
+    public function canAccessPanel(Panel $panel): bool
+    {
+        if ($panel->getId() !== 'admin') {
+            return false;
+        }
+
+        $admins = collect(explode(',', (string) config('admin.emails')))
+            ->map(fn (string $email): string => strtolower(trim($email)))
+            ->filter()
+            ->all();
+
+        if ($admins === []) {
+            return false;
+        }
+
+        return in_array(strtolower((string) $this->email), $admins, true);
     }
 }

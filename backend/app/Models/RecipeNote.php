@@ -11,6 +11,7 @@ class RecipeNote extends Model
         'user_id',
         'recipe_id',
         'body',
+        'is_public',
     ];
 
     public function user(): BelongsTo

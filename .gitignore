@@ -19,3 +19,7 @@ recipes-dataset/
 
 # Unrelated local projects (never commit)
 ads-campaign3/
+
+# Filament published panel assets (generated at deploy via filament:assets)
+/backend/public/css/
+/backend/public/js/
