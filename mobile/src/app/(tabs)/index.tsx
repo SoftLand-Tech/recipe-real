@@ -294,7 +294,8 @@ export default function HomeScreen() {
           backgroundColor: colors.accent,
         },
         retryText: {
-          color: colors.surface,
+          // Literal white on the accent pill — surface goes dark in dark mode.
+          color: "#FFFFFF",
           fontWeight: "700",
         },
         skeletonCard: {

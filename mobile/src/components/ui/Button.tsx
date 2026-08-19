@@ -24,9 +24,13 @@ function variantContent(
   { bg: string; fg: string; pressedBg: string }
 > {
   return {
+    // fg is LITERAL white, never colors.surface: the primary background is
+    // always the saturated accent, and surface flips to a dark tone in dark
+    // mode — dark-on-orange text (the "black text" bug). Same rule as
+    // over-photo elements: white on saturated color in BOTH schemes.
     primary: {
       bg: colors.accent,
-      fg: colors.surface,
+      fg: "#FFFFFF",
       pressedBg: colors.accentPress,
     },
     secondary: {
@@ -123,7 +127,8 @@ export function Button({
     >
       {loading ? (
         <ActivityIndicator
-          color={variant === "primary" ? colors.surface : colors.accent}
+          // Literal white on the accent background (see variantContent).
+          color={variant === "primary" ? "#FFFFFF" : colors.accent}
           size="small"
         />
       ) : (
