@@ -8,6 +8,7 @@ import {
   View,
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
+import Ionicons from "@expo/vector-icons/Ionicons";
 
 import {
   getCookSessions,
@@ -23,6 +24,7 @@ import {
   Button,
   Card,
   Chip,
+  IconPressable,
   ScreenHeader,
   SectionHeader,
   StatPill,
@@ -43,13 +45,14 @@ const REFRESH_SPINNER_MAX_MS = 10_000;
 
 // ---- Remount cache + identity fingerprints ----------------------------------
 //
-// Tab screens unmount/remount as the user navigates; without a cache the pace
-// tab would flash its first-visit spinner on every remount. The last payloads
-// live at module level so a remount renders instantly from the cache and the
-// focus load refreshes silently (stale-while-revalidate across unmounts).
-// The fingerprints let refocus refreshes skip the setState entirely when the
-// server returns identical data — fresh array identities would re-render the
-// whole list (and reset in-flight interactions) for nothing.
+// Screens unmount/remount as the user navigates; without a cache the pace
+// screen would flash its first-visit spinner on every remount. The last
+// payloads live at module level so a remount renders instantly from the cache
+// and the focus load refreshes silently (stale-while-revalidate across
+// unmounts). The fingerprints let refocus refreshes skip the setState
+// entirely when the server returns identical data — fresh array identities
+// would re-render the whole list (and reset in-flight interactions) for
+// nothing.
 let lastCalibrations: PaceCalibration[] | null = null;
 let lastCookCount: number | null = null;
 let lastSessions: CookSessionSummary[] | null = null;
@@ -132,10 +135,10 @@ export default function PaceScreen() {
   );
   const [showAllHistory, setShowAllHistory] = useState(false);
 
-  // Only show the loading spinner on the very first load. Refocuses (tab
-  // switches, returning from /login) refresh silently while the previous
-  // content stays visible — stale-while-revalidate. A remount with cached
-  // payloads also skips the spinner and renders the cache immediately.
+  // Only show the loading spinner on the very first load. Refocuses
+  // (returning from /login) refresh silently while the previous content stays
+  // visible — stale-while-revalidate. A remount with cached payloads also
+  // skips the spinner and renders the cache immediately.
   const firstLoadRef = useRef(true);
 
   // Set by handleRefresh while a pull-to-refresh is in flight; invoked once
@@ -376,11 +379,23 @@ export default function PaceScreen() {
     [colors],
   );
 
+  // Stack-screen close affordance (profile.tsx pattern): the native stack
+  // header is hidden, so the ScreenHeader carries the X that pops back.
+  const closeHeader = (
+    <IconPressable
+      onPress={() => router.back()}
+      hitSlop={Space.xs}
+      accessibilityLabel={t("common.cancel")}
+    >
+      <Ionicons name="close" size={22} color={colors.ink} />
+    </IconPressable>
+  );
+
   // Not authenticated: friendly sign-in prompt.
   if (state === "ready" && authenticated === false) {
     return (
       <View style={styles.container}>
-        <ScreenHeader title={t("tabs.pace")} />
+        <ScreenHeader title={t("tabs.pace")} right={closeHeader} />
         <View style={styles.center}>
           <Text style={styles.signInTitle}>{t("pace.trackTitle")}</Text>
           <Text style={styles.muted}>{t("pace.signInPrompt")}</Text>
@@ -398,7 +413,7 @@ export default function PaceScreen() {
   if (state === "loading") {
     return (
       <View style={styles.container}>
-        <ScreenHeader title={t("tabs.pace")} />
+        <ScreenHeader title={t("tabs.pace")} right={closeHeader} />
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.accent} />
           <Text style={styles.muted}>{t("pace.loading")}</Text>
@@ -410,7 +425,7 @@ export default function PaceScreen() {
   if (state === "error") {
     return (
       <View style={styles.container}>
-        <ScreenHeader title={t("tabs.pace")} />
+        <ScreenHeader title={t("tabs.pace")} right={closeHeader} />
         <View style={styles.center}>
           <Text style={styles.errorTitle}>{t("common.somethingWentWrong")}</Text>
           <Text style={styles.muted}>{t("pace.couldNotLoad")}</Text>
@@ -436,6 +451,7 @@ export default function PaceScreen() {
     >
       <ScreenHeader
         title={t("tabs.pace")}
+        right={closeHeader}
         subtitle={
           cookCount != null
             ? cookCount === 1

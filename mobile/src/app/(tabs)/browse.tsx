@@ -61,6 +61,7 @@ import {
   HeartButton,
   IconPressable,
   NoteBadge,
+  ScreenHeader,
   TimeChip,
   fmtMinutes,
 } from "@/components/ui";
@@ -297,23 +298,6 @@ function createStyles(colors: ThemeColors) {
     // follows the layout direction in RTL.
     searchClear: {
       marginStart: Space.xs,
-    },
-    // Compact header (photo-first layout): Type.h2 title row; the add
-    // shortcut lives in the search row below. The top safe-area inset is
-    // applied inline by the screen.
-    compactHeader: {
-      paddingHorizontal: Space.lg,
-    },
-    compactTitleRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: Space.sm,
-      paddingBottom: Space.sm,
-    },
-    compactTitle: {
-      ...Type.h2,
-      color: colors.ink,
-      flex: 1,
     },
     listContent: {
       paddingHorizontal: Space.lg,
@@ -1532,15 +1516,7 @@ export default function BrowseScreen() {
 
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      {/* Compact header — essentials only: just the title row; the search
-          field, filter toggle AND the add shortcut sit together below. */}
-      <View
-        style={[styles.compactHeader, { paddingTop: insets.top + Space.md }]}
-      >
-        <View style={styles.compactTitleRow}>
-          <Text style={styles.compactTitle}>{t("tabs.browse")}</Text>
-        </View>
-      </View>
+      <ScreenHeader title={t("tabs.browse")} />
       <SearchBar
         search={search}
         onChangeSearch={setSearch}

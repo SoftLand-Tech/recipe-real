@@ -5,14 +5,16 @@ import { useT } from "@/i18n";
 import { useThemeColors } from "@/theme";
 
 /**
- * Bottom-tab navigation for the six top-level destinations. Route URLs are
- * unchanged by the group: "/", "/browse", "/pace", "/favorites",
- * "/community", "/settings" — so existing router.push(...) calls keep
- * working. "/upgrade" is NOT a tab anymore: it lives in the root stack
- * (src/app/upgrade.tsx), so pushes to "/upgrade" from pace.tsx /
- * recipe/[id].tsx still resolve. Colors are resolved per scheme via
- * useThemeColors(); titles via useT(). All six tabs render the shared
- * on-screen ScreenHeader; native headers are off across the group. The tab
+ * Bottom-tab navigation for the five top-level destinations. Route URLs are
+ * unchanged by the group: "/", "/browse", "/favorites", "/community",
+ * "/settings" — so existing router.push(...) calls keep working. Pace is NOT
+ * a tab anymore: it lives in the root stack (src/app/pace.tsx), so pushes to
+ * "/pace" from profile.tsx / settings.tsx / login.tsx still resolve.
+ * "/upgrade" is also NOT a tab: it lives in the root stack
+ * (src/app/upgrade.tsx), so pushes to "/upgrade" from recipe/[id].tsx still
+ * resolve. Colors are resolved per scheme via useThemeColors(); titles via
+ * useT(). All five tabs render the shared on-screen ScreenHeader (Home keeps
+ * its custom brand header); native headers are off across the group. The tab
  * row order follows the layout direction (RTL via I18nManager).
  */
 export default function TabsLayout() {
@@ -47,16 +49,6 @@ export default function TabsLayout() {
           headerShown: false,
           tabBarIcon: ({ color }) => (
             <Ionicons name="search" size={22} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="pace"
-        options={{
-          title: t("tabs.pace"),
-          headerShown: false,
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="speedometer" size={22} color={color} />
           ),
         }}
       />

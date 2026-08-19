@@ -64,7 +64,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const t = useT();
-  const { lang } = useLang();
+  const { lang, dir } = useLang();
   const lr = useLocalizedRecipe();
 
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
@@ -210,6 +210,17 @@ export default function ProfileScreen() {
         identityCaption: {
           ...Type.bodySm,
           color: colors.inkSecondary,
+        },
+        paceRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.md,
+        },
+        paceLabel: {
+          flex: 1,
+          ...Type.body,
+          fontWeight: "600",
+          color: colors.ink,
         },
         googleFallback: {
           width: 72,
@@ -370,6 +381,23 @@ export default function ProfileScreen() {
                   <Text style={styles.identityCaption}>{since}</Text>
                 ) : null}
               </View>
+            </View>
+          </Card>
+
+          {/* Your pace — entry into the pace screen (now a stack screen). */}
+          <Card onPress={() => router.push("/pace")}>
+            <View style={styles.paceRow}>
+              <Ionicons
+                name="stopwatch-outline"
+                size={20}
+                color={colors.accent}
+              />
+              <Text style={styles.paceLabel}>{t("tabs.pace")}</Text>
+              <Ionicons
+                name={dir === "rtl" ? "chevron-back" : "chevron-forward"}
+                size={18}
+                color={colors.inkFaint}
+              />
             </View>
           </Card>
 

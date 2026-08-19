@@ -168,6 +168,16 @@ function NavigationFrame() {
             name="profile"
             options={{ title: t("stack.profile"), headerShown: false }}
           />
+          {/*
+            Pace (personal pace calibrations + cook history). Formerly a tab;
+            now a plain stack screen at /pace (src/app/pace.tsx) so pushes
+            from profile.tsx, settings.tsx and login.tsx keep resolving. It
+            renders its own header with a close affordance.
+          */}
+          <Stack.Screen
+            name="pace"
+            options={{ title: t("tabs.pace"), headerShown: false }}
+          />
           <Stack.Screen
             name="recipe/[id]"
             options={{ title: t("stack.recipe"), headerShown: false }}

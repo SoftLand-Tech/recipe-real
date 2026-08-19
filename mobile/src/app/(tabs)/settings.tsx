@@ -28,7 +28,7 @@ import {
   seedCacheRemainingPages,
 } from "@/db/database";
 import { getNudgePref, setNudgePref } from "@/utils/prefs";
-import { clearPaceCache } from "./pace";
+import { clearPaceCache } from "../pace";
 import { useT } from "@/i18n";
 import type { LangPref } from "@/i18n";
 import {
@@ -305,7 +305,7 @@ export default function SettingsScreen() {
     } catch {
       // logout() clears the stored token in its finally block; ignore errors.
     }
-    // Also clear the Pace tab's remount cache so the next signed-in user
+    // Also clear the Pace screen's remount cache so the next signed-in user
     // never sees the previous account's pace data flash on remount.
     clearPaceCache();
     await refreshAuth();
@@ -566,6 +566,14 @@ export default function SettingsScreen() {
               chevron
               disabled={authed === null}
               onPress={() => router.push("/profile")}
+            />
+            <View style={styles.divider} />
+            <SettingsRow
+              icon="stopwatch-outline"
+              label={t("tabs.pace")}
+              chevron
+              disabled={authed === null}
+              onPress={() => router.push("/pace")}
             />
             <View style={styles.divider} />
             <SettingsRow
