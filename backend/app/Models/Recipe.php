@@ -180,6 +180,7 @@ class Recipe extends Model
         return $query
             ->where('recipes.steps_count', '>=', 2)
             ->whereNotNull('recipes.image_url')
+            ->where('recipes.image_url', '!=', '')
             ->where('recipes.aggregated_rating', '>=', 4)
             ->where('recipes.review_count', '>=', 5);
     }

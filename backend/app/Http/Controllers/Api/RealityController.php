@@ -67,6 +67,7 @@ class RealityController extends Controller
             // requires rating/reviews — not relevant to honest timing).
             ->where('steps_count', '>=', 2)
             ->whereNotNull('image_url')
+            ->where('image_url', '!=', '')
             // Sanity bounds: estimate-path recipes with literal "overnight"
             // steps can produce absurd gaps (a 40-min claim vs a 50-hour
             // estimate = +7335%) — a leaderboard of typos is not a
