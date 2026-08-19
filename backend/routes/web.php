@@ -22,3 +22,15 @@ Route::get('/privacy', function () {
 Route::get('/auth/callback', function () {
     return response()->view('auth-callback');
 });
+
+/*
+ | Admin panel Google login ("Continue with Google" on /admin/login).
+ | Uses the SAME OAuth client + id_token verification as the mobile app;
+ | only emails on the ADMIN_EMAILS allowlist may enter. The callback needs
+ | its own Google-console redirect URI:
+ | https://recipe-real.softland.tech/admin/auth/google/callback
+ */
+Route::get('/admin/auth/google', [App\Http\Controllers\AdminGoogleController::class, 'redirect'])
+    ->name('admin.google.redirect');
+Route::get('/admin/auth/google/callback', [App\Http\Controllers\AdminGoogleController::class, 'callback'])
+    ->name('admin.google.callback');

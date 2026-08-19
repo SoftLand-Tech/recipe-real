@@ -31,6 +31,12 @@ class AdminPanelProvider extends PanelProvider
             ->path('admin')
             ->brandName('RecipeReal Admin')
             ->login()
+            // "Continue with Google" under the login form (allowlisted
+            // emails only; see AdminGoogleController + routes/web.php).
+            ->renderHook(
+                'panels::auth.login-form.after',
+                fn () => view('admin-google-button'),
+            )
             ->colors([
                 'primary' => Color::Amber,
             ])
