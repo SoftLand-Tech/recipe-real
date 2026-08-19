@@ -208,6 +208,15 @@ function NavigationFrame() {
             name="post/[id]"
             options={{ title: t("community.postDetail"), headerShown: false }}
           />
+          {/*
+            Post composer: full compose screen extracted from the community tab.
+            Renders its own header bar; the Stack header is hidden to avoid
+            a double-header gap.
+          */}
+          <Stack.Screen
+            name="post-composer"
+            options={{ title: t("community.composeTitle"), headerShown: false }}
+          />
         </Stack>
       </SafeAreaProvider>
     </ThemeProvider>

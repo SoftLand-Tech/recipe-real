@@ -433,6 +433,8 @@ export const ar: Record<string, string> = {
   "community.detailLoadFailed": "تعذّر تحميل هذا المنشور.",
   "community.viewAllComments": "عرض جميع التعليقات ({n})",
   "community.latestComment": "أحدث تعليق",
+  "community.seeMore": "عرض المزيد",
+  "community.seeLess": "عرض أقل",
 
   // ---- الملف الشخصي ------------------------------------------------------------
   "profile.title": "ملفك الشخصي",

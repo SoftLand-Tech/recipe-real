@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useThemeColors } from "@/theme";
 
-const { width: SCREEN_W } = Dimensions.get("window");
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
 // ---- Fullscreen viewer ---------------------------------------------------------
 
@@ -29,6 +29,11 @@ interface ImageViewerProps {
  * Full-screen horizontal image pager (dark scrim, page-dot indicator).
  * Opened from PostImageGrid; self-contained via a Modal so it composites
  * above the rest of the UI without navigation overhead.
+ *
+ * Viewer fixes:
+ *   - Images are CONTAINED (contentFit="contain") on a black background.
+ *   - Close ✕ sits below the notch using safe-area top + 16 pt offset.
+ *   - Position uses `start` (logical RTL-safe inset).
  *
  * Android paint rules: static styles only, no width:"100%" on any Pressable.
  */
@@ -54,6 +59,9 @@ export const ImageViewerModal = memo(function ImageViewerModal({
 
   const viewabilityConfig = { viewAreaCoveragePercentThreshold: 50 };
 
+  // Close button top: safe-area inset + 16 pt so it clears the notch/cutout.
+  const closeBtnTop = insets.top + 16;
+
   return (
     <Modal
       visible
@@ -67,9 +75,9 @@ export const ImageViewerModal = memo(function ImageViewerModal({
         <View style={styles.scrim} />
       </TouchableWithoutFeedback>
 
-      {/* Close button */}
+      {/* Close button — start side (LTR=left, RTL=right), below notch. */}
       <View
-        style={[styles.closeBtn, { top: insets.top + 12 }]}
+        style={[styles.closeBtn, { top: closeBtnTop }]}
         pointerEvents="box-none"
       >
         <Pressable
@@ -82,7 +90,7 @@ export const ImageViewerModal = memo(function ImageViewerModal({
         </Pressable>
       </View>
 
-      {/* Paged image list */}
+      {/* Paged image list — contained images on black pages. */}
       <FlatList
         ref={flatListRef}
         data={images}
@@ -145,14 +153,19 @@ interface PostImageGridProps {
 const GRID_GAP = 2;
 
 /**
- * Grid layout for 1, 2, or 3+ images:
- *   1 image  → full-width, 4:3 aspect (≈220 px)
- *   2 images → side-by-side, equal width, square cells
- *   3 images → left cell full height, right column stacks 2 cells
- *   4–6      → same as 3+ using a 2-column grid, first cell spans
+ * Facebook-style image grid layout:
+ *   1 image  → full-width, 4:3 aspect.
+ *   2 images → two equal halves side-by-side.
+ *   3 images → one large on top (4:3), two halves below.
+ *   4 images → 2×2 equal grid (square cells).
+ *   5+ images→ 2×2 grid; last cell (index 3) shows the 4th image DIMMED with
+ *               "+N" overlay where N = images.length − 4. Tapping the "+N"
+ *               cell opens the fullscreen viewer at index 3; remaining images
+ *               are reachable by swiping (Facebook behavior).
  *
- * Android paint rules: no width:"100%" on Pressable — use explicit numeric
- * sizing or flex instead; opacity press feedback via onPressIn/Out.
+ * Hairline 2 pt gaps between cells; outer corners rounded like cards.
+ *
+ * Android paint rules: no width:"100%" on Pressable; opacity feedback via state.
  */
 export const PostImageGrid = memo(function PostImageGrid({
   images,
@@ -165,7 +178,7 @@ export const PostImageGrid = memo(function PostImageGrid({
 
   const cellBg = colors.surfaceSoft;
 
-  // ---- 1 image ---------------------------------------------------------------
+  // ── 1 image: full-width 4:3 ──────────────────────────────────────────────
   if (images.length === 1) {
     return (
       <View style={gridStyles.singleContainer}>
@@ -193,7 +206,7 @@ export const PostImageGrid = memo(function PostImageGrid({
     );
   }
 
-  // ---- 2 images --------------------------------------------------------------
+  // ── 2 images: two side-by-side halves ─────────────────────────────────────
   if (images.length === 2) {
     return (
       <View style={gridStyles.doubleRow}>
@@ -224,87 +237,204 @@ export const PostImageGrid = memo(function PostImageGrid({
     );
   }
 
-  // ---- 3+ images: left spans full height, right stacks top + bottom ----------
-  const leftUri = images[0];
-  const rightTop = images[1];
-  const rightBottom = images[2];
-  // Remaining count indicator (4th+ images hidden behind the overlay).
-  const extraCount = images.length > 3 ? images.length - 3 : 0;
+  // ── 3 images: one large on top + two halves below ────────────────────────
+  if (images.length === 3) {
+    return (
+      <View style={gridStyles.tripleContainer}>
+        <Pressable
+          onPress={() => onImagePress?.(0)}
+          onPressIn={() => setPressedIndex(0)}
+          onPressOut={() => setPressedIndex(null)}
+          style={[
+            gridStyles.tripleTop,
+            { backgroundColor: cellBg },
+            pressedIndex === 0 ? gridStyles.pressed : null,
+          ]}
+          accessibilityRole="image"
+        >
+          <Image
+            source={{ uri: images[0] }}
+            style={gridStyles.fillImage}
+            contentFit="cover"
+            transition={0}
+            cachePolicy="memory-disk"
+            recyclingKey={images[0]}
+          />
+        </Pressable>
+        <View style={gridStyles.tripleBottomRow}>
+          <Pressable
+            onPress={() => onImagePress?.(1)}
+            onPressIn={() => setPressedIndex(1)}
+            onPressOut={() => setPressedIndex(null)}
+            style={[
+              gridStyles.tripleBottomCell,
+              { backgroundColor: cellBg },
+              pressedIndex === 1 ? gridStyles.pressed : null,
+            ]}
+            accessibilityRole="image"
+          >
+            <Image
+              source={{ uri: images[1] }}
+              style={gridStyles.fillImage}
+              contentFit="cover"
+              transition={0}
+              cachePolicy="memory-disk"
+              recyclingKey={images[1]}
+            />
+          </Pressable>
+          <Pressable
+            onPress={() => onImagePress?.(2)}
+            onPressIn={() => setPressedIndex(2)}
+            onPressOut={() => setPressedIndex(null)}
+            style={[
+              gridStyles.tripleBottomCell,
+              { backgroundColor: cellBg, marginLeft: GRID_GAP },
+              pressedIndex === 2 ? gridStyles.pressed : null,
+            ]}
+            accessibilityRole="image"
+          >
+            <Image
+              source={{ uri: images[2] }}
+              style={gridStyles.fillImage}
+              contentFit="cover"
+              transition={0}
+              cachePolicy="memory-disk"
+              recyclingKey={images[2]}
+            />
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  // ── 4 images: 2×2 equal grid ─────────────────────────────────────────────
+  if (images.length === 4) {
+    const topRow = images.slice(0, 2);
+    const botRow = images.slice(2, 4);
+    return (
+      <View style={gridStyles.quadContainer}>
+        <View style={gridStyles.quadRow}>
+          {topRow.map((uri, i) => (
+            <Pressable
+              key={uri}
+              onPress={() => onImagePress?.(i)}
+              onPressIn={() => setPressedIndex(i)}
+              onPressOut={() => setPressedIndex(null)}
+              style={[
+                gridStyles.quadCell,
+                { backgroundColor: cellBg, marginLeft: i === 1 ? GRID_GAP : 0 },
+                pressedIndex === i ? gridStyles.pressed : null,
+              ]}
+              accessibilityRole="image"
+            >
+              <Image
+                source={{ uri }}
+                style={gridStyles.fillImage}
+                contentFit="cover"
+                transition={0}
+                cachePolicy="memory-disk"
+                recyclingKey={uri}
+              />
+            </Pressable>
+          ))}
+        </View>
+        <View style={[gridStyles.quadRow, { marginTop: GRID_GAP }]}>
+          {botRow.map((uri, i) => {
+            const idx = 2 + i;
+            return (
+              <Pressable
+                key={uri}
+                onPress={() => onImagePress?.(idx)}
+                onPressIn={() => setPressedIndex(idx)}
+                onPressOut={() => setPressedIndex(null)}
+                style={[
+                  gridStyles.quadCell,
+                  { backgroundColor: cellBg, marginLeft: i === 1 ? GRID_GAP : 0 },
+                  pressedIndex === idx ? gridStyles.pressed : null,
+                ]}
+                accessibilityRole="image"
+              >
+                <Image
+                  source={{ uri }}
+                  style={gridStyles.fillImage}
+                  contentFit="cover"
+                  transition={0}
+                  cachePolicy="memory-disk"
+                  recyclingKey={uri}
+                />
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+    );
+  }
+
+  // ── 5+ images: 2×2 grid, last cell dimmed with "+N" overlay ──────────────
+  const extraCount = images.length - 4;
+  const topRow5 = images.slice(0, 2);
+  const botRow5 = images.slice(2, 4);
 
   return (
-    <View style={gridStyles.tripleContainer}>
-      {/* Left cell (full height) */}
-      <Pressable
-        onPress={() => onImagePress?.(0)}
-        onPressIn={() => setPressedIndex(0)}
-        onPressOut={() => setPressedIndex(null)}
-        style={[
-          gridStyles.tripleLeft,
-          { backgroundColor: cellBg },
-          pressedIndex === 0 ? gridStyles.pressed : null,
-        ]}
-        accessibilityRole="image"
-      >
-        <Image
-          source={{ uri: leftUri }}
-          style={gridStyles.fillImage}
-          contentFit="cover"
-          transition={0}
-          cachePolicy="memory-disk"
-          recyclingKey={leftUri}
-        />
-      </Pressable>
-
-      {/* Right column */}
-      <View style={gridStyles.tripleRight}>
-        {/* Top-right */}
-        <Pressable
-          onPress={() => onImagePress?.(1)}
-          onPressIn={() => setPressedIndex(1)}
-          onPressOut={() => setPressedIndex(null)}
-          style={[
-            gridStyles.tripleRightCell,
-            { backgroundColor: cellBg, marginBottom: GRID_GAP },
-            pressedIndex === 1 ? gridStyles.pressed : null,
-          ]}
-          accessibilityRole="image"
-        >
-          <Image
-            source={{ uri: rightTop }}
-            style={gridStyles.fillImage}
-            contentFit="cover"
-            transition={0}
-            cachePolicy="memory-disk"
-            recyclingKey={rightTop}
-          />
-        </Pressable>
-
-        {/* Bottom-right (with +N overlay when more than 3 images) */}
-        <Pressable
-          onPress={() => onImagePress?.(2)}
-          onPressIn={() => setPressedIndex(2)}
-          onPressOut={() => setPressedIndex(null)}
-          style={[
-            gridStyles.tripleRightCell,
-            { backgroundColor: cellBg },
-            pressedIndex === 2 ? gridStyles.pressed : null,
-          ]}
-          accessibilityRole="image"
-        >
-          <Image
-            source={{ uri: rightBottom }}
-            style={gridStyles.fillImage}
-            contentFit="cover"
-            transition={0}
-            cachePolicy="memory-disk"
-            recyclingKey={rightBottom}
-          />
-          {extraCount > 0 ? (
-            <View style={gridStyles.extraOverlay}>
-              <Text style={gridStyles.extraText}>+{extraCount}</Text>
-            </View>
-          ) : null}
-        </Pressable>
+    <View style={gridStyles.quadContainer}>
+      <View style={gridStyles.quadRow}>
+        {topRow5.map((uri, i) => (
+          <Pressable
+            key={uri}
+            onPress={() => onImagePress?.(i)}
+            onPressIn={() => setPressedIndex(i)}
+            onPressOut={() => setPressedIndex(null)}
+            style={[
+              gridStyles.quadCell,
+              { backgroundColor: cellBg, marginLeft: i === 1 ? GRID_GAP : 0 },
+              pressedIndex === i ? gridStyles.pressed : null,
+            ]}
+            accessibilityRole="image"
+          >
+            <Image
+              source={{ uri }}
+              style={gridStyles.fillImage}
+              contentFit="cover"
+              transition={0}
+              cachePolicy="memory-disk"
+              recyclingKey={uri}
+            />
+          </Pressable>
+        ))}
+      </View>
+      <View style={[gridStyles.quadRow, { marginTop: GRID_GAP }]}>
+        {botRow5.map((uri, i) => {
+          const idx = 2 + i;
+          const isLast = i === 1;
+          return (
+            <Pressable
+              key={uri}
+              onPress={() => onImagePress?.(idx)}
+              onPressIn={() => setPressedIndex(idx)}
+              onPressOut={() => setPressedIndex(null)}
+              style={[
+                gridStyles.quadCell,
+                { backgroundColor: cellBg, marginLeft: i === 1 ? GRID_GAP : 0 },
+                pressedIndex === idx ? gridStyles.pressed : null,
+              ]}
+              accessibilityRole="image"
+            >
+              <Image
+                source={{ uri }}
+                style={gridStyles.fillImage}
+                contentFit="cover"
+                transition={0}
+                cachePolicy="memory-disk"
+                recyclingKey={uri}
+              />
+              {isLast ? (
+                <View style={gridStyles.extraOverlay}>
+                  <Text style={gridStyles.extraText}>+{extraCount}</Text>
+                </View>
+              ) : null}
+            </Pressable>
+          );
+        })}
       </View>
     </View>
   );
@@ -319,8 +449,8 @@ interface ComposeImageGridProps {
 }
 
 /**
- * Image preview grid for the compose card. Mirrors PostImageGrid's layouts
- * and adds a small ✕ button on each cell to remove the photo.
+ * Image preview grid for the compose screen. Mirrors PostImageGrid's layouts
+ * (1/2/3/4/5+) and adds a small ✕ button on each cell to remove the photo.
  */
 export const ComposeImageGrid = memo(function ComposeImageGrid({
   uris,
@@ -332,6 +462,7 @@ export const ComposeImageGrid = memo(function ComposeImageGrid({
 
   if (uris.length === 0) return null;
 
+  // ── 1 image ──────────────────────────────────────────────────────────────
   if (uris.length === 1) {
     return (
       <View style={gridStyles.singleContainer}>
@@ -342,16 +473,13 @@ export const ComposeImageGrid = memo(function ComposeImageGrid({
             contentFit="cover"
             transition={0}
           />
-          <RemoveBtn
-            onPress={() => onRemove(0)}
-            disabled={disabled}
-            colors={colors}
-          />
+          <RemoveBtn onPress={() => onRemove(0)} disabled={disabled} colors={colors} />
         </View>
       </View>
     );
   }
 
+  // ── 2 images ─────────────────────────────────────────────────────────────
   if (uris.length === 2) {
     return (
       <View style={gridStyles.doubleRow}>
@@ -360,76 +488,114 @@ export const ComposeImageGrid = memo(function ComposeImageGrid({
             key={`compose-${i}`}
             style={[
               gridStyles.doubleCell,
-              {
-                backgroundColor: cellBg,
-                marginLeft: i === 1 ? GRID_GAP : 0,
-              },
+              { backgroundColor: cellBg, marginLeft: i === 1 ? GRID_GAP : 0 },
             ]}
           >
-            <Image
-              source={{ uri }}
-              style={gridStyles.fillImage}
-              contentFit="cover"
-              transition={0}
-            />
-            <RemoveBtn
-              onPress={() => onRemove(i)}
-              disabled={disabled}
-              colors={colors}
-            />
+            <Image source={{ uri }} style={gridStyles.fillImage} contentFit="cover" transition={0} />
+            <RemoveBtn onPress={() => onRemove(i)} disabled={disabled} colors={colors} />
           </View>
         ))}
       </View>
     );
   }
 
-  // 3+: same 2-column grid as PostImageGrid
-  return (
-    <View style={gridStyles.tripleContainer}>
-      <View style={[gridStyles.tripleLeft, { backgroundColor: cellBg }]}>
-        <Image
-          source={{ uri: uris[0] }}
-          style={gridStyles.fillImage}
-          contentFit="cover"
-          transition={0}
-        />
-        <RemoveBtn
-          onPress={() => onRemove(0)}
-          disabled={disabled}
-          colors={colors}
-        />
+  // ── 3 images: top large + 2 halves below ─────────────────────────────────
+  if (uris.length === 3) {
+    return (
+      <View style={gridStyles.tripleContainer}>
+        <View style={[gridStyles.tripleTop, { backgroundColor: cellBg }]}>
+          <Image source={{ uri: uris[0] }} style={gridStyles.fillImage} contentFit="cover" transition={0} />
+          <RemoveBtn onPress={() => onRemove(0)} disabled={disabled} colors={colors} />
+        </View>
+        <View style={gridStyles.tripleBottomRow}>
+          {uris.slice(1, 3).map((uri, i) => (
+            <View
+              key={`compose-r${i}`}
+              style={[
+                gridStyles.tripleBottomCell,
+                { backgroundColor: cellBg, marginLeft: i === 1 ? GRID_GAP : 0 },
+              ]}
+            >
+              <Image source={{ uri }} style={gridStyles.fillImage} contentFit="cover" transition={0} />
+              <RemoveBtn onPress={() => onRemove(i + 1)} disabled={disabled} colors={colors} />
+            </View>
+          ))}
+        </View>
       </View>
-      <View style={gridStyles.tripleRight}>
-        {uris.slice(1, 3).map((uri, i) => (
-          <View
-            key={`compose-r${i}`}
-            style={[
-              gridStyles.tripleRightCell,
-              {
-                backgroundColor: cellBg,
-                marginBottom: i === 0 ? GRID_GAP : 0,
-              },
-            ]}
-          >
-            <Image
-              source={{ uri }}
-              style={gridStyles.fillImage}
-              contentFit="cover"
-              transition={0}
-            />
-            <RemoveBtn
-              onPress={() => onRemove(i + 1)}
-              disabled={disabled}
-              colors={colors}
-            />
-            {/* +N overlay for hidden images */}
-            {i === 1 && uris.length > 3 ? (
-              <View style={gridStyles.extraOverlay}>
-                <Text style={gridStyles.extraText}>+{uris.length - 3}</Text>
+    );
+  }
+
+  // ── 4 images: 2×2 ────────────────────────────────────────────────────────
+  if (uris.length === 4) {
+    const topRow = uris.slice(0, 2);
+    const botRow = uris.slice(2, 4);
+    return (
+      <View style={gridStyles.quadContainer}>
+        <View style={gridStyles.quadRow}>
+          {topRow.map((uri, i) => (
+            <View
+              key={`compose-t${i}`}
+              style={[gridStyles.quadCell, { backgroundColor: cellBg, marginLeft: i === 1 ? GRID_GAP : 0 }]}
+            >
+              <Image source={{ uri }} style={gridStyles.fillImage} contentFit="cover" transition={0} />
+              <RemoveBtn onPress={() => onRemove(i)} disabled={disabled} colors={colors} />
+            </View>
+          ))}
+        </View>
+        <View style={[gridStyles.quadRow, { marginTop: GRID_GAP }]}>
+          {botRow.map((uri, i) => {
+            const idx = 2 + i;
+            return (
+              <View
+                key={`compose-b${i}`}
+                style={[gridStyles.quadCell, { backgroundColor: cellBg, marginLeft: i === 1 ? GRID_GAP : 0 }]}
+              >
+                <Image source={{ uri }} style={gridStyles.fillImage} contentFit="cover" transition={0} />
+                <RemoveBtn onPress={() => onRemove(idx)} disabled={disabled} colors={colors} />
               </View>
-            ) : null}
+            );
+          })}
+        </View>
+      </View>
+    );
+  }
+
+  // ── 5+ images: 2×2, last cell with +N ────────────────────────────────────
+  const extraCount = uris.length - 4;
+  const topRow5 = uris.slice(0, 2);
+  const botRow5 = uris.slice(2, 4);
+  return (
+    <View style={gridStyles.quadContainer}>
+      <View style={gridStyles.quadRow}>
+        {topRow5.map((uri, i) => (
+          <View
+            key={`compose-t5${i}`}
+            style={[gridStyles.quadCell, { backgroundColor: cellBg, marginLeft: i === 1 ? GRID_GAP : 0 }]}
+          >
+            <Image source={{ uri }} style={gridStyles.fillImage} contentFit="cover" transition={0} />
+            <RemoveBtn onPress={() => onRemove(i)} disabled={disabled} colors={colors} />
           </View>
         ))}
+      </View>
+      <View style={[gridStyles.quadRow, { marginTop: GRID_GAP }]}>
+        {botRow5.map((uri, i) => {
+          const idx = 2 + i;
+          const isLast = i === 1;
+          return (
+            <View
+              key={`compose-b5${i}`}
+              style={[gridStyles.quadCell, { backgroundColor: cellBg, marginLeft: i === 1 ? GRID_GAP : 0 }]}
+            >
+              <Image source={{ uri }} style={gridStyles.fillImage} contentFit="cover" transition={0} />
+              <RemoveBtn onPress={() => onRemove(idx)} disabled={disabled} colors={colors} />
+              {isLast ? (
+                <View style={gridStyles.extraOverlay}>
+                  <Text style={gridStyles.extraText}>+{extraCount}</Text>
+                </View>
+              ) : null}
+            </View>
+          );
+        })}
       </View>
     </View>
   );
@@ -470,35 +636,41 @@ function RemoveBtn({
 
 const SINGLE_HEIGHT = 220;
 const DOUBLE_HEIGHT = 180;
-const TRIPLE_HEIGHT = 200;
+const TRIPLE_TOP_HEIGHT = 160;
+const TRIPLE_BOTTOM_HEIGHT = 120;
+// Quad: square cells — (screen width − card horizontal padding − 1 gap) / 2
+// Card padding = 2 * Space.lg (≈2*16=32). SCREEN_W approx only for style const.
+const QUAD_CELL_SIZE = Math.floor((SCREEN_W - 32 - GRID_GAP) / 2);
 
 const styles = StyleSheet.create({
   scrim: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(0,0,0,0.9)",
+    backgroundColor: "#000",
   },
   closeBtn: {
     position: "absolute",
-    right: 16,
+    // Logical start (left in LTR, right in RTL) — RTL-safe.
+    start: 16,
     zIndex: 10,
   },
   closePressable: {
     padding: 8,
     borderRadius: 20,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: "rgba(0,0,0,0.55)",
   },
   pager: {
     flex: 1,
   },
   imagePage: {
     width: SCREEN_W,
-    flex: 1,
+    height: SCREEN_H,
+    backgroundColor: "#000",
     alignItems: "center",
     justifyContent: "center",
   },
   fullImage: {
     width: SCREEN_W,
-    flex: 1,
+    height: SCREEN_H,
   },
   dotsRow: {
     position: "absolute",
@@ -523,6 +695,7 @@ const styles = StyleSheet.create({
 });
 
 const gridStyles = StyleSheet.create({
+  // ── 1 image ──────────────────────────────────────────────────────────────
   singleContainer: {
     borderRadius: 8,
     overflow: "hidden",
@@ -530,6 +703,7 @@ const gridStyles = StyleSheet.create({
   singleCell: {
     height: SINGLE_HEIGHT,
   },
+  // ── 2 images ─────────────────────────────────────────────────────────────
   doubleRow: {
     flexDirection: "row",
     borderRadius: 8,
@@ -539,23 +713,35 @@ const gridStyles = StyleSheet.create({
   doubleCell: {
     flex: 1,
   },
+  // ── 3 images: top large + 2 halves below ─────────────────────────────────
   tripleContainer: {
-    flexDirection: "row",
     borderRadius: 8,
     overflow: "hidden",
-    height: TRIPLE_HEIGHT,
   },
-  tripleLeft: {
+  tripleTop: {
+    height: TRIPLE_TOP_HEIGHT,
+  },
+  tripleBottomRow: {
+    flexDirection: "row",
+    marginTop: GRID_GAP,
+    height: TRIPLE_BOTTOM_HEIGHT,
+  },
+  tripleBottomCell: {
     flex: 1,
-    marginRight: GRID_GAP,
   },
-  tripleRight: {
+  // ── 4+ images: 2×2 grid ───────────────────────────────────────────────────
+  quadContainer: {
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  quadRow: {
+    flexDirection: "row",
+    height: QUAD_CELL_SIZE,
+  },
+  quadCell: {
     flex: 1,
-    flexDirection: "column",
   },
-  tripleRightCell: {
-    flex: 1,
-  },
+  // ── Shared ───────────────────────────────────────────────────────────────
   fillImage: {
     ...StyleSheet.absoluteFill,
   },
@@ -564,13 +750,13 @@ const gridStyles = StyleSheet.create({
   },
   extraOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: "rgba(0,0,0,0.4)",
     alignItems: "center",
     justifyContent: "center",
   },
   extraText: {
     color: "#fff",
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: "700",
   },
 });

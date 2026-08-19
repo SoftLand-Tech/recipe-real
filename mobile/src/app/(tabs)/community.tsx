@@ -6,29 +6,21 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
-import * as ImagePicker from "expo-image-picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, useFocusEffect } from "expo-router";
 
 import {
-  createPost,
-  createPostComment,
   fetchPostComments,
   fetchPosts,
   hasToken,
-  HalalRejectionError,
   PostUnauthorizedError,
-  searchRecipes,
   togglePostLike,
-  uploadImage,
 } from "@/api/client";
-import { track } from "@/analytics";
-import type { Post, PostComment, PostKind, PostRecipe, Recipe } from "@/types";
+import type { Post, PostComment, PostKind, PostRecipe } from "@/types";
 import { useLang, useT, type Lang, type TranslateFn } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 import {
@@ -36,7 +28,6 @@ import {
   Button,
   Card,
   Chip,
-  ComposeImageGrid,
   IconPressable,
   ImageViewerModal,
   PostImageGrid,
@@ -48,6 +39,13 @@ type LoadState = "loading" | "ready" | "error";
 /** Active feed filter: one of the post kinds, or all posts. */
 type FeedFilter = "all" | PostKind;
 
+/**
+ * Static style for the hidden measurement Text used by the read-more body.
+ * height:0 + overflow:hidden makes it invisible; pointerEvents handled by
+ * wrapping View (not applicable here since Text itself cannot block touch).
+ */
+const measureStyle = { height: 0, opacity: 0 } as const;
+
 const KIND_FILTERS: { value: FeedFilter; labelKey: string }[] = [
   { value: "all", labelKey: "filter.all" },
   { value: "try", labelKey: "community.kindTry" },
@@ -55,16 +53,6 @@ const KIND_FILTERS: { value: FeedFilter; labelKey: string }[] = [
   { value: "question", labelKey: "community.kindQuestion" },
 ];
 
-/** Server-mirrored limits (POST /api/posts + comments). */
-const POST_BODY_MAX = 2000;
-const COMMENT_BODY_MAX = 1000;
-
-/** Top results kept in the compose-card recipe mini picker. */
-const RECIPE_PICK_RESULTS = 5;
-const RECIPE_SEARCH_DEBOUNCE_MS = 350;
-
-/** Max images per post. */
-const MAX_IMAGES = 6;
 
 /**
  * Safety cap for the pull-to-refresh spinner: it must never outlive ~10s
@@ -197,6 +185,10 @@ const PostCard = memo(function PostCard({
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerStartIndex, setViewerStartIndex] = useState(0);
 
+  // ---- Read-more (body clamping) --------------------------------------------
+  const [bodyExpanded, setBodyExpanded] = useState(false);
+  const [bodyOverflows, setBodyOverflows] = useState(false);
+
   const openViewer = useCallback((index: number) => {
     setViewerStartIndex(index);
     setViewerOpen(true);
@@ -313,6 +305,11 @@ const PostCard = memo(function PostCard({
           ...Type.bodySm,
           color: colors.accent,
         },
+        seeMore: {
+          ...Type.bodySm,
+          color: colors.accent,
+          marginTop: 2,
+        },
       }),
     [colors],
   );
@@ -348,9 +345,46 @@ const PostCard = memo(function PostCard({
           </View>
         </IconPressable>
 
-        {/* Body — full text (posts are capped at 2000 chars server-side). */}
+        {/* Body — clamped to 3 lines; "See more" expands inline.
+            We use a hidden unclamped Text for line-count measurement (onTextLayout
+            only reports clamped lines when numberOfLines is set, so we measure
+            separately). The hidden Text has height:0 and pointerEvents="none"
+            so it is invisible and non-interactive. */}
         <IconPressable onPress={() => router.push(`/post/${post.id}`)}>
-          <Text style={styles.body}>{post.body}</Text>
+          {/* Hidden measurement text — no numberOfLines, no height */}
+          <Text
+            style={[styles.body, measureStyle]}
+            numberOfLines={undefined}
+            onTextLayout={(e) => {
+              setBodyOverflows(e.nativeEvent.lines.length > 3);
+            }}
+            aria-hidden
+          >
+            {post.body}
+          </Text>
+          {/* Visible clamped text */}
+          <Text
+            style={styles.body}
+            numberOfLines={bodyExpanded ? undefined : 3}
+          >
+            {post.body}
+          </Text>
+          {bodyOverflows && !bodyExpanded ? (
+            <IconPressable
+              onPress={() => setBodyExpanded(true)}
+              hitSlop={Space.xs}
+            >
+              <Text style={styles.seeMore}>{t("community.seeMore")}</Text>
+            </IconPressable>
+          ) : null}
+          {bodyExpanded ? (
+            <IconPressable
+              onPress={() => setBodyExpanded(false)}
+              hitSlop={Space.xs}
+            >
+              <Text style={styles.seeMore}>{t("community.seeLess")}</Text>
+            </IconPressable>
+          ) : null}
         </IconPressable>
 
         {/* Optional multi-image grid (cells are NOT wrapped in the card tappable). */}
@@ -469,421 +503,6 @@ const PostCard = memo(function PostCard({
   );
 });
 
-// ---- Compose card ----------------------------------------------------------------
-
-interface ComposeCardProps {
-  onClose: () => void;
-  onCreated: (post: Post) => void;
-}
-
-/**
- * Inline compose card rendered at the top of the feed: kind chips, body,
- * optional recipe attach (search-as-you-type mini picker) and up to 6 photos
- * (sequential upload per file during submit). Preview grid while composing:
- * 1 image full-width 4:3; 2 images side-by-side; 3+ a 2-column grid.
- * Submit sends `images` (array of uploaded URLs) to createPost.
- */
-function ComposeCard({ onClose, onCreated }: ComposeCardProps) {
-  const colors = useThemeColors();
-  const t = useT();
-  const lr = useLocalizedTitle();
-
-  const [kind, setKind] = useState<PostKind>("try");
-  const [body, setBody] = useState("");
-  // Multi-image: array of local device URIs.
-  const [pickedUris, setPickedUris] = useState<string[]>([]);
-
-  // Recipe attach: query + debounced top-5 results + the selected row.
-  const [recipeQuery, setRecipeQuery] = useState("");
-  const [recipeResults, setRecipeResults] = useState<Recipe[]>([]);
-  const [recipeSearching, setRecipeSearching] = useState(false);
-  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
-
-  const [posting, setPosting] = useState(false);
-  const [uploadCaption, setUploadCaption] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [halalTerms, setHalalTerms] = useState<string[] | null>(null);
-
-  // Debounced recipe search (like the browse search box).
-  useEffect(() => {
-    if (selectedRecipe != null) return;
-    const q = recipeQuery.trim();
-    if (q.length === 0) {
-      setRecipeResults([]);
-      return;
-    }
-    const timer = setTimeout(() => {
-      setRecipeSearching(true);
-      searchRecipes({ q, perPage: RECIPE_PICK_RESULTS })
-        .then((page) => {
-          setRecipeResults(page.recipes.slice(0, RECIPE_PICK_RESULTS));
-        })
-        .catch(() => {
-          // Offline / server error: show an empty picker, not a crash.
-          setRecipeResults([]);
-        })
-        .finally(() => {
-          setRecipeSearching(false);
-        });
-    }, RECIPE_SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [recipeQuery, selectedRecipe]);
-
-  /** Pick up to MAX_IMAGES images from the library. */
-  const pickImages = useCallback(async () => {
-    const remaining = MAX_IMAGES - pickedUris.length;
-    if (remaining <= 0) return;
-    try {
-      // expo-image-picker supports allowsMultipleSelection on iOS 14+/Android.
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        quality: 0.8,
-        allowsMultipleSelection: true,
-        selectionLimit: remaining,
-      });
-      if (!result.canceled && result.assets.length > 0) {
-        const newUris = result.assets
-          .map((a) => a.uri)
-          .filter(Boolean)
-          .slice(0, remaining);
-        setPickedUris((prev) => [...prev, ...newUris].slice(0, MAX_IMAGES));
-      }
-    } catch (err) {
-      console.warn("[RecipeReal] image pick failed:", err);
-    }
-  }, [pickedUris]);
-
-  const removeImage = useCallback((index: number) => {
-    setPickedUris((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
-  const submit = useCallback(async () => {
-    const text = body.trim();
-    if (text.length === 0) {
-      setError(t("community.errBodyRequired"));
-      return;
-    }
-    if (text.length > POST_BODY_MAX) {
-      setError(t("community.errBodyLong"));
-      return;
-    }
-    if (posting) return;
-    setPosting(true);
-    setError(null);
-    setHalalTerms(null);
-    setUploadCaption(null);
-    try {
-      // Upload each picked image sequentially, reporting progress.
-      const uploadedUrls: string[] = [];
-      if (pickedUris.length > 0) {
-        for (let i = 0; i < pickedUris.length; i++) {
-          setUploadCaption(
-            t("community.uploadingImages", { n: pickedUris.length }) +
-              ` (${i + 1}/${pickedUris.length})`,
-          );
-          try {
-            const url = await uploadImage(pickedUris[i]);
-            uploadedUrls.push(url);
-          } catch {
-            setError(t("community.errImageUpload"));
-            return;
-          }
-        }
-      }
-      setUploadCaption(null);
-
-      const created = await createPost({
-        kind,
-        body: text,
-        ...(selectedRecipe ? { recipe_id: selectedRecipe.id } : {}),
-        // Always send `images` when we have any; image_url is set server-side
-        // to images[0] for backward compat.
-        ...(uploadedUrls.length > 0 ? { images: uploadedUrls } : {}),
-      });
-      track("post_created", {
-        kind,
-        has_image: uploadedUrls.length > 0,
-        image_count: uploadedUrls.length,
-        has_recipe: selectedRecipe != null,
-      });
-      onCreated(created);
-    } catch (err) {
-      if (err instanceof HalalRejectionError) {
-        setHalalTerms(err.terms);
-      } else {
-        console.warn("[RecipeReal] post creation failed:", err);
-        setError(t("community.postFailed"));
-      }
-    } finally {
-      setPosting(false);
-      setUploadCaption(null);
-    }
-  }, [body, posting, pickedUris, kind, selectedRecipe, t, onCreated]);
-
-  const styles = useMemo(
-    () =>
-      StyleSheet.create({
-        card: {
-          gap: Space.md,
-          borderWidth: 1,
-          borderColor: colors.accentSoft,
-        },
-        title: {
-          ...Type.h3,
-          color: colors.ink,
-        },
-        kindRow: {
-          flexDirection: "row",
-          flexWrap: "wrap",
-          gap: Space.sm,
-        },
-        bodyInput: {
-          ...Type.body,
-          color: colors.ink,
-          backgroundColor: colors.surfaceSoft,
-          borderRadius: Radius.md,
-          padding: Space.md,
-          minHeight: 96,
-          textAlignVertical: "top",
-        },
-        errorText: {
-          ...Type.bodySm,
-          color: colors.danger,
-        },
-        attachLabel: {
-          ...Type.caption,
-          color: colors.inkSecondary,
-          fontWeight: "600",
-        },
-        selectedRow: {
-          flexDirection: "row",
-          alignItems: "center",
-        },
-        photoActions: {
-          flexDirection: "row",
-          flexWrap: "wrap",
-          gap: Space.sm,
-        },
-        resultRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.sm,
-          paddingVertical: Space.xs,
-        },
-        resultTitle: {
-          ...Type.bodySm,
-          color: colors.ink,
-          flex: 1,
-        },
-        searchRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.sm,
-        },
-        searchInput: {
-          flex: 1,
-          ...Type.bodySm,
-          color: colors.ink,
-          backgroundColor: colors.surfaceSoft,
-          borderRadius: Radius.pill,
-          paddingHorizontal: Space.md,
-          paddingVertical: Space.sm,
-        },
-        searching: {
-          alignSelf: "flex-start",
-        },
-        actions: {
-          flexDirection: "row",
-          gap: Space.sm,
-        },
-        uploadCaption: {
-          ...Type.bodySm,
-          color: colors.inkSecondary,
-        },
-      }),
-    [colors],
-  );
-
-  return (
-    <Card style={styles.card}>
-      <Text style={styles.title}>{t("community.composeTitle")}</Text>
-
-      {/* Kind selector. */}
-      <Text style={styles.attachLabel}>{t("community.composeKindHint")}</Text>
-      <View style={styles.kindRow}>
-        {(["try", "fail", "question"] as PostKind[]).map((option) => (
-          <IconPressable
-            key={option}
-            onPress={() => setKind(option)}
-            hitSlop={Space.xs}
-          >
-            <Chip
-              label={t(kindLabelKey(option))}
-              tone={kind === option ? kindTone(option) : "neutral"}
-              size="sm"
-            />
-          </IconPressable>
-        ))}
-      </View>
-
-      {/* Body. */}
-      <TextInput
-        style={styles.bodyInput}
-        value={body}
-        onChangeText={setBody}
-        placeholder={t("community.composePlaceholder")}
-        placeholderTextColor={colors.inkFaint}
-        multiline
-        maxLength={POST_BODY_MAX}
-        editable={!posting}
-      />
-
-      {/* Multi-image preview grid (with remove buttons). */}
-      {pickedUris.length > 0 ? (
-        <ComposeImageGrid
-          uris={pickedUris}
-          onRemove={removeImage}
-          disabled={posting}
-        />
-      ) : null}
-
-      {/* Photo action buttons. */}
-      <View style={styles.photoActions}>
-        {pickedUris.length < MAX_IMAGES ? (
-          <Button
-            title={
-              pickedUris.length === 0
-                ? t("community.addImages")
-                : t("community.addMoreImages")
-            }
-            variant="ghost"
-            onPress={() => void pickImages()}
-            disabled={posting}
-          />
-        ) : null}
-      </View>
-
-      {/* Upload progress caption. */}
-      {uploadCaption != null ? (
-        <Text style={styles.uploadCaption}>{uploadCaption}</Text>
-      ) : null}
-
-      {/* Optional recipe attach: selected chip or search mini picker. */}
-      {selectedRecipe ? (
-        <View style={styles.selectedRow}>
-          <Chip
-            label={lr(selectedRecipe)}
-            tone="accent"
-            size="sm"
-            icon={
-              <Ionicons
-                name="restaurant-outline"
-                size={12}
-                color={colors.accent}
-              />
-            }
-          />
-          <IconPressable
-            onPress={() => {
-              setSelectedRecipe(null);
-              setRecipeQuery("");
-              setRecipeResults([]);
-            }}
-            hitSlop={Space.xs}
-            disabled={posting}
-          >
-            <Ionicons name="close" size={18} color={colors.inkSecondary} />
-          </IconPressable>
-        </View>
-      ) : (
-        <>
-          <Text style={styles.attachLabel}>{t("community.attachRecipe")}</Text>
-          <View style={styles.searchRow}>
-            <Ionicons
-              name="search"
-              size={16}
-              color={colors.inkFaint}
-            />
-            <TextInput
-              style={styles.searchInput}
-              value={recipeQuery}
-              onChangeText={setRecipeQuery}
-              placeholder={t("browse.searchPlaceholder")}
-              placeholderTextColor={colors.inkFaint}
-              editable={!posting}
-              returnKeyType="search"
-            />
-          </View>
-          {recipeSearching ? (
-            <ActivityIndicator
-              color={colors.accent}
-              size="small"
-              style={styles.searching}
-            />
-          ) : (
-            <View style={{ gap: Space.xs }}>
-              {recipeResults.map((recipe) => (
-                <IconPressable
-                  key={`pick-${recipe.id}`}
-                  onPress={() => setSelectedRecipe(recipe)}
-                  style={styles.resultRow}
-                  disabled={posting}
-                >
-                  <Ionicons
-                    name="add-circle-outline"
-                    size={18}
-                    color={colors.accent}
-                  />
-                  <Text style={styles.resultTitle} numberOfLines={1}>
-                    {lr(recipe)}
-                  </Text>
-                </IconPressable>
-              ))}
-            </View>
-          )}
-        </>
-      )}
-
-      {halalTerms != null ? (
-        <Text style={styles.errorText}>
-          {t("community.halalBlocked", { terms: halalTerms.join(", ") })}
-        </Text>
-      ) : null}
-      {error != null && halalTerms == null ? (
-        <Text style={styles.errorText}>{error}</Text>
-      ) : null}
-
-      <View style={styles.actions}>
-        <Button
-          title={t("common.cancel")}
-          variant="ghost"
-          onPress={onClose}
-          disabled={posting}
-        />
-        <Button
-          title={posting ? t("community.posting") : t("community.postAction")}
-          variant="primary"
-          loading={posting}
-          disabled={posting || body.trim().length === 0}
-          onPress={() => void submit()}
-        />
-      </View>
-    </Card>
-  );
-}
-
-/** Localized recipe title for the compose picker (single-language fallback). */
-function useLocalizedTitle(): (recipe: Recipe) => string {
-  const { lang } = useLang();
-  return useCallback(
-    (recipe: Recipe) =>
-      lang === "ar"
-        ? (recipe.title_ar ?? recipe.title ?? "")
-        : (recipe.title ?? recipe.title_ar ?? ""),
-    [lang],
-  );
-}
-
 // ---- Screen ----------------------------------------------------------------------
 
 /**
@@ -908,7 +527,6 @@ export default function CommunityScreen() {
   const [state, setState] = useState<LoadState>("loading");
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [composing, setComposing] = useState(false);
 
   // Mirror of `posts` readable inside async closures without re-creating them.
   const postsRef = useRef<Post[]>([]);
@@ -958,8 +576,9 @@ export default function CommunityScreen() {
     void fetchPage("all", 1);
   }, [fetchPage]);
 
-  // Refresh the sign-in state on focus so returning from /login updates the
-  // compose/avatar affordances.
+  // On every focus: refresh auth state AND silently reload feed page 1.
+  // This covers returning from /post-composer (new post visible at top) and
+  // from /login (compose affordance unlocks) without extra event coupling.
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
@@ -967,17 +586,19 @@ export default function CommunityScreen() {
         const ok = await hasToken();
         if (!cancelled) setSignedIn(ok);
       })();
+      // Silent feed refresh on re-focus (does not show spinner for non-empty feeds).
+      void fetchPage(filter, 1);
       return () => {
         cancelled = true;
       };
-    }, []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [fetchPage]),
   );
 
   const changeFilter = useCallback(
     (next: FeedFilter) => {
       if (next === filter) return;
       setFilter(next);
-      setComposing(false);
       setPosts([]);
       postsRef.current = [];
       setState("loading");
@@ -1016,23 +637,9 @@ export default function CommunityScreen() {
       router.push("/login");
       return;
     }
-    setComposing(true);
+    // Push the dedicated compose screen; on back, useFocusEffect refreshes the feed.
+    router.push("/post-composer");
   }, [signedIn]);
-
-  const handleCreated = useCallback(
-    (created: Post) => {
-      setComposing(false);
-      if (filter === "all" || filter === created.kind) {
-        // Newest-first feed: the fresh post lands on top.
-        setPosts((prev) => [created, ...prev]);
-        setState("ready");
-      } else {
-        // The active filter would hide it — hop to the All feed.
-        changeFilter("all");
-      }
-    },
-    [filter, changeFilter],
-  );
 
   const styles = useMemo(
     () =>
@@ -1177,14 +784,7 @@ export default function CommunityScreen() {
         }
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
-        ListHeaderComponent={
-          composing ? (
-            <ComposeCard
-              onClose={() => setComposing(false)}
-              onCreated={handleCreated}
-            />
-          ) : null
-        }
+        ListHeaderComponent={null}
         ListFooterComponent={
           loadingMore ? (
             <View style={styles.footer}>
