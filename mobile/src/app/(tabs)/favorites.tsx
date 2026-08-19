@@ -28,14 +28,21 @@ import {
   Chip,
   HeroImage,
   HeartButton,
+  IconPressable,
   NoteBadge,
   ScreenHeader,
-  SectionHeader,
   SkeletonCard,
   TimeChip,
 } from "@/components/ui";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 type LoadState = "loading" | "ready" | "error";
+
+/** Which of the two peer lists the screen shows. */
+type FavoritesTab = "favorites" | "notes";
+
+/** Persists the last-selected tab so the screen reopens where you left it. */
+const FAVORITES_TAB_KEY = "recipereal.favoritesTab";
 
 /** A recipe joined with its personal note (newest note first). */
 type NotedRecipe = { recipe: Recipe; note: string; updatedAt: number };
@@ -88,6 +95,25 @@ export default function FavoritesScreen() {
   const [noteIds, setNoteIds] = useState<Set<number>>(new Set());
   const [notedRecipes, setNotedRecipes] = useState<NotedRecipe[]>([]);
   const [showAllNotes, setShowAllNotes] = useState(false);
+
+  // Favorites/Notes peer tabs — notes live one tap away instead of an
+  // endless scroll below the grid (or vice versa).
+  const [tab, setTab] = useState<FavoritesTab>("favorites");
+  useEffect(() => {
+    AsyncStorage.getItem(FAVORITES_TAB_KEY)
+      .then((saved) => {
+        if (saved === "notes") setTab("notes");
+      })
+      .catch(() => {
+        // Best-effort restore.
+      });
+  }, []);
+  const selectTab = useCallback((next: FavoritesTab) => {
+    setTab(next);
+    AsyncStorage.setItem(FAVORITES_TAB_KEY, next).catch(() => {
+      // Best-effort persist.
+    });
+  }, []);
   const [state, setState] = useState<LoadState>("loading");
   const [refreshing, setRefreshing] = useState(false);
 
@@ -169,6 +195,12 @@ export default function FavoritesScreen() {
           ...Type.body,
           color: colors.inkSecondary,
           textAlign: "center",
+        },
+        tabsRow: {
+          flexDirection: "row",
+          flexWrap: "wrap",
+          gap: Space.sm,
+          marginBottom: Space.md,
         },
         notesSection: {
           gap: Space.md,
@@ -379,6 +411,30 @@ export default function FavoritesScreen() {
         subtitle={t("favorites.subtitle")}
       />
 
+      {/* Peer tabs: the two lists never bury each other in one scroll. */}
+      {state === "ready" ? (
+        <View style={styles.tabsRow}>
+          <IconPressable
+            onPress={() => selectTab("favorites")}
+            accessibilityRole="button"
+          >
+            <Chip
+              label={`${t("tabs.favorites")} · ${favorites.length}`}
+              tone={tab === "favorites" ? "accent" : "neutral"}
+            />
+          </IconPressable>
+          <IconPressable
+            onPress={() => selectTab("notes")}
+            accessibilityRole="button"
+          >
+            <Chip
+              label={`${t("favorites.tabNotes")} · ${notedRecipes.length}`}
+              tone={tab === "notes" ? "accent" : "neutral"}
+            />
+          </IconPressable>
+        </View>
+      ) : null}
+
       {state === "loading" ? (
         <View
           style={styles.list}
@@ -403,41 +459,14 @@ export default function FavoritesScreen() {
           <Text style={styles.muted}>{t("favorites.couldNotLoad")}</Text>
           <Button title={t("common.retry")} onPress={load} style={styles.cta} />
         </View>
-      ) : favorites.length === 0 ? (
-        <View style={styles.center}>
-          <Text style={styles.emptyGlyph}>♡</Text>
-          <Text style={styles.emptyTitle}>{t("favorites.emptyTitle")}</Text>
-          <Text style={styles.emptyCaption}>
-            {t("favorites.emptyCaption")}
-          </Text>
-          <Button
-            title={t("favorites.browseRecipes")}
-            variant="primary"
-            onPress={() => router.push("/browse")}
-            style={styles.cta}
-          />
-        </View>
-      ) : (
-        <View
-          style={styles.list}
-          key={numColumns === 1 ? "fav-1col" : "fav-2col"}
-        >
-          {rows.map((row) => (
-            <View key={`row-${row[0].id}`} style={styles.row}>
-              {row.map(renderCard)}
-              {row.length < numColumns ? <View style={styles.gridCell} /> : null}
-            </View>
-          ))}
-        </View>
-      )}
-
-      {/* "Your notes" — independent of favorites: shows below the grid or the
-          empty state alike, refreshed on focus with the same load(). */}
-      {state === "ready" ? (
+      ) : tab === "notes" ? (
+        /* Notes tab: the note list as its own top-level list. */
         <View style={styles.notesSection}>
-          <SectionHeader title={t("favorites.yourNotes")} />
           {notedRecipes.length === 0 ? (
-            <Text style={styles.notesEmpty}>{t("favorites.noNotes")}</Text>
+            <View style={styles.center}>
+              <Text style={styles.emptyGlyph}>📝</Text>
+              <Text style={styles.muted}>{t("favorites.noNotes")}</Text>
+            </View>
           ) : (
             <>
               <View style={styles.notesList}>
@@ -478,7 +507,33 @@ export default function FavoritesScreen() {
             </>
           )}
         </View>
-      ) : null}
+      ) : favorites.length === 0 ? (
+        <View style={styles.center}>
+          <Text style={styles.emptyGlyph}>♡</Text>
+          <Text style={styles.emptyTitle}>{t("favorites.emptyTitle")}</Text>
+          <Text style={styles.emptyCaption}>
+            {t("favorites.emptyCaption")}
+          </Text>
+          <Button
+            title={t("favorites.browseRecipes")}
+            variant="primary"
+            onPress={() => router.push("/browse")}
+            style={styles.cta}
+          />
+        </View>
+      ) : (
+        <View
+          style={styles.list}
+          key={numColumns === 1 ? "fav-1col" : "fav-2col"}
+        >
+          {rows.map((row) => (
+            <View key={`row-${row[0].id}`} style={styles.row}>
+              {row.map(renderCard)}
+              {row.length < numColumns ? <View style={styles.gridCell} /> : null}
+            </View>
+          ))}
+        </View>
+      )}
     </ScrollView>
   );
 }

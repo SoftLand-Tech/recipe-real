@@ -314,6 +314,7 @@ export const ar: Record<string, string> = {
   "favorites.emptyCaption": "اضغط القلب على أي وصفة لحفظها هنا.",
   "favorites.browseRecipes": "استعرض الوصفات",
   "favorites.yourNotes": "ملاحظاتك",
+  "favorites.tabNotes": "الملاحظات",
   "favorites.noNotes": "الملاحظات التي تكتبها على الوصفات تظهر هنا.",
   "favorites.showAllNotes": "عرض كل الملاحظات",
   "favorites.showFewNotes": "عرض أقل",
