@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class TopAnalyticsEventsWidget extends TableWidget
 {
+    protected static ?int $sort = 8;
+
     protected int | string | array $columnSpan = 'full';
 
     /**

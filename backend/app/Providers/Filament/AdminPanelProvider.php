@@ -2,10 +2,14 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Widgets\CookSessionsChartWidget;
 use App\Filament\Widgets\LatestCookSessionsWidget;
 use App\Filament\Widgets\LatestPostsWidget;
+use App\Filament\Widgets\PostsByKindChartWidget;
+use App\Filament\Widgets\SignupsChartWidget;
 use App\Filament\Widgets\StatsOverviewWidget;
 use App\Filament\Widgets\TopAnalyticsEventsWidget;
+use App\Filament\Widgets\TopRecipesChartWidget;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -48,6 +52,10 @@ class AdminPanelProvider extends PanelProvider
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([
                 StatsOverviewWidget::class,
+                CookSessionsChartWidget::class,
+                SignupsChartWidget::class,
+                PostsByKindChartWidget::class,
+                TopRecipesChartWidget::class,
                 LatestPostsWidget::class,
                 LatestCookSessionsWidget::class,
                 TopAnalyticsEventsWidget::class,
