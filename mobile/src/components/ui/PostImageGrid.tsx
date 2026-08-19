@@ -1,8 +1,10 @@
-import { memo, useCallback, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
+  Animated,
   Dimensions,
   FlatList,
   Modal,
+  PanResponder,
   Pressable,
   StyleSheet,
   Text,
@@ -17,6 +19,10 @@ import { useThemeColors } from "@/theme";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
+/** Vertical distance/velocity that commits a swipe-down dismiss. */
+const DISMISS_DRAG = 110;
+const DISMISS_VY = 1.1;
+
 // ---- Fullscreen viewer ---------------------------------------------------------
 
 interface ImageViewerProps {
@@ -26,14 +32,14 @@ interface ImageViewerProps {
 }
 
 /**
- * Full-screen horizontal image pager (dark scrim, page-dot indicator).
- * Opened from PostImageGrid; self-contained via a Modal so it composites
- * above the rest of the UI without navigation overhead.
+ * Facebook-style fullscreen photo viewer:
+ *   - opens with a zoom-in feel (photo scales up from 0.85 + scrim fades in)
+ *   - horizontal paging between photos with an "N / M" counter (not dots)
+ *   - SWIPE DOWN on a photo to dismiss (photo tracks the finger, scrim
+ *     fades; past the threshold the viewer closes, else it springs back)
+ *   - images contained (never cropped) on black; close ✕ below the notch
  *
- * Viewer fixes:
- *   - Images are CONTAINED (contentFit="contain") on a black background.
- *   - Close ✕ sits below the notch using safe-area top + 16 pt offset.
- *   - Position uses `start` (logical RTL-safe inset).
+ * Self-contained via a Modal — composites above the UI without navigation.
  *
  * Android paint rules: static styles only, no width:"100%" on any Pressable.
  */
@@ -47,6 +53,84 @@ export const ImageViewerModal = memo(function ImageViewerModal({
   const [currentIndex, setCurrentIndex] = useState(startIndex);
   const flatListRef = useRef<FlatList>(null);
 
+  // Entry animation: scrim fade + photo scale-up (the FB "zoom into place").
+  const scrimOpacity = useRef(new Animated.Value(0)).current;
+  const contentScale = useRef(new Animated.Value(0.85)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(scrimOpacity, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.spring(contentScale, {
+        toValue: 1,
+        speed: 20,
+        bounciness: 5,
+        useNativeDriver: true,
+      }),
+    ]).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Swipe-down-to-dismiss: the pager wrapper tracks a downward drag and the
+  // scrim fades proportionally. Only claims the gesture when the movement is
+  // clearly VERTICAL (dy dominates dx), so horizontal paging still works.
+  const panY = useRef(new Animated.Value(0)).current;
+  const dragOffsetRef = useRef(0);
+  const closingRef = useRef(false);
+  const runDismiss = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    Animated.parallel([
+      Animated.timing(panY, {
+        toValue: SCREEN_H,
+        duration: 170,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scrimOpacity, {
+        toValue: 0,
+        duration: 170,
+        useNativeDriver: true,
+      }),
+    ]).start(() => onClose());
+  }, [onClose, panY, scrimOpacity]);
+
+  const springBack = useCallback(() => {
+    Animated.parallel([
+      Animated.spring(panY, { toValue: 0, speed: 18, bounciness: 6, useNativeDriver: true }),
+      Animated.timing(scrimOpacity, { toValue: 1, duration: 140, useNativeDriver: true }),
+    ]).start();
+  }, [panY, scrimOpacity]);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_e, g) =>
+        !closingRef.current &&
+        g.dy > 0 &&
+        Math.abs(g.dy) > 12 &&
+        Math.abs(g.dy) > Math.abs(g.dx) * 1.5,
+      onPanResponderMove: (_e, g) => {
+        dragOffsetRef.current = g.dy;
+        panY.setValue(g.dy);
+        scrimOpacity.setValue(Math.max(0.15, 1 - g.dy / (SCREEN_H * 0.8)));
+      },
+      onPanResponderRelease: (_e, g) => {
+        if (dragOffsetRef.current > DISMISS_DRAG || g.vy > DISMISS_VY) {
+          runDismiss();
+        } else {
+          dragOffsetRef.current = 0;
+          springBack();
+        }
+      },
+      onPanResponderTerminate: () => {
+        dragOffsetRef.current = 0;
+        springBack();
+      },
+    }),
+  ).current;
+
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: Array<{ index: number | null }> }) => {
       const first = viewableItems[0];
@@ -59,27 +143,24 @@ export const ImageViewerModal = memo(function ImageViewerModal({
 
   const viewabilityConfig = { viewAreaCoveragePercentThreshold: 50 };
 
-  // Close button top: safe-area inset + 16 pt so it clears the notch/cutout.
-  const closeBtnTop = insets.top + 16;
+  // Chrome top: safe-area inset + 16 pt so it clears the notch/cutout.
+  const chromeTop = insets.top + 16;
 
   return (
     <Modal
       visible
       transparent
-      animationType="fade"
+      animationType="none"
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      {/* Dark scrim — tapping it closes the viewer. */}
+      {/* Dark scrim — fades in/out; tapping it closes the viewer. */}
       <TouchableWithoutFeedback onPress={onClose} accessible={false}>
-        <View style={styles.scrim} />
+        <Animated.View style={[styles.scrim, { opacity: scrimOpacity }]} />
       </TouchableWithoutFeedback>
 
-      {/* Close button — start side (LTR=left, RTL=right), below notch. */}
-      <View
-        style={[styles.closeBtn, { top: closeBtnTop }]}
-        pointerEvents="box-none"
-      >
+      {/* Chrome: close ✕ at start, "N / M" counter at end — below the notch. */}
+      <View style={[styles.chromeRow, { top: chromeTop }]} pointerEvents="box-none">
         <Pressable
           onPress={onClose}
           style={styles.closePressable}
@@ -88,57 +169,53 @@ export const ImageViewerModal = memo(function ImageViewerModal({
         >
           <Ionicons name="close" size={24} color={colors.surface} />
         </Pressable>
+        {images.length > 1 ? (
+          <Text style={styles.counter}>
+            {currentIndex + 1} / {images.length}
+          </Text>
+        ) : null}
       </View>
 
-      {/* Paged image list — contained images on black pages. */}
-      <FlatList
-        ref={flatListRef}
-        data={images}
-        keyExtractor={(uri) => uri}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        initialScrollIndex={startIndex}
-        getItemLayout={(_, index) => ({
-          length: SCREEN_W,
-          offset: SCREEN_W * index,
-          index,
-        })}
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={viewabilityConfig}
-        renderItem={({ item }) => (
-          <View style={styles.imagePage}>
-            <Image
-              source={{ uri: item }}
-              style={styles.fullImage}
-              contentFit="contain"
-              transition={0}
-              cachePolicy="memory-disk"
-              recyclingKey={item}
-            />
-          </View>
-        )}
-        style={styles.pager}
-        pointerEvents="box-none"
-      />
-
-      {/* Page-dot indicator */}
-      {images.length > 1 ? (
-        <View
-          style={[styles.dotsRow, { bottom: insets.bottom + 20 }]}
-          pointerEvents="none"
-        >
-          {images.map((uri, i) => (
-            <View
-              key={uri}
-              style={[
-                styles.dot,
-                i === currentIndex ? styles.dotActive : styles.dotInactive,
-              ]}
-            />
-          ))}
-        </View>
-      ) : null}
+      {/* Paged photos — zoom in on open, track vertical drags, contained. */}
+      <Animated.View
+        style={[
+          styles.pagerWrap,
+          {
+            transform: [{ scale: contentScale }, { translateY: panY }],
+          },
+        ]}
+        {...panResponder.panHandlers}
+      >
+        <FlatList
+          ref={flatListRef}
+          data={images}
+          keyExtractor={(uri) => uri}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          initialScrollIndex={startIndex}
+          getItemLayout={(_, index) => ({
+            length: SCREEN_W,
+            offset: SCREEN_W * index,
+            index,
+          })}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+          renderItem={({ item }) => (
+            <View style={styles.imagePage}>
+              <Image
+                source={{ uri: item }}
+                style={styles.fullImage}
+                contentFit="contain"
+                transition={0}
+                cachePolicy="memory-disk"
+                recyclingKey={item}
+              />
+            </View>
+          )}
+          style={styles.pager}
+        />
+      </Animated.View>
     </Modal>
   );
 });
@@ -647,16 +724,32 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     backgroundColor: "#000",
   },
-  closeBtn: {
+  // Chrome row: close ✕ at start, "N / M" counter at end (Facebook style).
+  chromeRow: {
     position: "absolute",
-    // Logical start (left in LTR, right in RTL) — RTL-safe.
-    start: 16,
+    left: 16,
+    right: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     zIndex: 10,
   },
   closePressable: {
     padding: 8,
     borderRadius: 20,
     backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  counter: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#fff",
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+    fontVariant: ["tabular-nums"] as ("tabular-nums")[],
+  },
+  pagerWrap: {
+    flex: 1,
   },
   pager: {
     flex: 1,
@@ -671,26 +764,6 @@ const styles = StyleSheet.create({
   fullImage: {
     width: SCREEN_W,
     height: SCREEN_H,
-  },
-  dotsRow: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 6,
-    zIndex: 10,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  dotActive: {
-    backgroundColor: "#fff",
-  },
-  dotInactive: {
-    backgroundColor: "rgba(255,255,255,0.4)",
   },
 });
 
