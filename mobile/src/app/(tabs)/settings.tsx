@@ -188,7 +188,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const t = useT();
-  const { pref: themePref, setPref: setThemePref, langPref, setLangPref } =
+  const { pref: themePref, setPref: setThemePref, langPref, setLangPref, scheme } =
     useThemePrefs();
 
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -480,8 +480,15 @@ export default function SettingsScreen() {
               <Switch
                 value={nudgeOn}
                 onValueChange={handleNudgeToggle}
-                trackColor={{ false: colors.hairline, true: colors.accent }}
-                thumbColor={colors.surface}
+                trackColor={{
+                  // Dark mode: the light hairline is invisible on a dark
+                  // card — brighten the off-track; ON stays accent.
+                  false: scheme === "dark" ? "#5A5148" : colors.hairline,
+                  true: colors.accent,
+                }}
+                // White thumb in BOTH schemes (system-switch convention) —
+                // colors.surface is near-black in dark mode.
+                thumbColor="#FFFFFF"
               />
             }
           />
