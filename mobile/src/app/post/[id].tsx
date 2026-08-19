@@ -778,7 +778,13 @@ export default function PostDetailScreen() {
         card: { gap: Space.md },
         headRow: { flexDirection: "row", alignItems: "center", gap: Space.sm },
         headMain: { flex: 1, gap: 1 },
-        author: { ...Type.title, color: colors.ink },
+        // Name + kind badge share one line (badge hugs the name).
+        nameRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.xs,
+        },
+        author: { ...Type.title, color: colors.ink, flexShrink: 1 },
         relTime: { ...Type.caption, color: colors.inkFaint },
         reportedRow: {
           flexDirection: "row",
@@ -913,9 +919,16 @@ export default function PostDetailScreen() {
             size={36}
           />
           <View style={styles.headMain}>
-            <Text style={styles.author} numberOfLines={1}>
-              {authorName(post.user)}
-            </Text>
+            <View style={styles.nameRow}>
+              <Text style={styles.author} numberOfLines={1}>
+                {authorName(post.user)}
+              </Text>
+              <Chip
+                size="sm"
+                tone={kindTone(post.kind)}
+                label={t(kindLabelKey(post.kind))}
+              />
+            </View>
             {caption.length > 0 ? (
               <Text style={styles.relTime}>{caption.join(" · ")}</Text>
             ) : null}
@@ -928,11 +941,6 @@ export default function PostDetailScreen() {
               </View>
             ) : null}
           </View>
-          <Chip
-            size="sm"
-            tone={kindTone(post.kind)}
-            label={t(kindLabelKey(post.kind))}
-          />
           <IconPressable
             onPress={() => void handleShare()}
             accessibilityLabel={t("community.shareA11y")}

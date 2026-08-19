@@ -331,9 +331,17 @@ const PostCard = memo(function PostCard({
           flex: 1,
           gap: 1,
         },
+        // Name + kind badge share one line (badge hugs the name, not the
+        // row end); the name shrinks first on narrow screens.
+        nameRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.xs,
+        },
         author: {
           ...Type.title,
           color: colors.ink,
+          flexShrink: 1,
         },
         relTime: {
           ...Type.caption,
@@ -439,18 +447,20 @@ const PostCard = memo(function PostCard({
               size={36}
             />
             <View style={styles.headMain}>
-              <Text style={styles.author} numberOfLines={1}>
-                {authorName(post.user)}
-              </Text>
+              <View style={styles.nameRow}>
+                <Text style={styles.author} numberOfLines={1}>
+                  {authorName(post.user)}
+                </Text>
+                <Chip
+                  size="sm"
+                  tone={kindTone(post.kind)}
+                  label={t(kindLabelKey(post.kind))}
+                />
+              </View>
               {rel !== "" ? (
                 <Text style={styles.relTime}>{rel}</Text>
               ) : null}
             </View>
-            <Chip
-              size="sm"
-              tone={kindTone(post.kind)}
-              label={t(kindLabelKey(post.kind))}
-            />
             <IconPressable
               onPress={openMenu}
               accessibilityLabel={t("community.postActions")}
