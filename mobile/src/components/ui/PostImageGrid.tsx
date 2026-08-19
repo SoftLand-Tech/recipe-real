@@ -87,8 +87,8 @@ const ViewerCardPage = memo(function ViewerCardPage({
   }, []);
 
   // Compute safe boundaries taking notch, chrome row, and margins into account
-  // Top: reserve the ✕ band again; bottom: reserve the counter band.
-  const safeTop = insets.top + 56;
+  // Top: notch inset only (no ✕ up there anymore); bottom: counter band.
+  const safeTop = insets.top;
   const safeBottom = insets.bottom + 44;
   const maxImageW = Math.max(100, SCREEN_W - 2 * CARD_MARGIN_H - 2 * CARD_PADDING);
   const maxImageH = Math.max(100, SCREEN_H - safeTop - safeBottom - 2 * CARD_MARGIN_V - 2 * CARD_PADDING);
@@ -260,9 +260,8 @@ export const ImageViewerModal = memo(function ImageViewerModal({
 
   const viewabilityConfig = { viewAreaCoveragePercentThreshold: 50 };
 
-  // Chrome: ✕ top-start (clear of the notch), counter bottom-center — each
-  // on the scrim; the card reserves bands for both so nothing overlaps it.
-  const chromeTop = insets.top + 16;
+  // Chrome: just the counter, bottom-center. Dismissing: tap the scrim,
+  // swipe down, or the hardware back button — no ✕ button by design.
   const counterBottom = insets.bottom + 20;
 
   return (
@@ -277,18 +276,6 @@ export const ImageViewerModal = memo(function ImageViewerModal({
       <TouchableWithoutFeedback onPress={onClose} accessible={false}>
         <Animated.View style={[styles.scrim, { opacity: scrimOpacity }]} />
       </TouchableWithoutFeedback>
-
-      {/* Close ✕ — top-start corner, below the notch. */}
-      <View style={[styles.closeRow, { top: chromeTop }]} pointerEvents="box-none">
-        <Pressable
-          onPress={onClose}
-          style={styles.closePressable}
-          accessibilityLabel="Close"
-          accessibilityRole="button"
-        >
-          <Ionicons name="close" size={24} color="#fff" />
-        </Pressable>
-      </View>
 
       {/* Photo counter — exact bottom-center. */}
       {images.length > 1 ? (
@@ -843,15 +830,6 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     backgroundColor: "#000",
   },
-  // Close ✕ row — top-start corner.
-  closeRow: {
-    position: "absolute",
-    left: 16,
-    right: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    zIndex: 10,
-  },
   // Counter row — exact bottom-center.
   counterRow: {
     position: "absolute",
@@ -859,11 +837,6 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: "center",
     zIndex: 10,
-  },
-  closePressable: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: "rgba(0,0,0,0.55)",
   },
   counter: {
     fontSize: 15,
