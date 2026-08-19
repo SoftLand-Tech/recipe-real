@@ -14,15 +14,23 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // API-only app: never build a login redirect (no such route).
-        // Returning null lets the Authenticate middleware construct an
-        // AuthenticationException (redirect = null) so the render handler
-        // in withExceptions() below can respond with JSON 401 instead of
-        // crashing with "Route [login] not defined."
-        $middleware->redirectGuestsTo(fn (Request $request) => null);
+        // Admin-panel (web) guests are sent to the panel login; API guests
+        // get null (no redirect target) so the render handler below can
+        // answer with JSON 401 instead of "Route [login] not defined."
+        $middleware->redirectGuestsTo(
+            fn (Request $request) => $request->is('admin') || $request->is('admin/*')
+                ? '/admin/login'
+                : null,
+        );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (AuthenticationException $e, Request $request) {
+            // Web panel guests redirect to the login; everything else is an
+            // API caller — JSON 401, no login route exists for them.
+            if ($request->is('admin') || $request->is('admin/*')) {
+                return redirect()->guest('/admin/login');
+            }
+
             return response()->json(['message' => $e->getMessage()], 401);
         });
 
