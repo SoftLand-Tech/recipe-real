@@ -152,6 +152,9 @@ export default function CookModeScreen() {
         retryBtn: {
           marginTop: Space.md,
         },
+        goHomeBtn: {
+          marginTop: Space.xs,
+        },
         // Header
         headerRow: {
           flexDirection: "row",
@@ -797,6 +800,20 @@ export default function CookModeScreen() {
             title={t("common.retry")}
             onPress={loadRecipe}
             style={styles.retryBtn}
+          />
+          {/* Escape hatch: never leave the user stranded on a dead cook
+              screen — one tap back to the home tab. */}
+          <Button
+            title={t("common.goHome")}
+            variant="ghost"
+            onPress={() => {
+              if (router.canDismiss()) {
+                router.dismissTo("/");
+              } else {
+                router.replace("/");
+              }
+            }}
+            style={styles.goHomeBtn}
           />
         </View>
       </View>

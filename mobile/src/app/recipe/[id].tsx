@@ -876,6 +876,16 @@ export default function RecipeDetailScreen() {
           borderRadius: Radius.pill,
           backgroundColor: colors.accent,
         },
+        errorHomeBtn: {
+          marginTop: Space.xs,
+          paddingVertical: Space.sm,
+          paddingHorizontal: Space.lg,
+        },
+        errorHomeText: {
+          ...Type.body,
+          fontWeight: "600",
+          color: colors.inkSecondary,
+        },
         retryText: {
           color: colors.surface,
           fontWeight: "700",
@@ -887,6 +897,18 @@ export default function RecipeDetailScreen() {
   // Monotonic load id: only the LATEST loadRecipe may commit state, so a
   // background revalidation or a retry can never clobber a newer recipe.
   const loadRequestIdRef = useRef(0);
+
+  /**
+   * Error-state escape hatch: dismiss the whole stack back to the home tab
+   * (falls back to a replace when there is nothing to dismiss).
+   */
+  const goHome = useCallback(() => {
+    if (router.canDismiss()) {
+      router.dismissTo("/");
+    } else {
+      router.replace("/");
+    }
+  }, []);
 
   const loadRecipe = useCallback(async () => {
     const requestId = ++loadRequestIdRef.current;
@@ -1546,6 +1568,11 @@ export default function RecipeDetailScreen() {
               </Text>
               <IconPressable style={styles.retry} onPress={loadRecipe}>
                 <Text style={styles.retryText}>{t("common.retry")}</Text>
+              </IconPressable>
+              {/* Escape hatch: never leave the user stranded on a dead detail
+                  screen — one tap back to the home tab. */}
+              <IconPressable style={styles.errorHomeBtn} onPress={goHome}>
+                <Text style={styles.errorHomeText}>{t("common.goHome")}</Text>
               </IconPressable>
             </View>
           )}

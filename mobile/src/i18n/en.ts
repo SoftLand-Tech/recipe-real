@@ -21,6 +21,7 @@ export const en: Record<string, string> = {
 
   // ---- Common -------------------------------------------------------------
   "common.retry": "Retry",
+  "common.goHome": "Go home",
   "common.somethingWentWrong": "Something went wrong",
   "common.seeAll": "See all",
   "common.signIn": "Sign in",

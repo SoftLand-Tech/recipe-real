@@ -22,6 +22,7 @@ export const ar: Record<string, string> = {
 
   // ---- عام ----------------------------------------------------------------
   "common.retry": "إعادة المحاولة",
+  "common.goHome": "العودة للرئيسية",
   "common.somethingWentWrong": "حدث خطأ ما",
   "common.seeAll": "عرض الكل",
   "common.signIn": "تسجيل الدخول",
