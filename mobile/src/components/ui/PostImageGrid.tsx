@@ -3,6 +3,7 @@ import {
   Animated,
   Dimensions,
   FlatList,
+  Image as RNImage,
   Modal,
   PanResponder,
   Pressable,
@@ -11,17 +12,24 @@ import {
   TouchableWithoutFeedback,
   View,
 } from "react-native";
-import { Image } from "expo-image";
+import { Image, type ImageLoadEventData } from "expo-image";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useThemeColors } from "@/theme";
+import { Radius, type ThemeColors, useThemeColors } from "@/theme";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
 /** Vertical distance/velocity that commits a swipe-down dismiss. */
 const DISMISS_DRAG = 110;
 const DISMISS_VY = 1.1;
+
+/** Floating card layout tokens */
+const CARD_MARGIN_H = 16;
+const CARD_MARGIN_V = 20;
+const CARD_PADDING = 10;
+const CARD_RADIUS = Radius.lg; // 16
+const CARD_IMAGE_RADIUS = Radius.sm; // 8
 
 // ---- Fullscreen viewer ---------------------------------------------------------
 
@@ -31,13 +39,121 @@ interface ImageViewerProps {
   onClose: () => void;
 }
 
+interface ViewerCardPageProps {
+  uri: string;
+  insets: { top: number; bottom: number; left: number; right: number };
+  colors: ThemeColors;
+  onClose: () => void;
+}
+
+/**
+ * Individual page inside the photo viewer FlatList:
+ * Measures intrinsic photo dimensions and renders a floating rounded card
+ * that wraps the contained image with padding and margins.
+ */
+const ViewerCardPage = memo(function ViewerCardPage({
+  uri,
+  insets,
+  colors,
+  onClose,
+}: ViewerCardPageProps) {
+  const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (uri) {
+      RNImage.getSize(
+        uri,
+        (width, height) => {
+          if (active && width > 0 && height > 0) {
+            setDimensions((prev) => prev ?? { width, height });
+          }
+        },
+        () => {
+          // Handled via expo-image onLoad fallback
+        },
+      );
+    }
+    return () => {
+      active = false;
+    };
+  }, [uri]);
+
+  const handleLoad = useCallback((event: ImageLoadEventData) => {
+    const { width, height } = event.source;
+    if (width > 0 && height > 0) {
+      setDimensions({ width, height });
+    }
+  }, []);
+
+  // Compute safe boundaries taking notch, chrome row, and margins into account
+  const safeTop = insets.top + 56;
+  const safeBottom = Math.max(insets.bottom, 16);
+  const maxImageW = Math.max(100, SCREEN_W - 2 * CARD_MARGIN_H - 2 * CARD_PADDING);
+  const maxImageH = Math.max(100, SCREEN_H - safeTop - safeBottom - 2 * CARD_MARGIN_V - 2 * CARD_PADDING);
+
+  let imageW = maxImageW;
+  let imageH = maxImageH;
+
+  if (dimensions && dimensions.width > 0 && dimensions.height > 0) {
+    const aspectRatio = dimensions.width / dimensions.height;
+    const maxAspectRatio = maxImageW / maxImageH;
+
+    if (aspectRatio >= maxAspectRatio) {
+      imageW = maxImageW;
+      imageH = Math.round(maxImageW / aspectRatio);
+    } else {
+      imageH = maxImageH;
+      imageW = Math.round(maxImageH * aspectRatio);
+    }
+  }
+
+  const cardW = imageW + 2 * CARD_PADDING;
+  const cardH = imageH + 2 * CARD_PADDING;
+
+  return (
+    <View style={styles.imagePage}>
+      {/* Tapping empty scrim area outside the card closes the viewer */}
+      <TouchableWithoutFeedback onPress={onClose} accessible={false}>
+        <View style={StyleSheet.absoluteFill} />
+      </TouchableWithoutFeedback>
+
+      {/* Floating card wrapping the photo */}
+      <TouchableWithoutFeedback onPress={() => {}} accessible={false}>
+        <View
+          style={[
+            styles.card,
+            {
+              width: cardW,
+              height: cardH,
+              backgroundColor: colors.surface,
+            },
+          ]}
+        >
+          <Image
+            source={{ uri }}
+            style={[styles.cardImage, { width: imageW, height: imageH }]}
+            contentFit={dimensions ? "cover" : "contain"}
+            transition={0}
+            cachePolicy="memory-disk"
+            recyclingKey={uri}
+            onLoad={handleLoad}
+          />
+        </View>
+      </TouchableWithoutFeedback>
+    </View>
+  );
+});
+
 /**
  * Facebook-style fullscreen photo viewer:
- *   - opens with a zoom-in feel (photo scales up from 0.85 + scrim fades in)
- *   - horizontal paging between photos with an "N / M" counter (not dots)
- *   - SWIPE DOWN on a photo to dismiss (photo tracks the finger, scrim
- *     fades; past the threshold the viewer closes, else it springs back)
- *   - images contained (never cropped) on black; close ✕ below the notch
+ *   - opens with a zoom-in feel (photo card scales up from 0.85 + scrim fades in)
+ *   - photo rendered in a rounded floating CARD (colors.surface, inner padding, drop shadow)
+ *   - card dimensions wrap the photo's intrinsic aspect ratio within safe screen margins
+ *   - horizontal paging between photos with an "N / M" counter
+ *   - SWIPE DOWN to dismiss (card tracks the finger, scrim fades proportionally)
+ *   - tapping dimmed scrim outside card closes viewer
+ *   - chrome ✕ and counter float on the scrim above the card
  *
  * Self-contained via a Modal — composites above the UI without navigation.
  *
@@ -167,7 +283,7 @@ export const ImageViewerModal = memo(function ImageViewerModal({
           accessibilityLabel="Close"
           accessibilityRole="button"
         >
-          <Ionicons name="close" size={24} color={colors.surface} />
+          <Ionicons name="close" size={24} color="#fff" />
         </Pressable>
         {images.length > 1 ? (
           <Text style={styles.counter}>
@@ -176,7 +292,7 @@ export const ImageViewerModal = memo(function ImageViewerModal({
         ) : null}
       </View>
 
-      {/* Paged photos — zoom in on open, track vertical drags, contained. */}
+      {/* Paged photos — zoom in on open, track vertical drags, contained in floating cards. */}
       <Animated.View
         style={[
           styles.pagerWrap,
@@ -202,16 +318,12 @@ export const ImageViewerModal = memo(function ImageViewerModal({
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
           renderItem={({ item }) => (
-            <View style={styles.imagePage}>
-              <Image
-                source={{ uri: item }}
-                style={styles.fullImage}
-                contentFit="contain"
-                transition={0}
-                cachePolicy="memory-disk"
-                recyclingKey={item}
-              />
-            </View>
+            <ViewerCardPage
+              uri={item}
+              insets={insets}
+              colors={colors}
+              onClose={onClose}
+            />
           )}
           style={styles.pager}
         />
@@ -757,13 +869,22 @@ const styles = StyleSheet.create({
   imagePage: {
     width: SCREEN_W,
     height: SCREEN_H,
-    backgroundColor: "#000",
     alignItems: "center",
     justifyContent: "center",
   },
-  fullImage: {
-    width: SCREEN_W,
-    height: SCREEN_H,
+  card: {
+    borderRadius: CARD_RADIUS,
+    padding: CARD_PADDING,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  cardImage: {
+    borderRadius: CARD_IMAGE_RADIUS,
   },
 });
 
