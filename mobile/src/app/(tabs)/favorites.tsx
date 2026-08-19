@@ -132,11 +132,16 @@ export default function FavoritesScreen() {
           flex: 1,
           backgroundColor: colors.canvas,
         },
+        scroll: {
+          flex: 1,
+        },
         content: {
           flexGrow: 1,
           paddingHorizontal: Space.lg,
           gap: Space.lg,
-          paddingBottom: insets.bottom + Space.xxl,
+          // Bottom inset handled on the outer container (pinned-header
+          // structure) — only list breathing room here.
+          paddingBottom: Space.xxl,
         },
         list: {
           gap: Space.lg,
@@ -393,24 +398,26 @@ export default function FavoritesScreen() {
   };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          tintColor={colors.accent}
-          colors={[colors.accent]}
-          progressBackgroundColor={colors.surface}
-        />
-      }
-    >
+    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
+      {/* Pinned header (Browse/Community pattern): the title stays put
+          while the lists scroll under it. */}
       <ScreenHeader
         title={t("tabs.favorites")}
         subtitle={t("favorites.subtitle")}
       />
-
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+            progressBackgroundColor={colors.surface}
+          />
+        }
+      >
       {/* Peer tabs: the two lists never bury each other in one scroll. */}
       {state === "ready" ? (
         <View style={styles.tabsRow}>
@@ -534,6 +541,7 @@ export default function FavoritesScreen() {
           ))}
         </View>
       )}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }

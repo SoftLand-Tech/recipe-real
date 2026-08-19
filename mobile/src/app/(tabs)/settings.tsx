@@ -216,6 +216,9 @@ export default function SettingsScreen() {
           flex: 1,
           backgroundColor: colors.canvas,
         },
+        scroll: {
+          flex: 1,
+        },
         content: {
           paddingHorizontal: Space.lg,
           gap: Space.lg,
@@ -421,15 +424,14 @@ export default function SettingsScreen() {
   const version = Constants.expoConfig?.version ?? "1.0.0";
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={[
-        styles.content,
-        { paddingTop: 0, paddingBottom: insets.bottom + Space.xxl },
-      ]}
-    >
+    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
+      {/* Pinned header (Browse/Community pattern): the title stays put
+          while the settings scroll under it. */}
       <ScreenHeader title={t("tabs.settings")} />
-
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.content, { paddingBottom: Space.xxl }]}
+      >
       {/* Appearance: theme + language as two rows of the same group. */}
       <View>
         <Text style={styles.groupCaption}>{t("settings.appearance")}</Text>
@@ -613,6 +615,7 @@ export default function SettingsScreen() {
 
       {/* About — one plain centered footer line, no card. */}
       <Text style={styles.aboutText}>{t("settings.about", { version })}</Text>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
