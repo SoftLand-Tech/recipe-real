@@ -24,10 +24,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import {
-  BigScreenTitle,
   PinnedHeaderBar,
   useChromeContentBottomPad,
-  useCollapseScroll,
   usePinnedBarPad,
   useScrollChrome,
 } from "@/components/chrome";
@@ -262,6 +260,7 @@ function createStyles(colors: ThemeColors) {
     },
     searchSection: {
       paddingHorizontal: Space.lg,
+      paddingTop: Space.sm,
       paddingBottom: Space.sm,
     },
     searchRow: {
@@ -878,7 +877,6 @@ export default function BrowseScreen() {
   const chrome = useScrollChrome();
   const chromeBottomPad = useChromeContentBottomPad();
   const barPad = usePinnedBarPad();
-  const collapse = useCollapseScroll({ existingOnScroll: chrome.onScroll });
 
   // ---- Local cache source (offline fallback + favorites) --------------------
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -1568,7 +1566,6 @@ export default function BrowseScreen() {
 
   const headerBlock = (
     <>
-      <BigScreenTitle title={t("tabs.browse")} rights={headerRights} />
       <SearchBar
         search={search}
         onChangeSearch={setSearch}
@@ -1651,8 +1648,8 @@ export default function BrowseScreen() {
             removeClippedSubviews
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            onScroll={collapse.onScroll}
-            scrollEventThrottle={collapse.scrollEventThrottle}
+            onScroll={chrome.onScroll}
+            scrollEventThrottle={chrome.scrollEventThrottle}
             ListHeaderComponent={headerBlock}
             onEndReached={offline ? undefined : handleEndReached}
             onEndReachedThreshold={0.5}
@@ -1685,7 +1682,7 @@ export default function BrowseScreen() {
       <View style={styles.pinnedBar} pointerEvents="box-none">
         <PinnedHeaderBar
           title={t("tabs.browse")}
-          collapse={collapse.scrollY}
+          hidden={chrome.hidden}
           rights={headerRights}
         />
       </View>

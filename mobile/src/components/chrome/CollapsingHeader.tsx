@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Animated, I18nManager, StyleSheet, Text, View } from "react-native";
 import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,67 +10,42 @@ import { Space, Type, useThemeColors } from "@/theme";
 import { IconPressable } from "@/components/ui";
 
 /**
- * Option-A header chrome: a slim PINNED bar (never hides) + a BIG title that
- * scrolls away with the content. While scrolled, the bar grows a small 17pt
- * title and a hairline (both faded in by scroll offset, iOS large-title
- * behavior) so the screen always keeps its identity mid-feed.
+ * Compact header bar (v4): a small 17pt title + plain icons, visible from
+ * the start. On TAB screens it hides on scroll-down and returns on
+ * scroll-up (Facebook-style) — pass ScrollChrome's `hidden` value so it
+ * moves in lockstep with the tab bar, giving full-screen content while
+ * scrolling. On PUSHED screens it stays put (no `hidden`).
  */
 
 /** Height of the bar's action row (excludes the safe-area inset). */
 export const PINNED_BAR_ROW = 44;
 
-/** Scroll-offset window over which the small title + hairline fade in. */
-const COLLAPSE_FROM = 16;
-const COLLAPSE_TO = 48;
-
 /**
- * Scroll-content top padding. On tab screens the bar only exists once you
- * scroll (it overlays content), so content starts right under the status
- * bar. Pushed screens render the bar in flow above the content instead.
+ * Scroll-content top padding: safe area + bar row + a small gap. The bar is
+ * an overlay, so when it hides the content scrolls under it.
  */
 export function usePinnedBarPad(): number {
   const insets = useSafeAreaInsets();
-  return insets.top + Space.sm;
-}
-
-/**
- * Drives PinnedHeaderBar's collapse. Returns an Animated scroll offset
- * (clamped to the fade window) plus a ready-to-spread onScroll that composes
- * an existing handler — pass ScrollChrome's onScroll there so the tab bar
- * keep its hide/show behavior unchanged.
- */
-export function useCollapseScroll(options?: {
-  existingOnScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
-}) {
-  const scrollY = useRef(new Animated.Value(0)).current;
-  const existingOnScroll = options?.existingOnScroll;
-  const onScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const y = event.nativeEvent.contentOffset.y;
-      scrollY.setValue(Math.min(Math.max(y, 0), COLLAPSE_TO + 8));
-      existingOnScroll?.(event);
-    },
-    [scrollY, existingOnScroll],
-  );
-  return { scrollY, onScroll, scrollEventThrottle: 16 as const };
+  return insets.top + PINNED_BAR_ROW + Space.xs;
 }
 
 export interface PinnedHeaderBarProps {
-  /** Bar title (17pt). On collapsing screens it fades in only when scrolled. */
+  /** Bar title (17pt), always visible. */
   title: string;
   /**
-   * Animated scroll offset from useCollapseScroll. Provide on tab screens —
-   * the small title + hairline fade in with scroll. Omit on pushed screens —
-   * the title + hairline are always shown (there is no big title there).
+   * ScrollChrome's `hidden` value (0 = shown, 1 = hidden). Provide on tab
+   * screens: the bar slides fully away on scroll-down and back on
+   * scroll-up, in sync with the tab bar. Omit to keep the bar always
+   * visible (pushed screens).
    */
-  collapse?: Animated.Value;
+  hidden?: Animated.Value;
   /** Leading control — normally <BackChevron /> on pushed screens. */
   leading?: ReactNode;
   /** Trailing actions (plain icons — no circle chrome). */
   rights?: ReactNode[];
 }
 
-export function PinnedHeaderBar({ title, collapse, leading, rights }: PinnedHeaderBarProps) {
+export function PinnedHeaderBar({ title, hidden, leading, rights }: PinnedHeaderBarProps) {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const styles = useMemo(
@@ -105,18 +80,18 @@ export function PinnedHeaderBar({ title, collapse, leading, rights }: PinnedHead
     [colors, insets.top, leading],
   );
 
-  // On collapsing (tab) screens the WHOLE bar materializes with scroll: at
-  // the top it is fully invisible (no dead action-only row under the status
-  // bar — the actions live on the big title's row instead) and fades in as
-  // the big title scrolls away.
+  // Slide the whole bar (incl. hairline) off-screen when the chrome hides.
   const barStyle =
-    collapse != null
+    hidden != null
       ? {
-          opacity: collapse.interpolate({
-            inputRange: [COLLAPSE_FROM, COLLAPSE_TO],
-            outputRange: [0, 1],
-            extrapolate: "clamp",
-          }),
+          transform: [
+            {
+              translateY: hidden.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, -(insets.top + PINNED_BAR_ROW + 1)],
+              }),
+            },
+          ],
         }
       : undefined;
 
@@ -159,67 +134,30 @@ export function BackChevron() {
 }
 
 /**
- * The big 24pt screen title — rendered INSIDE the scroll content (first
- * child) so it scrolls away under the bar that materializes on scroll.
- * `rights` (bell/avatar) ride the title's row at the top; once scrolled,
- * the bar's own copies take over.
+ * Small caption line for ex-subtitle info (e.g. Favorites tagline, Pace
+ * cook-count) that used to live under the big title. Renders at the top of
+ * scroll content, scrolls away with it.
  */
-export function BigScreenTitle({
-  title,
-  subtitle,
-  rights,
-}: {
-  title: string;
-  subtitle?: string;
-  rights?: ReactNode[];
-}) {
+export function ScreenCaption({ text }: { text: string }) {
   const colors = useThemeColors();
   const styles = useMemo(
     () =>
       StyleSheet.create({
-        wrap: {
-          paddingHorizontal: Space.lg,
-          paddingTop: Space.xs,
-          paddingBottom: subtitle ? Space.xs : Space.sm,
-          gap: Space.xs,
-        },
-        titleRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.md,
-        },
-        title: {
-          ...Type.h1,
-          fontSize: 24,
-          letterSpacing: -0.3,
-          color: colors.ink,
-          flex: 1,
-        },
-        rightsRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.md,
-        },
-        subtitle: {
+        caption: {
           ...Type.bodySm,
           color: colors.inkSecondary,
+          paddingHorizontal: Space.lg,
+          paddingBottom: Space.sm,
         },
       }),
     [colors],
   );
   return (
-    <View style={styles.wrap}>
-      <View style={styles.titleRow}>
-        <Text style={styles.title}>{title}</Text>
-        {rights && rights.length > 0 ? (
-          <View style={styles.rightsRow}>{rights}</View>
-        ) : null}
-      </View>
-      {subtitle ? (
-        <Text style={styles.subtitle} numberOfLines={2}>
-          {subtitle}
-        </Text>
-      ) : null}
-    </View>
+    <Text style={styles.caption} numberOfLines={2}>
+      {text}
+    </Text>
   );
 }
+
+// Re-exported scroll types for callers that compose handlers.
+export type ScrollEvent = NativeSyntheticEvent<NativeScrollEvent>;

@@ -14,10 +14,8 @@ import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
 import {
-  BigScreenTitle,
   PinnedHeaderBar,
   useChromeContentBottomPad,
-  useCollapseScroll,
   usePinnedBarPad,
   useScrollChrome,
 } from "@/components/chrome";
@@ -208,7 +206,6 @@ export default function SettingsScreen() {
   const chrome = useScrollChrome();
   const chromeBottomPad = useChromeContentBottomPad();
   const barPad = usePinnedBarPad();
-  const collapse = useCollapseScroll({ existingOnScroll: chrome.onScroll });
 
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [nudgeOn, setNudgeOn] = useState(false);
@@ -458,10 +455,9 @@ export default function SettingsScreen() {
           styles.content,
           { paddingTop: barPad, paddingBottom: chromeBottomPad },
         ]}
-        onScroll={collapse.onScroll}
-        scrollEventThrottle={collapse.scrollEventThrottle}
+        onScroll={chrome.onScroll}
+        scrollEventThrottle={chrome.scrollEventThrottle}
       >
-      <BigScreenTitle title={t("tabs.settings")} rights={headerRights} />
       {/* Appearance: theme + language as two rows of the same group. */}
       <View>
         <Text style={styles.groupCaption}>{t("settings.appearance")}</Text>
@@ -647,7 +643,7 @@ export default function SettingsScreen() {
       <View style={styles.pinnedBar} pointerEvents="box-none">
         <PinnedHeaderBar
           title={t("tabs.settings")}
-          collapse={collapse.scrollY}
+          hidden={chrome.hidden}
           rights={headerRights}
         />
       </View>

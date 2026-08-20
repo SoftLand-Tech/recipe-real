@@ -29,8 +29,8 @@ import {
 } from "@/components/ui";
 import {
   BackChevron,
-  BigScreenTitle,
   PinnedHeaderBar,
+  ScreenCaption,
 } from "@/components/chrome";
 import { computeStreak, summarizeHistory } from "@/utils/streaks";
 
@@ -444,9 +444,8 @@ export default function PaceScreen() {
           />
         }
       >
-      <BigScreenTitle
-        title={t("tabs.pace")}
-        subtitle={
+      <ScreenCaption
+        text={
           cookCount != null
             ? cookCount === 1
               ? t("pace.cooksOne", { n: cookCount })

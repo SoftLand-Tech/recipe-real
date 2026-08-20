@@ -10,10 +10,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import {
-  BigScreenTitle,
   PinnedHeaderBar,
+  ScreenCaption,
   useChromeContentBottomPad,
-  useCollapseScroll,
   usePinnedBarPad,
   useScrollChrome,
 } from "@/components/chrome";
@@ -96,7 +95,6 @@ export default function FavoritesScreen() {
   const chrome = useScrollChrome();
   const chromeBottomPad = useChromeContentBottomPad();
   const barPad = usePinnedBarPad();
-  const collapse = useCollapseScroll({ existingOnScroll: chrome.onScroll });
 
   // Tablet (width >= 768): two columns. Phones: one column. (Matches browse.)
   const numColumns = width >= 768 ? 2 : 1;
@@ -425,8 +423,8 @@ export default function FavoritesScreen() {
           styles.content,
           { paddingTop: barPad, paddingBottom: chromeBottomPad },
         ]}
-        onScroll={collapse.onScroll}
-        scrollEventThrottle={collapse.scrollEventThrottle}
+        onScroll={chrome.onScroll}
+        scrollEventThrottle={chrome.scrollEventThrottle}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -437,11 +435,7 @@ export default function FavoritesScreen() {
           />
         }
       >
-      <BigScreenTitle
-        title={t("tabs.favorites")}
-        subtitle={t("favorites.subtitle")}
-        rights={headerRights}
-      />
+      <ScreenCaption text={t("favorites.subtitle")} />
       {/* Peer tabs: the two lists never bury each other in one scroll. */}
       {state === "ready" ? (
         <View style={styles.tabsRow}>
@@ -569,7 +563,7 @@ export default function FavoritesScreen() {
       <View style={styles.pinnedBar} pointerEvents="box-none">
         <PinnedHeaderBar
           title={t("tabs.favorites")}
-          collapse={collapse.scrollY}
+          hidden={chrome.hidden}
           rights={headerRights}
         />
       </View>

@@ -8,8 +8,8 @@ export {
 export {
   PinnedHeaderBar,
   BackChevron,
-  BigScreenTitle,
-  useCollapseScroll,
+  ScreenCaption,
   usePinnedBarPad,
   PINNED_BAR_ROW,
+  type ScrollEvent,
 } from "./CollapsingHeader";

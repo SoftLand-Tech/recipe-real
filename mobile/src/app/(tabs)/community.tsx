@@ -14,10 +14,8 @@ import { Image } from "expo-image";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, useFocusEffect } from "expo-router";
 import {
-  BigScreenTitle,
   PinnedHeaderBar,
   useChromeContentBottomPad,
-  useCollapseScroll,
   usePinnedBarPad,
   useScrollChrome,
 } from "@/components/chrome";
@@ -797,7 +795,6 @@ export default function CommunityScreen() {
   const chrome = useScrollChrome();
   const chromeBottomPad = useChromeContentBottomPad();
   const barPad = usePinnedBarPad();
-  const collapse = useCollapseScroll({ existingOnScroll: chrome.onScroll });
 
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   // Signed-in user's id — resolves own-vs-other for the per-card ⋯ menu.
@@ -1032,6 +1029,7 @@ export default function CommunityScreen() {
           alignItems: "center",
           gap: Space.sm,
           paddingHorizontal: Space.lg,
+          paddingTop: Space.xs,
           paddingBottom: Space.sm,
         },
         filterScroll: {
@@ -1311,8 +1309,8 @@ export default function CommunityScreen() {
           // Clear the ABSOLUTE tab-bar overlay + pinned bar (measured).
           { paddingTop: barPad, paddingBottom: chromeBottomPad },
         ]}
-        onScroll={collapse.onScroll}
-        scrollEventThrottle={collapse.scrollEventThrottle}
+        onScroll={chrome.onScroll}
+        scrollEventThrottle={chrome.scrollEventThrottle}
         // Heavy photo cells: render small batches (browse pattern).
         initialNumToRender={3}
         maxToRenderPerBatch={3}
@@ -1330,7 +1328,6 @@ export default function CommunityScreen() {
         onEndReachedThreshold={0.5}
         ListHeaderComponent={
           <>
-            <BigScreenTitle title={t("community.title")} rights={communityRights} />
             {filterChips}
             {composerCard}
           </>
@@ -1388,7 +1385,7 @@ export default function CommunityScreen() {
       <View style={styles.pinnedBar} pointerEvents="box-none">
         <PinnedHeaderBar
           title={t("community.title")}
-          collapse={collapse.scrollY}
+          hidden={chrome.hidden}
           rights={communityRights}
         />
       </View>
