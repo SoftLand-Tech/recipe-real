@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Animated,
   FlatList,
   Pressable,
   RefreshControl,
@@ -9,15 +8,18 @@ import {
   Text,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useChromeContentBottomPad, useScrollChrome } from "@/components/chrome";
+import {
+  PinnedHeaderBar,
+  useChromeContentBottomPad,
+  usePinnedBarPad,
+  useScrollChrome,
+} from "@/components/chrome";
 
 import {
   fetchCategories,
   fetchHomeRails,
-  fetchMyProfile,
   fetchRealityRail,
   getCookSessions,
 } from "@/api/client";
@@ -50,8 +52,7 @@ import {
   SkeletonCard,
   TimeChip,
   fmtMinutes,
-  HeaderActions,
-} from "@/components/ui";
+  useHeaderActionsRights,} from "@/components/ui";
 import { CATEGORIES } from "@/utils/categorize";
 import { localizedCategory } from "@/utils/categories";
 import { bestMinutes } from "@/utils/recipeTime";
@@ -67,10 +68,7 @@ const CRAVING_CHIP_LIMIT = 12;
 /** Cards in the "Recently cooked" rail (start of the session history). */
 const RECENTLY_COOKED_LIMIT = 6;
 
-/** AsyncStorage mirror of the signed-in user's name (instant greeting). */
-const PROFILE_NAME_KEY = "recipereal.profileName";
-
-/** Mirror of the last successful /api/home payload for instant paint. */
+/** AsyncStorage mirror of the last successful /api/home payload for instant paint. */
 const HOME_RAILS_KEY = "recipereal.homeRails";
 
 /** Rail-content fingerprint (per-rail recipe ids) for the no-op guard. */
@@ -184,12 +182,12 @@ function sessionRecipe(session: CookSessionSummary): Recipe {
 }
 
 export default function HomeScreen() {
-  const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const t = useT();
   const chrome = useScrollChrome();
   const chromeBottomPad = useChromeContentBottomPad();
-  const [headerHeight, setHeaderHeight] = useState(0);
+  const barPad = usePinnedBarPad();
+  const headerRights = useHeaderActionsRights();
 
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [state, setState] = useState<LoadState>("loading");
@@ -236,10 +234,6 @@ export default function HomeScreen() {
     CookSessionSummary[] | null
   >(null);
 
-  // Display name for the greeting. The AsyncStorage copy paints instantly on
-  // later loads; the profile fetch revalidates (and re-caches) it.
-  const [profileName, setProfileName] = useState<string | null>(null);
-
   const reloadNoteIds = useCallback(async () => {
     try {
       setNoteIds(new Set(await getNotedRecipeIds()));
@@ -273,13 +267,12 @@ export default function HomeScreen() {
         content: {
           paddingBottom: Space.xxl,
         },
-        chromeHeader: {
+        pinnedBar: {
           position: "absolute",
           top: 0,
           left: 0,
           right: 0,
           zIndex: 10,
-          backgroundColor: colors.canvas,
         },
         center: {
           flexGrow: 1,
@@ -614,38 +607,6 @@ export default function HomeScreen() {
     };
   }, []);
 
-  // Greeting name: the cached copy paints instantly, then the profile fetch
-  // revalidates it (and re-caches). Signed out / offline keeps the cache.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const cached = await AsyncStorage.getItem(PROFILE_NAME_KEY);
-        if (!cancelled && cached != null) setProfileName(cached);
-      } catch {
-        // Unreadable cache — the fetch below is the source of truth.
-      }
-      try {
-        const profile = await fetchMyProfile();
-        const name = (profile.display_name ?? profile.name ?? "").trim() || null;
-        if (cancelled) return;
-        setProfileName(name);
-        const mirror =
-          name != null
-            ? AsyncStorage.setItem(PROFILE_NAME_KEY, name)
-            : AsyncStorage.removeItem(PROFILE_NAME_KEY);
-        mirror.catch(() => {
-          // Mirror is best-effort.
-        });
-      } catch {
-        // Signed out / offline: keep whatever the cache gave us.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   // "For your pace" gate + "Recently cooked" data: both auth-backed, loaded
   // once per mount, both degrade to hidden on any failure (401 included).
   useEffect(() => {
@@ -745,7 +706,7 @@ export default function HomeScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          { paddingTop: headerHeight, paddingBottom: chromeBottomPad },
+          { paddingTop: barPad, paddingBottom: chromeBottomPad },
         ]}
         onScroll={chrome.onScroll}
         scrollEventThrottle={chrome.scrollEventThrottle}
@@ -758,6 +719,8 @@ export default function HomeScreen() {
           />
         }
       >
+
+        <HomeSearchEntry />
 
         {featured != null ? (
           <FeaturedHero
@@ -844,24 +807,13 @@ export default function HomeScreen() {
           </>
         ) : null}
       </ScrollView>
-      <Animated.View
-        onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
-        style={[
-          styles.chromeHeader,
-          {
-            transform: [
-              {
-                translateY: chrome.hidden.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, -headerHeight],
-                }),
-              },
-            ],
-          },
-        ]}
-      >
-        <HomeHeader name={profileName} />
-      </Animated.View>
+      <View style={styles.pinnedBar} pointerEvents="box-none">
+        <PinnedHeaderBar
+          title="RecipeReal"
+          hidden={chrome.hidden}
+          rights={headerRights}
+        />
+      </View>
     </View>
   );
 }
@@ -869,40 +821,24 @@ export default function HomeScreen() {
 // ---- Local building blocks --------------------------------------------------
 
 /**
- * Brand header: "RecipeReal" beside a compact search pill (⌕ + the hero
- * prompt) that lands in Browse with the field focused, then the time-of-day
- * greeting (with the cached display name when known) and the tagline.
- * Carries the top safe-area inset itself (replaces ScreenHeader).
+ * Tappable search entry — the first thing under the bar on Home. Lands in
+ * Browse with the field focused. The bar carries the brand title, bell and
+ * avatar, so this is the ONLY header-ish element left in the content.
  */
-function HomeHeader({ name }: { name: string | null }) {
-  const insets = useSafeAreaInsets();
+function HomeSearchEntry() {
   const colors = useThemeColors();
   const t = useT();
   const styles = useMemo(
     () =>
       StyleSheet.create({
         wrap: {
-          paddingTop: insets.top + Space.md,
-          paddingHorizontal: 0,
+          marginHorizontal: Space.lg,
           marginBottom: Space.lg,
-          gap: Space.xs,
         },
-        brandRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: Space.md,
-        },
-        brand: {
-          ...Type.h2,
-          color: colors.ink,
-        },
-        // Compact tappable search pill (44pt). Static style only (no
-        // function styles on Pressables — Android paint rules); shrinks so
-        // the long prompt ellipsizes instead of crushing the brand.
-        searchPill: {
+        // Full-width tappable pill (44pt). Static style only (no function
+        // styles on Pressables — Android paint rules).
+        pill: {
           height: 44,
-          flexShrink: 1,
           flexDirection: "row",
           alignItems: "center",
           gap: Space.sm,
@@ -910,56 +846,29 @@ function HomeHeader({ name }: { name: string | null }) {
           backgroundColor: colors.surfaceSoft,
           borderRadius: Radius.pill,
         },
-        searchGlyph: {
+        glyph: {
           fontSize: 18,
           color: colors.inkFaint,
         },
-        searchLabel: {
+        label: {
           ...Type.bodySm,
           color: colors.inkFaint,
         },
-        greeting: {
-          ...Type.body,
-          color: colors.inkSecondary,
-        },
-        tagline: {
-          ...Type.h3,
-          color: colors.ink,
-          marginTop: Space.xs,
-        },
       }),
-    [colors, insets.top],
+    [colors],
   );
-
-  // Device-hour greeting: morning / afternoon / evening.
-  const hour = new Date().getHours();
-  const greeting =
-    hour < 12
-      ? t("home.greetMorning")
-      : hour < 18
-        ? t("home.greetAfternoon")
-        : t("home.greetEvening");
-
   return (
     <View style={styles.wrap}>
-      <View style={styles.brandRow}>
-        <Text style={styles.brand}>RecipeReal</Text>
-        <Pressable
-          accessibilityRole="search"
-          onPress={() => router.push("/browse?focus=1")}
-          style={styles.searchPill}
-        >
-          <Text style={styles.searchGlyph}>⌕</Text>
-          <Text style={styles.searchLabel} numberOfLines={1}>
-            {t("home.heroPrompt")}
-          </Text>
-        </Pressable>
-        <HeaderActions />
-      </View>
-      <Text style={styles.greeting}>
-        {name ? `${greeting}, ${name}` : greeting}
-      </Text>
-      <Text style={styles.tagline}>{t("home.tagline")}</Text>
+      <Pressable
+        accessibilityRole="search"
+        onPress={() => router.push("/browse?focus=1")}
+        style={styles.pill}
+      >
+        <Text style={styles.glyph}>⌕</Text>
+        <Text style={styles.label} numberOfLines={1}>
+          {t("home.heroPrompt")}
+        </Text>
+      </Pressable>
     </View>
   );
 }
