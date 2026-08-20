@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Animated,
   FlatList,
   Pressable,
   RefreshControl,
@@ -11,6 +12,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useChromeContentBottomPad, useScrollChrome } from "@/components/chrome";
 
 import {
   fetchCategories,
@@ -185,6 +187,9 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const t = useT();
+  const chrome = useScrollChrome();
+  const chromeBottomPad = useChromeContentBottomPad();
+  const [headerHeight, setHeaderHeight] = useState(0);
 
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [state, setState] = useState<LoadState>("loading");
@@ -267,6 +272,14 @@ export default function HomeScreen() {
         },
         content: {
           paddingBottom: Space.xxl,
+        },
+        chromeHeader: {
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 10,
+          backgroundColor: colors.canvas,
         },
         center: {
           flexGrow: 1,
@@ -728,9 +741,14 @@ export default function HomeScreen() {
     ) : null;
 
   return (
-    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
+    <View style={styles.container}>
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: headerHeight, paddingBottom: chromeBottomPad },
+        ]}
+        onScroll={chrome.onScroll}
+        scrollEventThrottle={chrome.scrollEventThrottle}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -740,7 +758,6 @@ export default function HomeScreen() {
           />
         }
       >
-        <HomeHeader name={profileName} />
 
         {featured != null ? (
           <FeaturedHero
@@ -827,6 +844,24 @@ export default function HomeScreen() {
           </>
         ) : null}
       </ScrollView>
+      <Animated.View
+        onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+        style={[
+          styles.chromeHeader,
+          {
+            transform: [
+              {
+                translateY: chrome.hidden.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, -headerHeight],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <HomeHeader name={profileName} />
+      </Animated.View>
     </View>
   );
 }

@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   LayoutAnimation,
   Platform,
@@ -23,6 +24,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { useChromeContentBottomPad, useScrollChrome } from "@/components/chrome";
 import {
   router,
   useFocusEffect,
@@ -499,6 +501,14 @@ function createStyles(colors: ThemeColors) {
       color: "#FFFFFF",
       fontWeight: "700",
     },
+    chromeHeader: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 10,
+      backgroundColor: colors.canvas,
+    },
   });
 }
 
@@ -861,6 +871,9 @@ export default function BrowseScreen() {
   const headerRights = useHeaderActionsRights();
   const params = useLocalSearchParams<{ filter?: string; focus?: string }>();
   const paramFilter = params.filter;
+  const chrome = useScrollChrome();
+  const chromeBottomPad = useChromeContentBottomPad();
+  const [headerHeight, setHeaderHeight] = useState(0);
 
   // ---- Local cache source (offline fallback + favorites) --------------------
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -1521,139 +1534,153 @@ export default function BrowseScreen() {
     (state === "ready" && applying);
 
   return (
-    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      <ScreenHeader title={t("tabs.browse")} rights={headerRights} />
-      <SearchBar
-        search={search}
-        onChangeSearch={setSearch}
-        showFilters={showFilters}
-        onToggleFilters={toggleFilters}
-        hasAdvancedFilters={hasAdvancedFilters}
-        onCreate={() => router.push("/recipe-composer")}
-        inputRef={searchInputRef}
-        colors={colors}
-        styles={styles}
-      />
+    <View style={styles.container}>
+      <View style={{ flex: 1, paddingTop: headerHeight }}>
+        {state === "ready" && (
+          <ChipRow
+            chips={chips}
+            filter={filter}
+            onSelect={handleSelectFilter}
+            styles={styles}
+          />
+        )}
 
-      {state === "ready" && (
-        <ChipRow
-          chips={chips}
-          filter={filter}
-          onSelect={handleSelectFilter}
+        {state === "ready" && offline && (
+          <View style={styles.offlineBannerWrap}>
+            <Chip tone="amber" size="sm" label={t("browse.offlineCaption")} />
+          </View>
+        )}
+
+        {state === "ready" && showFilters && (
+          <FilterPanel
+            timeMax={timeMax}
+            onTimeMaxChange={setTimeMax}
+            sortMode={sortMode}
+            onSortModeChange={setSortMode}
+            onClearAll={handleClearAdvanced}
+            onClose={toggleFilters}
+            styles={styles}
+          />
+        )}
+
+        {state === "ready" && activeFilterChips.length > 0 && (
+          <View style={styles.activeChipRow}>
+            {activeFilterChips.map((chip) => (
+              <View key={chip.key} style={styles.activeChip}>
+                <Text style={styles.activeChipText} numberOfLines={1}>
+                  {chip.label}
+                </Text>
+                <IconPressable
+                  onPress={chip.onClear}
+                  accessibilityLabel={t("filter.clearAll")}
+                  hitSlop={6}
+                >
+                  <Ionicons name="close" size={14} color={colors.accent} />
+                </IconPressable>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {showSkeletons && (
+          <FlatList
+            data={[0, 1, 2, 3, 4, 5]}
+            keyExtractor={(item) => `skel-${item}`}
+            numColumns={2}
+            renderItem={() => <View style={styles.skeletonBlock} />}
+            contentContainerStyle={styles.listContent}
+            columnWrapperStyle={{ gap: Space.sm }}
+            scrollEnabled={false}
+          />
+        )}
+
+        {state === "error" && (
+          <View style={styles.center}>
+            <Text style={styles.emptyGlyph}>🍲</Text>
+            <Text style={styles.errorTitle}>{t("common.somethingWentWrong")}</Text>
+            <Text style={styles.muted}>
+              {errorMessage ?? t("common.couldNotLoadRecipes")}
+            </Text>
+            <Pressable style={styles.retry} onPress={handleRetry}>
+              <Text style={styles.retryText}>{t("common.retry")}</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {state === "ready" && !applying && (
+          <FlatList
+            data={displayRecipes}
+            keyExtractor={(item) => String(item.id)}
+            renderItem={renderItem}
+            numColumns={2}
+            contentContainerStyle={[styles.listContent, { paddingBottom: chromeBottomPad }]}
+            columnWrapperStyle={{ gap: Space.sm }}
+            initialNumToRender={6}
+            maxToRenderPerBatch={6}
+            windowSize={5}
+            updateCellsBatchingPeriod={80}
+            removeClippedSubviews
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            onScroll={chrome.onScroll}
+            scrollEventThrottle={chrome.scrollEventThrottle}
+            onEndReached={offline ? undefined : handleEndReached}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={offline ? null : ListFooter}
+            ListEmptyComponent={
+              <View style={styles.center}>
+                <Text style={styles.emptyGlyph}>🍳</Text>
+                {hasActiveFilters ? (
+                  <>
+                    <Text style={styles.muted}>
+                      {search.trim().length > 0
+                        ? t("browse.noResultsFor", { query: search.trim() })
+                        : t("browse.noMatch")}
+                    </Text>
+                    <Text style={styles.emptyCount}>
+                      {t("browse.countOf", {
+                        shown: displayRecipes.length,
+                        total: offline ? recipes.length : serverTotal,
+                      })}
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={styles.muted}>{t("common.emptyRecipes")}</Text>
+                )}
+              </View>
+            }
+          />
+        )}
+      </View>
+      <Animated.View
+        onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+        style={[
+          styles.chromeHeader,
+          {
+            transform: [
+              {
+                translateY: chrome.hidden.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, -headerHeight],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <ScreenHeader title={t("tabs.browse")} rights={headerRights} />
+        <SearchBar
+          search={search}
+          onChangeSearch={setSearch}
+          showFilters={showFilters}
+          onToggleFilters={toggleFilters}
+          hasAdvancedFilters={hasAdvancedFilters}
+          onCreate={() => router.push("/recipe-composer")}
+          inputRef={searchInputRef}
+          colors={colors}
           styles={styles}
         />
-      )}
-
-      {state === "ready" && offline && (
-        <View style={styles.offlineBannerWrap}>
-          <Chip tone="amber" size="sm" label={t("browse.offlineCaption")} />
-        </View>
-      )}
-
-      {state === "ready" && showFilters && (
-        <FilterPanel
-          timeMax={timeMax}
-          onTimeMaxChange={setTimeMax}
-          sortMode={sortMode}
-          onSortModeChange={setSortMode}
-          onClearAll={handleClearAdvanced}
-          onClose={toggleFilters}
-          styles={styles}
-        />
-      )}
-
-      {state === "ready" && activeFilterChips.length > 0 && (
-        <View style={styles.activeChipRow}>
-          {activeFilterChips.map((chip) => (
-            <View key={chip.key} style={styles.activeChip}>
-              <Text style={styles.activeChipText} numberOfLines={1}>
-                {chip.label}
-              </Text>
-              <IconPressable
-                onPress={chip.onClear}
-                accessibilityLabel={t("filter.clearAll")}
-                hitSlop={6}
-              >
-                <Ionicons name="close" size={14} color={colors.accent} />
-              </IconPressable>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {showSkeletons && (
-        <FlatList
-          data={[0, 1, 2, 3, 4, 5]}
-          keyExtractor={(item) => `skel-${item}`}
-          numColumns={2}
-          renderItem={() => <View style={styles.skeletonBlock} />}
-          contentContainerStyle={styles.listContent}
-          columnWrapperStyle={{ gap: Space.sm }}
-          scrollEnabled={false}
-        />
-      )}
-
-      {state === "error" && (
-        <View style={styles.center}>
-          <Text style={styles.emptyGlyph}>🍲</Text>
-          <Text style={styles.errorTitle}>{t("common.somethingWentWrong")}</Text>
-          <Text style={styles.muted}>
-            {errorMessage ?? t("common.couldNotLoadRecipes")}
-          </Text>
-          <Pressable style={styles.retry} onPress={handleRetry}>
-            <Text style={styles.retryText}>{t("common.retry")}</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {state === "ready" && !applying && (
-        <FlatList
-          data={displayRecipes}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={renderItem}
-          // Immersive photo grid: always two columns, Space.sm gutter via the
-          // column wrapper, no separators.
-          numColumns={2}
-          contentContainerStyle={styles.listContent}
-          columnWrapperStyle={{ gap: Space.sm }}
-          // Heavy image cells: render small batches so no single frame tries
-          // to mount a whole window of photos (fixes the VirtualizedList
-          // "slow to update" warning on lower-end devices).
-          initialNumToRender={6}
-          maxToRenderPerBatch={6}
-          windowSize={5}
-          updateCellsBatchingPeriod={80}
-          removeClippedSubviews
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          // Server pagination: fetch the next page near the end of the list.
-          onEndReached={offline ? undefined : handleEndReached}
-          onEndReachedThreshold={0.5}
-          ListFooterComponent={offline ? null : ListFooter}
-          ListEmptyComponent={
-            <View style={styles.center}>
-              <Text style={styles.emptyGlyph}>🍳</Text>
-              {hasActiveFilters ? (
-                <>
-                  <Text style={styles.muted}>
-                    {search.trim().length > 0
-                      ? t("browse.noResultsFor", { query: search.trim() })
-                      : t("browse.noMatch")}
-                  </Text>
-                  <Text style={styles.emptyCount}>
-                    {t("browse.countOf", {
-                      shown: displayRecipes.length,
-                      total: offline ? recipes.length : serverTotal,
-                    })}
-                  </Text>
-                </>
-              ) : (
-                <Text style={styles.muted}>{t("common.emptyRecipes")}</Text>
-              )}
-            </View>
-          }
-        />
-      )}
+      </Animated.View>
     </View>
   );
 }

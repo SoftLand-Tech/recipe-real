@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState, type ComponentProps, type ReactNode } f
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   I18nManager,
   Pressable,
   ScrollView,
@@ -13,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
+import { useChromeContentBottomPad, useScrollChrome } from "@/components/chrome";
 
 import {
   isNotificationsAvailable,
@@ -198,6 +200,9 @@ export default function SettingsScreen() {
   const headerRights = useHeaderActionsRights();
   const { pref: themePref, setPref: setThemePref, langPref, setLangPref } =
     useThemePrefs();
+  const chrome = useScrollChrome();
+  const chromeBottomPad = useChromeContentBottomPad();
+  const [headerHeight, setHeaderHeight] = useState(0);
 
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [nudgeOn, setNudgeOn] = useState(false);
@@ -273,6 +278,14 @@ export default function SettingsScreen() {
           ...Type.caption,
           color: colors.inkFaint,
           textAlign: "center",
+        },
+        chromeHeader: {
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 10,
+          backgroundColor: colors.canvas,
         },
       }),
     [colors],
@@ -432,13 +445,15 @@ export default function SettingsScreen() {
   const version = Constants.expoConfig?.version ?? "1.0.0";
 
   return (
-    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      {/* Pinned header (Browse/Community pattern): the title stays put
-          while the settings scroll under it. */}
-      <ScreenHeader title={t("tabs.settings")} rights={headerRights} />
+    <View style={styles.container}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.content, { paddingBottom: Space.xxl }]}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: headerHeight, paddingBottom: chromeBottomPad },
+        ]}
+        onScroll={chrome.onScroll}
+        scrollEventThrottle={chrome.scrollEventThrottle}
       >
       {/* Appearance: theme + language as two rows of the same group. */}
       <View>
@@ -622,6 +637,24 @@ export default function SettingsScreen() {
       {/* About — one plain centered footer line, no card. */}
       <Text style={styles.aboutText}>{t("settings.about", { version })}</Text>
       </ScrollView>
+      <Animated.View
+        onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+        style={[
+          styles.chromeHeader,
+          {
+            transform: [
+              {
+                translateY: chrome.hidden.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, -headerHeight],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <ScreenHeader title={t("tabs.settings")} rights={headerRights} />
+      </Animated.View>
     </View>
   );
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Animated,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -9,6 +10,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
+import { useChromeContentBottomPad, useScrollChrome } from "@/components/chrome";
 
 import { track } from "@/analytics";
 import {
@@ -86,6 +88,9 @@ export default function FavoritesScreen() {
   const headerRights = useHeaderActionsRights();
   const lr = useLocalizedRecipe();
   const { lang } = useLang();
+  const chrome = useScrollChrome();
+  const chromeBottomPad = useChromeContentBottomPad();
+  const [headerHeight, setHeaderHeight] = useState(0);
 
   // Tablet (width >= 768): two columns. Phones: one column. (Matches browse.)
   const numColumns = width >= 768 ? 2 : 1;
@@ -144,6 +149,14 @@ export default function FavoritesScreen() {
           // Bottom inset handled on the outer container (pinned-header
           // structure) — only list breathing room here.
           paddingBottom: Space.xxl,
+        },
+        chromeHeader: {
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 10,
+          backgroundColor: colors.canvas,
         },
         list: {
           gap: Space.lg,
@@ -400,17 +413,15 @@ export default function FavoritesScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      {/* Pinned header (Browse/Community pattern): the title stays put
-          while the lists scroll under it. */}
-      <ScreenHeader
-        title={t("tabs.favorites")}
-        subtitle={t("favorites.subtitle")}
-        rights={headerRights}
-      />
+    <View style={styles.container}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: headerHeight, paddingBottom: chromeBottomPad },
+        ]}
+        onScroll={chrome.onScroll}
+        scrollEventThrottle={chrome.scrollEventThrottle}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -545,6 +556,28 @@ export default function FavoritesScreen() {
         </View>
       )}
       </ScrollView>
+      <Animated.View
+        onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+        style={[
+          styles.chromeHeader,
+          {
+            transform: [
+              {
+                translateY: chrome.hidden.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, -headerHeight],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <ScreenHeader
+          title={t("tabs.favorites")}
+          subtitle={t("favorites.subtitle")}
+          rights={headerRights}
+        />
+      </Animated.View>
     </View>
   );
 }
