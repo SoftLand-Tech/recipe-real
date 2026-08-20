@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -273,6 +274,13 @@ export default function HomeScreen() {
           left: 0,
           right: 0,
           zIndex: 10,
+        },
+        // Brand chip in the bar: the logo is a square with a solid dark
+        // background, so a rounded app-icon treatment reads best.
+        barLogo: {
+          width: 30,
+          height: 30,
+          borderRadius: 9,
         },
         center: {
           flexGrow: 1,
@@ -810,6 +818,13 @@ export default function HomeScreen() {
       <View style={styles.pinnedBar} pointerEvents="box-none">
         <PinnedHeaderBar
           title="RecipeReal"
+          titleContent={
+            <Image
+              source={require("../../../assets/images/recipereallogo.png")}
+              style={styles.barLogo}
+              accessibilityLabel="RecipeReal"
+            />
+          }
           hidden={chrome.hidden}
           rights={headerRights}
         />

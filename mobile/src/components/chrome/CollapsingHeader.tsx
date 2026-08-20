@@ -33,6 +33,11 @@ export interface PinnedHeaderBarProps {
   /** Bar title (17pt), always visible. */
   title: string;
   /**
+   * Custom content in place of the title text (e.g. a brand logo chip on
+   * Home). `title` is still used as the accessibility label.
+   */
+  titleContent?: ReactNode;
+  /**
    * ScrollChrome's `hidden` value (0 = shown, 1 = hidden). Provide on tab
    * screens: the bar slides fully away on scroll-down and back on
    * scroll-up, in sync with the tab bar. Omit to keep the bar always
@@ -45,7 +50,7 @@ export interface PinnedHeaderBarProps {
   rights?: ReactNode[];
 }
 
-export function PinnedHeaderBar({ title, hidden, leading, rights }: PinnedHeaderBarProps) {
+export function PinnedHeaderBar({ title, titleContent, hidden, leading, rights }: PinnedHeaderBarProps) {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const styles = useMemo(
@@ -66,6 +71,11 @@ export function PinnedHeaderBar({ title, hidden, leading, rights }: PinnedHeader
           ...Type.title,
           color: colors.ink,
           flex: 1,
+        },
+        titleSlot: {
+          flex: 1,
+          flexDirection: "row",
+          alignItems: "center",
         },
         rightsRow: {
           flexDirection: "row",
@@ -96,12 +106,16 @@ export function PinnedHeaderBar({ title, hidden, leading, rights }: PinnedHeader
       : undefined;
 
   return (
-    <Animated.View style={[styles.bar, barStyle]} pointerEvents="box-none">
+    <Animated.View style={[styles.bar, barStyle]} pointerEvents="box-none" accessibilityLabel={title}>
       <View style={styles.row}>
         {leading}
-        <Text style={styles.title} numberOfLines={1}>
-          {title}
-        </Text>
+        {titleContent != null ? (
+          <View style={styles.titleSlot}>{titleContent}</View>
+        ) : (
+          <Text style={styles.title} numberOfLines={1}>
+            {title}
+          </Text>
+        )}
         {rights && rights.length > 0 ? (
           <View style={styles.rightsRow}>{rights}</View>
         ) : null}
