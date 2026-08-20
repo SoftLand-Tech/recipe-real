@@ -1125,22 +1125,6 @@ export default function CommunityScreen() {
           borderRadius: Radius.md,
           backgroundColor: colors.surfaceSoft,
         },
-        fab: {
-          position: "absolute",
-          end: Space.lg,
-          bottom: insets.bottom + Space.lg,
-          width: 56,
-          height: 56,
-          borderRadius: 28,
-          backgroundColor: colors.accent,
-          alignItems: "center",
-          justifyContent: "center",
-          elevation: 4,
-          shadowColor: "#000",
-          shadowOpacity: 0.2,
-          shadowRadius: 4,
-          shadowOffset: { width: 0, height: 2 },
-        },
       }),
     [colors, insets.bottom],
   );
@@ -1337,16 +1321,6 @@ export default function CommunityScreen() {
           rights={communityRights}
         />
       </View>
-
-      {/* FAB — Facebook one-handed compose */}
-      <IconPressable
-        onPress={startCompose}
-        hitSlop={Space.xs}
-        accessibilityLabel={t("community.compose")}
-        style={styles.fab}
-      >
-        <Ionicons name="create-outline" size={24} color="#FFFFFF" />
-      </IconPressable>
 
       <CommentsSheet
         postId={commentsPostId}
