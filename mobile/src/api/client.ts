@@ -702,16 +702,23 @@ export async function postRecipeNote(
   }
 }
 
-/** The signed-in user's public profile (GET /api/users/me/profile). */
+/**
+ * The signed-in user's public profile (GET /api/users/me/profile).
+ * The endpoint returns { user: {...}, counts: {...} } — the profile fields
+ * live under `user` (reading them flat silently nulled avatar_url, which
+ * is why the community composer + header avatars fell back to initials).
+ * A flat payload and a `data` envelope are still tolerated.
+ */
 export async function fetchMyProfile(): Promise<PublicProfile> {
-  const { data } = await api.get<PublicProfile>("/api/users/me/profile");
-  const body = (data as { data?: PublicProfile } | undefined)?.data ?? data;
+  const { data } = await api.get("/api/users/me/profile");
+  const body = (data as { data?: unknown } | undefined)?.data ?? data;
+  const u = (body as { user?: Record<string, unknown> } | null)?.user ?? body;
   return {
-    id: Number(body?.id),
-    name: body?.name ?? null,
-    display_name: body?.display_name ?? null,
-    avatar_url: body?.avatar_url ?? null,
-    bio: (body as any)?.bio ?? null,
+    id: Number((u as { id?: unknown })?.id),
+    name: (u as { name?: string | null })?.name ?? null,
+    display_name: (u as { display_name?: string | null })?.display_name ?? null,
+    avatar_url: (u as { avatar_url?: string | null })?.avatar_url ?? null,
+    bio: (u as { bio?: string | null })?.bio ?? null,
   };
 }
 
