@@ -237,6 +237,9 @@ export default function ProfileScreen() {
           textTransform: "uppercase",
           letterSpacing: 0.8,
           marginBottom: Space.xs,
+          // Content is full-bleed; captions are text and must not touch
+          // the screen edge.
+          marginHorizontal: Space.lg,
         },
         identityRow: { flexDirection: "row", alignItems: "center", gap: Space.lg },
         identityMain: { flex: 1, gap: 4 },

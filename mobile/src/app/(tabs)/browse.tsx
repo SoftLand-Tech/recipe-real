@@ -308,7 +308,10 @@ function createStyles(colors: ThemeColors) {
       marginStart: Space.xs,
     },
     listContent: {
-      paddingHorizontal: Space.lg,
+      // Full-bleed immersive grid — cards run edge to edge (matches the
+      // other tabs). Text blocks (search, chips, captions, empty states)
+      // carry their own horizontal padding so they never touch the edge.
+      paddingHorizontal: 0,
       // Vertical breathing room between grid rows (the columnWrapper gap
       // covers the horizontal gutter).
       rowGap: Space.sm,

@@ -223,6 +223,7 @@ export default function FavoritesScreen() {
           flexDirection: "row",
           flexWrap: "wrap",
           gap: Space.sm,
+          paddingHorizontal: Space.lg,
           marginBottom: Space.md,
         },
         notesSection: {

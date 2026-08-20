@@ -245,6 +245,9 @@ export default function SettingsScreen() {
           textTransform: "uppercase",
           letterSpacing: 0.8,
           marginBottom: Space.xs,
+          // Content is full-bleed; captions are text and must not touch
+          // the screen edge.
+          marginHorizontal: Space.lg,
         },
         group: {
           borderRadius: 0,
@@ -282,6 +285,7 @@ export default function SettingsScreen() {
           ...Type.caption,
           color: colors.inkFaint,
           textAlign: "center",
+          marginHorizontal: Space.lg,
         },
         pinnedBar: {
           position: "absolute",
