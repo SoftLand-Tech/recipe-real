@@ -1243,6 +1243,51 @@ export default function CommunityScreen() {
         </IconPressable>
   );
 
+  // Shared trailing actions: ride the big title's row at the top, and the
+  // bar's row once scrolled (two instances of the same nodes).
+  const communityRights =
+    signedIn === false
+      ? undefined
+      : [
+          <IconPressable
+            key="bell"
+            onPress={() => router.push("/notifications")}
+            accessibilityLabel={
+              unreadCount > 0
+                ? `${t("notif.bellA11y")} · ${t("notif.unreadA11y", { n: unreadCount })}`
+                : t("notif.bellA11y")
+            }
+            hitSlop={Space.xs}
+          >
+            <View style={styles.bellWrap}>
+              <Ionicons
+                name="notifications-outline"
+                size={24}
+                color={colors.inkSecondary}
+              />
+              {unreadCount > 0 ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText} numberOfLines={1}>
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          </IconPressable>,
+          <IconPressable
+            key="profile"
+            onPress={() => router.push("/profile")}
+            accessibilityLabel={t("profile.title")}
+            hitSlop={Space.xs}
+          >
+            <Ionicons
+              name="person-circle-outline"
+              size={26}
+              color={colors.inkSecondary}
+            />
+          </IconPressable>,
+        ];
+
   return (
     <View style={styles.container}>
       <FlatList
@@ -1285,7 +1330,7 @@ export default function CommunityScreen() {
         onEndReachedThreshold={0.5}
         ListHeaderComponent={
           <>
-            <BigScreenTitle title={t("community.title")} />
+            <BigScreenTitle title={t("community.title")} rights={communityRights} />
             {filterChips}
             {composerCard}
           </>
@@ -1344,49 +1389,7 @@ export default function CommunityScreen() {
         <PinnedHeaderBar
           title={t("community.title")}
           collapse={collapse.scrollY}
-          rights={
-            signedIn === false
-              ? undefined
-              : [
-                  <IconPressable
-                    key="bell"
-                    onPress={() => router.push("/notifications")}
-                    accessibilityLabel={
-                      unreadCount > 0
-                        ? `${t("notif.bellA11y")} · ${t("notif.unreadA11y", { n: unreadCount })}`
-                        : t("notif.bellA11y")
-                    }
-                    hitSlop={Space.xs}
-                  >
-                    <View style={styles.bellWrap}>
-                      <Ionicons
-                        name="notifications-outline"
-                        size={24}
-                        color={colors.inkSecondary}
-                      />
-                      {unreadCount > 0 ? (
-                        <View style={styles.badge}>
-                          <Text style={styles.badgeText} numberOfLines={1}>
-                            {unreadCount > 99 ? "99+" : unreadCount}
-                          </Text>
-                        </View>
-                      ) : null}
-                    </View>
-                  </IconPressable>,
-                  <IconPressable
-                    key="profile"
-                    onPress={() => router.push("/profile")}
-                    accessibilityLabel={t("profile.title")}
-                    hitSlop={Space.xs}
-                  >
-                    <Ionicons
-                      name="person-circle-outline"
-                      size={26}
-                      color={colors.inkSecondary}
-                    />
-                  </IconPressable>,
-                ]
-          }
+          rights={communityRights}
         />
       </View>
 

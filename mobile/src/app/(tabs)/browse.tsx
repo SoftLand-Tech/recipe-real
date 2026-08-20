@@ -1568,7 +1568,7 @@ export default function BrowseScreen() {
 
   const headerBlock = (
     <>
-      <BigScreenTitle title={t("tabs.browse")} />
+      <BigScreenTitle title={t("tabs.browse")} rights={headerRights} />
       <SearchBar
         search={search}
         onChangeSearch={setSearch}

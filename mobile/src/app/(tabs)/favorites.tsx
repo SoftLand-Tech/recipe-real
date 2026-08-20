@@ -440,6 +440,7 @@ export default function FavoritesScreen() {
       <BigScreenTitle
         title={t("tabs.favorites")}
         subtitle={t("favorites.subtitle")}
+        rights={headerRights}
       />
       {/* Peer tabs: the two lists never bury each other in one scroll. */}
       {state === "ready" ? (

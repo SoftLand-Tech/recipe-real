@@ -461,7 +461,7 @@ export default function SettingsScreen() {
         onScroll={collapse.onScroll}
         scrollEventThrottle={collapse.scrollEventThrottle}
       >
-      <BigScreenTitle title={t("tabs.settings")} />
+      <BigScreenTitle title={t("tabs.settings")} rights={headerRights} />
       {/* Appearance: theme + language as two rows of the same group. */}
       <View>
         <Text style={styles.groupCaption}>{t("settings.appearance")}</Text>

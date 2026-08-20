@@ -24,12 +24,13 @@ const COLLAPSE_FROM = 16;
 const COLLAPSE_TO = 48;
 
 /**
- * Scroll-content top padding: safe area + bar row + a small gap. Use on the
- * scroller's contentContainerStyle so the big title starts below the bar.
+ * Scroll-content top padding. On tab screens the bar only exists once you
+ * scroll (it overlays content), so content starts right under the status
+ * bar. Pushed screens render the bar in flow above the content instead.
  */
 export function usePinnedBarPad(): number {
   const insets = useSafeAreaInsets();
-  return insets.top + PINNED_BAR_ROW + Space.xs;
+  return insets.top + Space.sm;
 }
 
 /**
@@ -104,7 +105,11 @@ export function PinnedHeaderBar({ title, collapse, leading, rights }: PinnedHead
     [colors, insets.top, leading],
   );
 
-  const faded =
+  // On collapsing (tab) screens the WHOLE bar materializes with scroll: at
+  // the top it is fully invisible (no dead action-only row under the status
+  // bar — the actions live on the big title's row instead) and fades in as
+  // the big title scrolls away.
+  const barStyle =
     collapse != null
       ? {
           opacity: collapse.interpolate({
@@ -113,21 +118,21 @@ export function PinnedHeaderBar({ title, collapse, leading, rights }: PinnedHead
             extrapolate: "clamp",
           }),
         }
-      : { opacity: 1 };
+      : undefined;
 
   return (
-    <View style={styles.bar} pointerEvents="box-none">
+    <Animated.View style={[styles.bar, barStyle]} pointerEvents="box-none">
       <View style={styles.row}>
         {leading}
-        <Animated.Text style={[styles.title, faded]} numberOfLines={1}>
+        <Text style={styles.title} numberOfLines={1}>
           {title}
-        </Animated.Text>
+        </Text>
         {rights && rights.length > 0 ? (
           <View style={styles.rightsRow}>{rights}</View>
         ) : null}
       </View>
-      <Animated.View style={[styles.hairline, faded]} />
-    </View>
+      <View style={styles.hairline} />
+    </Animated.View>
   );
 }
 
@@ -154,16 +159,19 @@ export function BackChevron() {
 }
 
 /**
- * The big 28pt screen title — rendered INSIDE the scroll content (first
- * child) so it scrolls away under the pinned bar. On collapse the bar's small
- * title takes over.
+ * The big 24pt screen title — rendered INSIDE the scroll content (first
+ * child) so it scrolls away under the bar that materializes on scroll.
+ * `rights` (bell/avatar) ride the title's row at the top; once scrolled,
+ * the bar's own copies take over.
  */
 export function BigScreenTitle({
   title,
   subtitle,
+  rights,
 }: {
   title: string;
   subtitle?: string;
+  rights?: ReactNode[];
 }) {
   const colors = useThemeColors();
   const styles = useMemo(
@@ -175,11 +183,22 @@ export function BigScreenTitle({
           paddingBottom: subtitle ? Space.xs : Space.sm,
           gap: Space.xs,
         },
+        titleRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.md,
+        },
         title: {
           ...Type.h1,
           fontSize: 24,
           letterSpacing: -0.3,
           color: colors.ink,
+          flex: 1,
+        },
+        rightsRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.md,
         },
         subtitle: {
           ...Type.bodySm,
@@ -190,7 +209,12 @@ export function BigScreenTitle({
   );
   return (
     <View style={styles.wrap}>
-      <Text style={styles.title}>{title}</Text>
+      <View style={styles.titleRow}>
+        <Text style={styles.title}>{title}</Text>
+        {rights && rights.length > 0 ? (
+          <View style={styles.rightsRow}>{rights}</View>
+        ) : null}
+      </View>
       {subtitle ? (
         <Text style={styles.subtitle} numberOfLines={2}>
           {subtitle}
