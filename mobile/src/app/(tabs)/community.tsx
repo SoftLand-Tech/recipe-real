@@ -257,12 +257,6 @@ const PostCard = memo(function PostCard({
     setViewerOpen(true);
   }, []);
 
-  // ---- Latest comment preview ------------------------------------------------
-  // Embedded in the feed row by the server (PostResource `latest_comment`,
-  // eager-loaded per page) — no per-card comments fetch anymore. Null when
-  // the post has no comments (the preview row simply hides).
-  const latestComment = post.latest_comment;
-
   const styles = useMemo(
     () =>
       StyleSheet.create({
@@ -385,29 +379,6 @@ const PostCard = memo(function PostCard({
           ...Type.bodySm,
           color: colors.inkSecondary,
           flex: 1,
-        },
-        previewRow: {
-          flexDirection: "row",
-          alignItems: "flex-start",
-          gap: Space.xs,
-          paddingTop: Space.sm,
-        },
-        previewBubble: {
-          flex: 1,
-          backgroundColor: colors.surfaceSoft,
-          borderRadius: Radius.md,
-          paddingHorizontal: Space.sm,
-          paddingVertical: Space.xs + 2,
-        },
-        previewText: {
-          ...Type.bodySm,
-          color: colors.ink,
-          flex: 1,
-        },
-        viewThread: {
-          ...Type.caption,
-          color: colors.inkSecondary,
-          marginTop: 2,
         },
         seeMore: {
           ...Type.bodySm,
@@ -628,29 +599,6 @@ const PostCard = memo(function PostCard({
               variant="ghost"
               onPress={() => router.push("/login")}
             />
-          </View>
-        ) : null}
-
-        {/* Comment preview — taps open comments sheet */}
-        {latestComment != null ? (
-          <View style={{ gap: Space.xs }}>
-            <IconPressable
-              onPress={() => onOpenComments(post.id)}
-              style={styles.previewRow}
-            >
-              <Avatar name={authorName(latestComment.user)} uri={latestComment.user.avatar_url} size={28} />
-              <View style={styles.previewBubble}>
-                <Text style={styles.previewText} numberOfLines={2}>
-                  <Text style={{ fontWeight: "700" }}>{authorName(latestComment.user)} </Text>
-                  {latestComment.body}
-                </Text>
-              </View>
-            </IconPressable>
-            {post.comments_count > 1 ? (
-              <IconPressable onPress={() => onOpenComments(post.id)} hitSlop={Space.xs}>
-                <Text style={styles.viewThread}>{t("community.viewAllComments", { n: post.comments_count })}</Text>
-              </IconPressable>
-            ) : null}
           </View>
         ) : null}
       </Card>

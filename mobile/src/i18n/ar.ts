@@ -444,8 +444,6 @@ export const ar: Record<string, string> = {
   // ---- شاشة تفاصيل المنشور -----------------------------------------------------
   "community.postDetail": "المنشور",
   "community.detailLoadFailed": "تعذّر تحميل هذا المنشور.",
-  "community.viewAllComments": "عرض جميع التعليقات ({n})",
-  "community.latestComment": "أحدث تعليق",
   "community.seeMore": "عرض المزيد",
   "community.seeLess": "عرض أقل",
   // ---- ملكية المحتوى والإشراف (تعديل/حذف/إبلاغ/حجب) ------------------------------

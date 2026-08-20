@@ -450,8 +450,6 @@ export const en: Record<string, string> = {
   // ---- Post detail screen ------------------------------------------------------
   "community.postDetail": "Post",
   "community.detailLoadFailed": "Couldn't load this post.",
-  "community.viewAllComments": "View all {n} comments",
-  "community.latestComment": "Latest comment",
   "community.seeMore": "See more",
   "community.seeLess": "See less",
   // ---- Content ownership + moderation (edit/delete/report/block) ---------------
