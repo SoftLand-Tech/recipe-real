@@ -24,7 +24,7 @@ class ProfileRouteShadowTest extends TestCase
         $this->actingAs($user, 'sanctum')
             ->getJson('/api/users/me/profile')
             ->assertOk()
-            ->assertJsonPath('id', $user->id);
+            ->assertJsonPath('user.id', $user->id);
     }
 
     public function test_public_profile_still_resolves_numeric_ids(): void
@@ -33,6 +33,6 @@ class ProfileRouteShadowTest extends TestCase
 
         $this->getJson("/api/users/{$user->id}/profile")
             ->assertOk()
-            ->assertJsonPath('display_name', 'Sara');
+            ->assertJsonPath('user.display_name', 'Sara');
     }
 }
