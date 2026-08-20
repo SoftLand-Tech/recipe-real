@@ -307,7 +307,7 @@ export default function NotificationsScreen() {
           color: colors.accent,
         },
         listContent: {
-          paddingHorizontal: Space.lg,
+          paddingHorizontal: 0,
           gap: Space.md,
           paddingBottom: insets.bottom + Space.xxl,
         },

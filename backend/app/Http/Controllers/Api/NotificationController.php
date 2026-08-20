@@ -21,7 +21,7 @@ class NotificationController extends Controller
      * unread count in the meta block (drives the header bell badge).
      *
      * Row shape: {id, type, read_at, created_at, actor: {id, display_name,
-     * name, avatar_url}|null, post: {id, kind, body (first 80 chars)}|null}.
+     * name, avatar_url}|null, post: {id, body (first 80 chars)}|null}.
      * The actor is null once the liker/commenter deleted their account; the
      * post reference is null once the post is gone (rows survive both as
      * gentle history).
@@ -34,7 +34,7 @@ class NotificationController extends Controller
             ->where('user_id', $user->id)
             ->with([
                 'actor:id,display_name,name,avatar_url',
-                'post:id,kind,body',
+                'post:id,body',
             ])
             ->orderByDesc('created_at')
             ->orderByDesc('id')
@@ -112,7 +112,6 @@ class NotificationController extends Controller
             ] : null,
             'post'       => $notification->post !== null ? [
                 'id'   => $notification->post->id,
-                'kind' => $notification->post->kind,
                 // Snippet only — the mobile row never shows the full body.
                 'body' => Str::limit($notification->post->body, 80),
             ] : null,

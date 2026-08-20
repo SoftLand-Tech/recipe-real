@@ -113,7 +113,7 @@ Route::get('/r/{recipe}', function (Recipe $recipe, Request $request) {
 /*
  | Public web post page (GET /p/{post}): the share target behind the app's
  * post Share buttons (feed card + post detail). Shows PUBLIC data only —
- * author display name/avatar, kind chip (Try/Fail/Question), the full body,
+ * author display name/avatar, the full body,
  * up to 4 images, and the attached recipe as a small card linking to
  * /r/{recipe}. No auth, no counts, no comments. Unknown ids 404 via route
  * model binding. Rendered HTML cached 5 minutes per post id (same plain-

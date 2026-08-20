@@ -280,7 +280,7 @@ export default function PaceScreen() {
           backgroundColor: colors.canvas,
         },
         content: {
-          paddingHorizontal: Space.lg,
+          paddingHorizontal: 0,
           paddingBottom: 40,
         },
         list: {

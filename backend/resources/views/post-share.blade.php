@@ -8,14 +8,7 @@
     $author = trim((string) ($post->user->display_name ?? $post->user->name ?? ''));
     $avatar = $post->user->avatar_url;
 
-    // Kind chip: label + tone matched to the app's mobile chips
-    // (try=success green / fail=danger red / question=amber).
-    $kindTones = [
-        'try'      => ['label' => 'Try',      'noun' => 'recipe try',  'fg' => '#3D8B5A', 'bg' => '#E3EFE8'],
-        'fail'     => ['label' => 'Fail',     'noun' => 'recipe fail', 'fg' => '#D9534F', 'bg' => '#FAE6E5'],
-        'question' => ['label' => 'Question', 'noun' => 'question',    'fg' => '#D69A2D', 'bg' => '#F8EDD4'],
-    ];
-    $kind = $kindTones[$post->kind] ?? $kindTones['try'];
+    $ogTitle = ($author !== '' ? $author . ' ' : '') . 'shared a post on RecipeReal';
 
     // Effective image list (images JSON column, else legacy image_url),
     // capped at 4 for the page.
@@ -40,9 +33,6 @@
 
     // og:image: first post image, else the attached recipe's image.
     $ogImage = $images[0] ?? $recipe?->image_url;
-
-    // og:title: "X shared a recipe try on RecipeReal" (or the kind word).
-    $ogTitle = ($author !== '' ? $author . ' ' : '') . 'shared a ' . $kind['noun'] . ' on RecipeReal';
 
     // og:description: first 120 chars of the body.
     $description = \Illuminate\Support\Str::limit(trim((string) $post->body), 120);
@@ -115,15 +105,6 @@
                 font-weight: 700;
                 letter-spacing: -0.02em;
                 line-height: 1.3;
-            }
-            .kind {
-                display: inline-block;
-                margin-top: 2px;
-                padding: 1px 10px;
-                border-radius: 999px;
-                font-size: 0.78rem;
-                font-weight: 700;
-                line-height: 1.5;
             }
             .body {
                 margin: 16px 0 0;
@@ -217,7 +198,6 @@
 @endif
                     <div>
                         <div class="name">{{ $author }}</div>
-                        <span class="kind" style="color: {{ $kind['fg'] }}; background: {{ $kind['bg'] }};">{{ $kind['label'] }}</span>
                     </div>
                 </div>
 

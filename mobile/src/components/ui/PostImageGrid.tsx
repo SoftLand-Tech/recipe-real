@@ -817,13 +817,13 @@ function RemoveBtn({
 
 // ---- Styles -------------------------------------------------------------------
 
-const SINGLE_HEIGHT = 220;
-const DOUBLE_HEIGHT = 180;
-const TRIPLE_TOP_HEIGHT = 160;
-const TRIPLE_BOTTOM_HEIGHT = 120;
-// Quad: square cells — (screen width − card horizontal padding − 1 gap) / 2
-// Card padding = 2 * Space.lg (≈2*16=32). SCREEN_W approx only for style const.
-const QUAD_CELL_SIZE = Math.floor((SCREEN_W - 32 - GRID_GAP) / 2);
+const SINGLE_HEIGHT = 260;
+const DOUBLE_HEIGHT = 220;
+const TRIPLE_TOP_HEIGHT = 200;
+const TRIPLE_BOTTOM_HEIGHT = 150;
+// Quad: edge-to-edge — (screen width − card inner padding − gap) / 2
+// Card inner padding = 2 * Space.md (12*2=24) when list is edge-to-edge.
+const QUAD_CELL_SIZE = Math.floor((SCREEN_W - 24 - GRID_GAP) / 2);
 
 const styles = StyleSheet.create({
   scrim: {

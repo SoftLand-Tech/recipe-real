@@ -9,12 +9,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Post extends Model
 {
-    /** See migration 000026: try|fail|question. */
-    public const KINDS = ['try', 'fail', 'question'];
-
     protected $fillable = [
         'user_id',
-        'kind',
         'body',
         'recipe_id',
         'image_url',

@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   RefreshControl,
   ScrollView,
@@ -13,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, useFocusEffect } from "expo-router";
+import { useChromeContentBottomPad, useScrollChrome } from "@/components/chrome";
 
 import {
   blockUser,
@@ -28,7 +30,7 @@ import {
 import { shareLink } from "@/utils/share";
 import { track } from "@/analytics";
 import { WEB_BASE_URL } from "@/config";
-import type { Post, PostKind, PostRecipe, PostSort } from "@/types";
+import type { Post, PostRecipe, PostSort } from "@/types";
 import { useLang, useT, type Lang, type TranslateFn } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 import {
@@ -37,6 +39,7 @@ import {
   Button,
   Card,
   Chip,
+  CommentsSheet,
   IconPressable,
   ImageViewerModal,
   PostImageGrid,
@@ -44,9 +47,6 @@ import {
 } from "@/components/ui";
 
 type LoadState = "loading" | "ready" | "error";
-
-/** Active feed filter: one of the post kinds, or all posts. */
-type FeedFilter = "all" | PostKind;
 
 /** Active feed ordering (see GET /api/posts?sort=). */
 type FeedSort = PostSort;
@@ -64,14 +64,7 @@ const SORT_PREF_KEY = "recipereal.communitySort";
  */
 const measureStyle = { height: 0, opacity: 0 } as const;
 
-const KIND_FILTERS: { value: FeedFilter; labelKey: string }[] = [
-  { value: "all", labelKey: "filter.all" },
-  { value: "try", labelKey: "community.kindTry" },
-  { value: "fail", labelKey: "community.kindFail" },
-  { value: "question", labelKey: "community.kindQuestion" },
-];
-
-/** The sort options rendered next to the kind chips (selected = accent). */
+/** The sort options (selected = accent). */
 const SORT_OPTIONS: { value: FeedSort; labelKey: string }[] = [
   { value: "suggested", labelKey: "community.sortSuggested" },
   { value: "latest", labelKey: "community.sortLatest" },
@@ -116,20 +109,6 @@ function authorName(user: Post["user"]): string {
   return (user.display_name ?? user.name ?? "").trim();
 }
 
-/** Chip tone per post kind (try=success / fail=danger / question=amber). */
-function kindTone(kind: PostKind): "success" | "danger" | "amber" {
-  if (kind === "fail") return "danger";
-  if (kind === "question") return "amber";
-  return "success";
-}
-
-/** i18n key of the kind chip label. */
-function kindLabelKey(kind: PostKind): string {
-  if (kind === "fail") return "community.kindFail";
-  if (kind === "question") return "community.kindQuestion";
-  return "community.kindTry";
-}
-
 /**
  * Localized title of a post's attached recipe with the single-language
  * fallback: app language first, the other language when untranslated.
@@ -148,6 +127,7 @@ interface PostCardProps {
   signedIn: boolean | null;
   lang: Lang;
   onCommented: (postId: number) => void;
+  onOpenComments: (postId: number) => void;
   /**
    * Reports like changes to the FEED's post state. Without this, the like
    * lived only in the card's local state — any remount (tab switch, list
@@ -180,6 +160,7 @@ const PostCard = memo(function PostCard({
   signedIn,
   lang,
   onCommented,
+  onOpenComments,
   onLiked,
   myUserId,
   onRemove,
@@ -283,7 +264,9 @@ const PostCard = memo(function PostCard({
     () =>
       StyleSheet.create({
         card: {
-          gap: Space.md,
+          gap: Space.sm,
+          padding: Space.md,
+          borderRadius: 0,
         },
         headRow: {
           flexDirection: "row",
@@ -292,23 +275,24 @@ const PostCard = memo(function PostCard({
         },
         headMain: {
           flex: 1,
-          gap: 1,
-        },
-        // Name + kind badge share one line (badge hugs the name, not the
-        // row end); the name shrinks first on narrow screens.
-        nameRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.xs,
+          gap: 2,
         },
         author: {
           ...Type.title,
           color: colors.ink,
           flexShrink: 1,
         },
+        relRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 4,
+        },
         relTime: {
           ...Type.caption,
           color: colors.inkFaint,
+        },
+        globeIcon: {
+          marginTop: 1,
         },
         reportedCaption: {
           ...Type.caption,
@@ -344,24 +328,55 @@ const PostCard = memo(function PostCard({
           color: colors.ink,
           flex: 1,
         },
+        // Facebook counts row — likes left, comments right, hairline top
+        countsRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingTop: Space.xs,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: colors.hairline,
+        },
+        countsLeft: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 4,
+        },
+        countsText: {
+          ...Type.caption,
+          color: colors.inkSecondary,
+        },
         actionsRow: {
           flexDirection: "row",
           alignItems: "center",
-          gap: Space.lg,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: colors.hairline,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.hairline,
+          marginHorizontal: -Space.md,
+          paddingHorizontal: Space.md,
         },
         action: {
+          flex: 1,
           flexDirection: "row",
           alignItems: "center",
-          gap: Space.xs,
+          justifyContent: "center",
+          gap: 6,
+          paddingVertical: Space.sm + 2,
         },
         actionCount: {
           ...Type.bodySm,
+          fontWeight: "600",
           color: colors.inkSecondary,
+        },
+        actionCountActive: {
+          color: colors.accent,
         },
         authPrompt: {
           flexDirection: "row",
           alignItems: "center",
           gap: Space.sm,
+          paddingTop: Space.xs,
         },
         authText: {
           ...Type.bodySm,
@@ -372,22 +387,28 @@ const PostCard = memo(function PostCard({
           flexDirection: "row",
           alignItems: "flex-start",
           gap: Space.xs,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: colors.hairline,
           paddingTop: Space.sm,
+        },
+        previewBubble: {
+          flex: 1,
+          backgroundColor: colors.surfaceSoft,
+          borderRadius: Radius.md,
+          paddingHorizontal: Space.sm,
+          paddingVertical: Space.xs + 2,
         },
         previewText: {
           ...Type.bodySm,
-          color: colors.inkSecondary,
+          color: colors.ink,
           flex: 1,
         },
         viewThread: {
-          ...Type.bodySm,
-          color: colors.accent,
+          ...Type.caption,
+          color: colors.inkSecondary,
+          marginTop: 2,
         },
         seeMore: {
           ...Type.bodySm,
-          color: colors.accent,
+          color: colors.inkSecondary,
           marginTop: 2,
         },
       }),
@@ -400,40 +421,45 @@ const PostCard = memo(function PostCard({
 
   return (
     <>
-      <Card style={styles.card}>
-        {/* Author row + kind chip. */}
+      <Card shadow="none" style={styles.card}>
+        {/* Header: avatar 40 | name + time·globe | menu — Facebook layout */}
         <View style={styles.headRow}>
           <IconPressable onPress={() => router.push(`/user/${post.user.id}`)} hitSlop={Space.xs}>
-            <Avatar name={authorName(post.user)} uri={post.user.avatar_url} size={36} />
+            <Avatar name={authorName(post.user)} uri={post.user.avatar_url} size={40} />
           </IconPressable>
           <View style={styles.headMain}>
-              <View style={styles.nameRow}>
-                <Text style={styles.author} numberOfLines={1}>
-                  {authorName(post.user)}
-                </Text>
-                <Chip
-                  size="sm"
-                  tone={kindTone(post.kind)}
-                  label={t(kindLabelKey(post.kind))}
-                />
-              </View>
+            <Text style={styles.author} numberOfLines={1}>
+              {authorName(post.user)}
+            </Text>
+            <View style={styles.relRow}>
               {rel !== "" ? (
                 <Text style={styles.relTime}>{rel}</Text>
               ) : null}
-            </View>
-            <IconPressable
-              onPress={openMenu}
-              accessibilityLabel={t("community.postActions")}
-              accessibilityRole="button"
-              hitSlop={Space.xs}
-            >
+              {rel !== "" ? (
+                <Text style={styles.relTime}> · </Text>
+              ) : null}
               <Ionicons
-                name="ellipsis-horizontal"
-                size={18}
-                color={reported ? colors.success : colors.inkSecondary}
+                name="earth-outline"
+                size={12}
+                color={colors.inkFaint}
+                style={styles.globeIcon}
               />
-            </IconPressable>
+            </View>
           </View>
+          <IconPressable
+            onPress={openMenu}
+            accessibilityLabel={t("community.postActions")}
+            accessibilityRole="button"
+            hitSlop={12}
+            style={{ width: 36, height: 36, alignItems: "center", justifyContent: "center" }}
+          >
+            <Ionicons
+              name="ellipsis-horizontal"
+              size={20}
+              color={reported ? colors.success : colors.inkSecondary}
+            />
+          </IconPressable>
+        </View>
         {reported ? (
           <Text style={styles.reportedCaption}>
             {t("community.reported")} ✓
@@ -522,27 +548,49 @@ const PostCard = memo(function PostCard({
           </IconPressable>
         ) : null}
 
-        {/* Like / Comment / Share action row (Facebook style) — one row at
-            the card bottom, spacing between the three segments. */}
+        {/* Counts row — taps open comments sheet */}
+        {(likesCount > 0 || post.comments_count > 0) ? (
+          <IconPressable
+            onPress={() => onOpenComments(post.id)}
+            style={styles.countsRow}
+            hitSlop={Space.xs}
+          >
+            <View style={styles.countsLeft}>
+              {likesCount > 0 ? (
+                <>
+                  <Ionicons name="heart" size={14} color={colors.accent} />
+                  <Text style={styles.countsText}>{likesCount}</Text>
+                </>
+              ) : (
+                <View />
+              )}
+            </View>
+            {post.comments_count > 0 ? (
+              <Text style={styles.countsText}>
+                {post.comments_count === 1 ? "1 comment" : `${post.comments_count} comments`}
+              </Text>
+            ) : null}
+          </IconPressable>
+        ) : null}
+
+        {/* Action row — Facebook 3 equal tabs with dividers */}
         <View style={styles.actionsRow}>
-          {/* Like — NOT wrapped in the card pressable; the optimistic state
-              machine (handleLike + onLiked wiring) is untouched. */}
           <IconPressable
             onPress={handleLike}
             disabled={likeBusy}
             style={styles.action}
             hitSlop={Space.xs}
+            accessibilityLabel="Like"
           >
             <Ionicons
               name={liked ? "heart" : "heart-outline"}
               size={20}
               color={liked ? colors.accent : colors.inkSecondary}
             />
-            <Text style={styles.actionCount}>{likesCount}</Text>
+            <Text style={[styles.actionCount, liked ? styles.actionCountActive : null]}>Like</Text>
           </IconPressable>
-          {/* Comment tap → post detail. */}
           <IconPressable
-            onPress={() => router.push(`/post/${post.id}`)}
+            onPress={() => onOpenComments(post.id)}
             style={styles.action}
             hitSlop={Space.xs}
           >
@@ -551,9 +599,8 @@ const PostCard = memo(function PostCard({
               size={20}
               color={colors.inkSecondary}
             />
-            <Text style={styles.actionCount}>{post.comments_count}</Text>
+            <Text style={styles.actionCount}>Comment</Text>
           </IconPressable>
-          {/* Share → system sheet with the public /p/{id} web page. */}
           <IconPressable
             onPress={() => void handleShare()}
             style={styles.action}
@@ -565,6 +612,7 @@ const PostCard = memo(function PostCard({
               size={20}
               color={colors.inkSecondary}
             />
+            <Text style={styles.actionCount}>Share</Text>
           </IconPressable>
         </View>
 
@@ -580,24 +628,27 @@ const PostCard = memo(function PostCard({
           </View>
         ) : null}
 
-        {/* Lightweight comment preview: latest comment + count. */}
+        {/* Comment preview — taps open comments sheet */}
         {latestComment != null ? (
-          <IconPressable
-            onPress={() => router.push(`/post/${post.id}`)}
-            style={styles.previewRow}
-          >
-            <Text style={styles.previewText} numberOfLines={2}>
-              <Text style={{ fontWeight: "600" }}>
-                {authorName(latestComment.user)}{" "}
-              </Text>
-              {latestComment.body}
-            </Text>
+          <View style={{ gap: Space.xs }}>
+            <IconPressable
+              onPress={() => onOpenComments(post.id)}
+              style={styles.previewRow}
+            >
+              <Avatar name={authorName(latestComment.user)} uri={latestComment.user.avatar_url} size={28} />
+              <View style={styles.previewBubble}>
+                <Text style={styles.previewText} numberOfLines={2}>
+                  <Text style={{ fontWeight: "700" }}>{authorName(latestComment.user)} </Text>
+                  {latestComment.body}
+                </Text>
+              </View>
+            </IconPressable>
             {post.comments_count > 1 ? (
-              <Text style={styles.viewThread}>
-                {t("community.viewAllComments", { n: post.comments_count })}
-              </Text>
+              <IconPressable onPress={() => onOpenComments(post.id)} hitSlop={Space.xs}>
+                <Text style={styles.viewThread}>{t("community.viewAllComments", { n: post.comments_count })}</Text>
+              </IconPressable>
             ) : null}
-          </IconPressable>
+          </View>
         ) : null}
       </Card>
 
@@ -728,26 +779,29 @@ const PostCard = memo(function PostCard({
 // ---- Screen ----------------------------------------------------------------------
 
 /**
- * The Community tab: the public post feed (tries / fails / questions) with
- * kind filter chips, an inline compose card, per-post likes and a lightweight
- * comment preview. Tapping a post card navigates to the post detail screen
- * (/post/[id]) where the full comment thread lives. Viewing is public;
- * composing and liking require sign-in (a 401 shows an inline sign-in prompt).
- * Signed-in users also get the header avatar button into /profile.
+ * The Community tab: the public post feed with per-post likes and a
+ * lightweight comment preview. Tapping a post card navigates to the post
+ * detail screen where the full comment thread lives. Viewing is public;
+ * composing and liking require sign-in.
  */
 export default function CommunityScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const t = useT();
   const { lang } = useLang();
+  const chrome = useScrollChrome();
+  const chromeBottomPad = useChromeContentBottomPad();
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const [chipHeight, setChipHeight] = useState(0);
 
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   // Signed-in user's id — resolves own-vs-other for the per-card ⋯ menu.
   const [myUserId, setMyUserId] = useState<number | null>(null);
-  const [filter, setFilter] = useState<FeedFilter>("all");
-  // Feed ordering: "latest" (default) or "trending"; persisted in
-  // AsyncStorage and restored on mount.
-  const [sort, setSort] = useState<FeedSort>("latest");
+  const [myAvatar, setMyAvatar] = useState<string | null>(null);
+  const [myName, setMyName] = useState<string | null>(null);
+  const [commentsPostId, setCommentsPostId] = useState<number | null>(null);
+  // Feed ordering: "suggested" (default) | "latest" | "trending"; persisted.
+  const [sort, setSort] = useState<FeedSort>("suggested");
   const [posts, setPosts] = useState<Post[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
@@ -763,48 +817,30 @@ export default function CommunityScreen() {
     postsRef.current = posts;
   }, [posts]);
 
-  // Mirrors of `filter`/`sort` readable inside stable closures (the focus
-  // effect's callback identity never changes, so it must read these instead
-  // of capturing stale state).
-  const filterRef = useRef<FeedFilter>("all");
-  useEffect(() => {
-    filterRef.current = filter;
-  }, [filter]);
-  const sortRef = useRef<FeedSort>("latest");
+  const sortRef = useRef<FeedSort>("suggested");
   useEffect(() => {
     sortRef.current = sort;
   }, [sort]);
 
-  /**
-   * The (filter, sort) pair of the NEWEST issued fetch. A response landing
-   * after the user switched the filter or the sort is dropped, so a slow
-   * request can never repaint the wrong feed.
-   */
-  const feedKeyRef = useRef("all:latest");
+  /** Sort of the newest issued fetch (dropping stale responses). */
+  const feedKeyRef = useRef("suggested");
 
   /**
-   * Fetch one feed page for an explicit filter + sort (avoids stale-closure
-   * races when switching them quickly). Page 1 replaces the list; later
-   * pages append deduped by id.
+   * Fetch one feed page for the current sort. Page 1 replaces the list;
+   * later pages append deduped by id.
    */
   const fetchPage = useCallback(
-    async (target: FeedFilter, targetPage: number, sortOverride?: FeedSort) => {
+    async (targetPage: number, sortOverride?: FeedSort) => {
       const activeSort = sortOverride ?? sortRef.current;
-      const feedKey = `${target}:${activeSort}`;
+      const feedKey = activeSort;
       feedKeyRef.current = feedKey;
       if (targetPage === 1) {
-        // Keep current content while silently revalidating (pull-to-refresh);
-        // only a truly empty feed shows the loading state.
         if (postsRef.current.length === 0) setState("loading");
       } else {
         setLoadingMore(true);
       }
       try {
-        const result = await fetchPosts(
-          target === "all" ? undefined : target,
-          targetPage,
-          activeSort,
-        );
+        const result = await fetchPosts(targetPage, activeSort);
         // Stale combo: the user moved on to another filter/sort — drop it.
         if (feedKeyRef.current !== feedKey) return;
         setPosts((prev) =>
@@ -830,7 +866,6 @@ export default function CommunityScreen() {
   );
 
   // Restore the persisted sort preference, then load page 1 with it
-  // (pull-to-refresh and the focus effect cover later updates).
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -844,7 +879,7 @@ export default function CommunityScreen() {
       const initial: FeedSort = (stored === "trending" || stored === "suggested") ? (stored as FeedSort) : "suggested";
       sortRef.current = initial;
       setSort(initial);
-      void fetchPage("all", 1, initial);
+      void fetchPage(1, initial);
     })();
     return () => {
       cancelled = true;
@@ -865,13 +900,19 @@ export default function CommunityScreen() {
         if (ok) {
           fetchMyProfile()
             .then((me) => {
-              if (!cancelled) setMyUserId(me.id);
+              if (!cancelled) {
+                setMyUserId(me.id);
+                setMyAvatar(me.avatar_url ?? null);
+                setMyName(me.display_name ?? me.name ?? null);
+              }
             })
             .catch(() => {
               // Non-fatal: cards just won't show the own-post menu.
             });
         } else if (!cancelled) {
           setMyUserId(null);
+          setMyAvatar(null);
+          setMyName(null);
         }
         // Cheap inbox page 1 fetch: only the meta.unread_count is used.
         if (ok) {
@@ -886,10 +927,8 @@ export default function CommunityScreen() {
           setUnreadCount(0);
         }
       })();
-      // Silent feed refresh on re-focus (does not show spinner for non-empty
-      // feeds). Refs, not captured state: this callback's identity never
-      // changes, so it must read the CURRENT filter + sort.
-      void fetchPage(filterRef.current, 1);
+      // Silent feed refresh on re-focus.
+      void fetchPage(1);
       return () => {
         cancelled = true;
       };
@@ -897,21 +936,9 @@ export default function CommunityScreen() {
     }, [fetchPage]),
   );
 
-  const changeFilter = useCallback(
-    (next: FeedFilter) => {
-      if (next === filter) return;
-      setFilter(next);
-      setPosts([]);
-      postsRef.current = [];
-      setState("loading");
-      void fetchPage(next, 1);
-    },
-    [filter, fetchPage],
-  );
-
   /**
-   * Switch the feed ordering (Latest / Top this week): persists the choice,
-   * clears the list and refetches page 1 with the new sort param.
+   * Switch the feed ordering: persists the choice, clears the list and
+   * refetches page 1 with the new sort param.
    */
   const changeSort = useCallback(
     (next: FeedSort) => {
@@ -923,27 +950,26 @@ export default function CommunityScreen() {
       setPosts([]);
       postsRef.current = [];
       setState("loading");
-      void fetchPage(filterRef.current, 1, next);
+      void fetchPage(1, next);
     },
     [sort, fetchPage],
   );
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    // Global safety: the spinner never outlives ~10s.
     const guard = setTimeout(() => setRefreshing(false), REFRESH_SPINNER_MAX_MS);
     try {
-      await fetchPage(filter, 1);
+      await fetchPage(1);
     } finally {
       clearTimeout(guard);
       setRefreshing(false);
     }
-  }, [filter, fetchPage]);
+  }, [fetchPage]);
 
   const handleEndReached = useCallback(() => {
     if (state !== "ready" || loadingMore || !hasMore) return;
-    void fetchPage(filter, page + 1);
-  }, [state, loadingMore, hasMore, filter, page, fetchPage]);
+    void fetchPage(page + 1);
+  }, [state, loadingMore, hasMore, page, fetchPage]);
 
   const bumpCommentCount = useCallback((postId: number) => {
     setPosts((prev) =>
@@ -978,9 +1004,16 @@ export default function CommunityScreen() {
       router.push("/login");
       return;
     }
-    // Push the dedicated compose screen; on back, useFocusEffect refreshes the feed.
     router.push("/post-composer");
   }, [signedIn]);
+
+  const openComments = useCallback((postId: number) => {
+    setCommentsPostId(postId);
+  }, []);
+
+  const closeComments = useCallback(() => {
+    setCommentsPostId(null);
+  }, []);
 
   const styles = useMemo(
     () =>
@@ -1004,17 +1037,19 @@ export default function CommunityScreen() {
         filterScrollInner: {
           flexGrow: 1,
         },
-        // Hairline separator between the kind chips and the sort pair
-        // (stretches to the row height; chips align flex-start).
-        filterDivider: {
-          width: StyleSheet.hairlineWidth,
-          alignSelf: "stretch",
-          backgroundColor: colors.hairline,
-        },
+
         listContent: {
-          paddingHorizontal: Space.lg,
-          gap: Space.lg,
+          paddingHorizontal: 0,
+          gap: Space.xs,
           paddingBottom: insets.bottom + Space.xxl,
+        },
+        chromeHeader: {
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 10,
+          backgroundColor: colors.canvas,
         },
         center: {
           alignItems: "center",
@@ -1040,29 +1075,7 @@ export default function CommunityScreen() {
           ...Type.h3,
           color: colors.ink,
         },
-        // Cold-start explainer: the three post kinds as small rows.
-        emptyKinds: {
-          gap: Space.xs,
-          marginTop: Space.sm,
-          alignSelf: "stretch",
-        },
-        emptyKindRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.sm,
-          backgroundColor: colors.surfaceSoft,
-          borderRadius: Radius.md,
-          paddingHorizontal: Space.md,
-          paddingVertical: Space.sm,
-        },
-        emptyKindGlyph: {
-          fontSize: 16,
-        },
-        emptyKindLabel: {
-          ...Type.bodySm,
-          fontWeight: "600",
-          flex: 1,
-        },
+
         cta: {
           marginTop: Space.md,
         },
@@ -1098,107 +1111,180 @@ export default function CommunityScreen() {
           color: "#FFFFFF",
           letterSpacing: 0,
         },
+        // Composer entry card — Facebook style top of feed
+        composerCard: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+          backgroundColor: colors.surface,
+          borderRadius: 0,
+          padding: Space.sm + 2,
+          marginHorizontal: 0,
+          marginBottom: Space.xs,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.hairline,
+        },
+        composerGhost: {
+          flex: 1,
+          backgroundColor: colors.surfaceSoft,
+          borderRadius: Radius.pill,
+          paddingHorizontal: Space.md,
+          paddingVertical: Space.sm + 2,
+        },
+        composerGhostText: {
+          ...Type.body,
+          color: colors.inkFaint,
+        },
+        composerPhotoBtn: {
+          width: 36,
+          height: 36,
+          borderRadius: 18,
+          backgroundColor: colors.surfaceSoft,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        // Skeleton card
+        skeletonCard: {
+          backgroundColor: colors.surface,
+          borderRadius: 0,
+          padding: Space.md,
+          gap: Space.sm,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.hairline,
+        },
+        skeletonRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+        },
+        skeletonAvatar: {
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          backgroundColor: colors.surfaceSoft,
+        },
+        skeletonLine: {
+          height: 12,
+          borderRadius: 6,
+          backgroundColor: colors.surfaceSoft,
+        },
+        skeletonImage: {
+          height: 180,
+          borderRadius: Radius.md,
+          backgroundColor: colors.surfaceSoft,
+        },
+        fab: {
+          position: "absolute",
+          end: Space.lg,
+          bottom: insets.bottom + Space.lg,
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          backgroundColor: colors.accent,
+          alignItems: "center",
+          justifyContent: "center",
+          elevation: 4,
+          shadowColor: "#000",
+          shadowOpacity: 0.2,
+          shadowRadius: 4,
+          shadowOffset: { width: 0, height: 2 },
+        },
       }),
     [colors, insets.bottom],
   );
 
+  const totalHeader = headerHeight + chipHeight;
+
   return (
     <View style={styles.container}>
-      <ScreenHeader
-        title={t("community.title")}
-        rights={
-          signedIn === false
-            ? undefined
-            : [
-                // Notification bell → /notifications. The little red badge
-                // shows the unread count (capped at 99+).
-                <IconPressable
-                  key="bell"
-                  onPress={() => router.push("/notifications")}
-                  accessibilityLabel={
-                    unreadCount > 0
-                      ? `${t("notif.bellA11y")} · ${t("notif.unreadA11y", { n: unreadCount })}`
-                      : t("notif.bellA11y")
-                  }
-                  hitSlop={Space.xs}
-                >
-                  <View style={styles.bellWrap}>
-                    <Ionicons
-                      name="notifications-outline"
-                      size={24}
-                      color={colors.inkSecondary}
-                    />
-                    {unreadCount > 0 ? (
-                      <View style={styles.badge}>
-                        <Text style={styles.badgeText} numberOfLines={1}>
-                          {unreadCount > 99 ? "99+" : unreadCount}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
-                </IconPressable>,
-                // Profile → /profile (kept from before; bell sits before it).
-                <IconPressable
-                  key="profile"
-                  onPress={() => router.push("/profile")}
-                  accessibilityLabel={t("profile.title")}
-                  hitSlop={Space.xs}
-                >
-                  <Ionicons
-                    name="person-circle-outline"
-                    size={26}
-                    color={colors.inkSecondary}
-                  />
-                </IconPressable>,
-              ]
-        }
-      />
+      {/* Sticky filter chips - slides to top when header hides */}
+      <Animated.View
+        onLayout={(e) => setChipHeight(e.nativeEvent.layout.height)}
+        style={{
+          position: "absolute",
+          top: headerHeight,
+          left: 0,
+          right: 0,
+          zIndex: 9,
+          backgroundColor: colors.canvas,
+          transform: [
+            {
+              translateY: chrome.hidden.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, -headerHeight],
+              }),
+            },
+          ],
+        }}
+      >
+        <View style={styles.filterRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.filterScrollInner}
+            contentContainerStyle={styles.filterScroll}
+          >
+            {SORT_OPTIONS.map(({ value, labelKey }) => (
+              <IconPressable
+                key={value}
+                onPress={() => changeSort(value)}
+                hitSlop={Space.xs}
+              >
+                <Chip
+                  label={t(labelKey)}
+                  tone={sort === value ? "accent" : "neutral"}
+                  size="sm"
+                />
+              </IconPressable>
+            ))}
+          </ScrollView>
+        </View>
+      </Animated.View>
+      {/* Static padding + TRANSFORM lift (community pattern): the padding
+          sits on a NON-scrolling container (the chip row doesn't scroll),
+          so without the lift a header-tall gap stays under the chips when
+          the header hides; translateY is native-driver-safe. The NEGATIVE
+          bottom margin extends the wrapper under the absolute tab bar by
+          the same height, so the lifted wrapper covers the full screen —
+          without it, the translate exposed a header-tall empty band at the
+          bottom of the list (the wrapper moved but its height didn't
+          grow). Bottom-clearing padding lives on the scroller itself. */}
+      <Animated.View
+        style={{
+          flex: 1,
+          paddingTop: totalHeader,
+          marginBottom: -headerHeight,
+          transform: [
+            {
+              translateY: chrome.hidden.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, -headerHeight],
+              }),
+            },
+          ],
+        }}
+      >
 
-      {/* Filter chips + the compose (FAB-like) button. */}
-      <View style={styles.filterRow}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.filterScrollInner}
-          contentContainerStyle={styles.filterScroll}
-        >
-          {KIND_FILTERS.map(({ value, labelKey }) => (
-            <IconPressable
-              key={value}
-              onPress={() => changeFilter(value)}
-              hitSlop={Space.xs}
-            >
-              <Chip
-                label={t(labelKey)}
-                tone={filter === value ? "accent" : "neutral"}
-                size="sm"
-              />
-            </IconPressable>
-          ))}
-          {/* Sort pair (Latest / Top this week) after a hairline divider. */}
-          <View style={styles.filterDivider} />
-          {SORT_OPTIONS.map(({ value, labelKey }) => (
-            <IconPressable
-              key={value}
-              onPress={() => changeSort(value)}
-              hitSlop={Space.xs}
-            >
-              <Chip
-                label={t(labelKey)}
-                tone={sort === value ? "accent" : "neutral"}
-                size="sm"
-              />
-            </IconPressable>
-          ))}
-        </ScrollView>
-        <Button
-          title={t("community.compose")}
-          onPress={startCompose}
-          icon="create"
-        />
-      </View>
+        {/* Composer entry — Facebook top-of-feed card */}
+        <IconPressable onPress={startCompose} style={styles.composerCard} hitSlop={Space.xs}>
+          <Avatar
+            name={myName ?? "?"}
+            uri={myAvatar}
+            size={36}
+          />
+          <View style={styles.composerGhost}>
+            <Text style={styles.composerGhostText} numberOfLines={1}>
+              {signedIn ? t("community.compose") : t("community.signInPrompt")}
+            </Text>
+          </View>
+          <View style={styles.composerPhotoBtn}>
+            <Ionicons name="image-outline" size={20} color={colors.accent} />
+          </View>
+        </IconPressable>
 
-      <FlatList
+        <FlatList
         data={state === "ready" ? posts : []}
         keyExtractor={(item) => String(item.id)}
         renderItem={({ item }) => (
@@ -1207,12 +1293,20 @@ export default function CommunityScreen() {
             signedIn={signedIn}
             lang={lang}
             onCommented={bumpCommentCount}
+            onOpenComments={openComments}
             onLiked={applyLikeState}
             myUserId={myUserId}
             onRemove={removePost}
           />
         )}
-        contentContainerStyle={styles.listContent}
+        style={{ flex: 1 }}
+        contentContainerStyle={[
+          styles.listContent,
+          // Clear the ABSOLUTE tab-bar overlay (measured height + room).
+          { paddingBottom: chromeBottomPad },
+        ]}
+        onScroll={chrome.onScroll}
+        scrollEventThrottle={chrome.scrollEventThrottle}
         // Heavy photo cells: render small batches (browse pattern).
         initialNumToRender={3}
         maxToRenderPerBatch={3}
@@ -1238,8 +1332,21 @@ export default function CommunityScreen() {
         }
         ListEmptyComponent={
           state === "loading" ? (
-            <View style={styles.center}>
-              <ActivityIndicator color={colors.accent} size="small" />
+            <View style={{ paddingHorizontal: 0, gap: Space.xs }}>
+              {[0, 1, 2].map((k) => (
+                <View key={k} style={styles.skeletonCard}>
+                  <View style={styles.skeletonRow}>
+                    <View style={styles.skeletonAvatar} />
+                    <View style={{ flex: 1, gap: 6 }}>
+                      <View style={[styles.skeletonLine, { width: "40%" }]} />
+                      <View style={[styles.skeletonLine, { width: "25%", height: 10 }]} />
+                    </View>
+                  </View>
+                  <View style={[styles.skeletonLine, { width: "95%" }]} />
+                  <View style={[styles.skeletonLine, { width: "80%" }]} />
+                  <View style={styles.skeletonImage} />
+                </View>
+              ))}
             </View>
           ) : state === "error" ? (
             <View style={styles.center}>
@@ -1249,7 +1356,7 @@ export default function CommunityScreen() {
               <Text style={styles.muted}>{t("community.loadFailed")}</Text>
               <Button
                 title={t("common.retry")}
-                onPress={() => void fetchPage(filter, 1)}
+                onPress={() => void fetchPage(1)}
                 style={styles.cta}
               />
             </View>
@@ -1257,24 +1364,6 @@ export default function CommunityScreen() {
             <View style={styles.center}>
               <Text style={styles.emptyGlyph}>💬</Text>
               <Text style={styles.emptyTitle}>{t("community.emptyTitle")}</Text>
-              {/* Cold-start explainer: the three kinds of post, tone-matched
-                  to their chips, so newcomers know what belongs here. */}
-              <View style={styles.emptyKinds}>
-                {(
-                  [
-                    { glyph: "✅", labelKey: "community.kindTry", tone: colors.success },
-                    { glyph: "❌", labelKey: "community.kindFail", tone: colors.danger },
-                    { glyph: "❓", labelKey: "community.kindQuestion", tone: colors.amber },
-                  ] as const
-                ).map(({ glyph, labelKey, tone }) => (
-                  <View key={labelKey} style={styles.emptyKindRow}>
-                    <Text style={styles.emptyKindGlyph}>{glyph}</Text>
-                    <Text style={[styles.emptyKindLabel, { color: tone }]}>
-                      {t(labelKey)}
-                    </Text>
-                  </View>
-                ))}
-              </View>
               <Button
                 title={t("community.emptyBeFirst")}
                 onPress={startCompose}
@@ -1283,6 +1372,89 @@ export default function CommunityScreen() {
             </View>
           )
         }
+      />
+      </Animated.View>
+      <Animated.View
+        onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+        style={[
+          styles.chromeHeader,
+          {
+            transform: [
+              {
+                translateY: chrome.hidden.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, -headerHeight],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <ScreenHeader
+          title={t("community.title")}
+          rights={
+            signedIn === false
+              ? undefined
+              : [
+                  <IconPressable
+                    key="bell"
+                    onPress={() => router.push("/notifications")}
+                    accessibilityLabel={
+                      unreadCount > 0
+                        ? `${t("notif.bellA11y")} · ${t("notif.unreadA11y", { n: unreadCount })}`
+                        : t("notif.bellA11y")
+                    }
+                    hitSlop={Space.xs}
+                  >
+                    <View style={styles.bellWrap}>
+                      <Ionicons
+                        name="notifications-outline"
+                        size={24}
+                        color={colors.inkSecondary}
+                      />
+                      {unreadCount > 0 ? (
+                        <View style={styles.badge}>
+                          <Text style={styles.badgeText} numberOfLines={1}>
+                            {unreadCount > 99 ? "99+" : unreadCount}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  </IconPressable>,
+                  <IconPressable
+                    key="profile"
+                    onPress={() => router.push("/profile")}
+                    accessibilityLabel={t("profile.title")}
+                    hitSlop={Space.xs}
+                  >
+                    <Ionicons
+                      name="person-circle-outline"
+                      size={26}
+                      color={colors.inkSecondary}
+                    />
+                  </IconPressable>,
+                ]
+          }
+        />
+      </Animated.View>
+
+      {/* FAB — Facebook one-handed compose */}
+      <IconPressable
+        onPress={startCompose}
+        hitSlop={Space.xs}
+        accessibilityLabel={t("community.compose")}
+        style={styles.fab}
+      >
+        <Ionicons name="create-outline" size={24} color="#FFFFFF" />
+      </IconPressable>
+
+      <CommentsSheet
+        postId={commentsPostId}
+        visible={commentsPostId != null}
+        onClose={closeComments}
+        myAvatar={myAvatar}
+        myName={myName}
+        onCommented={bumpCommentCount}
       />
     </View>
   );

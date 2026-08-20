@@ -17,7 +17,6 @@ class StorePostRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'kind'          => ['required', 'in:try,fail,question'],
             'body'          => ['required', 'string', 'min:1', 'max:2000'],
             'recipe_id'     => ['nullable', 'integer', 'exists:recipes,id'],
             'image_url'     => ['nullable', 'url', 'max:500'],

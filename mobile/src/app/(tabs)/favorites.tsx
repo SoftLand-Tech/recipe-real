@@ -144,7 +144,7 @@ export default function FavoritesScreen() {
         },
         content: {
           flexGrow: 1,
-          paddingHorizontal: Space.lg,
+          paddingHorizontal: 0,
           gap: Space.lg,
           // Bottom inset handled on the outer container (pinned-header
           // structure) — only list breathing room here.

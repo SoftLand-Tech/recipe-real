@@ -56,7 +56,7 @@ export default function PublicProfileScreen() {
 
   const styles = useMemo(() => StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.canvas },
-    content: { paddingHorizontal: Space.lg, gap: Space.lg, paddingBottom: Space.xxl },
+    content: { paddingHorizontal: 0, gap: Space.lg, paddingBottom: Space.xxl },
     center: { flex: 1, alignItems: "center", justifyContent: "center", gap: Space.md, padding: Space.xxl },
     name: { ...Type.h2, color: colors.ink },
     caption: { ...Type.bodySm, color: colors.inkSecondary },

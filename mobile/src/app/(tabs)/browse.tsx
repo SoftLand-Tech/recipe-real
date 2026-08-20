@@ -1535,7 +1535,28 @@ export default function BrowseScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={{ flex: 1, paddingTop: headerHeight }}>
+      {/* Static padding + TRANSFORM lift (community pattern): the padding
+          sits on a NON-scrolling container (the chip row + panels don't
+          scroll), so without the lift a header-tall gap stays above the
+          chips when the header hides. The NEGATIVE bottom margin extends
+          the wrapper under the absolute tab bar by the header height so
+          the lifted wrapper covers the full screen (no empty band at the
+          list's end). Both values are static layout — no jumps. */}
+      <Animated.View
+        style={{
+          flex: 1,
+          paddingTop: headerHeight,
+          marginBottom: -headerHeight,
+          transform: [
+            {
+              translateY: chrome.hidden.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, -headerHeight],
+              }),
+            },
+          ],
+        }}
+      >
         {state === "ready" && (
           <ChipRow
             chips={chips}
@@ -1651,7 +1672,7 @@ export default function BrowseScreen() {
             }
           />
         )}
-      </View>
+      </Animated.View>
       <Animated.View
         onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
         style={[

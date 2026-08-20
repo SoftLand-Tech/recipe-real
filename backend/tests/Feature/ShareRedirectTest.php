@@ -59,7 +59,6 @@ class ShareRedirectTest extends TestCase
         $id = $this->recipe()->id;
         $postId = \App\Models\Post::create([
             'user_id' => \App\Models\User::factory()->create()->id,
-            'kind' => 'try',
             'body' => 'WhatsApp preview guard test',
         ])->id;
 

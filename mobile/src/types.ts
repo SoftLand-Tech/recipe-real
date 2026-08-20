@@ -282,9 +282,6 @@ export interface RecipeNotesPage {
 
 // ---- Community posts --------------------------------------------------------
 
-/** Post kinds served by GET /api/posts?kind=. */
-export type PostKind = "try" | "fail" | "question";
-
 /** Feed sort orders served by GET /api/posts?sort= (default: latest). */
 export type PostSort = "latest" | "trending" | "suggested";
 
@@ -319,7 +316,6 @@ export interface PostLatestComment {
 /** One community post row (GET /api/posts, 20/page newest-first). */
 export interface Post {
   id: number;
-  kind: PostKind;
   body: string;
   image_url: string | null;
   /** Effective image list (1–6 URLs). New-client field; always present. */
@@ -357,7 +353,6 @@ export interface PostLikeResult {
 
 /** Payload for POST /api/posts. */
 export interface PostInput {
-  kind: PostKind;
   body: string;
   recipe_id?: number;
   image_url?: string;
@@ -418,12 +413,11 @@ export interface NotificationActor {
 }
 
 /**
- * Light post reference on a notification row: id + kind + an 80-char body
+ * Light post reference on a notification row: id + an 80-char body
  * snippet. Null once the post was deleted (the row survives as history).
  */
 export interface NotificationPostRef {
   id: number;
-  kind: string | null;
   body: string;
 }
 

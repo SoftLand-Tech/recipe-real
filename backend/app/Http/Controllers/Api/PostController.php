@@ -19,17 +19,17 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Community feed posts: "I tried it" / "I failed it" / "I have a question",
- * optionally attached to a recipe, with toggleable likes and comments.
- * Authors can edit/delete their own posts; any signed-in user can report a
- * post, and blocking an author removes their posts from the blocker's feed.
+ * Community feed posts: plain posts optionally attached to a recipe,
+ * with toggleable likes and comments. Authors can edit/delete their own
+ * posts; any signed-in user can report a post, and blocking an author
+ * removes their posts from the blocker's feed.
  */
 class PostController extends Controller
 {
     /**
      * Paginated feed (20/page, newest first), public read.
-     * ?kind=try|fail|question filters by kind, ?recipe_id= by attachment.
-     * ?sort=trending ranks posts from the LAST 7 DAYS by engagement
+     * ?recipe_id= filters by attachment. ?sort=trending ranks posts from the
+     * LAST 7 DAYS by engagement
      * (likes*2 + comments, then id) instead of recency; when the 7-day
      * window is empty after the filters, it transparently falls back to the
      * same ranking over the whole catalog so the tab never shows an empty
@@ -48,13 +48,6 @@ class PostController extends Controller
                 'latestComment.user:id,display_name,name,avatar_url',
             ])
             ->withCount(['likes', 'comments']);
-
-        if ($request->filled('kind')) {
-            $kind = (string) $request->string('kind');
-            if (in_array($kind, Post::KINDS, true)) {
-                $query->where('kind', $kind);
-            }
-        }
 
         if ($request->filled('recipe_id')) {
             $query->where('recipe_id', $request->integer('recipe_id'));
@@ -162,7 +155,6 @@ class PostController extends Controller
 
         $post = Post::create([
             'user_id'   => $request->user()->id,
-            'kind'      => $request->string('kind')->toString(),
             'body'      => $body,
             'recipe_id' => $request->input('recipe_id'),
             'image_url' => $firstImageUrl,

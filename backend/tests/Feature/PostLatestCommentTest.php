@@ -36,7 +36,6 @@ class PostLatestCommentTest extends TestCase
 
         $post = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'try',
             'body'    => 'Made the lemon chicken — worth it.',
         ]);
 
@@ -80,7 +79,6 @@ class PostLatestCommentTest extends TestCase
         $author = User::factory()->create();
         $post   = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'question',
             'body'    => 'Any substitute for sumac?',
         ]);
 
@@ -102,7 +100,6 @@ class PostLatestCommentTest extends TestCase
         $commenter = User::factory()->create();
         $post      = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'fail',
             'body'    => 'Souq batch was too salty.',
         ]);
         $newest = PostComment::create([
@@ -135,13 +132,11 @@ class PostLatestCommentTest extends TestCase
 
         $postA = Post::create([
             'user_id'   => $author->id,
-            'kind'      => 'try',
             'body'      => 'Tried recipe A.',
             'recipe_id' => $recipeA->id,
         ]);
         Post::create([
             'user_id'   => $author->id,
-            'kind'      => 'try',
             'body'      => 'Tried recipe B.',
             'recipe_id' => $recipeB->id,
         ]);

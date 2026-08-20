@@ -16,7 +16,7 @@ use Tests\TestCase;
  *   1. Posts from the last 7 days rank by engagement
  *      (likes*2 + comments) DESC, id DESC — a liked/commented post ranks
  *      above a NEWER unliked one.
- *   2. The ranking applies AFTER the kind/recipe_id filters.
+ *   2. The ranking applies AFTER the recipe_id filter.
  *   3. When nothing exists in the 7-day window, the feed transparently
  *      falls back to the same ranking over the whole catalog (a cold
  *      community never sees an empty trending list).
@@ -36,7 +36,6 @@ class PostTrendingSortTest extends TestCase
         // Older post, 2 likes + 1 comment → score 5.
         $liked = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'try',
             'body'    => 'Slower than the recipe said, but great.',
         ]);
         // Keep it inside the 7-day window but clearly older.
@@ -55,7 +54,6 @@ class PostTrendingSortTest extends TestCase
         // Newer post, zero engagement → score 0.
         $unliked = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'try',
             'body'    => 'Just posted this second.',
         ]);
 
@@ -68,31 +66,37 @@ class PostTrendingSortTest extends TestCase
         $this->assertSame($unliked->id, $rows[1]['id']);
     }
 
-    /** Trending applies after the kind filter (only matching kinds ranked). */
-    public function test_trending_applies_after_the_kind_filter(): void
+    /** Trending applies after the recipe_id filter (only matching posts ranked). */
+    public function test_trending_applies_after_the_recipe_filter(): void
     {
         $author = User::factory()->create();
         $liker  = User::factory()->create();
+        $recipe = \App\Models\Recipe::create([
+            'title' => 'Test Recipe',
+            'source_type' => 'user',
+            'owner_id' => $author->id,
+        ]);
 
-        $likedFail = Post::create([
+        $likedWithRecipe = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'fail',
             'body'    => 'Burned it.',
+            'recipe_id' => $recipe->id,
         ]);
-        PostLike::create(['post_id' => $likedFail->id, 'user_id' => $liker->id]);
+        PostLike::create(['post_id' => $likedWithRecipe->id, 'user_id' => $liker->id]);
 
-        $plainTry = Post::create([
+        $plain = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'try',
-            'body'    => 'Plain try inside the window.',
+            'body'    => 'Plain post inside the window.',
+            'recipe_id' => $recipe->id,
         ]);
 
-        $response = $this->getJson('/api/posts?kind=try&sort=trending');
+        $response = $this->getJson('/api/posts?recipe_id=' . $recipe->id . '&sort=trending');
         $response->assertOk();
 
         $rows = $response->json('data');
-        $this->assertCount(1, $rows, 'The kind filter must run before the ranking.');
-        $this->assertSame($plainTry->id, $rows[0]['id']);
+        $this->assertCount(2, $rows);
+        // Both have same recipe_id, so filtering keeps both; trending orders by engagement.
+        $this->assertSame($likedWithRecipe->id, $rows[0]['id']);
     }
 
     /** Nothing in the last 7 days → whole-catalog ranking, still ordered by score. */
@@ -105,13 +109,11 @@ class PostTrendingSortTest extends TestCase
         // Both posts are 10 days old — the 7-day window is empty.
         $likedOld = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'question',
-            'body'    => 'Old question with engagement.',
+            'body'    => 'Old post with engagement.',
         ]);
         $unlikedOld = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'question',
-            'body'    => 'Older question, no engagement.',
+            'body'    => 'Older post, no engagement.',
         ]);
         DB::table('posts')->whereIn('id', [$likedOld->id, $unlikedOld->id])
             ->update(['created_at' => now()->subDays(10)]);

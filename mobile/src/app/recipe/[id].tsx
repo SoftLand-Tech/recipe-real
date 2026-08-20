@@ -41,7 +41,6 @@ import type {
   CleanupFactors,
   PaceCalibration,
   Post,
-  PostKind,
   Recipe,
   RecipeNote,
   RecipeStep,
@@ -159,21 +158,7 @@ function postAuthorName(user: Post["user"]): string {
   return (user.display_name ?? user.name ?? "").trim();
 }
 
-/** Chip tone per post kind (try=success / fail=danger / question=amber). */
-function postKindTone(kind: PostKind): "success" | "danger" | "amber" {
-  if (kind === "fail") return "danger";
-  if (kind === "question") return "amber";
-  return "success";
-}
-
-/** i18n key of the post kind chip label (community.kindTry etc.). */
-function postKindLabelKey(kind: PostKind): string {
-  if (kind === "fail") return "community.kindFail";
-  if (kind === "question") return "community.kindQuestion";
-  return "community.kindTry";
-}
-
-/** Rows shown before "Show all" expands the recipe's community-tries list. */
+/** Rows shown before "Show all" expands the recipe's community list. */
 const TRIES_PREVIEW_COUNT = 3;
 
 /**
@@ -926,7 +911,7 @@ export default function RecipeDetailScreen() {
         triesList: {
           gap: Space.md,
         },
-        // One compact row: avatar | (name + kind chip / 2-line snippet /
+        // One compact row: avatar | (name / 2-line snippet /
         // up to 3 tiny image squares). Static style only — IconPressable
         // adds the pressed opacity feedback (Android paint rules).
         tryRow: {
@@ -2528,13 +2513,13 @@ export default function RecipeDetailScreen() {
                   </Card>
                 </View>
 
-                {/* 6. COMMUNITY TRIES — community posts attached to this
+                {/* 6. COMMUNITY POSTS — community posts attached to this
                     recipe (GET /api/posts?recipe_id=), loaded non-blocking
                     once the recipe is ready; a silent failure keeps the
-                    section hidden. Compact vertical rows (avatar + name +
-                    kind chip, 2-line body snippet, up to 3 tiny image
-                    squares); at most 3 rows up front with "Show all"
-                    expanding in place. Tapping a row opens the post. */}
+                    section hidden. Compact vertical rows (avatar + name,
+                    2-line body snippet, up to 3 tiny image squares); at
+                    most 3 rows up front with "Show all" expanding in
+                    place. Tapping a row opens the post. */}
                 {tries != null ? (
                   <View style={styles.section}>
                     <SectionHeader
@@ -2575,19 +2560,12 @@ export default function RecipeDetailScreen() {
                                 size={32}
                               />
                               <View style={styles.tryMain}>
-                                <View style={styles.tryHeadRow}>
-                                  <Text
-                                    style={styles.tryAuthor}
-                                    numberOfLines={1}
-                                  >
-                                    {author}
-                                  </Text>
-                                  <Chip
-                                    size="sm"
-                                    tone={postKindTone(item.kind)}
-                                    label={t(postKindLabelKey(item.kind))}
-                                  />
-                                </View>
+                                <Text
+                                  style={styles.tryAuthor}
+                                  numberOfLines={1}
+                                >
+                                  {author}
+                                </Text>
                                 <Text style={styles.tryBody} numberOfLines={2}>
                                   {item.body}
                                 </Text>

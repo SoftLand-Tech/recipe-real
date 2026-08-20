@@ -233,7 +233,7 @@ export default function SettingsScreen() {
           flex: 1,
         },
         content: {
-          paddingHorizontal: Space.lg,
+          paddingHorizontal: 0,
           gap: Space.lg,
         },
         groupCaption: {
@@ -244,6 +244,7 @@ export default function SettingsScreen() {
           marginBottom: Space.xs,
         },
         group: {
+          borderRadius: 0,
           // Card already clips to its radius; rows run edge to edge.
         },
         // Inset divider — starts at the row text so the icon column reads as

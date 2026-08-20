@@ -883,7 +883,7 @@ function HomeHeader({ name }: { name: string | null }) {
       StyleSheet.create({
         wrap: {
           paddingTop: insets.top + Space.md,
-          paddingHorizontal: Space.lg,
+          paddingHorizontal: 0,
           marginBottom: Space.lg,
           gap: Space.xs,
         },
@@ -1282,10 +1282,10 @@ function HomeRail({
           marginBottom: Space.md,
         },
         sectionHeaderPad: {
-          paddingHorizontal: Space.lg,
+          paddingHorizontal: Space.md,
         },
         railContent: {
-          paddingHorizontal: Space.lg,
+          paddingHorizontal: 0,
           gap: Space.md,
         },
       }),
@@ -1341,10 +1341,10 @@ function CategoryRail({
           marginBottom: Space.md,
         },
         sectionHeaderPad: {
-          paddingHorizontal: Space.lg,
+          paddingHorizontal: Space.md,
         },
         railContent: {
-          paddingHorizontal: Space.lg,
+          paddingHorizontal: 0,
           gap: Space.sm,
           alignItems: "center",
         },
@@ -1386,10 +1386,10 @@ function SkeletonRail() {
           marginBottom: Space.md,
         },
         sectionHeaderPad: {
-          paddingHorizontal: Space.lg,
+          paddingHorizontal: Space.md,
         },
         railContent: {
-          paddingHorizontal: Space.lg,
+          paddingHorizontal: 0,
           gap: Space.md,
         },
         card: {

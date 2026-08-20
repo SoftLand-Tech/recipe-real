@@ -34,7 +34,6 @@ class PostMultiImageTest extends TestCase
 
         $createResponse = $this->actingAs($user, 'sanctum')
             ->postJson('/api/posts', [
-                'kind'   => 'try',
                 'body'   => 'Made shakshuka — absolutely nailed it!',
                 'images' => $images,
             ]);
@@ -75,7 +74,6 @@ class PostMultiImageTest extends TestCase
         // Directly insert a legacy post (no `images` column value).
         $post = Post::create([
             'user_id'   => $user->id,
-            'kind'      => 'fail',
             'body'      => 'Burnt the rice again.',
             'image_url' => $imageUrl,
         ]);
@@ -95,7 +93,6 @@ class PostMultiImageTest extends TestCase
         $user = User::factory()->create();
         $post = Post::create([
             'user_id' => $user->id,
-            'kind'    => 'question',
             'body'    => 'How long should I marinate chicken?',
         ]);
 
@@ -104,7 +101,6 @@ class PostMultiImageTest extends TestCase
         $response->assertJsonStructure([
             'data' => [
                 'id',
-                'kind',
                 'body',
                 'image_url',
                 'images',

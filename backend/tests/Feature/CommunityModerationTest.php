@@ -34,7 +34,6 @@ class CommunityModerationTest extends TestCase
         $other  = User::factory()->create();
         $post   = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'try',
             'body'    => 'Nailed the flatbread.',
         ]);
 
@@ -56,7 +55,6 @@ class CommunityModerationTest extends TestCase
         $user = User::factory()->create();
         $post = Post::create([
             'user_id' => $user->id,
-            'kind'    => 'fail',
             'body'    => 'Burnt the rice.',
         ]);
 
@@ -101,7 +99,6 @@ class CommunityModerationTest extends TestCase
         $other   = User::factory()->create();
         $post    = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'try',
             'body'    => 'Great shakshuka.',
         ]);
         $comment = PostComment::create([
@@ -128,7 +125,6 @@ class CommunityModerationTest extends TestCase
         $user    = User::factory()->create();
         $post    = Post::create([
             'user_id' => $user->id,
-            'kind'    => 'question',
             'body'    => 'How long to soak the beans?',
         ]);
         $comment = PostComment::create([
@@ -187,7 +183,6 @@ class CommunityModerationTest extends TestCase
         $reporter = User::factory()->create();
         $post   = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'try',
             'body'    => 'Spammy vibes.',
         ]);
 
@@ -213,7 +208,6 @@ class CommunityModerationTest extends TestCase
         $reporter = User::factory()->create();
         $post     = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'try',
             'body'    => 'Post body.',
         ]);
         $comment  = PostComment::create([
@@ -244,12 +238,10 @@ class CommunityModerationTest extends TestCase
         $bystander = User::factory()->create();
         $blockedPost = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'try',
             'body'    => 'Blocked author post.',
         ]);
         $otherPost = Post::create([
             'user_id' => $bystander->id,
-            'kind'    => 'fail',
             'body'    => 'Bystander post.',
         ]);
 
@@ -298,7 +290,6 @@ class CommunityModerationTest extends TestCase
         $friend  = User::factory()->create();
         $post    = Post::create([
             'user_id' => $blocker->id,
-            'kind'    => 'question',
             'body'    => 'Best pan for dosa?',
         ]);
         $hiddenComment = PostComment::create([

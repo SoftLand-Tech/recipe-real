@@ -21,7 +21,6 @@ class PostResource extends JsonResource
 
         return [
             'id'             => $this->id,
-            'kind'           => $this->kind,
             'body'           => $this->body,
             'image_url'      => $this->image_url,
             // Array of image URLs (1–6 entries, or empty). New clients use

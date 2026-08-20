@@ -7,14 +7,19 @@ import {
 } from "react";
 import { Animated } from "react-native";
 import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "expo-router/build/react-navigation/bottom-tabs/utils/useBottomTabBarHeight";
+import { useFocusEffect } from "expo-router";
 
-// Facebook-style thresholds
+// Facebook-style thresholds. SHOW is deliberately LARGER than a hair
+// trigger: with the old 10pt, very-slow-scroll finger jitter produced
+// rapid hide→show→hide alternation (flicker) — asymmetric hysteresis in
+// the WRONG direction. Sub-pixel deltas (<1pt) are jitter noise.
 const HIDE_THRESHOLD = 28;
-const SHOW_THRESHOLD = 10;
+const SHOW_THRESHOLD = 16;
 const TOP_ALWAYS_SHOW_OFFSET = 24;
 const ANIM_DURATION_MS = 200;
+/** No transition decision until the previous animation has settled. */
+const TRANSITION_COOLDOWN_MS = 260;
 
 interface ScrollChromeContextValue {
   /** 0 = visible, 1 = hidden. Drives both header and tab bar interpolations. */
@@ -22,6 +27,12 @@ interface ScrollChromeContextValue {
   /** Imperative controls — fire-and-forget, transition-only. */
   hideChrome: () => void;
   showChrome: () => void;
+  /**
+   * Screen-entry reset: drops the accumulators and skips the NEXT scroll
+   * event's delta (it carries the previous screen's baseline — a huge
+   * stale jump that used to auto-hide the chrome without any gesture).
+   */
+  resetChrome: () => void;
   /** Direct scroll handler for screens that want manual wiring. */
   handleScroll: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
 }
@@ -37,12 +48,17 @@ export function ScrollChromeProvider({ children }: { children: React.ReactNode }
   const accumUpRef = useRef(0);
   const lastOffsetRef = useRef(0);
   const isDraggingRef = useRef(false);
+  // Timestamp of the last show/hide transition (flicker guard).
+  const lastTransitionAtRef = useRef(0);
+  // Set by resetChrome: the next scroll event only re-baselines.
+  const skipNextDeltaRef = useRef(false);
 
   const animateTo = useCallback(
     (toValue: number) => {
       const shouldHide = toValue === 1;
       if (isHiddenRef.current === shouldHide) return;
       isHiddenRef.current = shouldHide;
+      lastTransitionAtRef.current = Date.now();
       Animated.timing(hidden, {
         toValue,
         duration: ANIM_DURATION_MS,
@@ -54,6 +70,12 @@ export function ScrollChromeProvider({ children }: { children: React.ReactNode }
 
   const hideChrome = useCallback(() => animateTo(1), [animateTo]);
   const showChrome = useCallback(() => animateTo(0), [animateTo]);
+
+  const resetChrome = useCallback(() => {
+    accumDownRef.current = 0;
+    accumUpRef.current = 0;
+    skipNextDeltaRef.current = true;
+  }, []);
 
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -69,8 +91,23 @@ export function ScrollChromeProvider({ children }: { children: React.ReactNode }
         return;
       }
 
-      // Ignore tiny jitter / zero delta.
-      if (delta === 0) return;
+      // Screen-entry baseline swap: the first event after entering a screen
+      // carries the PREVIOUS screen's offset — treat it as a re-baseline,
+      // never as scroll travel (this was the auto-hide-on-entry bug).
+      if (skipNextDeltaRef.current) {
+        skipNextDeltaRef.current = false;
+        return;
+      }
+
+      // Sub-pixel movement is finger jitter noise at very slow scroll
+      // speeds — accumulating it is what made the chrome indecisive.
+      if (Math.abs(delta) < 1) return;
+
+      // Let the previous transition's animation settle before deciding
+      // again (rapid retriggering = flicker).
+      if (Date.now() - lastTransitionAtRef.current < TRANSITION_COOLDOWN_MS) {
+        return;
+      }
 
       if (delta > 0) {
         // Scrolling DOWN — accumulate downward, reset upward.
@@ -101,8 +138,8 @@ export function ScrollChromeProvider({ children }: { children: React.ReactNode }
   void isDraggingRef;
 
   const value = useMemo<ScrollChromeContextValue>(
-    () => ({ hidden, hideChrome, showChrome, handleScroll }),
-    [hidden, hideChrome, showChrome, handleScroll],
+    () => ({ hidden, hideChrome, showChrome, resetChrome, handleScroll }),
+    [hidden, hideChrome, showChrome, resetChrome, handleScroll],
   );
 
   return (
@@ -132,13 +169,35 @@ export function useScrollChrome(options?: {
   existingOnScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   enabled?: boolean;
 }) {
-  const { handleScroll, hidden, hideChrome, showChrome } = useScrollChromeContext();
+  const { handleScroll, hidden, hideChrome, showChrome, resetChrome } = useScrollChromeContext();
   const enabled = options?.enabled ?? true;
   const existingOnScroll = options?.existingOnScroll;
 
+  // FOCUS GATE (flicker fix): every tab screen stays MOUNTED in the tab
+  // navigator, and all of them feed this ONE shared hidden value — without
+  // the gate, a background tab's scroller emitting layout-driven events
+  // (rails landing, feeds filling) fights the screen you're actually
+  // touching, and the chrome flickers indecisively. Only the FOCUSED
+  // screen may drive the chrome.
+  //
+  // On GAINING focus the chrome is also SHOWN and re-baselined: entering a
+  // screen must never inherit the previous screen's hidden state or its
+  // stale scroll offset (the auto-hide-on-entry bug).
+  const focusedRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      focusedRef.current = true;
+      resetChrome();
+      showChrome();
+      return () => {
+        focusedRef.current = false;
+      };
+    }, [resetChrome, showChrome]),
+  );
+
   const onScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (enabled) handleScroll(event);
+      if (enabled && focusedRef.current) handleScroll(event);
       existingOnScroll?.(event);
     },
     [enabled, handleScroll, existingOnScroll],
@@ -169,7 +228,10 @@ export const SCROLL_CHROME_CONSTANTS = {
  * harmless for one frame at the top of a list.
  */
 export function useChromeContentBottomPad(): number {
-  const insets = useSafeAreaInsets();
-  // Expo tab bar is ~49dp + safe inset — fallback when the height hook is unavailable.
-  return 49 + insets.bottom + 24;
+  // Measured bar height (includes its safe-area inset) + a SMALL breathing
+  // gap. The old constant stacked 49 + inset + 24 on top of a hardcoded
+  // guess — users saw a huge dead band under the last card.
+  const barHeight = useBottomTabBarHeight();
+
+  return barHeight + 8;
 }

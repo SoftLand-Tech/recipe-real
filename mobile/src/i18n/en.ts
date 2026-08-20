@@ -163,11 +163,11 @@ export const en: Record<string, string> = {
   "detail.notesSignIn": "Sign in to join the conversation.",
   "detail.notePostFailed": "Couldn't post your note. Please try again.",
   "detail.noteHalalBlocked": "Please remove these terms: {terms}",
-  // ---- Community tries (posts attached to this recipe) ----
-  "detail.communityTries": "Community tries",
-  "detail.communityTriesCount": "Community tries · {n}",
-  "detail.triesEmpty": "No community tries yet — be the first",
-  "detail.shareYourTry": "Share your try",
+  // ---- Community posts (posts attached to this recipe) ----
+  "detail.communityTries": "Community posts",
+  "detail.communityTriesCount": "Community posts · {n}",
+  "detail.triesEmpty": "No posts yet — be the first",
+  "detail.shareYourTry": "Share a post",
   "detail.showAllTries": "Show all",
 
   // ---- Recipe composer -------------------------------------------------------
@@ -553,4 +553,5 @@ export const en: Record<string, string> = {
   "notif.signInPrompt": "Sign in to see your notifications.",
   "notif.bellA11y": "Notifications",
   "notif.unreadA11y": "{n} unread",
+  "profile.actionA11y": "Profile",
 };

@@ -13,10 +13,9 @@ use Tests\TestCase;
  * Covers the public web post page GET /p/{post} — the share target behind
  * the app's post Share buttons (feed card + post detail):
  *
- *   1. 200 with PUBLIC data only: author display name + avatar, the kind
- *      chip (Try/Fail/Question), the full body, up to 4 images, and full
- *      OpenGraph meta (og:title / og:description / og:image / og:url) so
- *      WhatsApp previews render.
+ *   1. 200 with PUBLIC data only: author display name + avatar, the full
+ *      body, up to 4 images, and full OpenGraph meta (og:title /
+ *      og:description / og:image / og:url) so WhatsApp previews render.
  *   2. Posts with an attached recipe render the small recipe card linking
  *      to /r/{recipe} with its "Recipe says X · Really takes Y" badge.
  *   3. Unknown ids 404. No auth, no counts, no comments on the page.
@@ -25,7 +24,7 @@ class PublicPostPageTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** Full-data post: author + avatar + kind chip + body + images + og meta. */
+    /** Full-data post: author + avatar + body + images + og meta. */
     public function test_share_page_renders_post_body_and_open_graph_meta(): void
     {
         $user = User::factory()->create([
@@ -36,7 +35,6 @@ class PublicPostPageTest extends TestCase
         $body = 'Nailed the one-pan lemon chicken tonight — crispy skin and all. ';
         $post = Post::create([
             'user_id' => $user->id,
-            'kind'    => 'try',
             'body'    => $body . str_repeat('x', 130),
             'images'  => [
                 'https://example.com/plate-1.jpg',
@@ -49,10 +47,9 @@ class PublicPostPageTest extends TestCase
         $response->assertOk();
 
         $html = $response->getContent();
-        // Public content: author, avatar, kind chip, body, images.
+        // Public content: author, avatar, body, images.
         $this->assertStringContainsString('Mona Sobhy', $html);
         $this->assertStringContainsString('https://example.com/avatar.jpg', $html);
-        $this->assertStringContainsString('>Try</span>', $html);
         $this->assertStringContainsString('Nailed the one-pan lemon chicken tonight', $html);
         $this->assertStringContainsString('https://example.com/plate-1.jpg', $html);
         $this->assertStringContainsString('https://example.com/plate-3.jpg', $html);
@@ -60,7 +57,7 @@ class PublicPostPageTest extends TestCase
 
         // OpenGraph preview meta.
         $this->assertStringContainsString(
-            '<meta property="og:title" content="Mona Sobhy shared a recipe try on RecipeReal">',
+            '<meta property="og:title" content="Mona Sobhy shared a post on RecipeReal">',
             $html,
         );
         $this->assertStringContainsString(
@@ -96,7 +93,6 @@ class PublicPostPageTest extends TestCase
         ]);
         $post = Post::create([
             'user_id'   => $user->id,
-            'kind'      => 'fail',
             'body'      => 'The skin burned before the thighs finished.',
             'recipe_id' => $recipe->id,
         ]);
@@ -125,13 +121,11 @@ class PublicPostPageTest extends TestCase
         $user = User::factory()->create();
         $post = Post::create([
             'user_id' => $user->id,
-            'kind'    => 'question',
             'body'    => 'Any trick for crispy skin without burning it?',
         ]);
 
         $html = $this->get("/p/{$post->id}")->getContent();
 
-        $this->assertStringContainsString('>Question</span>', $html);
         $this->assertStringNotContainsString('likes', $html);
         $this->assertStringNotContainsString('comments', $html);
     }
@@ -148,7 +142,6 @@ class PublicPostPageTest extends TestCase
         $user = User::factory()->create();
         $post = Post::create([
             'user_id' => $user->id,
-            'kind'    => 'try',
             'body'    => 'Cached shakshuka success.',
         ]);
 

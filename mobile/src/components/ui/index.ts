@@ -55,6 +55,8 @@ export {
 export { ActionSheet } from "./ActionSheet";
 export type { SheetAction, ActionSheetProps } from "./ActionSheet";
 
+export { CommentsSheet } from "./CommentsSheet";
+
 export { Toggle } from "./Toggle";
 export type { ToggleProps } from "./Toggle";
 

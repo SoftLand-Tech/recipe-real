@@ -229,7 +229,7 @@ export default function ProfileScreen() {
       StyleSheet.create({
         container: { flex: 1, backgroundColor: colors.canvas },
         scroll: { flex: 1 },
-        content: { paddingHorizontal: Space.lg, gap: Space.lg, paddingBottom: Space.xxl },
+        content: { paddingHorizontal: 0, gap: Space.lg, paddingBottom: Space.xxl },
         section: { gap: Space.sm },
         groupCaption: {
           ...Type.caption,

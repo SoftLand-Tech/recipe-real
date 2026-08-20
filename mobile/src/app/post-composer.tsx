@@ -21,7 +21,7 @@ import {
   uploadImage,
 } from "@/api/client";
 import { track } from "@/analytics";
-import type { Post, PostKind, Recipe } from "@/types";
+import type { Post, Recipe } from "@/types";
 import { useLang, useT } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 import {
@@ -38,20 +38,6 @@ const POST_BODY_MAX = 2000;
 const RECIPE_PICK_RESULTS = 5;
 const RECIPE_SEARCH_DEBOUNCE_MS = 350;
 const MAX_IMAGES = 6;
-
-// ---- Helpers -----------------------------------------------------------------
-
-function kindTone(kind: PostKind): "success" | "danger" | "amber" {
-  if (kind === "fail") return "danger";
-  if (kind === "question") return "amber";
-  return "success";
-}
-
-function kindLabelKey(kind: PostKind): string {
-  if (kind === "fail") return "community.kindFail";
-  if (kind === "question") return "community.kindQuestion";
-  return "community.kindTry";
-}
 
 function useLocalizedTitle(): (recipe: Recipe) => string {
   const { lang } = useLang();
@@ -89,7 +75,6 @@ export default function PostComposerScreen() {
     recipeTitle?: string;
   }>();
 
-  const [kind, setKind] = useState<PostKind>("try");
   const [body, setBody] = useState("");
   const [pickedUris, setPickedUris] = useState<string[]>([]);
 
@@ -206,13 +191,11 @@ export default function PostComposerScreen() {
       setUploadCaption(null);
 
       const created: Post = await createPost({
-        kind,
         body: text,
         ...(selectedRecipe ? { recipe_id: selectedRecipe.id } : {}),
         ...(uploadedUrls.length > 0 ? { images: uploadedUrls } : {}),
       });
       track("post_created", {
-        kind,
         has_image: uploadedUrls.length > 0,
         image_count: uploadedUrls.length,
         has_recipe: selectedRecipe != null,
@@ -233,7 +216,7 @@ export default function PostComposerScreen() {
       setPosting(false);
       setUploadCaption(null);
     }
-  }, [body, posting, pickedUris, kind, selectedRecipe, t]);
+  }, [body, posting, pickedUris, selectedRecipe, t]);
 
   const styles = useMemo(
     () =>
@@ -279,16 +262,6 @@ export default function PostComposerScreen() {
           gap: Space.md,
           borderWidth: 1,
           borderColor: colors.accentSoft,
-        },
-        kindLabel: {
-          ...Type.caption,
-          color: colors.inkSecondary,
-          fontWeight: "600",
-        },
-        kindRow: {
-          flexDirection: "row",
-          flexWrap: "wrap",
-          gap: Space.sm,
         },
         bodyInput: {
           ...Type.body,
@@ -383,24 +356,6 @@ export default function PostComposerScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <Card style={styles.card}>
-            {/* Kind selector */}
-            <Text style={styles.kindLabel}>{t("community.composeKindHint")}</Text>
-            <View style={styles.kindRow}>
-              {(["try", "fail", "question"] as PostKind[]).map((option) => (
-                <IconPressable
-                  key={option}
-                  onPress={() => setKind(option)}
-                  hitSlop={Space.xs}
-                >
-                  <Chip
-                    label={t(kindLabelKey(option))}
-                    tone={kind === option ? kindTone(option) : "neutral"}
-                    size="sm"
-                  />
-                </IconPressable>
-              ))}
-            </View>
-
             {/* Body */}
             <TextInput
               style={styles.bodyInput}

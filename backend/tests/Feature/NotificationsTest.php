@@ -34,7 +34,6 @@ class NotificationsTest extends TestCase
         $liker  = User::factory()->create();
         $post   = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'try',
             'body'    => 'Fluffy focaccia, finally.',
         ]);
 
@@ -61,7 +60,6 @@ class NotificationsTest extends TestCase
         $author = User::factory()->create();
         $post   = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'fail',
             'body'    => 'Sourdough brick.',
         ]);
 
@@ -83,7 +81,6 @@ class NotificationsTest extends TestCase
         $liker  = User::factory()->create();
         $post   = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'try',
             'body'    => 'Knead less, bake more.',
         ]);
 
@@ -113,7 +110,6 @@ class NotificationsTest extends TestCase
         $commenter = User::factory()->create();
         $post      = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'question',
             'body'    => 'Why is my tabbouleh soupy?',
         ]);
 
@@ -147,7 +143,6 @@ class NotificationsTest extends TestCase
         $author  = User::factory()->create();
         $post    = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'try',
             'body'    => str_repeat('a', 200), // longer than the 80-char snippet
         ]);
 
@@ -192,8 +187,7 @@ class NotificationsTest extends TestCase
         $this->assertNotNull($row['actor']['id']);
         $this->assertArrayHasKey('avatar_url', $row['actor']);
         $this->assertSame($post->id, $row['post']['id']);
-        $this->assertSame('try', $row['post']['kind']);
-        // Snippet = first 80 chars + ellipsis (Str::limit default).
+                // Snippet = first 80 chars + ellipsis (Str::limit default).
         $this->assertSame(Str::limit($post->body, 80), $row['post']['body']);
         $this->assertSame(str_repeat('a', 80), mb_substr($row['post']['body'], 0, 80));
 
@@ -216,7 +210,6 @@ class NotificationsTest extends TestCase
         $liker     = User::factory()->create();
         $post      = Post::create([
             'user_id' => $author->id,
-            'kind'    => 'try',
             'body'    => 'Crispy shallots.',
         ]);
 

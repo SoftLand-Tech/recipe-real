@@ -41,7 +41,6 @@ import {
   Avatar,
   Button,
   Card,
-  Chip,
   IconPressable,
   ImageViewerModal,
   PostImageGrid,
@@ -73,18 +72,6 @@ function relativeDate(t: TranslateFn, iso: string): string {
 
 function authorName(user: Post["user"]): string {
   return (user.display_name ?? user.name ?? "").trim();
-}
-
-function kindTone(kind: Post["kind"]): "success" | "danger" | "amber" {
-  if (kind === "fail") return "danger";
-  if (kind === "question") return "amber";
-  return "success";
-}
-
-function kindLabelKey(kind: Post["kind"]): string {
-  if (kind === "fail") return "community.kindFail";
-  if (kind === "question") return "community.kindQuestion";
-  return "community.kindTry";
 }
 
 function postRecipeTitle(lang: Lang, recipe: PostRecipe): string {
@@ -160,12 +147,20 @@ const CommentRow = memo(function CommentRow({
   const s = useMemo(
     () =>
       StyleSheet.create({
-        row: { flexDirection: "row", gap: Space.sm },
-        main: { flex: 1, gap: 2 },
-        head: { flexDirection: "row", alignItems: "center", gap: Space.sm },
+        row: { flexDirection: "row", gap: Space.sm, alignItems: "flex-start" },
+        main: { flex: 1, gap: 4 },
+        bubble: {
+          backgroundColor: colors.surfaceSoft,
+          borderRadius: Radius.md,
+          paddingHorizontal: Space.sm,
+          paddingVertical: Space.xs + 2,
+          alignSelf: "flex-start",
+          maxWidth: "100%",
+        },
         author: { ...Type.bodySm, fontWeight: "600", color: colors.ink },
+        body: { ...Type.bodySm, color: colors.ink, marginTop: 1 },
+        metaRow: { flexDirection: "row", alignItems: "center", gap: Space.sm, marginStart: Space.sm },
         time: { ...Type.caption, color: colors.inkFaint },
-        body: { ...Type.bodySm, color: colors.ink },
         actions: { flexDirection: "row", alignItems: "center", gap: Space.xs },
         editWrap: { gap: Space.xs },
         editInput: {
@@ -192,59 +187,9 @@ const CommentRow = memo(function CommentRow({
       <Avatar
         name={authorName(comment.user)}
         uri={comment.user.avatar_url}
-        size={28}
+        size={32}
       />
       <View style={s.main}>
-        <View style={s.head}>
-          <Text style={s.author} numberOfLines={1}>
-            {authorName(comment.user)}
-          </Text>
-          {caption.length > 0 ? (
-            <Text style={s.time}>{caption.join(" · ")}</Text>
-          ) : null}
-          {!editing && mine ? (
-            <View style={s.actions}>
-              <IconPressable
-                onPress={startEdit}
-                accessibilityLabel={t("community.editCommentA11y")}
-                hitSlop={Space.xs}
-              >
-                <Ionicons
-                  name="pencil"
-                  size={14}
-                  color={colors.inkFaint}
-                />
-              </IconPressable>
-              <IconPressable
-                onPress={() => onDelete(comment)}
-                accessibilityLabel={t("community.deleteCommentA11y")}
-                hitSlop={Space.xs}
-              >
-                <Ionicons
-                  name="trash-outline"
-                  size={14}
-                  color={colors.inkFaint}
-                />
-              </IconPressable>
-            </View>
-          ) : null}
-          {!mine && reported ? (
-            <Ionicons name="flag" size={14} color={colors.inkFaint} />
-          ) : null}
-          {!mine && !reported ? (
-            <IconPressable
-              onPress={() => onReport(comment)}
-              accessibilityLabel={t("community.reportComment")}
-              hitSlop={Space.xs}
-            >
-              <Ionicons
-                name="flag-outline"
-                size={14}
-                color={colors.inkFaint}
-              />
-            </IconPressable>
-          ) : null}
-        </View>
         {editing ? (
           <View style={s.editWrap}>
             <TextInput
@@ -274,7 +219,35 @@ const CommentRow = memo(function CommentRow({
             </View>
           </View>
         ) : (
-          <Text style={s.body}>{comment.body}</Text>
+          <>
+            <View style={s.bubble}>
+              <Text style={s.author} numberOfLines={1}>
+                {authorName(comment.user)}
+              </Text>
+              <Text style={s.body}>{comment.body}</Text>
+            </View>
+            <View style={s.metaRow}>
+              {caption.length > 0 ? (
+                <Text style={s.time}>{caption.join(" · ")}</Text>
+              ) : null}
+              {mine ? (
+                <>
+                  <IconPressable onPress={startEdit} hitSlop={Space.xs} accessibilityLabel={t("community.editCommentA11y")}>
+                    <Text style={s.time}>Edit</Text>
+                  </IconPressable>
+                  <IconPressable onPress={() => onDelete(comment)} hitSlop={Space.xs} accessibilityLabel={t("community.deleteCommentA11y")}>
+                    <Text style={s.time}>Delete</Text>
+                  </IconPressable>
+                </>
+              ) : reported ? (
+                <Ionicons name="flag" size={12} color={colors.inkFaint} />
+              ) : (
+                <IconPressable onPress={() => onReport(comment)} hitSlop={Space.xs} accessibilityLabel={t("community.reportComment")}>
+                  <Text style={s.time}>Report</Text>
+                </IconPressable>
+              )}
+            </View>
+          </>
         )}
       </View>
     </View>
@@ -317,6 +290,8 @@ export default function PostDetailScreen() {
   // Own-content affordances (edit/delete) need the signed-in user's id —
   // best-effort: while null, the screen only offers report/block actions.
   const [myUserId, setMyUserId] = useState<number | null>(null);
+  const [myAvatar, setMyAvatar] = useState<string | null>(null);
+  const [myName, setMyName] = useState<string | null>(null);
 
   // ---- Like state -----------------------------------------------------------
   const [liked, setLiked] = useState(false);
@@ -411,7 +386,11 @@ export default function PostDetailScreen() {
       // Best-effort id for the own-content affordances.
       try {
         const profile = await fetchMyProfile();
-        if (!cancelled) setMyUserId(profile.id);
+        if (!cancelled) {
+          setMyUserId(profile.id);
+          setMyAvatar(profile.avatar_url ?? null);
+          setMyName(profile.display_name ?? profile.name ?? null);
+        }
       } catch {
         // Non-fatal: edit/delete stay hidden, report/block still work.
       }
@@ -680,21 +659,17 @@ export default function PostDetailScreen() {
         errorTitle: { ...Type.h3, color: colors.danger },
         errorCaption: { ...Type.body, color: colors.inkSecondary, textAlign: "center" },
         listContent: {
-          paddingHorizontal: Space.lg,
+          paddingHorizontal: 0,
           gap: Space.lg,
           paddingBottom: insets.bottom + Space.xxl,
         },
-        card: { gap: Space.md },
+        card: { gap: Space.sm, padding: Space.md },
         headRow: { flexDirection: "row", alignItems: "center", gap: Space.sm },
-        headMain: { flex: 1, gap: 1 },
-        // Name + kind badge share one line (badge hugs the name).
-        nameRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.xs,
-        },
+        headMain: { flex: 1, gap: 2 },
         author: { ...Type.title, color: colors.ink, flexShrink: 1 },
+        relRow: { flexDirection: "row", alignItems: "center", gap: 4 },
         relTime: { ...Type.caption, color: colors.inkFaint },
+        globeIcon: { marginTop: 1 },
         reportedRow: {
           flexDirection: "row",
           alignItems: "center",
@@ -742,13 +717,36 @@ export default function PostDetailScreen() {
           color: colors.ink,
           flex: 1,
         },
+        countsRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingTop: Space.xs,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: colors.hairline,
+        },
+        countsLeft: { flexDirection: "row", alignItems: "center", gap: 4 },
+        countsText: { ...Type.caption, color: colors.inkSecondary },
         actionsRow: {
           flexDirection: "row",
           alignItems: "center",
-          gap: Space.lg,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: colors.hairline,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.hairline,
+          marginHorizontal: -Space.md,
+          paddingHorizontal: Space.md,
         },
-        action: { flexDirection: "row", alignItems: "center", gap: Space.xs },
-        actionCount: { ...Type.bodySm, color: colors.inkSecondary },
+        action: {
+          flex: 1,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 6,
+          paddingVertical: Space.sm + 2,
+        },
+        actionCount: { ...Type.bodySm, fontWeight: "600", color: colors.inkSecondary },
+        actionCountActive: { color: colors.accent },
         authPrompt: { flexDirection: "row", alignItems: "center", gap: Space.sm },
         authText: { ...Type.bodySm, color: colors.inkSecondary, flex: 1 },
         divider: {
@@ -764,17 +762,34 @@ export default function PostDetailScreen() {
         commentMuted: { ...Type.bodySm, color: colors.inkSecondary },
         composeRow: {
           flexDirection: "row",
-          alignItems: "center",
+          alignItems: "flex-start",
           gap: Space.sm,
+        },
+        composePill: {
+          flex: 1,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.xs,
+          backgroundColor: colors.surfaceSoft,
+          borderRadius: Radius.pill,
+          paddingHorizontal: Space.sm,
+          paddingVertical: Space.xs,
+          minHeight: 40,
         },
         composeInput: {
           flex: 1,
           ...Type.bodySm,
           color: colors.ink,
-          backgroundColor: colors.surfaceSoft,
-          borderRadius: Radius.pill,
-          paddingHorizontal: Space.md,
-          paddingVertical: Space.sm,
+          paddingHorizontal: Space.xs,
+          paddingVertical: Space.xs,
+          textAlignVertical: "center",
+        },
+        composeSend: {
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          alignItems: "center",
+          justifyContent: "center",
         },
         loadMore: { alignSelf: "flex-start" },
       }),
@@ -820,27 +835,24 @@ export default function PostDetailScreen() {
   const ListHeader = (
     <View style={{ gap: Space.lg }}>
       <Card style={styles.card}>
-        {/* Author row + kind chip + moderation menu */}
+        {/* Header — Facebook layout: avatar 40 + name + time·globe */}
         <View style={styles.headRow}>
           <Avatar
             name={authorName(post.user)}
             uri={post.user.avatar_url}
-            size={36}
+            size={40}
           />
           <View style={styles.headMain}>
-            <View style={styles.nameRow}>
-              <Text style={styles.author} numberOfLines={1}>
-                {authorName(post.user)}
-              </Text>
-              <Chip
-                size="sm"
-                tone={kindTone(post.kind)}
-                label={t(kindLabelKey(post.kind))}
-              />
+            <Text style={styles.author} numberOfLines={1}>
+              {authorName(post.user)}
+            </Text>
+            <View style={styles.relRow}>
+              {caption.length > 0 ? (
+                <Text style={styles.relTime}>{caption.join(" · ")}</Text>
+              ) : null}
+              {caption.length > 0 ? <Text style={styles.relTime}> · </Text> : null}
+              <Ionicons name="earth-outline" size={12} color={colors.inkFaint} style={styles.globeIcon} />
             </View>
-            {caption.length > 0 ? (
-              <Text style={styles.relTime}>{caption.join(" · ")}</Text>
-            ) : null}
             {reportedPost ? (
               <View style={styles.reportedRow}>
                 <Ionicons name="flag" size={12} color={colors.inkFaint} />
@@ -854,7 +866,8 @@ export default function PostDetailScreen() {
             onPress={openPostMenu}
             disabled={deletingPost}
             accessibilityLabel={t("community.postActions")}
-            hitSlop={Space.xs}
+            hitSlop={12}
+            style={{ width: 36, height: 36, alignItems: "center", justifyContent: "center" }}
           >
             <Ionicons
               name="ellipsis-horizontal"
@@ -944,31 +957,55 @@ export default function PostDetailScreen() {
           </IconPressable>
         ) : null}
 
-        {/* Like / Comment / Share action row (Facebook style) — same row
-            and styling as the feed card. */}
+        {/* Counts — Facebook above action bar */}
+        {(likesCount > 0 || post.comments_count > 0) ? (
+          <View style={styles.countsRow}>
+            <View style={styles.countsLeft}>
+              {likesCount > 0 ? (
+                <>
+                  <Ionicons name="heart" size={14} color={colors.accent} />
+                  <Text style={styles.countsText}>{likesCount}</Text>
+                </>
+              ) : (
+                <View />
+              )}
+            </View>
+            {post.comments_count > 0 ? (
+              <Text style={styles.countsText}>
+                {post.comments_count === 1 ? "1 comment" : `${post.comments_count} comments`}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        {/* Action row — 3 equal Facebook tabs */}
         <View style={styles.actionsRow}>
           <IconPressable
             onPress={handleLike}
             disabled={likeBusy}
             style={styles.action}
             hitSlop={Space.xs}
+            accessibilityLabel="Like"
           >
             <Ionicons
               name={liked ? "heart" : "heart-outline"}
               size={20}
               color={liked ? colors.accent : colors.inkSecondary}
             />
-            <Text style={styles.actionCount}>{likesCount}</Text>
+            <Text style={[styles.actionCount, liked ? styles.actionCountActive : null]}>Like</Text>
           </IconPressable>
-          <View style={styles.action}>
+          <IconPressable
+            onPress={() => setDraft("")}
+            style={styles.action}
+            hitSlop={Space.xs}
+          >
             <Ionicons
               name="chatbubble-outline"
               size={20}
               color={colors.inkSecondary}
             />
-            <Text style={styles.actionCount}>{post.comments_count}</Text>
-          </View>
-          {/* Share → system sheet with the public /p/{id} web page. */}
+            <Text style={styles.actionCount}>Comment</Text>
+          </IconPressable>
           <IconPressable
             onPress={() => void handleShare()}
             style={styles.action}
@@ -980,6 +1017,7 @@ export default function PostDetailScreen() {
               size={20}
               color={colors.inkSecondary}
             />
+            <Text style={styles.actionCount}>Share</Text>
           </IconPressable>
         </View>
 
@@ -996,26 +1034,38 @@ export default function PostDetailScreen() {
         ) : null}
       </Card>
 
-      {/* Comment compose + header */}
-      <View style={{ gap: Space.md }}>
-        <Text style={styles.commentsHeader}>{t("community.commentPlaceholder").replace("…", "")}</Text>
+      {/* Comment composer — Facebook avatar + pill input */}
+      <View style={{ gap: Space.sm }}>
         <View style={styles.composeRow}>
-          <TextInput
-            style={styles.composeInput}
-            value={draft}
-            onChangeText={setDraft}
-            placeholder={t("community.commentPlaceholder")}
-            placeholderTextColor={colors.inkFaint}
-            maxLength={COMMENT_BODY_MAX}
-            editable={!posting}
-          />
-          <Button
-            variant="primary"
-            title={t("community.commentSend")}
-            loading={posting}
-            disabled={posting || draft.trim().length === 0}
-            onPress={() => void sendComment()}
-          />
+          <Avatar name={myName ?? "?"} uri={myAvatar} size={32} />
+          <View style={styles.composePill}>
+            <TextInput
+              style={styles.composeInput}
+              value={draft}
+              onChangeText={setDraft}
+              placeholder={t("community.commentPlaceholder")}
+              placeholderTextColor={colors.inkFaint}
+              maxLength={COMMENT_BODY_MAX}
+              editable={!posting}
+              multiline
+            />
+            <IconPressable
+              onPress={() => void sendComment()}
+              disabled={posting || draft.trim().length === 0}
+              hitSlop={Space.xs}
+              style={styles.composeSend}
+            >
+              {posting ? (
+                <Ionicons name="hourglass-outline" size={18} color={colors.inkFaint} />
+              ) : (
+                <Ionicons
+                  name="send"
+                  size={18}
+                  color={draft.trim().length === 0 ? colors.inkFaint : colors.accent}
+                />
+              )}
+            </IconPressable>
+          </View>
         </View>
         {halalTerms != null ? (
           <Text style={styles.commentError}>
@@ -1025,7 +1075,6 @@ export default function PostDetailScreen() {
         {commentFailed ? (
           <Text style={styles.commentError}>{t("community.commentFailed")}</Text>
         ) : null}
-        <View style={styles.divider} />
       </View>
     </View>
   );

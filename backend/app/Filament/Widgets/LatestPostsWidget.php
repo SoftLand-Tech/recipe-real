@@ -23,15 +23,6 @@ class LatestPostsWidget extends TableWidget
                 TextColumn::make('user.name')
                     ->label('User')
                     ->searchable(),
-                TextColumn::make('kind')
-                    ->badge()
-                    ->formatStateUsing(fn (string $state): string => ucfirst($state))
-                    ->color(fn (string $state): string => match ($state) {
-                        'try' => 'success',
-                        'fail' => 'danger',
-                        'question' => 'info',
-                        default => 'gray',
-                    }),
                 TextColumn::make('body')
                     ->limit(70),
                 TextColumn::make('recipe.title')

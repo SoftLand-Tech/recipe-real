@@ -163,11 +163,11 @@ export const ar: Record<string, string> = {
   "detail.notesSignIn": "سجّل الدخول للمشاركة في النقاش.",
   "detail.notePostFailed": "تعذّر نشر ملاحظتك. حاول مرة أخرى.",
   "detail.noteHalalBlocked": "يرجى إزالة هذه المصطلحات: {terms}",
-  // ---- تجارب المجتمع (منشورات مرتبطة بهذه الوصفة) ----
-  "detail.communityTries": "تجارب المجتمع",
-  "detail.communityTriesCount": "تجارب المجتمع · {n}",
-  "detail.triesEmpty": "لا تجارب بعد — كن أول من يجرّب",
-  "detail.shareYourTry": "شارك تجربتك",
+  // ---- منشورات المجتمع (مرتبطة بهذه الوصفة) ----
+  "detail.communityTries": "منشورات المجتمع",
+  "detail.communityTriesCount": "منشورات المجتمع · {n}",
+  "detail.triesEmpty": "لا منشورات بعد — كن أول من ينشر",
+  "detail.shareYourTry": "شارك منشورًا",
   "detail.showAllTries": "عرض الكل",
 
   // ---- محرر الوصفات ------------------------------------------------------------
@@ -545,4 +545,5 @@ export const ar: Record<string, string> = {
   "notif.signInPrompt": "سجّل الدخول لعرض إشعاراتك.",
   "notif.bellA11y": "الإشعارات",
   "notif.unreadA11y": "{n} غير مقروء",
+  "profile.actionA11y": "الملف الشخصي",
 };

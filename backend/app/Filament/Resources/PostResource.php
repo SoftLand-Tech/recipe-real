@@ -11,7 +11,6 @@ use App\Filament\Resources\PostResource\RelationManagers\LikesRelationManager;
 use App\Models\Post;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\ViewAction;
-use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Infolists\Components\TextEntry;
@@ -21,7 +20,6 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 
 class PostResource extends Resource
@@ -48,15 +46,8 @@ class PostResource extends Resource
     {
         return $schema
             ->schema([
-                Grid::make(2)
+                Grid::make(1)
                     ->schema([
-                        Select::make('kind')
-                            ->options([
-                                'try' => 'Try',
-                                'fail' => 'Fail',
-                                'question' => 'Question',
-                            ])
-                            ->required(),
                         TextInput::make('image_url')
                             ->label('Image URL')
                             ->url()
@@ -76,14 +67,6 @@ class PostResource extends Resource
                     ->schema([
                         TextEntry::make('user.name')
                             ->label('User'),
-                        TextEntry::make('kind')
-                            ->badge()
-                            ->color(fn (string $state): string => match ($state) {
-                                'try' => 'success',
-                                'fail' => 'danger',
-                                'question' => 'info',
-                                default => 'gray',
-                            }),
                         TextEntry::make('likes_count')
                             ->label('Likes'),
                         TextEntry::make('comments_count')
@@ -108,14 +91,6 @@ class PostResource extends Resource
                 TextColumn::make('user.name')
                     ->label('User')
                     ->searchable(),
-                TextColumn::make('kind')
-                    ->badge()
-                    ->color(fn (string $state): string => match ($state) {
-                        'try' => 'success',
-                        'fail' => 'danger',
-                        'question' => 'info',
-                        default => 'gray',
-                    }),
                 TextColumn::make('body')
                     ->searchable()
                     ->limit(60),
@@ -134,14 +109,7 @@ class PostResource extends Resource
                     ->since()
                     ->sortable(),
             ])
-            ->filters([
-                SelectFilter::make('kind')
-                    ->options([
-                        'try' => 'Try',
-                        'fail' => 'Fail',
-                        'question' => 'Question',
-                    ]),
-            ])
+            ->filters([])
             ->defaultSort('id', 'desc')
             ->recordActions([
                 ViewAction::make(),

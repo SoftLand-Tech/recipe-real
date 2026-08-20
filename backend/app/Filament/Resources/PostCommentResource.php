@@ -60,9 +60,6 @@ class PostCommentResource extends Resource
                     ->schema([
                         TextEntry::make('user.name')
                             ->label('User'),
-                        TextEntry::make('post.kind')
-                            ->label('Post kind')
-                            ->badge(),
                         TextEntry::make('created_at')
                             ->dateTime(),
                     ]),
