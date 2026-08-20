@@ -1032,7 +1032,7 @@ export default function CommunityScreen() {
           alignItems: "center",
           gap: Space.sm,
           paddingHorizontal: Space.lg,
-          paddingBottom: Space.md,
+          paddingBottom: Space.sm,
         },
         filterScroll: {
           gap: Space.sm,

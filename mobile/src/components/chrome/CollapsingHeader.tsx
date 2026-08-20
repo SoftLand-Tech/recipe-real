@@ -17,11 +17,11 @@ import { IconPressable } from "@/components/ui";
  */
 
 /** Height of the bar's action row (excludes the safe-area inset). */
-export const PINNED_BAR_ROW = 48;
+export const PINNED_BAR_ROW = 44;
 
 /** Scroll-offset window over which the small title + hairline fade in. */
-const COLLAPSE_FROM = 24;
-const COLLAPSE_TO = 64;
+const COLLAPSE_FROM = 16;
+const COLLAPSE_TO = 48;
 
 /**
  * Scroll-content top padding: safe area + bar row + a small gap. Use on the
@@ -29,7 +29,7 @@ const COLLAPSE_TO = 64;
  */
 export function usePinnedBarPad(): number {
   const insets = useSafeAreaInsets();
-  return insets.top + PINNED_BAR_ROW + Space.sm;
+  return insets.top + PINNED_BAR_ROW + Space.xs;
 }
 
 /**
@@ -171,14 +171,15 @@ export function BigScreenTitle({
       StyleSheet.create({
         wrap: {
           paddingHorizontal: Space.lg,
-          paddingTop: Space.sm,
-          paddingBottom: subtitle ? Space.sm : Space.md,
+          paddingTop: Space.xs,
+          paddingBottom: subtitle ? Space.xs : Space.sm,
           gap: Space.xs,
         },
         title: {
           ...Type.h1,
+          fontSize: 24,
+          letterSpacing: -0.3,
           color: colors.ink,
-          letterSpacing: -0.4,
         },
         subtitle: {
           ...Type.bodySm,

@@ -262,7 +262,7 @@ function createStyles(colors: ThemeColors) {
     },
     searchSection: {
       paddingHorizontal: Space.lg,
-      paddingBottom: Space.md,
+      paddingBottom: Space.sm,
     },
     searchRow: {
       flexDirection: "row",
@@ -419,7 +419,7 @@ function createStyles(colors: ThemeColors) {
     },
     filterRow: {
       flexShrink: 0,
-      marginBottom: Space.sm,
+      marginBottom: Space.xs,
     },
     filterContent: {
       paddingHorizontal: Space.lg,
@@ -1538,9 +1538,34 @@ export default function BrowseScreen() {
     (state === "loading" && recipes.length === 0) ||
     (state === "ready" && applying);
 
-  // Big title + search scroll AWAY with the feed (iOS large-title pattern);
-  // shown statically only while the real list isn't mounted (loading /
-  // error / applying), where they sit at scroll-top anyway.
+  // Everything below the pinned bar scrolls TOGETHER: big title, search,
+  // category chips, offline banner, active-filter chips. Nothing is pinned
+  // between the bar and the title (v1 put the chips there — felt like a gap).
+  const offlineBanner = (
+    <View style={styles.offlineBannerWrap}>
+      <Chip tone="amber" size="sm" label={t("browse.offlineCaption")} />
+    </View>
+  );
+
+  const activeChipsRow = (
+    <View style={styles.activeChipRow}>
+      {activeFilterChips.map((chip) => (
+        <View key={chip.key} style={styles.activeChip}>
+          <Text style={styles.activeChipText} numberOfLines={1}>
+            {chip.label}
+          </Text>
+          <IconPressable
+            onPress={chip.onClear}
+            accessibilityLabel={t("filter.clearAll")}
+            hitSlop={6}
+          >
+            <Ionicons name="close" size={14} color={colors.accent} />
+          </IconPressable>
+        </View>
+      ))}
+    </View>
+  );
+
   const headerBlock = (
     <>
       <BigScreenTitle title={t("tabs.browse")} />
@@ -1555,30 +1580,25 @@ export default function BrowseScreen() {
         colors={colors}
         styles={styles}
       />
+      {state === "ready" ? (
+        <ChipRow
+          chips={chips}
+          filter={filter}
+          onSelect={handleSelectFilter}
+          styles={styles}
+        />
+      ) : null}
+      {state === "ready" && offline ? offlineBanner : null}
+      {state === "ready" && activeFilterChips.length > 0 ? activeChipsRow : null}
     </>
   );
 
   return (
     <View style={styles.container}>
-      {/* The chips + filter panels stay pinned under the bar (persistent
-          filters); only the big title + search scroll with the list. */}
+      {/* Only the filter DROPDOWN panel is pinned under the bar (ephemeral
+          overlay while open); the scroller carries everything else. */}
       <View style={{ flex: 1, paddingTop: barPad }}>
         {!(state === "ready" && !applying) ? headerBlock : null}
-        {state === "ready" && (
-          <ChipRow
-            chips={chips}
-            filter={filter}
-            onSelect={handleSelectFilter}
-            styles={styles}
-          />
-        )}
-
-        {state === "ready" && offline && (
-          <View style={styles.offlineBannerWrap}>
-            <Chip tone="amber" size="sm" label={t("browse.offlineCaption")} />
-          </View>
-        )}
-
         {state === "ready" && showFilters && (
           <FilterPanel
             timeMax={timeMax}
@@ -1589,25 +1609,6 @@ export default function BrowseScreen() {
             onClose={toggleFilters}
             styles={styles}
           />
-        )}
-
-        {state === "ready" && activeFilterChips.length > 0 && (
-          <View style={styles.activeChipRow}>
-            {activeFilterChips.map((chip) => (
-              <View key={chip.key} style={styles.activeChip}>
-                <Text style={styles.activeChipText} numberOfLines={1}>
-                  {chip.label}
-                </Text>
-                <IconPressable
-                  onPress={chip.onClear}
-                  accessibilityLabel={t("filter.clearAll")}
-                  hitSlop={6}
-                >
-                  <Ionicons name="close" size={14} color={colors.accent} />
-                </IconPressable>
-              </View>
-            ))}
-          </View>
         )}
 
         {showSkeletons && (
