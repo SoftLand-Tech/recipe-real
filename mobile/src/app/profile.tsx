@@ -31,10 +31,10 @@ import {
   Card,
   GoogleLogo,
   IconPressable,
-  ScreenHeader,
   SectionHeader,
   TimeChip,
 } from "@/components/ui";
+import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -312,8 +312,9 @@ export default function ProfileScreen() {
 
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      <ScreenHeader
+      <PinnedHeaderBar
         title={t("profile.title")}
+        leading={<BackChevron />}
         rights={
           isEditing
             ? [
@@ -324,9 +325,6 @@ export default function ProfileScreen() {
             : [
                 <IconPressable key="edit" onPress={enterEdit} hitSlop={Space.xs} accessibilityLabel={t("profile.editProfile")}>
                   <Ionicons name="create-outline" size={20} color={colors.ink} />
-                </IconPressable>,
-                <IconPressable key="close" onPress={() => router.back()} hitSlop={Space.xs} accessibilityLabel={t("common.cancel")}>
-                  <Ionicons name="close" size={22} color={colors.ink} />
                 </IconPressable>,
               ]
         }

@@ -42,6 +42,7 @@ export const ar: Record<string, string> = {
   "common.loadFailedRecipe": "فشل تحميل الوصفة.",
   "common.ratingChip": "★ {rating}",
   "common.cancel": "إلغاء",
+  "common.back": "رجوع",
   "common.delete": "حذف",
   "common.ok": "حسنًا",
 

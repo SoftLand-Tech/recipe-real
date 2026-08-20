@@ -122,7 +122,7 @@ function BellIcon({ unread }: { unread: number }) {
       hitSlop={Space.xs}
     >
       <View style={styles.bellWrap}>
-        <Ionicons name="notifications-outline" size={22} color={colors.inkSecondary} />
+        <Ionicons name="notifications-outline" size={24} color={colors.inkSecondary} />
         {unread > 0 ? (
           <View style={[styles.badge, { backgroundColor: colors.danger }]}>
             <Text style={styles.badgeText} numberOfLines={1}>
@@ -159,9 +159,9 @@ function AvatarIcon({ avatarUrl }: { avatarUrl: string | null }) {
 // ---- Public API ------------------------------------------------------------
 
 /**
- * Hook returning the two rights nodes for ScreenHeader `rights` prop. Each node
- * is a bare IconPressable (no outer circle) — ScreenHeader wraps each in its
- * 40dp circle slot. Shares the same avatar/unread data as HeaderActions.
+ * Hook returning the two rights nodes for PinnedHeaderBar's `rights` prop.
+ * Each node is a bare IconPressable (plain icon, no circle chrome) — the bar
+ * lays them out itself. Shares the same avatar/unread data as HeaderActions.
  */
 export function useHeaderActionsRights(): ReactNode[] {
   const { avatarUrl, unread } = useHeaderData();
@@ -174,31 +174,15 @@ export function useHeaderActionsRights(): ReactNode[] {
 
 /**
  * The shared action cluster for the Home brand header row (after the search
- * pill). Renders the same bell + avatar inside 40dp circle slots (identical
- * to ScreenHeader's `right` style) so the Home header matches Browse/
- * Favorites/Settings visually without needing ScreenHeader's wrapper.
+ * pill). Plain icons — no circle chrome (matches PinnedHeaderBar's plain
+ * rights): lighter row, standard iOS/Material look.
  */
 export function HeaderActions() {
   const { avatarUrl, unread } = useHeaderData();
-  const colors = useThemeColors();
   return (
     <View style={styles.row}>
-      <View
-        style={[
-          styles.circle,
-          { backgroundColor: colors.surfaceSoft, borderColor: colors.hairline },
-        ]}
-      >
-        <BellIcon unread={unread} />
-      </View>
-      <View
-        style={[
-          styles.circle,
-          { backgroundColor: colors.surfaceSoft, borderColor: colors.hairline },
-        ]}
-      >
-        <AvatarIcon avatarUrl={avatarUrl} />
-      </View>
+      <BellIcon unread={unread} />
+      <AvatarIcon avatarUrl={avatarUrl} />
     </View>
   );
 }
@@ -206,16 +190,8 @@ export function HeaderActions() {
 const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
-    gap: Space.xs,
+    gap: Space.md,
     alignItems: "center",
-  },
-  circle: {
-    width: 40,
-    height: 40,
-    borderRadius: 999,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
   },
   bellWrap: {
     width: 26,

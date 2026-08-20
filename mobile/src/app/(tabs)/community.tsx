@@ -1,7 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Animated,
   FlatList,
   RefreshControl,
   ScrollView,
@@ -14,7 +13,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, useFocusEffect } from "expo-router";
-import { useChromeContentBottomPad, useScrollChrome } from "@/components/chrome";
+import {
+  BigScreenTitle,
+  PinnedHeaderBar,
+  useChromeContentBottomPad,
+  useCollapseScroll,
+  usePinnedBarPad,
+  useScrollChrome,
+} from "@/components/chrome";
 
 import {
   blockUser,
@@ -43,7 +49,6 @@ import {
   IconPressable,
   ImageViewerModal,
   PostImageGrid,
-  ScreenHeader,
 } from "@/components/ui";
 
 type LoadState = "loading" | "ready" | "error";
@@ -791,8 +796,8 @@ export default function CommunityScreen() {
   const { lang } = useLang();
   const chrome = useScrollChrome();
   const chromeBottomPad = useChromeContentBottomPad();
-  const [headerHeight, setHeaderHeight] = useState(0);
-  const [chipHeight, setChipHeight] = useState(0);
+  const barPad = usePinnedBarPad();
+  const collapse = useCollapseScroll({ existingOnScroll: chrome.onScroll });
 
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   // Signed-in user's id — resolves own-vs-other for the per-card ⋯ menu.
@@ -1043,13 +1048,12 @@ export default function CommunityScreen() {
           gap: Space.xs,
           paddingBottom: insets.bottom + Space.xxl,
         },
-        chromeHeader: {
+        pinnedBar: {
           position: "absolute",
           top: 0,
           left: 0,
           right: 0,
           zIndex: 10,
-          backgroundColor: colors.canvas,
         },
         center: {
           alignItems: "center",
@@ -1195,31 +1199,8 @@ export default function CommunityScreen() {
     [colors, insets.bottom],
   );
 
-  const totalHeader = headerHeight + chipHeight;
-
-  return (
-    <View style={styles.container}>
-      {/* Sticky filter chips - slides to top when header hides */}
-      <Animated.View
-        onLayout={(e) => setChipHeight(e.nativeEvent.layout.height)}
-        style={{
-          position: "absolute",
-          top: headerHeight,
-          left: 0,
-          right: 0,
-          zIndex: 9,
-          backgroundColor: colors.canvas,
-          transform: [
-            {
-              translateY: chrome.hidden.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, -headerHeight],
-              }),
-            },
-          ],
-        }}
-      >
-        <View style={styles.filterRow}>
+  const filterChips = (
+    <View style={styles.filterRow}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -1240,34 +1221,11 @@ export default function CommunityScreen() {
               </IconPressable>
             ))}
           </ScrollView>
-        </View>
-      </Animated.View>
-      {/* Static padding + TRANSFORM lift (community pattern): the padding
-          sits on a NON-scrolling container (the chip row doesn't scroll),
-          so without the lift a header-tall gap stays under the chips when
-          the header hides; translateY is native-driver-safe. The NEGATIVE
-          bottom margin extends the wrapper under the absolute tab bar by
-          the same height, so the lifted wrapper covers the full screen —
-          without it, the translate exposed a header-tall empty band at the
-          bottom of the list (the wrapper moved but its height didn't
-          grow). Bottom-clearing padding lives on the scroller itself. */}
-      <Animated.View
-        style={{
-          flex: 1,
-          paddingTop: totalHeader,
-          marginBottom: -headerHeight,
-          transform: [
-            {
-              translateY: chrome.hidden.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, -headerHeight],
-              }),
-            },
-          ],
-        }}
-      >
+    </View>
+  );
 
-        {/* Composer entry — Facebook top-of-feed card */}
+  const composerCard = (
+    /* Composer entry — Facebook top-of-feed card */
         <IconPressable onPress={startCompose} style={styles.composerCard} hitSlop={Space.xs}>
           <Avatar
             name={myName ?? "?"}
@@ -1283,8 +1241,11 @@ export default function CommunityScreen() {
             <Ionicons name="image-outline" size={20} color={colors.accent} />
           </View>
         </IconPressable>
+  );
 
-        <FlatList
+  return (
+    <View style={styles.container}>
+      <FlatList
         data={state === "ready" ? posts : []}
         keyExtractor={(item) => String(item.id)}
         renderItem={({ item }) => (
@@ -1302,11 +1263,11 @@ export default function CommunityScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={[
           styles.listContent,
-          // Clear the ABSOLUTE tab-bar overlay (measured height + room).
-          { paddingBottom: chromeBottomPad },
+          // Clear the ABSOLUTE tab-bar overlay + pinned bar (measured).
+          { paddingTop: barPad, paddingBottom: chromeBottomPad },
         ]}
-        onScroll={chrome.onScroll}
-        scrollEventThrottle={chrome.scrollEventThrottle}
+        onScroll={collapse.onScroll}
+        scrollEventThrottle={collapse.scrollEventThrottle}
         // Heavy photo cells: render small batches (browse pattern).
         initialNumToRender={3}
         maxToRenderPerBatch={3}
@@ -1322,7 +1283,13 @@ export default function CommunityScreen() {
         }
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
-        ListHeaderComponent={null}
+        ListHeaderComponent={
+          <>
+            <BigScreenTitle title={t("community.title")} />
+            {filterChips}
+            {composerCard}
+          </>
+        }
         ListFooterComponent={
           loadingMore ? (
             <View style={styles.footer}>
@@ -1373,25 +1340,10 @@ export default function CommunityScreen() {
           )
         }
       />
-      </Animated.View>
-      <Animated.View
-        onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
-        style={[
-          styles.chromeHeader,
-          {
-            transform: [
-              {
-                translateY: chrome.hidden.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, -headerHeight],
-                }),
-              },
-            ],
-          },
-        ]}
-      >
-        <ScreenHeader
+      <View style={styles.pinnedBar} pointerEvents="box-none">
+        <PinnedHeaderBar
           title={t("community.title")}
+          collapse={collapse.scrollY}
           rights={
             signedIn === false
               ? undefined
@@ -1436,7 +1388,7 @@ export default function CommunityScreen() {
                 ]
           }
         />
-      </Animated.View>
+      </View>
 
       {/* FAB — Facebook one-handed compose */}
       <IconPressable

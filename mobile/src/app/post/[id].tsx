@@ -44,8 +44,8 @@ import {
   IconPressable,
   ImageViewerModal,
   PostImageGrid,
-  ScreenHeader,
 } from "@/components/ui";
+import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
 
 // ---- Helpers (duplicated from community.tsx for isolation) -------------------
 
@@ -801,7 +801,7 @@ export default function PostDetailScreen() {
   if (loadState === "loading") {
     return (
       <View style={styles.container}>
-        <ScreenHeader title={t("community.postDetail")} />
+        <PinnedHeaderBar title={t("community.postDetail")} leading={<BackChevron />} />
         <View style={styles.center}>
           <ActivityIndicator color={colors.accent} size="small" />
         </View>
@@ -812,7 +812,7 @@ export default function PostDetailScreen() {
   if (loadState === "error" || !post) {
     return (
       <View style={styles.container}>
-        <ScreenHeader title={t("community.postDetail")} />
+        <PinnedHeaderBar title={t("community.postDetail")} leading={<BackChevron />} />
         <View style={styles.center}>
           <Text style={styles.errorTitle}>{t("common.somethingWentWrong")}</Text>
           <Text style={styles.errorCaption}>{t("community.detailLoadFailed")}</Text>
@@ -1261,7 +1261,7 @@ export default function PostDetailScreen() {
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title={t("community.postDetail")} />
+      <PinnedHeaderBar title={t("community.postDetail")} leading={<BackChevron />} />
 
       <FlatList
         data={comments}

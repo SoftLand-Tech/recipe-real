@@ -20,7 +20,8 @@ import {
 import type { NotificationRow, NotificationType } from "@/types";
 import { useT, type TranslateFn } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
-import { Button, Card, IconPressable, ScreenHeader } from "@/components/ui";
+import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
+import { Button, Card, IconPressable } from "@/components/ui";
 
 type LoadState = "loading" | "ready" | "error" | "signedout";
 
@@ -339,19 +340,8 @@ export default function NotificationsScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Pinned header (profile.tsx pattern): X pops back to Community. */}
-      <ScreenHeader
-        title={t("notif.title")}
-        right={
-          <IconPressable
-            onPress={() => router.back()}
-            hitSlop={Space.xs}
-            accessibilityLabel={t("common.cancel")}
-          >
-            <Ionicons name="close" size={22} color={colors.ink} />
-          </IconPressable>
-        }
-      />
+      {/* Pinned header: back chevron pops to the previous screen. */}
+      <PinnedHeaderBar title={t("notif.title")} leading={<BackChevron />} />
 
       {/* Explicit mark-all — never done automatically on mount/focus. */}
       {state === "ready" && unreadCount > 0 ? (

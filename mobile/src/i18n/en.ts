@@ -41,6 +41,7 @@ export const en: Record<string, string> = {
   "common.loadFailedRecipe": "Failed to load recipe.",
   "common.ratingChip": "★ {rating}",
   "common.cancel": "Cancel",
+  "common.back": "Back",
   "common.delete": "Delete",
   "common.ok": "OK",
 

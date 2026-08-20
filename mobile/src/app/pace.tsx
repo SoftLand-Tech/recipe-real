@@ -8,7 +8,6 @@ import {
   View,
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
-import Ionicons from "@expo/vector-icons/Ionicons";
 
 import {
   getCookSessions,
@@ -24,12 +23,15 @@ import {
   Button,
   Card,
   Chip,
-  IconPressable,
-  ScreenHeader,
   SectionHeader,
   StatPill,
   type ChipProps,
 } from "@/components/ui";
+import {
+  BackChevron,
+  BigScreenTitle,
+  PinnedHeaderBar,
+} from "@/components/chrome";
 import { computeStreak, summarizeHistory } from "@/utils/streaks";
 
 type LoadState = "loading" | "ready" | "error";
@@ -379,23 +381,14 @@ export default function PaceScreen() {
     [colors],
   );
 
-  // Stack-screen close affordance (profile.tsx pattern): the native stack
-  // header is hidden, so the ScreenHeader carries the X that pops back.
-  const closeHeader = (
-    <IconPressable
-      onPress={() => router.back()}
-      hitSlop={Space.xs}
-      accessibilityLabel={t("common.cancel")}
-    >
-      <Ionicons name="close" size={22} color={colors.ink} />
-    </IconPressable>
-  );
+  // Stack-screen back affordance: chevron pops back (platform convention
+  // for pushed screens — X is for modals).
 
   // Not authenticated: friendly sign-in prompt.
   if (state === "ready" && authenticated === false) {
     return (
       <View style={styles.container}>
-        <ScreenHeader title={t("tabs.pace")} right={closeHeader} />
+        <PinnedHeaderBar title={t("tabs.pace")} leading={<BackChevron />} />
         <View style={styles.center}>
           <Text style={styles.signInTitle}>{t("pace.trackTitle")}</Text>
           <Text style={styles.muted}>{t("pace.signInPrompt")}</Text>
@@ -413,7 +406,7 @@ export default function PaceScreen() {
   if (state === "loading") {
     return (
       <View style={styles.container}>
-        <ScreenHeader title={t("tabs.pace")} right={closeHeader} />
+        <PinnedHeaderBar title={t("tabs.pace")} leading={<BackChevron />} />
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.accent} />
           <Text style={styles.muted}>{t("pace.loading")}</Text>
@@ -425,7 +418,7 @@ export default function PaceScreen() {
   if (state === "error") {
     return (
       <View style={styles.container}>
-        <ScreenHeader title={t("tabs.pace")} right={closeHeader} />
+        <PinnedHeaderBar title={t("tabs.pace")} leading={<BackChevron />} />
         <View style={styles.center}>
           <Text style={styles.errorTitle}>{t("common.somethingWentWrong")}</Text>
           <Text style={styles.muted}>{t("pace.couldNotLoad")}</Text>
@@ -436,22 +429,23 @@ export default function PaceScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          tintColor={colors.accent}
-          colors={[colors.accent]}
-          progressBackgroundColor={colors.surface}
-        />
-      }
-    >
-      <ScreenHeader
+    <View style={styles.container}>
+      <PinnedHeaderBar title={t("tabs.pace")} leading={<BackChevron />} />
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+            progressBackgroundColor={colors.surface}
+          />
+        }
+      >
+      <BigScreenTitle
         title={t("tabs.pace")}
-        right={closeHeader}
         subtitle={
           cookCount != null
             ? cookCount === 1
@@ -564,5 +558,6 @@ export default function PaceScreen() {
         style={styles.listSignOut}
       />
     </ScrollView>
+    </View>
   );
 }

@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
-import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fetchPublicProfile, followUser, unfollowUser } from "@/api/client";
 import type { MyProfile } from "@/types";
 import { useT, useLang, type Lang, type TranslateFn } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
-import { Avatar, Button, Card, IconPressable, ScreenHeader } from "@/components/ui";
+import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
+import { Avatar, Button, Card } from "@/components/ui";
 
 function memberSince(t: TranslateFn, lang: Lang, iso: string): string {
   const then = Date.parse(iso);
@@ -80,7 +80,7 @@ export default function PublicProfileScreen() {
 
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      <ScreenHeader title={displayName} right={<IconPressable onPress={() => router.back()} hitSlop={Space.xs}><Ionicons name="close" size={22} color={colors.ink} /></IconPressable>} />
+      <PinnedHeaderBar title={displayName} leading={<BackChevron />} />
       <ScrollView contentContainerStyle={styles.content}>
         <Card style={{ gap: Space.md, alignItems: "center" }}>
           <Avatar name={displayName} uri={profile.user.avatar_url} size={96} />

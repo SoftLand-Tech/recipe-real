@@ -9,7 +9,6 @@ import {
 } from "react";
 import {
   ActivityIndicator,
-  Animated,
   FlatList,
   LayoutAnimation,
   Platform,
@@ -24,7 +23,14 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useChromeContentBottomPad, useScrollChrome } from "@/components/chrome";
+import {
+  BigScreenTitle,
+  PinnedHeaderBar,
+  useChromeContentBottomPad,
+  useCollapseScroll,
+  usePinnedBarPad,
+  useScrollChrome,
+} from "@/components/chrome";
 import {
   router,
   useFocusEffect,
@@ -63,7 +69,6 @@ import {
   HeartButton,
   IconPressable,
   NoteBadge,
-  ScreenHeader,
   TimeChip,
   fmtMinutes,
   useHeaderActionsRights,
@@ -501,13 +506,12 @@ function createStyles(colors: ThemeColors) {
       color: "#FFFFFF",
       fontWeight: "700",
     },
-    chromeHeader: {
+    pinnedBar: {
       position: "absolute",
       top: 0,
       left: 0,
       right: 0,
       zIndex: 10,
-      backgroundColor: colors.canvas,
     },
   });
 }
@@ -873,7 +877,8 @@ export default function BrowseScreen() {
   const paramFilter = params.filter;
   const chrome = useScrollChrome();
   const chromeBottomPad = useChromeContentBottomPad();
-  const [headerHeight, setHeaderHeight] = useState(0);
+  const barPad = usePinnedBarPad();
+  const collapse = useCollapseScroll({ existingOnScroll: chrome.onScroll });
 
   // ---- Local cache source (offline fallback + favorites) --------------------
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -1533,30 +1538,32 @@ export default function BrowseScreen() {
     (state === "loading" && recipes.length === 0) ||
     (state === "ready" && applying);
 
+  // Big title + search scroll AWAY with the feed (iOS large-title pattern);
+  // shown statically only while the real list isn't mounted (loading /
+  // error / applying), where they sit at scroll-top anyway.
+  const headerBlock = (
+    <>
+      <BigScreenTitle title={t("tabs.browse")} />
+      <SearchBar
+        search={search}
+        onChangeSearch={setSearch}
+        showFilters={showFilters}
+        onToggleFilters={toggleFilters}
+        hasAdvancedFilters={hasAdvancedFilters}
+        onCreate={() => router.push("/recipe-composer")}
+        inputRef={searchInputRef}
+        colors={colors}
+        styles={styles}
+      />
+    </>
+  );
+
   return (
     <View style={styles.container}>
-      {/* Static padding + TRANSFORM lift (community pattern): the padding
-          sits on a NON-scrolling container (the chip row + panels don't
-          scroll), so without the lift a header-tall gap stays above the
-          chips when the header hides. The NEGATIVE bottom margin extends
-          the wrapper under the absolute tab bar by the header height so
-          the lifted wrapper covers the full screen (no empty band at the
-          list's end). Both values are static layout — no jumps. */}
-      <Animated.View
-        style={{
-          flex: 1,
-          paddingTop: headerHeight,
-          marginBottom: -headerHeight,
-          transform: [
-            {
-              translateY: chrome.hidden.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, -headerHeight],
-              }),
-            },
-          ],
-        }}
-      >
+      {/* The chips + filter panels stay pinned under the bar (persistent
+          filters); only the big title + search scroll with the list. */}
+      <View style={{ flex: 1, paddingTop: barPad }}>
+        {!(state === "ready" && !applying) ? headerBlock : null}
         {state === "ready" && (
           <ChipRow
             chips={chips}
@@ -1643,8 +1650,9 @@ export default function BrowseScreen() {
             removeClippedSubviews
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            onScroll={chrome.onScroll}
-            scrollEventThrottle={chrome.scrollEventThrottle}
+            onScroll={collapse.onScroll}
+            scrollEventThrottle={collapse.scrollEventThrottle}
+            ListHeaderComponent={headerBlock}
             onEndReached={offline ? undefined : handleEndReached}
             onEndReachedThreshold={0.5}
             ListFooterComponent={offline ? null : ListFooter}
@@ -1672,36 +1680,14 @@ export default function BrowseScreen() {
             }
           />
         )}
-      </Animated.View>
-      <Animated.View
-        onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
-        style={[
-          styles.chromeHeader,
-          {
-            transform: [
-              {
-                translateY: chrome.hidden.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, -headerHeight],
-                }),
-              },
-            ],
-          },
-        ]}
-      >
-        <ScreenHeader title={t("tabs.browse")} rights={headerRights} />
-        <SearchBar
-          search={search}
-          onChangeSearch={setSearch}
-          showFilters={showFilters}
-          onToggleFilters={toggleFilters}
-          hasAdvancedFilters={hasAdvancedFilters}
-          onCreate={() => router.push("/recipe-composer")}
-          inputRef={searchInputRef}
-          colors={colors}
-          styles={styles}
+      </View>
+      <View style={styles.pinnedBar} pointerEvents="box-none">
+        <PinnedHeaderBar
+          title={t("tabs.browse")}
+          collapse={collapse.scrollY}
+          rights={headerRights}
         />
-      </Animated.View>
+      </View>
     </View>
   );
 }

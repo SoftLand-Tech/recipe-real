@@ -2,7 +2,6 @@ import { useCallback, useMemo, useState, type ComponentProps, type ReactNode } f
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   I18nManager,
   Pressable,
   ScrollView,
@@ -14,7 +13,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
-import { useChromeContentBottomPad, useScrollChrome } from "@/components/chrome";
+import {
+  BigScreenTitle,
+  PinnedHeaderBar,
+  useChromeContentBottomPad,
+  useCollapseScroll,
+  usePinnedBarPad,
+  useScrollChrome,
+} from "@/components/chrome";
 
 import {
   isNotificationsAvailable,
@@ -44,7 +50,6 @@ import {
   Card,
   Chip,
   IconPressable,
-  ScreenHeader,
   Toggle,
   useHeaderActionsRights,
 } from "@/components/ui";
@@ -202,7 +207,8 @@ export default function SettingsScreen() {
     useThemePrefs();
   const chrome = useScrollChrome();
   const chromeBottomPad = useChromeContentBottomPad();
-  const [headerHeight, setHeaderHeight] = useState(0);
+  const barPad = usePinnedBarPad();
+  const collapse = useCollapseScroll({ existingOnScroll: chrome.onScroll });
 
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [nudgeOn, setNudgeOn] = useState(false);
@@ -280,13 +286,12 @@ export default function SettingsScreen() {
           color: colors.inkFaint,
           textAlign: "center",
         },
-        chromeHeader: {
+        pinnedBar: {
           position: "absolute",
           top: 0,
           left: 0,
           right: 0,
           zIndex: 10,
-          backgroundColor: colors.canvas,
         },
       }),
     [colors],
@@ -451,11 +456,12 @@ export default function SettingsScreen() {
         style={styles.scroll}
         contentContainerStyle={[
           styles.content,
-          { paddingTop: headerHeight, paddingBottom: chromeBottomPad },
+          { paddingTop: barPad, paddingBottom: chromeBottomPad },
         ]}
-        onScroll={chrome.onScroll}
-        scrollEventThrottle={chrome.scrollEventThrottle}
+        onScroll={collapse.onScroll}
+        scrollEventThrottle={collapse.scrollEventThrottle}
       >
+      <BigScreenTitle title={t("tabs.settings")} />
       {/* Appearance: theme + language as two rows of the same group. */}
       <View>
         <Text style={styles.groupCaption}>{t("settings.appearance")}</Text>
@@ -638,24 +644,13 @@ export default function SettingsScreen() {
       {/* About — one plain centered footer line, no card. */}
       <Text style={styles.aboutText}>{t("settings.about", { version })}</Text>
       </ScrollView>
-      <Animated.View
-        onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
-        style={[
-          styles.chromeHeader,
-          {
-            transform: [
-              {
-                translateY: chrome.hidden.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, -headerHeight],
-                }),
-              },
-            ],
-          },
-        ]}
-      >
-        <ScreenHeader title={t("tabs.settings")} rights={headerRights} />
-      </Animated.View>
+      <View style={styles.pinnedBar} pointerEvents="box-none">
+        <PinnedHeaderBar
+          title={t("tabs.settings")}
+          collapse={collapse.scrollY}
+          rights={headerRights}
+        />
+      </View>
     </View>
   );
 }

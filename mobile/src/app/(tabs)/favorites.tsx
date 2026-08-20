@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Animated,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -10,7 +9,14 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
-import { useChromeContentBottomPad, useScrollChrome } from "@/components/chrome";
+import {
+  BigScreenTitle,
+  PinnedHeaderBar,
+  useChromeContentBottomPad,
+  useCollapseScroll,
+  usePinnedBarPad,
+  useScrollChrome,
+} from "@/components/chrome";
 
 import { track } from "@/analytics";
 import {
@@ -32,7 +38,6 @@ import {
   HeartButton,
   IconPressable,
   NoteBadge,
-  ScreenHeader,
   SkeletonCard,
   TimeChip,
   useHeaderActionsRights,
@@ -90,7 +95,8 @@ export default function FavoritesScreen() {
   const { lang } = useLang();
   const chrome = useScrollChrome();
   const chromeBottomPad = useChromeContentBottomPad();
-  const [headerHeight, setHeaderHeight] = useState(0);
+  const barPad = usePinnedBarPad();
+  const collapse = useCollapseScroll({ existingOnScroll: chrome.onScroll });
 
   // Tablet (width >= 768): two columns. Phones: one column. (Matches browse.)
   const numColumns = width >= 768 ? 2 : 1;
@@ -150,13 +156,12 @@ export default function FavoritesScreen() {
           // structure) — only list breathing room here.
           paddingBottom: Space.xxl,
         },
-        chromeHeader: {
+        pinnedBar: {
           position: "absolute",
           top: 0,
           left: 0,
           right: 0,
           zIndex: 10,
-          backgroundColor: colors.canvas,
         },
         list: {
           gap: Space.lg,
@@ -418,10 +423,10 @@ export default function FavoritesScreen() {
         style={styles.scroll}
         contentContainerStyle={[
           styles.content,
-          { paddingTop: headerHeight, paddingBottom: chromeBottomPad },
+          { paddingTop: barPad, paddingBottom: chromeBottomPad },
         ]}
-        onScroll={chrome.onScroll}
-        scrollEventThrottle={chrome.scrollEventThrottle}
+        onScroll={collapse.onScroll}
+        scrollEventThrottle={collapse.scrollEventThrottle}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -432,6 +437,10 @@ export default function FavoritesScreen() {
           />
         }
       >
+      <BigScreenTitle
+        title={t("tabs.favorites")}
+        subtitle={t("favorites.subtitle")}
+      />
       {/* Peer tabs: the two lists never bury each other in one scroll. */}
       {state === "ready" ? (
         <View style={styles.tabsRow}>
@@ -556,28 +565,13 @@ export default function FavoritesScreen() {
         </View>
       )}
       </ScrollView>
-      <Animated.View
-        onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
-        style={[
-          styles.chromeHeader,
-          {
-            transform: [
-              {
-                translateY: chrome.hidden.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, -headerHeight],
-                }),
-              },
-            ],
-          },
-        ]}
-      >
-        <ScreenHeader
+      <View style={styles.pinnedBar} pointerEvents="box-none">
+        <PinnedHeaderBar
           title={t("tabs.favorites")}
-          subtitle={t("favorites.subtitle")}
+          collapse={collapse.scrollY}
           rights={headerRights}
         />
-      </Animated.View>
+      </View>
     </View>
   );
 }

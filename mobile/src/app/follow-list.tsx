@@ -6,7 +6,8 @@ import { fetchFollowers, fetchFollowing } from "@/api/client";
 import type { PublicProfile } from "@/types";
 import { useT } from "@/i18n";
 import { Space, Type, useThemeColors } from "@/theme";
-import { Avatar, Card, IconPressable, ScreenHeader } from "@/components/ui";
+import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
+import { Avatar, Card } from "@/components/ui";
 
 export default function FollowListScreen() {
   const { userId: userIdRaw, tab } = useLocalSearchParams<{ userId?: string; tab?: string }>();
@@ -58,7 +59,10 @@ export default function FollowListScreen() {
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title={active === "followers" ? t("profile.followersTitle") : t("profile.followingTitle")} right={<IconPressable onPress={() => router.back()} hitSlop={Space.xs}><Ionicons name="close" size={22} color={colors.ink} /></IconPressable>} />
+      <PinnedHeaderBar
+        title={active === "followers" ? t("profile.followersTitle") : t("profile.followingTitle")}
+        leading={<BackChevron />}
+      />
       <View style={styles.tabs}>
         <Pressable onPress={() => switchTab("followers")} style={[styles.tab, active === "followers" && styles.tabActive]}><Text style={[styles.tabText, active === "followers" && styles.tabTextActive]}>{t("profile.followers")}</Text></Pressable>
         <Pressable onPress={() => switchTab("following")} style={[styles.tab, active === "following" && styles.tabActive]}><Text style={[styles.tabText, active === "following" && styles.tabTextActive]}>{t("profile.following")}</Text></Pressable>
