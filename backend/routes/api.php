@@ -52,9 +52,15 @@ Route::middleware('throttle:240,1')->group(function (): void {
     Route::get('/posts/{post}/comments', [PostCommentController::class, 'index']);
 
     // Public profile + followers (auth optional for is_following).
-    Route::get('/users/{user}/profile', [ProfileController::class, 'showPublic']);
-    Route::get('/users/{user}/followers', [FollowController::class, 'followers']);
-    Route::get('/users/{user}/following', [FollowController::class, 'following']);
+    // whereNumber is LOAD-BEARING: without it these wildcards also match
+    // the literal "me" and shadow the authed /users/me/* routes above them
+    // in matching order (profile screen broke with 404 "No user 'me'").
+    Route::get('/users/{user}/profile', [ProfileController::class, 'showPublic'])
+        ->whereNumber('user');
+    Route::get('/users/{user}/followers', [FollowController::class, 'followers'])
+        ->whereNumber('user');
+    Route::get('/users/{user}/following', [FollowController::class, 'following'])
+        ->whereNumber('user');
 
     // Home-screen rails (curated, cached, light).
     Route::get('/home', HomeController::class);
@@ -99,8 +105,10 @@ Route::middleware(['throttle:60,1', 'auth:sanctum'])->group(function (): void {
     Route::get('/users/me/profile', [ProfileController::class, 'show']);
     Route::patch('/users/me/profile', [ProfileController::class, 'update']);
 
-    Route::post('/users/{user}/follow', [FollowController::class, 'store']);
-    Route::delete('/users/{user}/follow', [FollowController::class, 'destroy']);
+    Route::post('/users/{user}/follow', [FollowController::class, 'store'])
+        ->whereNumber('user');
+    Route::delete('/users/{user}/follow', [FollowController::class, 'destroy'])
+        ->whereNumber('user');
 
     // Community writes: notes on recipes, posts, likes, comments. All
     // halal-gated server-side (see App\Support\HalalGate).
@@ -118,8 +126,10 @@ Route::middleware(['throttle:60,1', 'auth:sanctum'])->group(function (): void {
     Route::patch('/posts/{post}/comments/{comment}', [PostCommentController::class, 'update']);
     Route::delete('/posts/{post}/comments/{comment}', [PostCommentController::class, 'destroy']);
     Route::post('/posts/{post}/comments/{comment}/report', [PostCommentController::class, 'report']);
-    Route::post('/users/{user}/block', [UserBlockController::class, 'store']);
-    Route::delete('/users/{user}/block', [UserBlockController::class, 'destroy']);
+    Route::post('/users/{user}/block', [UserBlockController::class, 'store'])
+        ->whereNumber('user');
+    Route::delete('/users/{user}/block', [UserBlockController::class, 'destroy'])
+        ->whereNumber('user');
 
     // Notification center: the signed-in user's inbox of likes/comments on
     // their posts (20/page, unread_count in meta) + mark-read (ids optional;
