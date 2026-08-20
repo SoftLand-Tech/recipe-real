@@ -17,7 +17,9 @@ class UpdateProfileRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'display_name' => ['required', 'string', 'min:2', 'max:40'],
+            'display_name' => ['sometimes', 'required', 'string', 'min:2', 'max:40'],
+            'bio' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'avatar_url' => ['sometimes', 'nullable', 'string', 'max:2000', 'url'],
         ];
     }
 }

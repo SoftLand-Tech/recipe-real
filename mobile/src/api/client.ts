@@ -712,7 +712,88 @@ export async function fetchMyProfile(): Promise<PublicProfile> {
     name: body?.name ?? null,
     display_name: body?.display_name ?? null,
     avatar_url: body?.avatar_url ?? null,
+    bio: (body as any)?.bio ?? null,
   };
+}
+
+export async function updateProfile(patch: { display_name?: string; bio?: string | null; avatar_url?: string | null }): Promise<void> {
+  await api.patch("/api/users/me/profile", patch);
+}
+
+export async function uploadAvatar(uri: string): Promise<string> {
+  const ext = uri.split("?")[0].split(".").pop()?.toLowerCase();
+  const type = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+  const name = `avatar.${ext === "png" || ext === "webp" ? ext : "jpg"}`;
+  const form = new FormData();
+  form.append("image", { uri, name, type } as unknown as Blob);
+  const { data } = await api.post<{ avatar_url?: string; url?: string }>("/api/users/me/avatar", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  const url = (data as any)?.avatar_url ?? (data as any)?.url;
+  if (typeof url !== "string" || url.length === 0) throw new Error("Avatar upload failed");
+  return url;
+}
+
+export async function fetchPublicProfile(userId: number): Promise<MyProfile> {
+  const { data } = await api.get("/api/users/" + userId + "/profile");
+  const body = (data as { data?: any } | undefined)?.data ?? data;
+  return {
+    user: {
+      id: Number(body?.user?.id),
+      display_name: body?.user?.display_name ?? null,
+      name: body?.user?.name ?? null,
+      avatar_url: body?.user?.avatar_url ?? null,
+      bio: body?.user?.bio ?? null,
+      created_at: typeof body?.user?.created_at === "string" ? body.user.created_at : "",
+    },
+    counts: {
+      recipes: toNum(body?.counts?.recipes) ?? 0,
+      public_notes: toNum(body?.counts?.public_notes) ?? 0,
+      posts: toNum(body?.counts?.posts) ?? 0,
+      likes_received: toNum(body?.counts?.likes_received) ?? 0,
+      followers: toNum(body?.counts?.followers) ?? 0,
+      following: toNum(body?.counts?.following) ?? 0,
+    },
+    is_following: typeof body?.is_following === "boolean" ? body.is_following : undefined,
+    is_self: typeof body?.is_self === "boolean" ? body.is_self : undefined,
+  };
+}
+
+export async function followUser(userId: number): Promise<void> {
+  await api.post("/api/users/" + userId + "/follow");
+}
+export async function unfollowUser(userId: number): Promise<void> {
+  await api.delete("/api/users/" + userId + "/follow");
+}
+export async function fetchFollowers(userId: number, page = 1): Promise<{ users: PublicProfile[]; hasMore: boolean }> {
+  const { data } = await api.get("/api/users/" + userId + "/followers", { params: { page } });
+  const rows = Array.isArray((data as any)?.data) ? (data as any).data : [];
+  const users: PublicProfile[] = rows.map((u: any) => ({
+    id: Number(u?.id),
+    display_name: u?.display_name ?? null,
+    name: u?.name ?? null,
+    avatar_url: u?.avatar_url ?? null,
+    bio: u?.bio ?? null,
+  }));
+  const meta = (data as any)?.meta;
+  const current = Number(meta?.current_page) || page;
+  const last = Number(meta?.last_page) || current;
+  return { users, hasMore: current < last };
+}
+export async function fetchFollowing(userId: number, page = 1): Promise<{ users: PublicProfile[]; hasMore: boolean }> {
+  const { data } = await api.get("/api/users/" + userId + "/following", { params: { page } });
+  const rows = Array.isArray((data as any)?.data) ? (data as any).data : [];
+  const users: PublicProfile[] = rows.map((u: any) => ({
+    id: Number(u?.id),
+    display_name: u?.display_name ?? null,
+    name: u?.name ?? null,
+    avatar_url: u?.avatar_url ?? null,
+    bio: u?.bio ?? null,
+  }));
+  const meta = (data as any)?.meta;
+  const current = Number(meta?.current_page) || page;
+  const last = Number(meta?.last_page) || current;
+  return { users, hasMore: current < last };
 }
 
 /** Update the signed-in user's display name (PATCH /api/users/me/profile). */
@@ -726,6 +807,7 @@ export async function updateDisplayName(name: string): Promise<PublicProfile> {
     name: body?.name ?? null,
     display_name: body?.display_name ?? null,
     avatar_url: body?.avatar_url ?? null,
+    bio: (body as any)?.bio ?? null,
   };
 }
 
@@ -1134,6 +1216,7 @@ export async function fetchMyProfileFull(): Promise<MyProfile> {
       display_name: body?.user?.display_name ?? null,
       name: body?.user?.name ?? null,
       avatar_url: body?.user?.avatar_url ?? null,
+      bio: body?.user?.bio ?? null,
       created_at:
         typeof body?.user?.created_at === "string" ? body.user.created_at : "",
     },
@@ -1142,6 +1225,8 @@ export async function fetchMyProfileFull(): Promise<MyProfile> {
       public_notes: toNum(body?.counts?.public_notes) ?? 0,
       posts: toNum(body?.counts?.posts) ?? 0,
       likes_received: toNum(body?.counts?.likes_received) ?? 0,
+      followers: toNum(body?.counts?.followers) ?? 0,
+      following: toNum(body?.counts?.following) ?? 0,
     },
   };
 }

@@ -18,10 +18,10 @@ class UserPublicResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            // Public name falls back to the Google account name.
             'display_name' => $this->display_name ?? $this->name,
             'name' => $this->name,
             'avatar_url' => $this->avatar_url,
+            'bio' => $this->bio ?? null,
         ];
     }
 }

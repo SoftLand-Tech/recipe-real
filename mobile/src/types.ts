@@ -271,6 +271,7 @@ export interface PublicProfile {
   name: string | null;
   display_name: string | null;
   avatar_url: string | null;
+  bio?: string | null;
 }
 
 /** One page of community notes: rows plus whether more pages exist. */
@@ -285,7 +286,7 @@ export interface RecipeNotesPage {
 export type PostKind = "try" | "fail" | "question";
 
 /** Feed sort orders served by GET /api/posts?sort= (default: latest). */
-export type PostSort = "latest" | "trending";
+export type PostSort = "latest" | "trending" | "suggested";
 
 /** Author block attached to each community post / comment. */
 export interface PostUser {
@@ -384,6 +385,8 @@ export interface ProfileCounts {
   public_notes: number;
   posts: number;
   likes_received: number;
+  followers: number;
+  following: number;
 }
 
 /** The signed-in user's full profile (user + counters). */
@@ -393,9 +396,12 @@ export interface MyProfile {
     display_name: string | null;
     name: string | null;
     avatar_url: string | null;
+    bio?: string | null;
     created_at: string;
   };
   counts: ProfileCounts;
+  is_following?: boolean;
+  is_self?: boolean;
 }
 
 // ---- Notifications ------------------------------------------------------------

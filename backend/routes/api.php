@@ -10,6 +10,8 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PaceCalibrationController;
 use App\Http\Controllers\Api\PostCommentController;
 use App\Http\Controllers\Api\PostController;
+use App\Http\Controllers\Api\AvatarController;
+use App\Http\Controllers\Api\FollowController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RecipeController;
 use App\Http\Controllers\Api\RecipeNoteController;
@@ -48,6 +50,11 @@ Route::middleware('throttle:240,1')->group(function (): void {
     Route::get('/posts', [PostController::class, 'index']);
     Route::get('/posts/{post}', [PostController::class, 'show']);
     Route::get('/posts/{post}/comments', [PostCommentController::class, 'index']);
+
+    // Public profile + followers (auth optional for is_following).
+    Route::get('/users/{user}/profile', [ProfileController::class, 'showPublic']);
+    Route::get('/users/{user}/followers', [FollowController::class, 'followers']);
+    Route::get('/users/{user}/following', [FollowController::class, 'following']);
 
     // Home-screen rails (curated, cached, light).
     Route::get('/home', HomeController::class);
@@ -92,6 +99,9 @@ Route::middleware(['throttle:60,1', 'auth:sanctum'])->group(function (): void {
     Route::get('/users/me/profile', [ProfileController::class, 'show']);
     Route::patch('/users/me/profile', [ProfileController::class, 'update']);
 
+    Route::post('/users/{user}/follow', [FollowController::class, 'store']);
+    Route::delete('/users/{user}/follow', [FollowController::class, 'destroy']);
+
     // Community writes: notes on recipes, posts, likes, comments. All
     // halal-gated server-side (see App\Support\HalalGate).
     Route::post('/recipes/{recipe}/notes', [RecipeNoteController::class, 'store']);
@@ -123,6 +133,7 @@ Route::middleware(['throttle:60,1', 'auth:sanctum'])->group(function (): void {
 // a tighter throttle than the general API: 20/min per user+IP.
 Route::middleware(['throttle:20,1', 'auth:sanctum'])->group(function (): void {
     Route::post('/uploads', UploadController::class);
+    Route::post('/users/me/avatar', AvatarController::class);
 });
 
 // Protected billing + usage routes.

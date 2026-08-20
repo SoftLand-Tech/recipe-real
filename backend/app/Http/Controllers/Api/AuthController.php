@@ -109,13 +109,13 @@ class AuthController extends Controller
                 }
             }
         } else {
-            // Keep the avatar in sync with the Google profile on later
-            // sign-ins (display_name is deliberately untouched — the user
-            // may have customized it).
-            $user->forceFill(array_filter([
-                'google_sub' => $googleSub,
-                'avatar_url' => $avatarUrl,
-            ], fn ($value) => $value !== null))->save();
+            $patch = array_filter(['google_sub' => $googleSub], fn ($v) => $v !== null);
+            if ($avatarUrl !== null && empty($user->avatar_url)) {
+                $patch['avatar_url'] = $avatarUrl;
+            }
+            if ($patch !== []) {
+                $user->forceFill($patch)->save();
+            }
         }
 
         $token = $user->createToken('mobile')->plainTextToken;

@@ -71,8 +71,9 @@ const KIND_FILTERS: { value: FeedFilter; labelKey: string }[] = [
   { value: "question", labelKey: "community.kindQuestion" },
 ];
 
-/** The sort pair rendered next to the kind chips (selected = accent). */
+/** The sort options rendered next to the kind chips (selected = accent). */
 const SORT_OPTIONS: { value: FeedSort; labelKey: string }[] = [
+  { value: "suggested", labelKey: "community.sortSuggested" },
   { value: "latest", labelKey: "community.sortLatest" },
   { value: "trending", labelKey: "community.sortTrending" },
 ];
@@ -401,14 +402,11 @@ const PostCard = memo(function PostCard({
     <>
       <Card style={styles.card}>
         {/* Author row + kind chip. */}
-        <IconPressable onPress={() => router.push(`/post/${post.id}`)}>
-          <View style={styles.headRow}>
-            <Avatar
-              name={authorName(post.user)}
-              uri={post.user.avatar_url}
-              size={36}
-            />
-            <View style={styles.headMain}>
+        <View style={styles.headRow}>
+          <IconPressable onPress={() => router.push(`/user/${post.user.id}`)} hitSlop={Space.xs}>
+            <Avatar name={authorName(post.user)} uri={post.user.avatar_url} size={36} />
+          </IconPressable>
+          <View style={styles.headMain}>
               <View style={styles.nameRow}>
                 <Text style={styles.author} numberOfLines={1}>
                   {authorName(post.user)}
@@ -436,7 +434,6 @@ const PostCard = memo(function PostCard({
               />
             </IconPressable>
           </View>
-        </IconPressable>
         {reported ? (
           <Text style={styles.reportedCaption}>
             {t("community.reported")} ✓
@@ -844,7 +841,7 @@ export default function CommunityScreen() {
         // Best-effort: fall through with the default sort.
       }
       if (cancelled) return;
-      const initial: FeedSort = stored === "trending" ? "trending" : "latest";
+      const initial: FeedSort = (stored === "trending" || stored === "suggested") ? (stored as FeedSort) : "suggested";
       sortRef.current = initial;
       setSort(initial);
       void fetchPage("all", 1, initial);

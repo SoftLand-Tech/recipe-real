@@ -69,9 +69,14 @@ class PostController extends Controller
             }
         }
 
-        $posts = (string) $request->string('sort') === 'trending'
-            ? $this->paginateTrending($query)
-            : $query->latest('id')->paginate(20);
+        $sort = (string) $request->string('sort');
+        if ($sort === 'trending') {
+            $posts = $this->paginateTrending($query);
+        } elseif ($sort === 'suggested' || $sort === 'for_you') {
+            $posts = $this->paginateSuggested($query, $user);
+        } else {
+            $posts = $query->latest('id')->paginate(20);
+        }
 
         // Mark liked_by_me on the page's models (one extra query instead
         // of N+1 through the resource).
@@ -322,6 +327,99 @@ class PostController extends Controller
         return (clone $query)
             ->orderByRaw("{$score} DESC, posts.id DESC")
             ->paginate(20);
+    }
+
+    private function paginateSuggested(Builder $query, ?\App\Models\User $user): LengthAwarePaginator
+    {
+        if ($user === null) {
+            return $this->paginateTrending($query);
+        }
+
+        $userId = $user->id;
+
+        $followedIds = DB::table('follows')->where('follower_id', $userId)->pluck('followed_id')->all();
+        $followedList = $followedIds !== [] ? implode(',', array_map('intval', $followedIds)) : '0';
+
+        $likedRecipeIds = DB::table('post_likes')
+            ->join('posts as lp', 'lp.id', '=', 'post_likes.post_id')
+            ->where('post_likes.user_id', $userId)
+            ->whereNotNull('lp.recipe_id')
+            ->pluck('lp.recipe_id')->all();
+
+        $cookedRecipeIds = DB::table('cook_sessions')
+            ->where('user_id', $userId)
+            ->whereNotNull('recipe_id')
+            ->pluck('recipe_id')->all();
+
+        $viewedRecipeIds = DB::table('recipe_views')
+            ->where('user_id', $userId)
+            ->pluck('recipe_id')->all();
+
+        $affinityRecipeIds = array_values(array_unique(array_merge($likedRecipeIds, $cookedRecipeIds, $viewedRecipeIds)));
+
+        $categories = [];
+        if ($affinityRecipeIds !== []) {
+            $categories = DB::table('recipes')
+                ->whereIn('id', array_slice($affinityRecipeIds, 0, 80))
+                ->whereNotNull('category')
+                ->pluck('category')->all();
+            $categories = array_values(array_unique(array_map(fn ($c) => trim((string) $c), $categories)));
+            $categories = array_values(array_filter($categories, fn ($c) => $c !== ''));
+        }
+
+        $hasAffinity = $affinityRecipeIds !== [] || $followedIds !== [];
+
+        if (!$hasAffinity) {
+            return $this->paginateTrending($query);
+        }
+
+        $driver = DB::connection()->getDriverName();
+        $isSqlite = $driver === 'sqlite';
+
+        $engagement = '(SELECT COUNT(*) FROM post_likes WHERE post_likes.post_id = posts.id) * 2 + (SELECT COUNT(*) FROM post_comments WHERE post_comments.post_id = posts.id)';
+        $logEng = $isSqlite ? "ln(1 + ({$engagement}))" : "LOG(1 + ({$engagement}))";
+        $hoursAgo = $isSqlite
+            ? "(julianday('now') - julianday(posts.created_at)) * 24.0"
+            : "TIMESTAMPDIFF(SECOND, posts.created_at, NOW()) / 3600.0";
+        $decay = "exp(-({$hoursAgo}) / 48.0)";
+        $halfLifeBoost = "1.0 + 0.7 * {$decay}";
+
+        $followScore = $followedIds !== []
+            ? "CASE WHEN posts.user_id IN ({$followedList}) THEN 1.8 ELSE 0 END"
+            : "0";
+
+        $categoryBoost = "0";
+        if ($categories !== []) {
+            $quoted = implode(',', array_map(fn ($c) => DB::connection()->getPdo()->quote($c), array_slice($categories, 0, 12)));
+            $categoryBoost = "CASE WHEN posts.recipe_id IS NOT NULL AND EXISTS (SELECT 1 FROM recipes r2 WHERE r2.id = posts.recipe_id AND r2.category IN ({$quoted})) THEN 0.9 ELSE 0 END";
+        }
+
+        $recipeAffinityBoost = "0";
+        if ($affinityRecipeIds !== []) {
+            $rList = implode(',', array_map('intval', array_slice($affinityRecipeIds, 0, 60)));
+            $recipeAffinityBoost = "CASE WHEN posts.recipe_id IN ({$rList}) THEN 1.2 ELSE 0 END";
+        }
+
+        $recentCommentJd = $isSqlite
+            ? "(SELECT COALESCE(MAX(julianday(post_comments.created_at)), 0) FROM post_comments WHERE post_comments.post_id = posts.id)"
+            : "(SELECT COALESCE(MAX(UNIX_TIMESTAMP(post_comments.created_at)), 0) FROM post_comments WHERE post_comments.post_id = posts.id)";
+        $nowJd = $isSqlite ? "julianday('now')" : "UNIX_TIMESTAMP(NOW()) / 86400.0";
+        $hasRecentComment = $isSqlite
+            ? "CASE WHEN {$recentCommentJd} > {$nowJd} - 2 THEN 0.5 ELSE 0 END"
+            : "CASE WHEN {$recentCommentJd} > UNIX_TIMESTAMP(NOW()) - 172800 THEN 0.5 ELSE 0 END";
+
+        $scoreExpr = "(({$logEng}) * ({$halfLifeBoost}) + ({$followScore}) + ({$categoryBoost}) + ({$recipeAffinityBoost}) + ({$hasRecentComment}))";
+
+        $base = clone $query;
+        $recent = (clone $base)->where('posts.created_at', '>=', now()->subDays(30))
+            ->orderByRaw("{$scoreExpr} DESC, posts.id DESC")
+            ->paginate(20);
+
+        if ($recent->isNotEmpty() && $recent->count() >= 6) {
+            return $recent;
+        }
+
+        return (clone $base)->orderByRaw("{$scoreExpr} DESC, posts.id DESC")->paginate(20);
     }
 
     /**
