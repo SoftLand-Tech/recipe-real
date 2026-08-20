@@ -425,6 +425,12 @@ function createStyles(colors: ThemeColors) {
       gap: Space.sm,
       alignItems: "center",
     },
+    filterPanelWrap: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      zIndex: 20,
+    },
     filterPanel: {
       marginHorizontal: Space.lg,
       marginBottom: Space.sm,
@@ -1592,11 +1598,96 @@ export default function BrowseScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Only the filter DROPDOWN panel is pinned under the bar (ephemeral
-          overlay while open); the scroller carries everything else. */}
-      <View style={{ flex: 1, paddingTop: barPad }}>
-        {!(state === "ready" && !applying) ? headerBlock : null}
-        {state === "ready" && showFilters && (
+      {/* Full-bleed scroller: the FlatList owns the WHOLE screen and the
+          top padding lives on the SCROLL CONTENT — a static padded wrapper
+          here is what left a dead band at the top while scrolled (content
+          could never fill the space the bar vacates). Non-list states
+          (skeleton/error) use a padded wrapper since they don't scroll. */}
+      {state === "ready" && !applying ? (
+        <FlatList
+          data={displayRecipes}
+          keyExtractor={(item) => String(item.id)}
+          renderItem={renderItem}
+          numColumns={2}
+          style={{ flex: 1 }}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingTop: barPad, paddingBottom: chromeBottomPad },
+          ]}
+          columnWrapperStyle={{ gap: Space.sm }}
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={5}
+          updateCellsBatchingPeriod={80}
+          removeClippedSubviews
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          onScroll={chrome.onScroll}
+          scrollEventThrottle={chrome.scrollEventThrottle}
+          ListHeaderComponent={headerBlock}
+          onEndReached={offline ? undefined : handleEndReached}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={offline ? null : ListFooter}
+          ListEmptyComponent={
+            <View style={styles.center}>
+              <Text style={styles.emptyGlyph}>🍳</Text>
+              {hasActiveFilters ? (
+                <>
+                  <Text style={styles.muted}>
+                    {search.trim().length > 0
+                      ? t("browse.noResultsFor", { query: search.trim() })
+                      : t("browse.noMatch")}
+                  </Text>
+                  <Text style={styles.emptyCount}>
+                    {t("browse.countOf", {
+                      shown: displayRecipes.length,
+                      total: offline ? recipes.length : serverTotal,
+                    })}
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.muted}>{t("common.emptyRecipes")}</Text>
+              )}
+            </View>
+          }
+        />
+      ) : (
+        <View style={{ flex: 1, paddingTop: barPad }}>
+          {headerBlock}
+          {showSkeletons && (
+            <FlatList
+              data={[0, 1, 2, 3, 4, 5]}
+              keyExtractor={(item) => `skel-${item}`}
+              numColumns={2}
+              renderItem={() => <View style={styles.skeletonBlock} />}
+              contentContainerStyle={styles.listContent}
+              columnWrapperStyle={{ gap: Space.sm }}
+              scrollEnabled={false}
+            />
+          )}
+
+          {state === "error" && (
+            <View style={styles.center}>
+              <Text style={styles.emptyGlyph}>🍲</Text>
+              <Text style={styles.errorTitle}>{t("common.somethingWentWrong")}</Text>
+              <Text style={styles.muted}>
+                {errorMessage ?? t("common.couldNotLoadRecipes")}
+              </Text>
+              <Pressable style={styles.retry} onPress={handleRetry}>
+                <Text style={styles.retryText}>{t("common.retry")}</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Filter DROPDOWN: ephemeral overlay hanging below the bar — opening
+          it no longer pushes the grid down. */}
+      {state === "ready" && showFilters ? (
+        <View
+          style={[styles.filterPanelWrap, { top: barPad }]}
+          pointerEvents="box-none"
+        >
           <FilterPanel
             timeMax={timeMax}
             onTimeMaxChange={setTimeMax}
@@ -1606,79 +1697,9 @@ export default function BrowseScreen() {
             onClose={toggleFilters}
             styles={styles}
           />
-        )}
+        </View>
+      ) : null}
 
-        {showSkeletons && (
-          <FlatList
-            data={[0, 1, 2, 3, 4, 5]}
-            keyExtractor={(item) => `skel-${item}`}
-            numColumns={2}
-            renderItem={() => <View style={styles.skeletonBlock} />}
-            contentContainerStyle={styles.listContent}
-            columnWrapperStyle={{ gap: Space.sm }}
-            scrollEnabled={false}
-          />
-        )}
-
-        {state === "error" && (
-          <View style={styles.center}>
-            <Text style={styles.emptyGlyph}>🍲</Text>
-            <Text style={styles.errorTitle}>{t("common.somethingWentWrong")}</Text>
-            <Text style={styles.muted}>
-              {errorMessage ?? t("common.couldNotLoadRecipes")}
-            </Text>
-            <Pressable style={styles.retry} onPress={handleRetry}>
-              <Text style={styles.retryText}>{t("common.retry")}</Text>
-            </Pressable>
-          </View>
-        )}
-
-        {state === "ready" && !applying && (
-          <FlatList
-            data={displayRecipes}
-            keyExtractor={(item) => String(item.id)}
-            renderItem={renderItem}
-            numColumns={2}
-            contentContainerStyle={[styles.listContent, { paddingBottom: chromeBottomPad }]}
-            columnWrapperStyle={{ gap: Space.sm }}
-            initialNumToRender={6}
-            maxToRenderPerBatch={6}
-            windowSize={5}
-            updateCellsBatchingPeriod={80}
-            removeClippedSubviews
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            onScroll={chrome.onScroll}
-            scrollEventThrottle={chrome.scrollEventThrottle}
-            ListHeaderComponent={headerBlock}
-            onEndReached={offline ? undefined : handleEndReached}
-            onEndReachedThreshold={0.5}
-            ListFooterComponent={offline ? null : ListFooter}
-            ListEmptyComponent={
-              <View style={styles.center}>
-                <Text style={styles.emptyGlyph}>🍳</Text>
-                {hasActiveFilters ? (
-                  <>
-                    <Text style={styles.muted}>
-                      {search.trim().length > 0
-                        ? t("browse.noResultsFor", { query: search.trim() })
-                        : t("browse.noMatch")}
-                    </Text>
-                    <Text style={styles.emptyCount}>
-                      {t("browse.countOf", {
-                        shown: displayRecipes.length,
-                        total: offline ? recipes.length : serverTotal,
-                      })}
-                    </Text>
-                  </>
-                ) : (
-                  <Text style={styles.muted}>{t("common.emptyRecipes")}</Text>
-                )}
-              </View>
-            }
-          />
-        )}
-      </View>
       <View style={styles.pinnedBar} pointerEvents="box-none">
         <PinnedHeaderBar
           title={t("tabs.browse")}
