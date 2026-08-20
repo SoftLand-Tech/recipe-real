@@ -44,6 +44,7 @@ import {
   IconPressable,
   ScreenHeader,
   Toggle,
+  useHeaderActionsRights,
 } from "@/components/ui";
 
 const THEME_OPTIONS: { pref: ThemePref; labelKey: string }[] = [
@@ -194,6 +195,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const t = useT();
+  const headerRights = useHeaderActionsRights();
   const { pref: themePref, setPref: setThemePref, langPref, setLangPref } =
     useThemePrefs();
 
@@ -433,7 +435,7 @@ export default function SettingsScreen() {
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       {/* Pinned header (Browse/Community pattern): the title stays put
           while the settings scroll under it. */}
-      <ScreenHeader title={t("tabs.settings")} />
+      <ScreenHeader title={t("tabs.settings")} rights={headerRights} />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.content, { paddingBottom: Space.xxl }]}

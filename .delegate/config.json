@@ -9,6 +9,10 @@
       "implementer": "opencode",
       "model": "opencode/deepseek-v4-flash-free"
     },
+    "spark": {
+      "implementer": "opencode",
+      "model": "opencode/muse-spark-1.2-contributor-free"
+    },
     "strong": {
       "implementer": "agy",
       "model": "claude-sonnet-4-6"

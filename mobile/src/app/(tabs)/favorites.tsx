@@ -33,6 +33,7 @@ import {
   ScreenHeader,
   SkeletonCard,
   TimeChip,
+  useHeaderActionsRights,
 } from "@/components/ui";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -82,6 +83,7 @@ export default function FavoritesScreen() {
   const { width } = useWindowDimensions();
   const colors = useThemeColors();
   const t = useT();
+  const headerRights = useHeaderActionsRights();
   const lr = useLocalizedRecipe();
   const { lang } = useLang();
 
@@ -404,6 +406,7 @@ export default function FavoritesScreen() {
       <ScreenHeader
         title={t("tabs.favorites")}
         subtitle={t("favorites.subtitle")}
+        rights={headerRights}
       />
       <ScrollView
         style={styles.scroll}

@@ -48,6 +48,7 @@ import {
   SkeletonCard,
   TimeChip,
   fmtMinutes,
+  HeaderActions,
 } from "@/components/ui";
 import { CATEGORIES } from "@/utils/categorize";
 import { localizedCategory } from "@/utils/categories";
@@ -918,6 +919,7 @@ function HomeHeader({ name }: { name: string | null }) {
             {t("home.heroPrompt")}
           </Text>
         </Pressable>
+        <HeaderActions />
       </View>
       <Text style={styles.greeting}>
         {name ? `${greeting}, ${name}` : greeting}

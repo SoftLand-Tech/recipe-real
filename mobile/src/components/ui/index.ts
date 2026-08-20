@@ -57,3 +57,5 @@ export type { SheetAction, ActionSheetProps } from "./ActionSheet";
 
 export { Toggle } from "./Toggle";
 export type { ToggleProps } from "./Toggle";
+
+export { HeaderActions, useHeaderActionsRights } from "./HeaderActions";

@@ -64,6 +64,7 @@ import {
   ScreenHeader,
   TimeChip,
   fmtMinutes,
+  useHeaderActionsRights,
 } from "@/components/ui";
 import {
   CATEGORIES,
@@ -857,6 +858,7 @@ export default function BrowseScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const t = useT();
+  const headerRights = useHeaderActionsRights();
   const params = useLocalSearchParams<{ filter?: string; focus?: string }>();
   const paramFilter = params.filter;
 
@@ -1520,7 +1522,7 @@ export default function BrowseScreen() {
 
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      <ScreenHeader title={t("tabs.browse")} />
+      <ScreenHeader title={t("tabs.browse")} rights={headerRights} />
       <SearchBar
         search={search}
         onChangeSearch={setSearch}
