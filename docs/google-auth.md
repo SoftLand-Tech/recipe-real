@@ -11,14 +11,17 @@ you must create**: a Google OAuth **Web Client ID**.
    (RecipeReal) + support email. Test users are fine for beta.
 3. **APIs & Services → Credentials → Create credentials → OAuth client ID** →
    type **Web application**.
-4. **Authorized redirect URIs** — add:
+4. **Authorized redirect URIs** — add BOTH:
    ```
-   https://auth.expo.io/@mamounhisham1/recipereal
+   https://auth.expo.io/@mamounhisham1/recipereal          # Expo Go runs
+   https://recipe-real.softland.tech/auth/callback         # standalone builds
    ```
-   (the Expo auth proxy used when running in Expo Go). When you later ship a
-   standalone/dev-client build, also add the app redirect `recipereal://auth`
-   (the URL scheme is already renamed to `recipereal` in `mobile/app.json`) and
-   switch the mobile redirect accordingly.
+   The first is the Expo auth proxy used when running in Expo Go. The second
+   is our domain trampoline (`routes/web.php` `/auth/callback`): standalone
+   builds send it to Google, and the trampoline forwards the result to the
+   `recipereal:///login` deep link (mobile/src/app/login.tsx handles both the
+   browser-session return and the deep-linked token). Removing either URI
+   breaks sign-in in the other environment.
 5. Copy the **Client ID** (`...apps.googleusercontent.com`).
 
 ## 2. Configure

@@ -6,8 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": [
-      "recipereal",
-      "https://recipe-real.softland.tech"
+      "recipereal"
     ],
     "intentFilters": [
       {
