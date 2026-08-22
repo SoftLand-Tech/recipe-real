@@ -5,8 +5,11 @@ import Constants from "expo-constants";
  *
  * Priority:
  *   1. Expo extra `recipereal.apiBaseUrl` (app.json `expo.extra`)
- *   2. Expo release-channel / manifest extra fallback
- *   3. `http://localhost:8000`
+ *
+ * FAILS CLOSED: with no configured base URL there is no safe default —
+ * falling back to cleartext http://localhost:8000 would silently send
+ * bearer tokens over plaintext whenever the extra key is dropped or
+ * renamed. Dev setups must configure the extra explicitly.
  */
 function resolveBaseUrl(): string {
   const extra = Constants.expoConfig?.extra as
@@ -18,7 +21,9 @@ function resolveBaseUrl(): string {
     return fromExtra.replace(/\/+$/, "");
   }
 
-  return "http://localhost:8000";
+  throw new Error(
+    "reciperealApiBaseUrl is not configured in app.json expo.extra",
+  );
 }
 
 export const API_BASE_URL = resolveBaseUrl();
@@ -30,5 +35,14 @@ export const API_BASE_URL = resolveBaseUrl();
  */
 export const WEB_BASE_URL = "https://recipe-real.softland.tech";
 
-/** AsyncStorage key for the persisted auth token. */
+/** SecureStore key for the persisted auth token. */
 export const AUTH_TOKEN_KEY = "recipereal.token";
+
+/**
+ * SecureStore key for the single-use OAuth anti-injection material
+ * ({ nonce, state }) generated per sign-in attempt. Persisted so a
+ * cold-start deep-link completion (the OS killed the app behind Google's
+ * consent screen) still finds matching material to verify against;
+ * consumed on read so a captured callback can never replay.
+ */
+export const OAUTH_FLOW_KEY = "recipereal.oauth.flow";

@@ -4,12 +4,15 @@ import * as SecureStore from "expo-secure-store";
 
 import { AUTH_TOKEN_KEY } from "@/config";
 import { enqueuePendingCookSession } from "@/db/database";
+import { clearPostPreview } from "@/utils/postPreview";
 import {
   http,
   isOfflineError,
   postCookSessionRaw,
   seedRecipes,
   getPaceCalibrations,
+  getAuthToken,
+  setAuthTokenCache,
   normalizeRecipe,
   toNum,
   fetchSearchPage,
@@ -60,18 +63,47 @@ import type {
 // ---- Auth ------------------------------------------------------------------
 
 /**
- * Sign in (or register) with a Google ID token: POST /api/auth/google with
- * `{ id_token }`. Google is the only auth method; the response token is
- * persisted to SecureStore for subsequent authenticated calls.
+ * AsyncStorage mirror of the Community tab's feed page-1 (see community.tsx).
+ * Account-scoped: removed on logout / account deletion so the next signed-in
+ * user never paints the previous one's feed.
  */
-export async function loginWithGoogle(idToken: string): Promise<AuthResponse> {
+const COMMUNITY_FEED_CACHE_KEY = "recipereal.communityFeed";
+
+/**
+ * Sign in (or register) with a Google ID token: POST /api/auth/google with
+ * `{ id_token, nonce }`. The nonce is the single-use value embedded in the
+ * id_token by Google for this exact sign-in attempt — the backend rejects
+ * tokens whose nonce doesn't match, which neutralizes injected/replayed
+ * tokens. Google is the only auth method; the response token is persisted
+ * to SecureStore for subsequent authenticated calls.
+ */
+export async function loginWithGoogle(
+  idToken: string,
+  nonce: string,
+): Promise<AuthResponse> {
   const { data } = await api.post<AuthResponse>("/api/auth/google", {
     id_token: idToken,
+    nonce,
   });
   if (data?.token) {
     await SecureStore.setItemAsync(AUTH_TOKEN_KEY, data.token);
+    // Keep the http layer's in-memory mirror in sync (see getAuthToken).
+    setAuthTokenCache(data.token);
   }
   return data;
+}
+
+/**
+ * Drop the account-scoped local leftovers after the token is cleared (the
+ * same hygiene clearPaceCache() applies at the sign-out call sites): the
+ * community feed mirror and the post-detail preview pass-through. Best-effort
+ * — a storage failure must never turn a successful sign-out into an error.
+ */
+function clearAccountScopedCaches(): void {
+  clearPostPreview();
+  AsyncStorage.removeItem(COMMUNITY_FEED_CACHE_KEY).catch(() => {
+    // Best-effort: the mirror rewrites on the next feed fetch.
+  });
 }
 
 export async function logout(): Promise<void> {
@@ -79,37 +111,38 @@ export async function logout(): Promise<void> {
     await api.post("/api/auth/logout");
   } finally {
     await SecureStore.deleteItemAsync(AUTH_TOKEN_KEY);
+    setAuthTokenCache(null);
+    clearAccountScopedCaches();
   }
 }
 
 /**
  * Permanently delete the signed-in account: DELETE /api/account (authed,
  * Sanctum bearer) → 204 on success, after which the local token is cleared
- * like logout(). A 401 means the token is already gone or invalid — the
- * account is unreachable either way — so it is treated as success and the
- * token is still cleared. Any other failure rethrows (token stays put).
+ * like logout(). ANY failure — including a 401 — rethrows so the UI reports
+ * deletion as failed instead of silently claiming success while the account
+ * survives server-side; the stored token is still cleared either way so a
+ * dead session never lingers.
  */
 export async function deleteAccount(): Promise<void> {
   try {
     await api.delete("/api/account");
-  } catch (error) {
-    if (axios.isAxiosError(error) && error.response?.status === 401) {
-      await SecureStore.deleteItemAsync(AUTH_TOKEN_KEY);
-      return;
-    }
-    throw error;
+  } finally {
+    await SecureStore.deleteItemAsync(AUTH_TOKEN_KEY);
+    setAuthTokenCache(null);
+    clearAccountScopedCaches();
   }
-  await SecureStore.deleteItemAsync(AUTH_TOKEN_KEY);
 }
 
 /**
- * Whether a bearer token is currently stored in SecureStore. Used by screens
- * to decide whether to attempt authenticated-only calls (e.g. pace data).
- * Best-effort: any SecureStore failure resolves to false.
+ * Whether a bearer token is currently available. Delegates to the http
+ * layer's memoized getAuthToken() (SecureStore is hit at most once per
+ * session) so the frequent focus-time checks stay cheap. Signature and
+ * semantics are unchanged: best-effort, any storage failure → false.
  */
 export async function hasToken(): Promise<boolean> {
   try {
-    const token = await SecureStore.getItemAsync(AUTH_TOKEN_KEY);
+    const token = await getAuthToken();
     return Boolean(token);
   } catch {
     return false;
@@ -387,26 +420,42 @@ const COOK_SESSIONS_PER_PAGE = 100;
 /** Safety cap for the history loop: 5 pages x 100 = 500 sessions max. */
 const COOK_SESSIONS_MAX_PAGES = 5;
 
+/**
+ * Optional knobs for getCookSessions. Omitted (the default) keeps today's
+ * full-history sweep — Pace stats depend on it — while callers that need
+ * only a few rows (e.g. Home's "Recently cooked" rail) can cap the pages.
+ */
+export interface CookSessionsOptions {
+  /** Stop after this many pages (1 = a single request). */
+  maxPages?: number;
+  /** `per_page` sent to the server (defaults to COOK_SESSIONS_PER_PAGE). */
+  perPage?: number;
+}
+
 /** One page of the cook-session history. */
 async function fetchCookSessionsPage(
   page: number,
+  perPage: number = COOK_SESSIONS_PER_PAGE,
 ): Promise<Paginated<CookSessionSummary>> {
   const { data } = await api.get<Paginated<CookSessionSummary>>(
     "/api/cook-sessions",
-    { params: { page, per_page: COOK_SESSIONS_PER_PAGE } },
+    { params: { page, per_page: perPage } },
   );
   return data;
 }
 
 /**
- * Fetch the user's FULL cook-session history for Pace stats.
+ * Fetch the user's cook-session history.
  *
  * The endpoint paginates (Laravel default 15/page), so a single request
  * silently truncated history — undercounting Pace streaks for active users.
- * Walk every page (`per_page=100`, capped at COOK_SESSIONS_MAX_PAGES pages)
- * and merge the `data` arrays; `meta` (including `total`) is kept from the
- * FIRST response so the returned shape stays exactly
- * `Paginated<CookSessionSummary>`.
+ * By default it walks every page (`per_page=100`, capped at
+ * COOK_SESSIONS_MAX_PAGES pages) and merges the `data` arrays; pass
+ * `{ maxPages, perPage }` when only a few rows are needed (Home's recent
+ * rail) to stop after the first page(s) instead of sweeping the history.
+ *
+ * `meta` (including `total`) is kept from the FIRST response so the returned
+ * shape stays exactly `Paginated<CookSessionSummary>`.
  *
  * A failure on a LATER page returns what was fetched so far rather than
  * throwing; a failure on page 1 still throws (matching the old behavior —
@@ -414,14 +463,18 @@ async function fetchCookSessionsPage(
  * legacy response) is treated as a single page, mirroring the defensive
  * handling in `@/api/http`.
  */
-export async function getCookSessions(): Promise<Paginated<CookSessionSummary>> {
+export async function getCookSessions(
+  options: CookSessionsOptions = {},
+): Promise<Paginated<CookSessionSummary>> {
+  const perPage = options.perPage ?? COOK_SESSIONS_PER_PAGE;
+  const maxPages = options.maxPages ?? COOK_SESSIONS_MAX_PAGES;
   const merged: CookSessionSummary[] = [];
   let meta: Paginated<CookSessionSummary>["meta"] | undefined;
 
-  for (let page = 1; page <= COOK_SESSIONS_MAX_PAGES; page++) {
+  for (let page = 1; page <= maxPages; page++) {
     let body: Paginated<CookSessionSummary>;
     try {
-      body = await fetchCookSessionsPage(page);
+      body = await fetchCookSessionsPage(page, perPage);
     } catch (error) {
       if (page === 1) throw error; // Nothing fetched yet: surface it.
       break; // Partial fetch: return what we already have.
@@ -435,17 +488,18 @@ export async function getCookSessions(): Promise<Paginated<CookSessionSummary>> 
       meta = body?.meta ?? {
         current_page: 1,
         last_page: 1,
-        per_page: COOK_SESSIONS_PER_PAGE,
+        per_page: perPage,
         total: merged.length,
       };
     }
 
     const currentPage = Number(body?.meta?.current_page) || page;
     const lastPage = Number(body?.meta?.last_page) || currentPage;
-    // Done when the paginator says we're on the last page, or when a short
+    // Done when the paginator says we're on the last page, when a short
     // page comes back (covers empty pages and backends with a missing/odd
-    // meta, mirroring the heuristic in `@/api/http`).
-    if (currentPage >= lastPage || rows.length < COOK_SESSIONS_PER_PAGE) {
+    // meta, mirroring the heuristic in `@/api/http`), or when the caller's
+    // page cap is reached.
+    if (currentPage >= lastPage || rows.length < perPage) {
       break;
     }
   }
@@ -456,7 +510,7 @@ export async function getCookSessions(): Promise<Paginated<CookSessionSummary>> 
       meta ?? {
         current_page: 1,
         last_page: 1,
-        per_page: COOK_SESSIONS_PER_PAGE,
+        per_page: perPage,
         total: merged.length,
       },
   };
@@ -722,7 +776,12 @@ export async function fetchMyProfile(): Promise<PublicProfile> {
   };
 }
 
-export async function updateProfile(patch: { display_name?: string; bio?: string | null; avatar_url?: string | null }): Promise<void> {
+export async function updateProfile(patch: {
+  display_name?: string;
+  bio?: string | null;
+  avatar_url?: string | null;
+  gender?: "male" | "female" | null;
+}): Promise<void> {
   await api.patch("/api/users/me/profile", patch);
 }
 
@@ -1219,6 +1278,10 @@ export async function fetchMyProfileFull(): Promise<MyProfile> {
       name: body?.user?.name ?? null,
       avatar_url: body?.user?.avatar_url ?? null,
       bio: body?.user?.bio ?? null,
+      gender:
+        body?.user?.gender === "male" || body?.user?.gender === "female"
+          ? body.user.gender
+          : null,
       created_at:
         typeof body?.user?.created_at === "string" ? body.user.created_at : "",
     },

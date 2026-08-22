@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   Image,
+  InteractionManager,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -31,7 +32,6 @@ import {
   getCachedRecipes,
   getFavoriteIds,
   getNotedRecipeIds,
-  refreshCacheLight,
   refreshPaceCalibrations,
   repairCachedStepsIfNeeded,
   seedCacheFirstPage,
@@ -57,6 +57,7 @@ import {
 import { CATEGORIES } from "@/utils/categorize";
 import { localizedCategory } from "@/utils/categories";
 import { bestMinutes } from "@/utils/recipeTime";
+import { maybeSweepCache } from "@/utils/cacheSweep";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -114,6 +115,13 @@ const REFRESH_SPINNER_MAX_MS = 10_000;
  * Avoids hanging on skeletons during flaky network conditions up to the 15s axios timeout.
  */
 const RAILS_DEADLINE_MS = 2500;
+
+/**
+ * Extra delay (after the first interactions settle) before the deferred
+ * auth-backed loads fire — keeps the pace calibration rewrite and the
+ * cook-session fetch out of the first-paint burst entirely.
+ */
+const DEFERRED_AUTH_DATA_DELAY_MS = 800;
 
 /**
  * Cheap content fingerprint of a recipe list. Background reloads from the
@@ -275,12 +283,14 @@ export default function HomeScreen() {
           right: 0,
           zIndex: 10,
         },
-        // Brand chip in the bar: the logo is a square with a solid dark
-        // background, so a rounded app-icon treatment reads best.
+        // Brand chip in the bar. The webp is pre-trimmed to the mark, whose
+        // blob already carries its own rounding — a borderRadius here would
+        // clip the yellow outline's corners. Explicit width AND height (no
+        // aspectRatio reliance) so the chip can never render unconstrained.
         barLogo: {
-          width: 30,
-          height: 30,
-          borderRadius: 9,
+          width: 46,
+          height: 45,
+          resizeMode: "contain",
         },
         center: {
           flexGrow: 1,
@@ -404,10 +414,12 @@ export default function HomeScreen() {
     }
   }, [setRecipesIfChanged]);
 
-  // Background refresh: light upsert (no step re-download) + reload from cache.
+  // Background refresh: light upsert (no step re-download) + reload from
+  // cache. Routed through maybeSweepCache so Home and Browse share a
+  // single-flight, at-most-once-an-hour sweep instead of competing.
   const refreshInBackground = useCallback(async () => {
     try {
-      await refreshCacheLight();
+      await maybeSweepCache();
       setRecipesIfChanged(await getCachedRecipes());
     } catch (error) {
       // Background refresh failures are non-fatal.
@@ -615,26 +627,40 @@ export default function HomeScreen() {
     };
   }, []);
 
-  // "For your pace" gate + "Recently cooked" data: both auth-backed, loaded
-  // once per mount, both degrade to hidden on any failure (401 included).
+  // "For your pace" gate + "Recently cooked" data: both auth-backed, both
+  // degrade to hidden on any failure (401 included). DEFERRED past the first
+  // paint (runAfterInteractions + a short delay): these feed conditional
+  // sections that simply appear a beat later — nothing on screen (skeletons,
+  // error or empty states) waits on them, so they must not compete with the
+  // mount burst. The cook-session call is capped to a single 10-row page:
+  // it only feeds the 6-item "Recently cooked" rail (Pace's own full-history
+  // sweep lives in pace.tsx and is untouched).
   useEffect(() => {
     let cancelled = false;
-    refreshPaceCalibrations()
-      .then((items) => {
-        if (!cancelled) setHasPace(items.length > 0);
-      })
-      .catch(() => {
-        if (!cancelled) setHasPace(false);
-      });
-    getCookSessions()
-      .then((page) => {
-        if (!cancelled) setRecentSessions(page.data);
-      })
-      .catch(() => {
-        if (!cancelled) setRecentSessions(null);
-      });
+    let delayTimer: ReturnType<typeof setTimeout> | null = null;
+    const task = InteractionManager.runAfterInteractions(() => {
+      delayTimer = setTimeout(() => {
+        if (cancelled) return;
+        refreshPaceCalibrations()
+          .then((items) => {
+            if (!cancelled) setHasPace(items.length > 0);
+          })
+          .catch(() => {
+            if (!cancelled) setHasPace(false);
+          });
+        getCookSessions({ maxPages: 1, perPage: 10 })
+          .then((page) => {
+            if (!cancelled) setRecentSessions(page.data);
+          })
+          .catch(() => {
+            if (!cancelled) setRecentSessions(null);
+          });
+      }, DEFERRED_AUTH_DATA_DELAY_MS);
+    });
     return () => {
       cancelled = true;
+      task.cancel();
+      if (delayTimer) clearTimeout(delayTimer);
     };
   }, []);
 
@@ -820,7 +846,7 @@ export default function HomeScreen() {
           title="RecipeReal"
           titleContent={
             <Image
-              source={require("../../../assets/images/recipereallogo.png")}
+              source={require("../../../assets/images/recipereallogo.webp")}
               style={styles.barLogo}
               accessibilityLabel="RecipeReal"
             />

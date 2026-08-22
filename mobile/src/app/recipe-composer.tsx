@@ -13,12 +13,20 @@ import {
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { Stack, router, useLocalSearchParams } from "expo-router";
+import {
+  Stack,
+  router,
+  useFocusEffect,
+  useLocalSearchParams,
+  useNavigation,
+} from "expo-router";
+import { usePreventRemove } from "expo-router/build/react-navigation/core";
 
 import {
   createUserRecipe,
   deleteUserRecipe,
   getRecipe,
+  hasToken,
   HalalRejectionError,
   updateUserRecipe,
   uploadImage,
@@ -60,6 +68,38 @@ function parseIntOrNull(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** The comparable shape of the whole composer form (for dirty tracking). */
+interface FormShape {
+  title: string;
+  titleAr: string;
+  description: string;
+  servings: string;
+  minutes: string;
+  ingredients: string[];
+  steps: StepDraft[];
+  pickedUri: string | null;
+  imageRemoved: boolean;
+}
+
+function serializeForm(f: FormShape): string {
+  return JSON.stringify(f);
+}
+
+/** Pristine create-mode form — the initial baseline snapshot. */
+const EMPTY_FORM: FormShape = {
+  title: "",
+  titleAr: "",
+  description: "",
+  servings: "",
+  minutes: "",
+  ingredients: [""],
+  steps: [
+    { description: "", description_ar: "", minutes: "", step_type: "active" },
+  ],
+  pickedUri: null,
+  imageRemoved: false,
+};
+
 export default function RecipeComposerScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const editId = id != null && /^\d+$/.test(id) ? Number(id) : null;
@@ -87,6 +127,12 @@ export default function RecipeComposerScreen() {
 
   // ---- Load state (edit-mode prefill) / submission state ------------------------
   const [loading, setLoading] = useState(editMode);
+  // Baseline snapshot of the pristine form (create mode: empty; edit mode:
+  // set by prefill once loaded). State — not a ref — so the dirty check in
+  // render never reads a ref.
+  const [baselineSnapshot, setBaselineSnapshot] = useState<string>(() =>
+    serializeForm(EMPTY_FORM),
+  );
   const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -95,6 +141,23 @@ export default function RecipeComposerScreen() {
   /** Terms from a HalalRejectionError — rendered as a prominent danger card. */
   const [halalTerms, setHalalTerms] = useState<string[] | null>(null);
   const [needsAuth, setNeedsAuth] = useState(false);
+
+  // ---- Auth gate -----------------------------------------------------------------
+  // Checked on every focus: a signed-out visitor sees a sign-in prompt
+  // INSTEAD of the form, not a 401 after filling everything in.
+  const [authed, setAuthed] = useState<boolean | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        const ok = await hasToken();
+        if (!cancelled) setAuthed(ok);
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
 
   const styles = useMemo(
     () =>
@@ -271,84 +334,109 @@ export default function RecipeComposerScreen() {
     [colors],
   );
 
-  // ---- Edit-mode prefill --------------------------------------------------------
+  // ---- Edit-mode prefill (retryable) ---------------------------------------------
+  // All setState calls happen AFTER the await (never synchronously in the
+  // mount effect). The retry handler owns the loading/error resets.
 
-  useEffect(() => {
+  const prefill = useCallback(async () => {
     if (editId == null) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const recipe = await getRecipe(editId);
-        if (cancelled) return;
-        setTitle(recipe.title ?? "");
-        setTitleAr(recipe.title_ar ?? "");
-        setDescription(recipe.description ?? "");
-        setExistingImage(recipe.image_url ?? null);
-        // Total minutes: the dedicated field when the server sends it, else the
-        // publisher claim, else the community consensus.
-        const dedicated = (
-          recipe as { estimated_minutes?: unknown }
-        ).estimated_minutes;
-        const mins =
-          parseIntOrNull(String(dedicated ?? "")) ??
-          recipe.publisher_time_minutes ??
-          recipe.community_avg_minutes;
-        setMinutes(mins != null ? String(Math.round(mins)) : "");
-        const ing = (recipe.ingredients ?? []).filter(
-          (row) => typeof row === "string",
+    try {
+      const recipe = await getRecipe(editId);
+      setTitle(recipe.title ?? "");
+      setTitleAr(recipe.title_ar ?? "");
+      setDescription(recipe.description ?? "");
+      setExistingImage(recipe.image_url ?? null);
+      // Total minutes: the dedicated field when the server sends it, else the
+      // publisher claim, else the community consensus.
+      const dedicated = (
+        recipe as { estimated_minutes?: unknown }
+      ).estimated_minutes;
+      const mins =
+        parseIntOrNull(String(dedicated ?? "")) ??
+        recipe.publisher_time_minutes ??
+        recipe.community_avg_minutes;
+      const minutesStr = mins != null ? String(Math.round(mins)) : "";
+      setMinutes(minutesStr);
+      const ing = (recipe.ingredients ?? []).filter(
+        (row): row is string => typeof row === "string",
+      );
+      const ingRows = ing.length > 0 ? ing : [""];
+      setIngredients(ingRows);
+      // Prefill from structured recipe_steps when present, else the plain
+      // text steps.
+      const structured = recipe.recipe_steps ?? [];
+      let stepRows: StepDraft[];
+      if (structured.length > 0) {
+        stepRows = structured.map((s) => ({
+          description: s.description ?? "",
+          description_ar: s.description_ar ?? "",
+          minutes:
+            s.publisher_minutes != null
+              ? String(Math.round(s.publisher_minutes))
+              : "",
+          step_type:
+            s.step_type === "passive" || s.step_type === "cleanup"
+              ? s.step_type
+              : "active",
+        }));
+      } else {
+        const plain = (recipe.steps ?? []).filter(
+          (row): row is string => typeof row === "string",
         );
-        setIngredients(ing.length > 0 ? ing : [""]);
-        // Prefill from structured recipe_steps when present, else the plain
-        // text steps.
-        const structured = recipe.recipe_steps ?? [];
-        if (structured.length > 0) {
-          setSteps(
-            structured.map((s) => ({
-              description: s.description ?? "",
-              description_ar: s.description_ar ?? "",
-              minutes:
-                s.publisher_minutes != null
-                  ? String(Math.round(s.publisher_minutes))
-                  : "",
-              step_type:
-                s.step_type === "passive" || s.step_type === "cleanup"
-                  ? s.step_type
-                  : "active",
-            })),
-          );
-        } else {
-          const plain = (recipe.steps ?? []).filter(
-            (row) => typeof row === "string",
-          );
-          setSteps(
-            plain.length > 0
-              ? plain.map((description) => ({
-                  description,
+        stepRows =
+          plain.length > 0
+            ? plain.map((description) => ({
+                description,
+                description_ar: "",
+                minutes: "",
+                step_type: "active" as const,
+              }))
+            : [
+                {
+                  description: "",
                   description_ar: "",
                   minutes: "",
                   step_type: "active" as const,
-                }))
-              : [
-                  {
-                    description: "",
-                    description_ar: "",
-                    minutes: "",
-                    step_type: "active" as const,
-                  },
-                ],
-          );
-        }
-      } catch (error) {
-        console.warn("[RecipeReal] composer prefill failed:", error);
-        if (!cancelled) setLoadFailed(true);
-      } finally {
-        if (!cancelled) setLoading(false);
+                },
+              ];
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+      setSteps(stepRows);
+      // Baseline for the unsaved-changes guard: the pristine prefilled form.
+      setBaselineSnapshot(
+        serializeForm({
+          title: recipe.title ?? "",
+          titleAr: recipe.title_ar ?? "",
+          description: recipe.description ?? "",
+          servings: "",
+          minutes: minutesStr,
+          ingredients: ingRows,
+          steps: stepRows,
+          pickedUri: null,
+          imageRemoved: false,
+        }),
+      );
+    } catch (err) {
+      console.warn("[RecipeReal] composer prefill failed:", err);
+      setLoadFailed(true);
+    } finally {
+      setLoading(false);
+    }
   }, [editId]);
+
+  /** Retry entry point: own the spinner/error reset, then re-fetch. */
+  const retryPrefill = useCallback(() => {
+    setLoadFailed(false);
+    setLoading(true);
+    void prefill();
+  }, [prefill]);
+
+  useEffect(() => {
+    // The rule can't see that every setState inside `prefill` happens after
+    // the initial await — the sync body only fetches. Same fetch-on-mount
+    // shape as the other screens.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void prefill();
+  }, [prefill]);
 
   // ---- Dynamic row helpers ------------------------------------------------------
 
@@ -599,6 +687,44 @@ export default function RecipeComposerScreen() {
 
   const thumbUri = pickedUri ?? (imageRemoved ? null : existingImage);
 
+  // ---- Unsaved-changes guard ------------------------------------------------------
+  // The baseline snapshot is STATE (create mode: pristine empty form; edit
+  // mode: set by prefill once loaded). Any drift from it arms a
+  // confirm-before-remove guard covering the native header back, the
+  // Android gesture/hardware back AND programmatic router.back() calls.
+  const formSnapshot = useMemo(
+    () =>
+      serializeForm({
+        title,
+        titleAr,
+        description,
+        servings,
+        minutes,
+        ingredients,
+        steps,
+        pickedUri,
+        imageRemoved,
+      }),
+    [title, titleAr, description, servings, minutes, ingredients, steps, pickedUri, imageRemoved],
+  );
+  const dirty = formSnapshot !== baselineSnapshot;
+
+  const navigation = useNavigation();
+  usePreventRemove(dirty && !saving && !deleting, ({ data }) => {
+    Alert.alert(
+      t("composer.discardTitle"),
+      t("composer.discardRecipeMessage"),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: t("composer.discardBtn"),
+          style: "destructive",
+          onPress: () => navigation.dispatch(data.action),
+        },
+      ],
+    );
+  });
+
   const stepTypeChips = (row: StepDraft, index: number) => (
     <View style={styles.typeChips}>
       {STEP_TYPES.map((type) => (
@@ -616,6 +742,28 @@ export default function RecipeComposerScreen() {
     </View>
   );
 
+  if (authed === null) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color={colors.accent} />
+      </View>
+    );
+  }
+
+  if (authed === false) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.muted}>{t("composer.signInRequired")}</Text>
+        <Button
+          title={t("common.signIn")}
+          variant="secondary"
+          onPress={() => router.push("/login")}
+          style={styles.addRow}
+        />
+      </View>
+    );
+  }
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -630,7 +778,13 @@ export default function RecipeComposerScreen() {
       <View style={styles.center}>
         <Text style={styles.errorText}>{t("common.somethingWentWrong")}</Text>
         <Text style={styles.muted}>{t("common.couldNotLoadRecipe")}</Text>
-        <Button title={t("common.retry")} onPress={router.back} />
+        {/* Real retry: re-runs the prefill fetch (back would just leave). */}
+        <Button title={t("common.retry")} onPress={retryPrefill} />
+        <Button
+          title={t("common.back")}
+          variant="ghost"
+          onPress={() => router.back()}
+        />
       </View>
     );
   }

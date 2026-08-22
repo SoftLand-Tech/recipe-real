@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -12,10 +13,17 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as ImagePicker from "expo-image-picker";
-import { router, useLocalSearchParams } from "expo-router";
+import {
+  router,
+  useFocusEffect,
+  useLocalSearchParams,
+  useNavigation,
+} from "expo-router";
+import { usePreventRemove } from "expo-router/build/react-navigation/core";
 
 import {
   createPost,
+  hasToken,
   HalalRejectionError,
   searchRecipes,
   uploadImage,
@@ -98,7 +106,6 @@ export default function PostComposerScreen() {
       cleanup_avg_minutes: null,
     });
     // Run once per param pair — params are stable for this screen's life.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.recipeId, params.recipeTitle]);
 
   const [posting, setPosting] = useState(false);
@@ -106,25 +113,55 @@ export default function PostComposerScreen() {
   const [error, setError] = useState<string | null>(null);
   const [halalTerms, setHalalTerms] = useState<string[] | null>(null);
 
-  // Debounced recipe search.
+  // ---- Auth gate -----------------------------------------------------------------
+  // Signed-out visitors get a sign-in prompt instead of a form that 401s
+  // after they've written everything. Re-checked on focus so returning
+  // from /login lands back on a usable composer.
+  const [authed, setAuthed] = useState<boolean | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        const ok = await hasToken();
+        if (!cancelled) setAuthed(ok);
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
+
+  // ---- Debounced recipe search (stale-response safe) ------------------------------
+  // A monotonic id per query: only the LATEST search may commit results, so
+  // a slow earlier response can never overwrite a newer one's rows. All
+  // state updates happen inside the timer callback (never synchronously in
+  // the effect body).
+  const searchRequestIdRef = useRef(0);
   useEffect(() => {
     if (selectedRecipe != null) return;
     const q = recipeQuery.trim();
-    if (q.length === 0) {
-      setRecipeResults([]);
-      return;
-    }
+    const requestId = ++searchRequestIdRef.current;
     const timer = setTimeout(() => {
+      if (searchRequestIdRef.current !== requestId) return;
+      if (q.length === 0) {
+        setRecipeResults([]);
+        setRecipeSearching(false);
+        return;
+      }
       setRecipeSearching(true);
       searchRecipes({ q, perPage: RECIPE_PICK_RESULTS })
         .then((page) => {
+          if (searchRequestIdRef.current !== requestId) return;
           setRecipeResults(page.recipes.slice(0, RECIPE_PICK_RESULTS));
         })
         .catch(() => {
+          if (searchRequestIdRef.current !== requestId) return;
           setRecipeResults([]);
         })
         .finally(() => {
-          setRecipeSearching(false);
+          if (searchRequestIdRef.current === requestId) {
+            setRecipeSearching(false);
+          }
         });
     }, RECIPE_SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
@@ -220,8 +257,7 @@ export default function PostComposerScreen() {
 
   const styles = useMemo(
     () =>
-      StyleSheet.create({
-        flex: { flex: 1 },
+      StyleSheet.create({        flex: { flex: 1 },
         container: {
           flex: 1,
           backgroundColor: colors.canvas,
@@ -331,6 +367,66 @@ export default function PostComposerScreen() {
     [colors, insets],
   );
 
+  // ---- Unsaved-changes guard -------------------------------------------------------
+  // Armed once the user types anything, picks a photo or attaches a recipe;
+  // covers the header ✕, Cancel button, Android back gesture and any other
+  // removal of this screen.
+  const dirty =
+    body.trim().length > 0 ||
+    pickedUris.length > 0 ||
+    selectedRecipe != null;
+  const navigation = useNavigation();
+  usePreventRemove(dirty && !posting, ({ data }) => {
+    Alert.alert(
+      t("composer.discardTitle"),
+      t("composer.discardPostMessage"),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: t("composer.discardBtn"),
+          style: "destructive",
+          onPress: () => navigation.dispatch(data.action),
+        },
+      ],
+    );
+  });
+
+  // ---- Auth gate (after all hooks) ---------------------------------------------------
+  if (authed === null) {
+    return (
+      <View style={styles.container}>
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+          <ActivityIndicator color={colors.accent} size="small" />
+        </View>
+      </View>
+    );
+  }
+
+  if (authed === false) {
+    return (
+      <View style={styles.container}>
+        <View
+          style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            gap: Space.md,
+            padding: Space.xxl,
+          }}
+        >
+          <Text style={[styles.attachLabel, { textAlign: "center" }]}>
+            {t("community.signInPrompt")}
+          </Text>
+          <Button
+            title={t("common.signIn")}
+            variant="secondary"
+            onPress={() => router.push("/login")}
+          />
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       {/* Header bar with close button */}
@@ -421,6 +517,8 @@ export default function PostComposerScreen() {
                   }}
                   hitSlop={Space.xs}
                   disabled={posting}
+                  accessibilityRole="button"
+                  accessibilityLabel={t("common.cancel")}
                 >
                   <Ionicons name="close" size={18} color={colors.inkSecondary} />
                 </IconPressable>
@@ -446,27 +544,26 @@ export default function PostComposerScreen() {
                     size="small"
                     style={styles.searching}
                   />
-                ) : (
-                  <View style={{ gap: Space.xs }}>
-                    {recipeResults.map((recipe) => (
-                      <IconPressable
-                        key={`pick-${recipe.id}`}
-                        onPress={() => setSelectedRecipe(recipe)}
-                        style={styles.resultRow}
-                        disabled={posting}
-                      >
-                        <Ionicons
-                          name="add-circle-outline"
-                          size={18}
-                          color={colors.accent}
-                        />
-                        <Text style={styles.resultTitle} numberOfLines={1}>
-                          {lr(recipe)}
-                        </Text>
-                      </IconPressable>
-                    ))}
-                  </View>
-                )}
+                ) : null}
+                <View style={{ gap: Space.xs }}>
+                  {recipeResults.map((recipe) => (
+                    <IconPressable
+                      key={`pick-${recipe.id}`}
+                      onPress={() => setSelectedRecipe(recipe)}
+                      style={styles.resultRow}
+                      disabled={posting}
+                    >
+                      <Ionicons
+                        name="add-circle-outline"
+                        size={18}
+                        color={colors.accent}
+                      />
+                      <Text style={styles.resultTitle} numberOfLines={1}>
+                        {lr(recipe)}
+                      </Text>
+                    </IconPressable>
+                  ))}
+                </View>
               </>
             )}
 

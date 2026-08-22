@@ -77,6 +77,7 @@ import {
   estimateStepMinutes,
   stepMinutes,
 } from "@/utils/recipeTime";
+import { parseIntOrNull, relativeDate } from "@/utils/format";
 import {
   cancelPlannedNotifications,
   requestNotificationsPermission,
@@ -90,13 +91,6 @@ type LoadState = "loading" | "ready" | "error";
 function roundMin(value: number | null | undefined): number | null {
   if (value == null) return null;
   return Math.round(value);
-}
-
-/** Parses a digits-only field; empty (optional) fields parse to null. */
-function parseIntOrNull(raw: string): number | null {
-  if (raw.trim() === "") return null;
-  const n = Number.parseInt(raw, 10);
-  return Number.isFinite(n) ? n : null;
 }
 
 /** Formats a Date as a short local clock string, e.g. "7:04 PM". */
@@ -122,32 +116,6 @@ const NOTE_PUBLIC_PREF_KEY = "recipereal.notePublicDefault";
  */
 const QUICK_TIME_STALE_KEY = "recipereal.quickTimeStale";
 
-/**
- * Compact relative timestamp for community notes ("just now", "3h ago",
- * "2d ago", …). Falls back to a local date string past a year; an unparsable
- * timestamp renders as "" (the caption row simply hides it).
- */
-function relativeDate(t: TranslateFn, iso: string): string {
-  const then = Date.parse(iso);
-  if (!Number.isFinite(then)) return "";
-  const mins = Math.floor((Date.now() - then) / 60000);
-  if (mins < 1) return t("rel.now");
-  if (mins < 60) return t("rel.minutesAgo", { n: mins });
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return t("rel.hoursAgo", { n: hours });
-  const days = Math.floor(hours / 24);
-  if (days < 7) return t("rel.daysAgo", { n: days });
-  const weeks = Math.floor(days / 7);
-  if (weeks < 5) return t("rel.weeksAgo", { n: weeks });
-  const months = Math.floor(days / 30);
-  if (months < 12) return t("rel.monthsAgo", { n: months });
-  try {
-    return new Date(then).toLocaleDateString();
-  } catch {
-    return "";
-  }
-}
-
 /** Display name of a note author: display_name, else the account name. */
 function noteAuthorName(user: RecipeNote["user"]): string {
   return (user.display_name ?? user.name ?? "").trim();
@@ -160,6 +128,9 @@ function postAuthorName(user: Post["user"]): string {
 
 /** Rows shown before "Show all" expands the recipe's community list. */
 const TRIES_PREVIEW_COUNT = 3;
+
+/** Skeleton rows of the timeline placeholder while cached steps are absent. */
+const TIMELINE_PLACEHOLDER_ROWS = 3;
 
 /**
  * Cap on scheduled planner notifications (one per step boundary): the OS
@@ -299,6 +270,11 @@ export default function RecipeDetailScreen() {
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // True while the screen paints a LIGHT cached row (no structured
+  // recipe_steps) and the fresh copy is still loading: the timeline section
+  // shows its compact inline placeholder and Cook Mode stays disabled until
+  // steps land (or the fetch settles without any).
+  const [stepsPending, setStepsPending] = useState(false);
   const [calibrations, setCalibrations] = useState<PaceCalibration[]>([]);
   const [favorited, setFavorited] = useState(false);
   // Personal note (local-only): the current editor text, the last saved
@@ -306,6 +282,8 @@ export default function RecipeDetailScreen() {
   const [note, setNote] = useState("");
   const [savedNote, setSavedNote] = useState("");
   const [noteJustSaved, setNoteJustSaved] = useState(false);
+  /** Set when the local note save fails — surfaced inline (never silent). */
+  const [noteSaveError, setNoteSaveError] = useState<string | null>(null);
   // "Make public" toggle under the note editor: when on, saving the local note
   // ALSO posts it as a public community note. Persisted as the default.
   const [notePublic, setNotePublic] = useState(false);
@@ -716,6 +694,35 @@ export default function RecipeDetailScreen() {
           color: colors.ink,
           marginTop: Space.xs,
         },
+        // ---- Timeline placeholder (light cache row, steps still loading) ----
+        // Compact inline stand-in: a small spinner plus text-free skeleton
+        // rows shaped like the timeline rows they replace.
+        timelinePending: {
+          alignItems: "center",
+          gap: Space.xs,
+          marginTop: Space.md,
+        },
+        timelineSkelRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+          paddingHorizontal: Space.sm,
+          paddingVertical: Space.sm,
+          borderRadius: Radius.md,
+          alignSelf: "stretch",
+        },
+        timelineSkelDot: {
+          width: 8,
+          height: 8,
+          borderRadius: Radius.pill,
+          backgroundColor: colors.hairline,
+        },
+        timelineSkelLine: {
+          flex: 1,
+          height: 14,
+          borderRadius: Radius.pill,
+          backgroundColor: colors.surfaceSoft,
+        },
         section: {
           marginTop: Space.xxl,
         },
@@ -1063,56 +1070,55 @@ export default function RecipeDetailScreen() {
     setQuickNeedsAuth(false);
     setQuickOpen(false);
     quickFadeRef.current.setValue(0);
+    setStepsPending(false);
     try {
       const numericId = Number(id);
-      // 1. Serve the cached copy immediately (fast paint + offline support).
-      let result = await getCachedRecipe(numericId);
-      const servedFromCache =
-        result != null && (result.recipe_steps?.length ?? 0) > 0;
-      if (!servedFromCache) {
-        // Not in cache OR cached copy lost its steps (damaged cache): fetch
-        // live and re-cache so the step library self-heals recipe by recipe.
-        try {
-          const fetched = await getRecipe(id);
-          if (fetched.recipe_steps?.length) {
-            upsertRecipes([fetched], { withSteps: true }).catch(() => {});
-          }
-          result = fetched;
-        } catch (error) {
-          // Network failed. When a cached copy exists, show it anyway;
-          // otherwise surface the original error.
-          if (!result) throw error;
-        }
+      // 1. Paint ANY cached copy immediately — including a light row whose
+      // structured steps were never cached: hero, stats, info chips and
+      // ingredients render right away; the timeline section shows its inline
+      // placeholder until the fresh copy swaps in.
+      const result = await getCachedRecipe(numericId);
+      const paintedFromCache = result != null;
+      if (paintedFromCache) {
+        if (requestId !== loadRequestIdRef.current) return;
+        setRecipe(result);
+        setState("ready");
+        setStepsPending((result.recipe_steps?.length ?? 0) === 0);
+        // Fire-and-forget analytics once the recipe is on screen.
+        track("recipe_viewed", { recipe_id: result.id });
+        // Best-effort: seed the favorite state from local storage (never blocks).
+        isFavorite(numericId)
+          .then(setFavorited)
+          .catch(() => {});
       }
-      if (requestId !== loadRequestIdRef.current) return;
-      // Unreachable in practice: a null result here means the cache miss and
-      // the live fetch both failed, and the catch above already rethrew. The
-      // guard exists for TypeScript's benefit (narrowing is reset across the
-      // try/catch) and doubles as a last-resort error surface.
-      if (!result) throw new Error("No recipe data");
-      setRecipe(result);
-      setState("ready");
-      // Fire-and-forget analytics once the recipe is successfully loaded.
-      track("recipe_viewed", { recipe_id: result.id });
-      // Best-effort: seed the favorite state from local storage (never blocks).
-      isFavorite(numericId)
-        .then(setFavorited)
-        .catch(() => {});
-      // 2. Revalidate in the background when we served the cached copy, so a
-      // stale cache (community averages, reality, per-step minutes) never
-      // pins this screen forever — the fresh copy swaps in when it lands.
-      // Only the LATEST loadRecipe may commit (request-id guard).
-      if (servedFromCache) {
-        getRecipe(id)
-          .then((fetched) => {
-            if (requestId !== loadRequestIdRef.current) return;
-            upsertRecipes([fetched], { withSteps: true }).catch(() => {});
-            setRecipe(fetched);
-          })
-          .catch((error) => {
-            // Offline: the cached copy stays — it's already on screen.
-            console.warn("[RecipeReal] detail revalidation failed:", error);
-          });
+      // 2. Load the live copy and swap it in behind the request-id guard.
+      // From a cache paint this is a background revalidation (a stale cache
+      // never pins the screen); from a cold miss it is the primary load.
+      // Self-heal: whenever the fetched recipe carries steps, re-cache them
+      // so the step library repairs itself recipe by recipe.
+      try {
+        const fetched = await getRecipe(id);
+        if (fetched.recipe_steps?.length) {
+          upsertRecipes([fetched], { withSteps: true }).catch(() => {});
+        }
+        if (requestId !== loadRequestIdRef.current) return;
+        setRecipe(fetched);
+        setStepsPending(false);
+        if (!paintedFromCache) {
+          setState("ready");
+          track("recipe_viewed", { recipe_id: fetched.id });
+          isFavorite(numericId)
+            .then(setFavorited)
+            .catch(() => {});
+        }
+      } catch (error) {
+        if (!paintedFromCache) throw error;
+        if (requestId === loadRequestIdRef.current) {
+          // Offline: the cached copy stays on screen; the placeholder makes
+          // way for the plain-text steps when the row carries any.
+          setStepsPending(false);
+        }
+        console.warn("[RecipeReal] detail revalidation failed:", error);
       }
     } catch (error) {
       console.warn("[RecipeReal] loadRecipe failed:", error);
@@ -1228,6 +1234,7 @@ export default function RecipeDetailScreen() {
       try {
         await saveNote(Number(id), note);
         setSavedNote(note);
+        setNoteSaveError(null);
         track("note_saved", { recipe_id: Number(id) });
         setNoteJustSaved(true);
         if (noteSavedTimerRef.current) clearTimeout(noteSavedTimerRef.current);
@@ -1238,10 +1245,11 @@ export default function RecipeDetailScreen() {
           await postPublicNote(note);
         }
       } catch {
-        // Notes are best-effort; never crash the detail screen.
+        // Local save failed — surface it instead of failing silently.
+        setNoteSaveError(t("detail.noteSaveFailed"));
       }
     },
-    [id, note, notePublic, postPublicNote],
+    [id, note, notePublic, postPublicNote, t],
   );
 
   /**
@@ -1400,7 +1408,10 @@ export default function RecipeDetailScreen() {
   const realityChip =
     realityGap != null ? realityBadge(t, realityGap) : null;
 
-  const steps: RecipeStep[] = recipe?.recipe_steps ?? [];
+  // Memoized so the timeline memo below (and any other consumer) gets a
+  // stable identity — the `?? []` fallback would otherwise allocate a fresh
+  // array every render and defeat downstream memoization.
+  const steps: RecipeStep[] = useMemo(() => recipe?.recipe_steps ?? [], [recipe]);
 
   // Localized ingredient text list, paired by index with the structured rows.
   const ingredientLines = recipe ? lr.ingredients(recipe) : [];
@@ -1418,88 +1429,109 @@ export default function RecipeDetailScreen() {
     ingredientLines.length > 0 &&
     structuredIngredients.length === ingredientLines.length;
 
-  // Build a step_type -> multiplier map and compute the personalized estimate.
-  const paceMap = new Map<string, number>();
-  for (const c of calibrations) paceMap.set(c.step_type, c.multiplier);
-
-  /**
-   * Personalized total: sum each non-cleanup step's community minutes scaled
-   * by its multiplier, plus the recipe-level cleanup_avg scaled if a cleanup
-   * calibration exists. Falls back to the raw community value (multiplier 1)
-   * when no calibration is present.
-   */
-  let personalTotal: number | null = null;
-  if (calibrations.length > 0 && recipe) {
-    let sum = 0;
-    let hasAny = false;
-    for (const step of steps) {
-      if (step.step_type === "cleanup") continue;
-      // Per-step publisher fallback: a missing community figure alone must
-      // not drop the step from the personalized estimate.
-      const stepM = stepMinutes(step);
-      if (stepM == null) continue;
-      const mult = paceMap.get(step.step_type) ?? 1;
-      sum += stepM * mult;
-      hasAny = true;
-    }
-    if (recipe.cleanup_avg_minutes != null) {
-      const cleanupMult = paceMap.get("cleanup");
-      sum += recipe.cleanup_avg_minutes * (cleanupMult ?? 1);
-      hasAny = true;
-    }
-    if (hasAny) personalTotal = Math.round(sum);
-  }
-
-  /** Adjusted minutes for a single step (null when no calibration applies). */
-  function adjustedForStep(step: RecipeStep): number | null {
-    if (step.community_minutes == null) return null;
-    const mult = paceMap.get(step.step_type);
-    if (mult == null || mult === 1) return null;
-    return Math.round(step.community_minutes * mult);
-  }
-
-  // Timeline: cooking steps only — cleanup is quoted separately (you eat first).
-  // The distribution below runs over THESE steps so the walked clock adds back
-  // up to the recipe's stated total by construction.
-  const timelineSteps = steps.filter((s) => s.step_type !== "cleanup");
-
-  /**
-   * Effective minutes used by the "When's dinner ready?" timeline: the
-   * pace-adjusted value when a calibration applies, else the step's own
-   * community/publisher figure, else its word-weighted share of the recipe
-   * total (never a flat 3-minute guess unless the recipe has no total at all).
-   */
-  function minutesForStep(step: RecipeStep): number {
-    return adjustedForStep(step) ?? estimateStepMinutes(step, recipe, timelineSteps);
-  }
   // Anchor the clock walk once per recipe (not per render) so re-renders —
   // heart toggles, quick-time keystrokes — never shift the displayed times.
   const timelineStart = useMemo(() => Date.now(), [recipe?.id, steps.length]);
-  // Walk the cooking steps into (step, minutes) pairs once; the absolute
-  // clock times are stamped from the anchor below so flipping between
-  // "start now" and "eating at" modes reanchors without re-walking.
-  const timelineBase: { step: RecipeStep; minutes: number }[] = [];
-  let totalTimelineMs = 0;
-  for (const step of timelineSteps) {
-    const minutes = minutesForStep(step);
-    timelineBase.push({ step, minutes });
-    totalTimelineMs += minutes * 60000;
-  }
-  // Planner anchor: eat-at mode walks BACK from the chosen eat time
-  // (start = eatAt − total); now-mode anchors at the fixed load moment.
-  const anchorMs =
-    planEatAt != null ? planEatAt - totalTimelineMs : timelineStart;
-  const timelineRows: { step: RecipeStep; at: Date; minutes: number }[] = [];
-  let offsetMs = 0;
-  for (const { step, minutes } of timelineBase) {
-    timelineRows.push({ step, minutes, at: new Date(anchorMs + offsetMs) });
-    offsetMs += minutes * 60000;
-  }
-  // Eat time ("Start now" target or the planner's choice) and the matching
-  // "start by" moment — cleanup is intentionally excluded (you eat first).
-  const eatAtMs = anchorMs + totalTimelineMs;
-  const eatAt = new Date(eatAtMs);
-  const startBy = new Date(anchorMs);
+
+  /**
+   * Everything derived from the pace calibrations + the step list: the
+   * multiplier map, the personalized total and the walked timeline. Computed
+   * in ONE memo so quick-time keystrokes / heart toggles (unrelated state)
+   * never re-walk the steps or rebuild the map on every render.
+   */
+  const {
+    personalTotal,
+    adjustedForStep,
+    timelineRows,
+    eatAtMs,
+    eatAt,
+    startBy,
+  } = useMemo(() => {
+    // Build a step_type -> multiplier map.
+    const paceMap = new Map<string, number>();
+    for (const c of calibrations) paceMap.set(c.step_type, c.multiplier);
+
+    /**
+     * Personalized total: sum each non-cleanup step's community minutes scaled
+     * by its multiplier, plus the recipe-level cleanup_avg scaled if a cleanup
+     * calibration exists. Falls back to the raw community value (multiplier 1)
+     * when no calibration is present.
+     */
+    let personalizedTotal: number | null = null;
+    if (calibrations.length > 0 && recipe) {
+      let sum = 0;
+      let hasAny = false;
+      for (const step of steps) {
+        if (step.step_type === "cleanup") continue;
+        // Per-step publisher fallback: a missing community figure alone must
+        // not drop the step from the personalized estimate.
+        const stepM = stepMinutes(step);
+        if (stepM == null) continue;
+        const mult = paceMap.get(step.step_type) ?? 1;
+        sum += stepM * mult;
+        hasAny = true;
+      }
+      if (recipe.cleanup_avg_minutes != null) {
+        const cleanupMult = paceMap.get("cleanup");
+        sum += recipe.cleanup_avg_minutes * (cleanupMult ?? 1);
+        hasAny = true;
+      }
+      if (hasAny) personalizedTotal = Math.round(sum);
+    }
+
+    /** Adjusted minutes for a single step (null when no calibration applies). */
+    const adjustFor = (step: RecipeStep): number | null => {
+      if (step.community_minutes == null) return null;
+      const mult = paceMap.get(step.step_type);
+      if (mult == null || mult === 1) return null;
+      return Math.round(step.community_minutes * mult);
+    };
+
+    // Timeline: cooking steps only — cleanup is quoted separately (you eat
+    // first). The distribution runs over THESE steps so the walked clock adds
+    // back up to the recipe's stated total by construction.
+    const timelineSteps = steps.filter((s) => s.step_type !== "cleanup");
+
+    /**
+     * Effective minutes used by the "When's dinner ready?" timeline: the
+     * pace-adjusted value when a calibration applies, else the step's own
+     * community/publisher figure, else its word-weighted share of the recipe
+     * total (never a flat 3-minute guess unless the recipe has no total).
+     */
+    const minutesForStep = (step: RecipeStep): number =>
+      adjustFor(step) ?? estimateStepMinutes(step, recipe, timelineSteps);
+
+    // Walk the cooking steps into (step, minutes) pairs; the absolute clock
+    // times are stamped from the anchor below so flipping between "start now"
+    // and "eating at" modes reanchors without re-walking.
+    const base: { step: RecipeStep; minutes: number }[] = [];
+    let totalMs = 0;
+    for (const step of timelineSteps) {
+      const minutes = minutesForStep(step);
+      base.push({ step, minutes });
+      totalMs += minutes * 60000;
+    }
+    // Planner anchor: eat-at mode walks BACK from the chosen eat time
+    // (start = eatAt − total); now-mode anchors at the fixed load moment.
+    const anchor =
+      planEatAt != null ? planEatAt - totalMs : timelineStart;
+    const rows: { step: RecipeStep; at: Date; minutes: number }[] = [];
+    let offset = 0;
+    for (const { step, minutes } of base) {
+      rows.push({ step, minutes, at: new Date(anchor + offset) });
+      offset += minutes * 60000;
+    }
+    // Eat time ("Start now" target or the planner's choice) and the matching
+    // "start by" moment — cleanup is intentionally excluded (you eat first).
+    return {
+      personalTotal: personalizedTotal,
+      adjustedForStep: adjustFor,
+      timelineRows: rows,
+      eatAtMs: anchor + totalMs,
+      eatAt: new Date(anchor + totalMs),
+      startBy: new Date(anchor),
+    };
+  }, [calibrations, recipe, steps, planEatAt, timelineStart]);
 
   /**
    * Shift the target eat time by ±15-minute steps, entering eat-at mode (the
@@ -1872,6 +1904,7 @@ export default function RecipeDetailScreen() {
                 ]}
                 onPress={() => router.back()}
                 hitSlop={Space.sm}
+                accessibilityLabel={t("detail.backA11y")}
               >
                 <Text style={styles.backGlyph}>{dir === "rtl" ? "›" : "‹"}</Text>
               </IconPressable>
@@ -1884,6 +1917,11 @@ export default function RecipeDetailScreen() {
                 ]}
                 onPress={onToggleFavorite}
                 hitSlop={Space.sm}
+                accessibilityLabel={
+                  favorited
+                    ? t("detail.favoriteRemoveA11y")
+                    : t("detail.favoriteAddA11y")
+                }
               >
                 <Ionicons
                   name={favorited ? "heart" : "heart-outline"}
@@ -2164,13 +2202,33 @@ export default function RecipeDetailScreen() {
                       })}
                     </View>
                   </View>
+                ) : stepsPending ? (
+                  // Light cached row: the fresh copy (with structured steps)
+                  // is still loading — hold the section's place with a
+                  // compact, text-free placeholder instead of nothing.
+                  <View style={styles.section}>
+                    <SectionHeader title={t("detail.timelineTitle")} />
+                    <View style={styles.timelinePending}>
+                      <ActivityIndicator size="small" color={colors.timing} />
+                      {Array.from({ length: TIMELINE_PLACEHOLDER_ROWS }, (_, i) => (
+                        <View key={`tl-skel-${i}`} style={styles.timelineSkelRow}>
+                          <View style={styles.timelineSkelDot} />
+                          <View style={styles.timelineSkelLine} />
+                        </View>
+                      ))}
+                    </View>
+                  </View>
                 ) : null}
 
 
                 {/* 4. STEPS (fallback) — only for recipes without structured
                     recipe_steps: plain numbered list. Structured recipes get
-                    their full steps inside the timeline above. */}
-                {steps.length === 0 && lr.steps(recipe).length > 0 ? (
+                    their full steps inside the timeline above. Suppressed
+                    while the placeholder holds (the pending copy carries the
+                    same steps the timeline will render). */}
+                {steps.length === 0 &&
+                !stepsPending &&
+                lr.steps(recipe).length > 0 ? (
                   <View style={styles.section}>
                     <SectionHeader title={t("detail.steps")} />
                     <View style={styles.stepList}>
@@ -2233,9 +2291,11 @@ export default function RecipeDetailScreen() {
                         ]}
                         numberOfLines={1}
                       >
-                        {t("quick.thanksBreakdown", {
-                          time: fmtMin(quickAvg ?? quickTotalValue ?? 0),
-                        })}
+                        {quickAvg != null
+                          ? t("quick.thanksBreakdown", { time: fmtMin(quickAvg) })
+                          : // No server average (offline / sparse data): thank the
+                            // user WITHOUT dressing their own input up as an average.
+                            t("quick.thanksOwnTime")}
                         {quickCleanupAvg != null
                           ? ` · ${t("quick.thanksCleanup", {
                               cleanup: fmtMin(quickCleanupAvg),
@@ -2338,7 +2398,10 @@ export default function RecipeDetailScreen() {
                         <TextInput
                           style={styles.noteInput}
                           value={note}
-                          onChangeText={setNote}
+                          onChangeText={(text) => {
+                            setNote(text);
+                            if (noteSaveError) setNoteSaveError(null);
+                          }}
                           placeholder={t("detail.notesPlaceholder")}
                           placeholderTextColor={colors.inkFaint}
                           multiline
@@ -2359,6 +2422,9 @@ export default function RecipeDetailScreen() {
                             </Text>
                           ) : null}
                         </View>
+                        {noteSaveError ? (
+                          <Text style={styles.noteError}>{noteSaveError}</Text>
+                        ) : null}
                         {/* "Make public": flipping it on with text present
                             publishes the note immediately (save + community
                             post, no separate Save press); with no text the
@@ -2608,7 +2674,9 @@ export default function RecipeDetailScreen() {
         </View>
       </ScrollView>
 
-      {/* Pinned footer: Cook Mode button stays visible regardless of scroll. */}
+      {/* Pinned footer: Cook Mode button stays visible regardless of scroll.
+          Disabled (dimmed, no-press) while the loaded recipe has no
+          structured steps yet — Cook Mode walks the step list. */}
       {ready && (
         <View
           style={[
@@ -2621,6 +2689,7 @@ export default function RecipeDetailScreen() {
             size="lg"
             fullWidth
             title={t("detail.startCookMode")}
+            disabled={steps.length === 0}
             onPress={() => router.push(`/cook/${id}`)}
           />
         </View>

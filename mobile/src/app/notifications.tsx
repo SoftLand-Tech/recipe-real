@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -182,6 +183,8 @@ export default function NotificationsScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [markingAll, setMarkingAll] = useState(false);
+  /** True when the latest load-more attempt failed (footer retry affordance). */
+  const [loadMoreFailed, setLoadMoreFailed] = useState(false);
 
   // Mirror of `items` readable inside async closures without re-creating them.
   const itemsRef = useRef<NotificationRow[]>([]);
@@ -191,7 +194,10 @@ export default function NotificationsScreen() {
 
   /** Fetch one inbox page: page 1 replaces the list, later pages append. */
   const loadPage = useCallback(async (targetPage: number) => {
-    if (targetPage > 1) setLoadingMore(true);
+    if (targetPage > 1) {
+      setLoadingMore(true);
+      setLoadMoreFailed(false);
+    }
     try {
       const result = await fetchNotifications(targetPage);
       setItems((prev) =>
@@ -214,6 +220,11 @@ export default function NotificationsScreen() {
       } else if (targetPage === 1) {
         console.warn("[RecipeReal] notifications load failed:", error);
         if (itemsRef.current.length === 0) setState("error");
+      } else {
+        // Load-more failure: surface a footer retry instead of silently
+        // keeping hasMore=true (which would loop doomed fetches).
+        console.warn("[RecipeReal] notifications load-more failed:", error);
+        setLoadMoreFailed(true);
       }
     } finally {
       setLoadingMore(false);
@@ -239,7 +250,8 @@ export default function NotificationsScreen() {
 
   /**
    * Row tap: mark exactly that notification read (optimistic, fire-and-forget
-   * server call) and open the post when it still exists.
+   * server call) and open the post when it still exists. Deleted posts get
+   * explicit feedback instead of a silent no-op.
    */
   const handleOpen = useCallback((row: NotificationRow) => {
     if (row.read_at == null) {
@@ -252,8 +264,13 @@ export default function NotificationsScreen() {
         // Non-fatal: a later "mark all" or re-open retries it.
       });
     }
-    if (row.post != null) router.push(`/post/${row.post.id}`);
-  }, []);
+    if (row.post != null) {
+      router.push(`/post/${row.post.id}`);
+    } else {
+      // The underlying post was deleted — say so instead of doing nothing.
+      Alert.alert(t("community.detailLoadFailed"));
+    }
+  }, [t]);
 
   /** "Mark all read": stamp everything locally, then sync best-effort. */
   const handleMarkAll = useCallback(async () => {
@@ -383,6 +400,14 @@ export default function NotificationsScreen() {
           loadingMore ? (
             <View style={styles.footer}>
               <ActivityIndicator color={colors.accent} size="small" />
+            </View>
+          ) : loadMoreFailed ? (
+            <View style={styles.footer}>
+              <Button
+                title={t("common.retry")}
+                variant="ghost"
+                onPress={() => void loadPage(page + 1)}
+              />
             </View>
           ) : null
         }

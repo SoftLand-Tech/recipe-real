@@ -33,19 +33,64 @@ export const http: AxiosInstance = axios.create({
  */
 let cooldownUntil = 0;
 
+/**
+ * In-memory mirror of the SecureStore auth token. `undefined` = never read:
+ * the first getAuthToken() hits the keystore exactly once and the result is
+ * memoized (including the null/no-token case), so the per-request
+ * interceptor and hasToken() stop paying a keystore read on every call.
+ * Kept in sync by setAuthTokenCache() whenever the token is written or
+ * cleared. A SecureStore FAILURE is NOT memoized — it propagates like the
+ * old raw read did, and the next call retries the keystore.
+ */
+let authToken: string | null | undefined;
+
+/** The bearer token, read from SecureStore at most once per session. */
+export async function getAuthToken(): Promise<string | null> {
+  if (authToken === undefined) {
+    authToken = await SecureStore.getItemAsync(AUTH_TOKEN_KEY);
+  }
+  return authToken;
+}
+
+/** Update (or clear) the in-memory token mirror after a keystore write. */
+export function setAuthTokenCache(token: string | null): void {
+  authToken = token;
+}
+
 /** Attach the bearer token from SecureStore to every request, if present. */
 http.interceptors.request.use(async (config) => {
   const now = Date.now();
   if (now < cooldownUntil) {
     await new Promise((resolve) => setTimeout(resolve, cooldownUntil - now));
   }
-  const token = await SecureStore.getItemAsync(AUTH_TOKEN_KEY);
+  const token = await getAuthToken();
   if (token) {
     config.headers = config.headers ?? {};
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
+
+/**
+ * Scrub credential material from an axios error before it propagates:
+ * callers routinely log caught errors (`console.warn(..., error)`), and a
+ * serialized AxiosError carries the FULL request config — including the
+ * live bearer token in `config.headers.Authorization` and the complete
+ * URL with any query params. Stripping them here makes every existing log
+ * site safe without touching its call sites. Mutates in place and returns
+ * the error for convenient pass-through.
+ */
+function scrubError<T>(error: T): T {
+  if (!axios.isAxiosError(error)) return error;
+  const config = error.config as
+    | { headers?: Record<string, unknown>; url?: string }
+    | undefined;
+  if (config?.headers) {
+    delete config.headers.Authorization;
+    delete config.headers.authorization;
+  }
+  return error;
+}
 
 /**
  * On a 401 response, clear the stored auth token (it is no longer valid).
@@ -62,6 +107,9 @@ http.interceptors.response.use(
       } catch {
         // Swallow: don't let a failed clear mask the original 401.
       }
+      // The token is dead either way — reset the in-memory mirror too so
+      // subsequent requests don't re-attach it.
+      setAuthTokenCache(null);
     }
     if (error?.response?.status === 429) {
       // Honor the server's Retry-After when present (Laravel sends seconds),
@@ -72,7 +120,7 @@ http.interceptors.response.use(
         : 20_000;
       cooldownUntil = Math.max(cooldownUntil, Date.now() + waitMs);
     }
-    return Promise.reject(error);
+    return Promise.reject(scrubError(error));
   },
 );
 

@@ -32,6 +32,7 @@ import {
   togglePostLike,
 } from "@/api/client";
 import { shareLink } from "@/utils/share";
+import { setPostPreview } from "@/utils/postPreview";
 import { track } from "@/analytics";
 import { WEB_BASE_URL } from "@/config";
 import type { Post, PostRecipe, PostSort } from "@/types";
@@ -59,6 +60,34 @@ type FeedSort = PostSort;
  * the Community tab reopens the way the user left it.
  */
 const SORT_PREF_KEY = "recipereal.communitySort";
+
+/**
+ * AsyncStorage mirror of the last successful feed page-1 (Home's
+ * `recipereal.homeRails` pattern): painted instantly on a cold mount while
+ * the normal network refresh revalidates behind it. The `sort` field keeps
+ * one ordering's rows from ever painting under another chip. Cleared on
+ * sign-out (account-scoped) by the api client.
+ */
+const COMMUNITY_FEED_KEY = "recipereal.communityFeed";
+
+/** Envelope stored under COMMUNITY_FEED_KEY. */
+interface CachedCommunityFeed {
+  sort: FeedSort;
+  posts: Post[];
+}
+
+/**
+ * Focus-refetch throttle window: the silent feed refetch on tab focus is
+ * skipped while the last SUCCESSFUL page-1 refresh is younger than this.
+ */
+const FEED_REFETCH_THROTTLE_MS = 60_000;
+
+/**
+ * Module-level stamp of the last successful page-1 feed refresh (survives
+ * tab remounts, resets naturally on app restart). Profile + notifications
+ * focus refreshes are deliberately NOT throttled.
+ */
+let lastFeedRefreshAt = 0;
 
 /**
  * Static style for the hidden measurement Text used by the read-more body.
@@ -445,7 +474,14 @@ const PostCard = memo(function PostCard({
             only reports clamped lines when numberOfLines is set, so we measure
             separately). The hidden Text has height:0 and pointerEvents="none"
             so it is invisible and non-interactive. */}
-        <IconPressable onPress={() => router.push(`/post/${post.id}`)}>
+        <IconPressable
+          onPress={() => {
+            // Pass the feed's full Post to the detail screen for an instant
+            // paint; the detail revalidates from the network behind it.
+            setPostPreview(post);
+            router.push(`/post/${post.id}`);
+          }}
+        >
           {/* Hidden measurement text — no numberOfLines, no height */}
           <Text
             style={[styles.body, measureStyle]}
@@ -804,6 +840,21 @@ export default function CommunityScreen() {
         setPage(targetPage);
         setHasMore(result.hasMore);
         setState("ready");
+        if (targetPage === 1) {
+          // Successful page-1 refresh: stamp the focus throttle and refresh
+          // the AsyncStorage mirror so the next cold mount paints instantly
+          // (homeRails pattern). Best-effort on the write.
+          lastFeedRefreshAt = Date.now();
+          AsyncStorage.setItem(
+            COMMUNITY_FEED_KEY,
+            JSON.stringify({
+              sort: activeSort,
+              posts: result.posts,
+            } satisfies CachedCommunityFeed),
+          ).catch(() => {
+            // Mirror is best-effort.
+          });
+        }
       } catch (error) {
         if (feedKeyRef.current !== feedKey) return;
         console.warn("[RecipeReal] community feed load failed:", error);
@@ -829,6 +880,34 @@ export default function CommunityScreen() {
       const initial: FeedSort = (stored === "trending" || stored === "suggested") ? (stored as FeedSort) : "suggested";
       sortRef.current = initial;
       setSort(initial);
+      // Instant paint from the feed mirror (homeRails pattern): only on a
+      // cold mount with nothing on screen, and only when signed in — the
+      // normal refresh right after revalidates. The envelope's sort guards
+      // against painting one ordering's rows under another chip.
+      if (postsRef.current.length === 0) {
+        try {
+          const ok = await hasToken();
+          if (!cancelled && ok) {
+            const raw = await AsyncStorage.getItem(COMMUNITY_FEED_KEY);
+            if (!cancelled && postsRef.current.length === 0 && raw) {
+              const parsed = JSON.parse(raw) as Partial<CachedCommunityFeed>;
+              const mirrored = Array.isArray(parsed?.posts) ? parsed.posts : [];
+              if (
+                mirrored.length > 0 &&
+                (parsed.sort == null || parsed.sort === initial)
+              ) {
+                // Update the ref too so the fetch below stays SILENT — it
+                // only flips to "loading" when the visible feed is empty.
+                postsRef.current = mirrored;
+                setPosts(mirrored);
+                setState("ready");
+              }
+            }
+          }
+        } catch {
+          // Corrupt/unreadable mirror — ignore; the fetch is authoritative.
+        }
+      }
       void fetchPage(1, initial);
     })();
     return () => {
@@ -877,8 +956,14 @@ export default function CommunityScreen() {
           setUnreadCount(0);
         }
       })();
-      // Silent feed refresh on re-focus.
-      void fetchPage(1);
+      // Silent feed refresh on re-focus — throttled: when the last
+      // SUCCESSFUL page-1 refresh is under a minute old, the feed is fresh
+      // enough and the refetch is skipped (the profile + notifications
+      // refreshes above still run on every focus). Pull-to-refresh and sort
+      // switches bypass the throttle by design.
+      if (Date.now() - lastFeedRefreshAt >= FEED_REFETCH_THROTTLE_MS) {
+        void fetchPage(1);
+      }
       return () => {
         cancelled = true;
       };

@@ -17,6 +17,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import "@/global.css";
 import { track } from "@/analytics";
+import { AnimatedSplash } from "@/components/AnimatedSplash";
 import { initDatabase } from "@/db/database";
 import { useLang, useT } from "@/i18n";
 import {
@@ -27,9 +28,10 @@ import {
   useThemePrefs,
 } from "@/theme";
 
-// Hold the native splash until the persisted language preference has been
-// read and the RTL flags applied — otherwise the app boots in the wrong
-// direction for a frame and a SECOND reload is needed to fix the layout.
+// Hold the native (plain canvas) splash until the AnimatedSplash overlay is
+// laid out — it opens on the same canvas color, plays the reveal sequence,
+// and is the ONLY caller of hideAsync(). Without this, the app would flash
+// before the overlay's first paint.
 void SplashScreen.preventAutoHideAsync().catch(() => {
   // Already prevented or unavailable (dev web) — fine.
 });
@@ -42,8 +44,8 @@ void SplashScreen.preventAutoHideAsync().catch(() => {
  */
 export default function RootLayout() {
   useEffect(() => {
-    // Apply the stored language's RTL flags BEFORE revealing the UI, then
-    // release the splash. The provider's own state load covers strings.
+    // Apply the stored language's RTL flags while the splash overlay still
+    // covers the UI — the provider's own state load covers strings.
     (async () => {
       try {
         const stored = await AsyncStorage.getItem(LANG_STORAGE_KEY);
@@ -52,13 +54,6 @@ export default function RootLayout() {
         I18nManager.forceRTL(isAr);
       } catch {
         // Preference unreadable — boot as-is.
-      } finally {
-        // Give the provider one tick to commit its loaded state, then show.
-        setTimeout(() => {
-          SplashScreen.hideAsync().catch(() => {
-            // Splash already hidden — fine.
-          });
-        }, 80);
       }
     })();
     initDatabase().catch((error) => {
@@ -73,6 +68,12 @@ export default function RootLayout() {
     <ThemePrefProvider>
       <RtlDirection />
       <NavigationFrame />
+      {/*
+        Animated splash reveal, above everything. Mirrors the native splash's
+        first frame, plays the lines → splash → logo sequence, fades out and
+        unmounts itself once per cold start.
+      */}
+      <AnimatedSplash />
     </ThemePrefProvider>
   );
 }
@@ -225,6 +226,43 @@ function NavigationFrame() {
           <Stack.Screen
             name="notifications"
             options={{ title: t("notif.title"), headerShown: false }}
+          />
+          {/*
+            Public profile of another user (avatar, bio, follow button,
+            counters). Renders its own PinnedHeaderBar — the native header
+            is hidden. Declared explicitly so expo-router doesn't auto-mount
+            a default native header above the custom one.
+          */}
+          <Stack.Screen
+            name="user/[id]"
+            options={{ headerShown: false }}
+          />
+          {/* Followers/Following list — own pinned header, native off. */}
+          <Stack.Screen
+            name="follow-list"
+            options={{ headerShown: false }}
+          />
+          {/*
+            Deep-link bridges (/r/:id, /p/:id): instant redirects with no
+            chrome at all.
+          */}
+          <Stack.Screen name="r/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="p/[id]" options={{ headerShown: false }} />
+          {/* Catch-all 404: silent bounce home, no chrome. */}
+          <Stack.Screen name="+not-found" options={{ headerShown: false }} />
+          {/*
+            First-sign-in onboarding: complete profile details (name,
+            gender, photo, bio) before continuing into the app.
+          */}
+          <Stack.Screen
+            name="onboarding"
+            options={{
+              title: t("stack.onboarding"),
+              headerShown: true,
+              headerStyle: { backgroundColor: colors.canvas },
+              headerTintColor: colors.ink,
+              headerBackVisible: false,
+            }}
           />
         </Stack>
       </SafeAreaProvider>

@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -10,13 +10,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import { openBrowserAsync } from "expo-web-browser";
 
-import {
-  createCheckout,
-  hasToken,
-  openBillingPortal,
-} from "@/api/client";
+import { hasToken, openBillingPortal } from "@/api/client";
 import { track } from "@/analytics";
-import type { BillingPlan } from "@/types";
 import { useT } from "@/i18n";
 import {
   MaxContentWidth,
@@ -26,8 +21,14 @@ import {
 } from "@/theme";
 import { Button, Card, Chip } from "@/components/ui";
 
+/**
+ * Plan rows are DISPLAY-ONLY while billing is "coming soon": prices are
+ * hardcoded here and the subscribe buttons render disabled with no press
+ * handler. When billing ships, wire each row's button to createCheckout()
+ * (see the git history of this file for the previous flow).
+ */
 const PLANS: {
-  plan: BillingPlan;
+  plan: "monthly" | "yearly";
   price: string;
   cadenceKey: string;
   noteKey?: string;
@@ -51,9 +52,11 @@ export default function UpgradeScreen() {
   const t = useT();
 
   const [authed, setAuthed] = useState<boolean | null>(null);
-  const [pendingPlan, setPendingPlan] = useState<BillingPlan | null>(null);
   const [portalPending, setPortalPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Once-only guard for the upgrade_viewed analytics event (fires after the
+  // auth state resolved, not on the spinner frame).
+  const viewedTrackedRef = useRef(false);
 
   const styles = useMemo(
     () =>
@@ -127,43 +130,25 @@ export default function UpgradeScreen() {
   );
 
   // Re-check auth whenever the screen gains focus, so this refreshes after
-  // returning from /login.
+  // returning from /login. The view event fires once, after auth resolved.
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       (async () => {
         const ok = await hasToken();
-        if (!cancelled) setAuthed(ok);
+        if (!cancelled) {
+          setAuthed(ok);
+          if (!viewedTrackedRef.current) {
+            viewedTrackedRef.current = true;
+            track("upgrade_viewed");
+          }
+        }
       })();
       return () => {
         cancelled = true;
       };
     }, []),
   );
-
-  // Fire-and-forget analytics: upgrade screen viewed.
-  useEffect(() => {
-    track("upgrade_viewed");
-  }, []);
-
-  async function handleSubscribe(plan: BillingPlan) {
-    setError(null);
-    setPendingPlan(plan);
-    try {
-      const url = await createCheckout(plan);
-      if (url) {
-        // Fire-and-forget analytics right before opening the checkout browser.
-        track("upgrade_checkout_opened", { plan });
-        await openBrowserAsync(url);
-      }
-    } catch (e) {
-      // 503 = billing not configured on the backend; anything else is still a
-      // "can't reach checkout right now" state for the user.
-      setError(t("upgrade.errBilling"));
-    } finally {
-      setPendingPlan(null);
-    }
-  }
 
   async function handleManage() {
     setError(null);
@@ -172,6 +157,10 @@ export default function UpgradeScreen() {
       const url = await openBillingPortal();
       if (url) {
         await openBrowserAsync(url);
+      } else {
+        // Portal reachable but returned no URL — surface it instead of
+        // silently doing nothing.
+        setError(t("upgrade.errPortal"));
       }
     } catch {
       // Best-effort: don't block the user on portal failures.
@@ -217,7 +206,6 @@ export default function UpgradeScreen() {
           <View style={styles.plans}>
             <Chip label={t("upgrade.comingSoon")} tone="amber" />
             {PLANS.map(({ plan, price, cadenceKey, noteKey }) => {
-              const busy = pendingPlan === plan;
               return (
                 <Card key={plan} style={styles.planCard}>
                   <View style={styles.planHeader}>
@@ -234,14 +222,13 @@ export default function UpgradeScreen() {
                     {price}
                     <Text style={styles.planCadence}> {t(cadenceKey)}</Text>
                   </Text>
+                  {/* Display-only while billing is coming soon — no handler. */}
                   <Button
                     title={t("upgrade.subscribe")}
                     variant="primary"
                     size="lg"
                     fullWidth
-                    loading={busy}
                     disabled
-                    onPress={() => handleSubscribe(plan)}
                   />
                 </Card>
               );

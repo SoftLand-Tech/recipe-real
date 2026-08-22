@@ -553,4 +553,51 @@ export const en: Record<string, string> = {
   "notif.bellA11y": "Notifications",
   "notif.unreadA11y": "{n} unread",
   "profile.actionA11y": "Profile",
+
+  // ---- Onboarding ----------------------------------------------------------
+  "stack.onboarding": "Complete your profile",
+  "onboarding.welcome": "Welcome to RecipeReal!",
+  "onboarding.subtitle": "Tell the community a little about yourself.",
+  "onboarding.nameLabel": "Display name",
+  "onboarding.genderLabel": "Gender",
+  "onboarding.male": "Male",
+  "onboarding.female": "Female",
+  "onboarding.continue": "Continue",
+  "onboarding.saving": "Saving…",
+  "onboarding.skip": "Skip for now",
+  "onboarding.errNameLength": "Display name must be 2–40 characters.",
+  "onboarding.errSave": "Couldn't save your profile. Please try again.",
+  "onboarding.photoA11y": "Profile photo",
+
+  // ---- Post detail actions (row labels) ------------------------------------
+  "community.likeAction": "Like",
+  "community.commentAction": "Comment",
+  "community.shareAction": "Share",
+  "community.editAction": "Edit",
+  "community.deleteAction": "Delete",
+  "community.reportAction": "Report",
+  "community.oneComment": "1 comment",
+  "community.nComments": "{n} comments",
+
+  // ---- Follow list -----------------------------------------------------------
+  "followList.loadFailed": "Couldn't load this list.",
+
+  // ---- Recipe detail a11y + note errors --------------------------------------
+  "detail.backA11y": "Back",
+  "detail.favoriteAddA11y": "Add to favorites",
+  "detail.favoriteRemoveA11y": "Remove from favorites",
+  "quick.thanksOwnTime": "Thanks! Your time was recorded.",
+  "detail.noteSaveFailed": "Couldn't save your note on this device.",
+
+  // ---- Cook mode close confirm ------------------------------------------------
+  "cook.closeA11y": "Close cook mode",
+  "cook.discardTitle": "Leave cook mode?",
+  "cook.discardMessage": "Your stopwatch and step timings for this session will be lost.",
+  "cook.discardBtn": "Discard session",
+
+  // ---- Composer discard guards -------------------------------------------------
+  "composer.discardTitle": "Discard changes?",
+  "composer.discardRecipeMessage": "Your recipe won't be saved.",
+  "composer.discardPostMessage": "Your post won't be saved.",
+  "composer.discardBtn": "Discard",
 };

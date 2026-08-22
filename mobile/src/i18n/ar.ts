@@ -545,4 +545,51 @@ export const ar: Record<string, string> = {
   "notif.bellA11y": "الإشعارات",
   "notif.unreadA11y": "{n} غير مقروء",
   "profile.actionA11y": "الملف الشخصي",
+
+  // ---- التهيئة ------------------------------------------------------------------
+  "stack.onboarding": "أكمل ملفك الشخصي",
+  "onboarding.welcome": "مرحبًا بك في RecipeReal!",
+  "onboarding.subtitle": "عرّف المجتمع بنفسك قليلًا.",
+  "onboarding.nameLabel": "الاسم المعروض",
+  "onboarding.genderLabel": "الجنس",
+  "onboarding.male": "ذكر",
+  "onboarding.female": "أنثى",
+  "onboarding.continue": "متابعة",
+  "onboarding.saving": "جارٍ الحفظ…",
+  "onboarding.skip": "تخطَّ الآن",
+  "onboarding.errNameLength": "يجب أن يكون الاسم المعروض بين 2 و40 حرفًا.",
+  "onboarding.errSave": "تعذّر حفظ ملفك الشخصي. حاول مجددًا.",
+  "onboarding.photoA11y": "الصورة الشخصية",
+
+  // ---- أزرار تفاصيل المنشور ------------------------------------------------------
+  "community.likeAction": "إعجاب",
+  "community.commentAction": "تعليق",
+  "community.shareAction": "مشاركة",
+  "community.editAction": "تعديل",
+  "community.deleteAction": "حذف",
+  "community.reportAction": "إبلاغ",
+  "community.oneComment": "تعليق واحد",
+  "community.nComments": "{n} تعليقات",
+
+  // ---- قائمة المتابعات -----------------------------------------------------------
+  "followList.loadFailed": "تعذّر تحميل هذه القائمة.",
+
+  // ---- إمكانية الوصول وأخطاء ملاحظات الوصفة ----------------------------------------
+  "detail.backA11y": "رجوع",
+  "detail.favoriteAddA11y": "أضف إلى المفضلة",
+  "detail.favoriteRemoveA11y": "أزل من المفضلة",
+  "quick.thanksOwnTime": "شكرًا! تم تسجيل وقتك.",
+  "detail.noteSaveFailed": "تعذّر حفظ ملاحظتك على هذا الجهاز.",
+
+  // ---- تأكيد مغادرة وضع الطهي ------------------------------------------------------
+  "cook.closeA11y": "إغلاق وضع الطهي",
+  "cook.discardTitle": "المغادرة أثناء الطهي؟",
+  "cook.discardMessage": "ستفقد ساعة الإيقاف وتوقيتات الخطوات لهذه الجلسة.",
+  "cook.discardBtn": "تجاهل الجلسة",
+
+  // ---- تأكيد تجاهل المسودات ---------------------------------------------------------
+  "composer.discardTitle": "تجاهل التغييرات؟",
+  "composer.discardRecipeMessage": "لن يتم حفظ وصفتك.",
+  "composer.discardPostMessage": "لن يتم حفظ منشورك.",
+  "composer.discardBtn": "تجاهل",
 };

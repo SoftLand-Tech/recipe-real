@@ -2,6 +2,8 @@ import { useLocalSearchParams, router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  BackHandler,
   StyleSheet,
   Text,
   View,
@@ -772,9 +774,59 @@ export default function CookModeScreen() {
     [recipe, summary, t],
   );
 
+  /**
+   * Leave Cook Mode after finishing: pop back to the recipe detail that
+   * pushed this screen (it's still mounted right below in the stack).
+   * Falls back to a replace when there's no history (deep link) — never
+   * PUSH a duplicate detail on top.
+   */
   const finish = useCallback(() => {
-    router.push(`/recipe/${id}`);
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace(`/recipe/${id}`);
+    }
   }, [id]);
+
+  /**
+   * Close (✕ / back affordance). While a cook session is actually running
+   * or paused, ask before discarding — the stopwatch and per-step timings
+   * are lost otherwise. Idle (never started) and post-finish phases close
+   * immediately.
+   */
+  const requestClose = useCallback(() => {
+    const sessionActive =
+      phase === "cooking" && cookStartAt != null && status !== "finished";
+    if (!sessionActive) {
+      router.back();
+      return;
+    }
+    Alert.alert(
+      t("cook.discardTitle"),
+      t("cook.discardMessage"),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: t("cook.discardBtn"),
+          style: "destructive",
+          onPress: () => router.back(),
+        },
+      ],
+    );
+  }, [phase, cookStartAt, status, t]);
+
+  // Intercept the Android hardware/gesture back during an active session so
+  // the discard confirmation applies to it too (not just the ✕ button).
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (phase === "cooking" && cookStartAt != null) {
+        requestClose();
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [phase, cookStartAt, requestClose]);
 
   // ---- Render --------------------------------------------------------------
   if (loadState === "loading") {
@@ -824,7 +876,11 @@ export default function CookModeScreen() {
     return (
       <View style={[styles.fullScreen, { paddingTop: insets.top + Space.md }]}>
         <View style={styles.headerRow}>
-          <IconPressable onPress={() => router.back()} hitSlop={Space.md}>
+          <IconPressable
+            onPress={() => router.back()}
+            hitSlop={Space.md}
+            accessibilityLabel={t("cook.closeA11y")}
+          >
             <Text style={styles.closeGlyph}>✕</Text>
           </IconPressable>
         </View>
@@ -1013,7 +1069,11 @@ export default function CookModeScreen() {
       {/* Header — close ✕ + "STEP x / y" only (no recipe title: less on
           screen, the step is the focus). */}
       <View style={styles.headerRow}>
-        <IconPressable onPress={() => router.back()} hitSlop={Space.md}>
+        <IconPressable
+          onPress={requestClose}
+          hitSlop={Space.md}
+          accessibilityLabel={t("cook.closeA11y")}
+        >
           <Text style={styles.closeGlyph}>✕</Text>
         </IconPressable>
         <Text style={styles.overline}>

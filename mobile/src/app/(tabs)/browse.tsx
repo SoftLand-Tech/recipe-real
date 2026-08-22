@@ -44,12 +44,12 @@ import {
   getCachedRecipes,
   getFavoriteIds,
   getNotedRecipeIds,
-  refreshCacheLight,
   repairCachedStepsIfNeeded,
   seedCacheFirstPage,
   seedCacheRemainingPages,
   toggleFavorite,
 } from "@/db/database";
+import { maybeSweepCache } from "@/utils/cacheSweep";
 import type { Recipe, SearchParams } from "@/types";
 import { useLang, useLocalizedRecipe, useT } from "@/i18n";
 import {
@@ -985,9 +985,11 @@ export default function BrowseScreen() {
   }, [applyRecipes]);
 
   // Background refresh: light upsert (no step re-download) + reload from cache.
+  // The sweep runs through maybeSweepCache()'s single-flight/hourly guard so
+  // Home and Browse never fire duplicate multi-page sweeps at startup.
   const refreshInBackground = useCallback(async () => {
     try {
-      await refreshCacheLight();
+      await maybeSweepCache();
       applyRecipes(await getCachedRecipes());
     } catch (error) {
       // Background refresh failures are non-fatal.

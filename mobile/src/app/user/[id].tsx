@@ -3,21 +3,13 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { fetchPublicProfile, followUser, unfollowUser } from "@/api/client";
+import { fetchPublicProfile, followUser, hasToken, unfollowUser } from "@/api/client";
 import type { MyProfile } from "@/types";
-import { useT, useLang, type Lang, type TranslateFn } from "@/i18n";
+import { useT, useLang } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
+import { memberSince } from "@/utils/format";
 import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
 import { Avatar, Button, Card } from "@/components/ui";
-
-function memberSince(t: TranslateFn, lang: Lang, iso: string): string {
-  const then = Date.parse(iso);
-  if (!Number.isFinite(then)) return "";
-  try {
-    const date = new Date(then).toLocaleDateString(lang === "ar" ? "ar" : "en-US", { month: "long", year: "numeric" });
-    return t("profile.memberSince", { date });
-  } catch { return ""; }
-}
 
 export default function PublicProfileScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -29,6 +21,9 @@ export default function PublicProfileScreen() {
   const [profile, setProfile] = useState<MyProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [followBusy, setFollowBusy] = useState(false);
+  // Whether THIS visitor is signed in — signed-out users get a sign-in
+  // prompt instead of a follow button that silently 401s.
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
 
   const load = useCallback(async () => {
     if (!Number.isFinite(userId)) return;
@@ -40,19 +35,45 @@ export default function PublicProfileScreen() {
     setLoading(false);
   }, [userId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    let cancelled = false;
+    (async () => {
+      const ok = await hasToken();
+      if (!cancelled) setSignedIn(ok);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
 
+  /**
+   * Optimistic follow/unfollow: flip locally, fire the request, reconcile
+   * with the server's follower count on success, roll back on failure.
+   */
   const toggleFollow = useCallback(async () => {
-    if (!profile) return;
+    if (!profile || followBusy) return;
+    const prev = profile;
+    const nextFollowing = !profile.is_following;
     setFollowBusy(true);
+    setProfile({
+      ...profile,
+      is_following: nextFollowing,
+      counts: {
+        ...profile.counts,
+        followers: Math.max(0, profile.counts.followers + (nextFollowing ? 1 : -1)),
+      },
+    });
     try {
-      if (profile.is_following) await unfollowUser(profile.user.id);
-      else await followUser(profile.user.id);
+      if (nextFollowing) await followUser(profile.user.id);
+      else await unfollowUser(profile.user.id);
       const p = await fetchPublicProfile(profile.user.id);
       setProfile(p);
-    } catch { /* ignore */ }
+    } catch {
+      setProfile(prev);
+    }
     setFollowBusy(false);
-  }, [profile]);
+  }, [profile, followBusy]);
 
   const styles = useMemo(() => StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.canvas },
@@ -88,19 +109,37 @@ export default function PublicProfileScreen() {
           {since ? <Text style={styles.caption}>{since}</Text> : null}
           {profile.user.bio ? <Text style={styles.bio}>{profile.user.bio}</Text> : null}
           {!profile.is_self ? (
-            <Button
-              title={profile.is_following ? t("profile.unfollow") : t("profile.follow")}
-              variant={profile.is_following ? "secondary" : "primary"}
-              loading={followBusy}
-              onPress={() => void toggleFollow()}
-            />
+            signedIn === false ? (
+              <Button
+                title={t("common.signIn")}
+                variant="secondary"
+                onPress={() => router.push("/login")}
+              />
+            ) : (
+              <Button
+                title={profile.is_following ? t("profile.unfollow") : t("profile.follow")}
+                variant={profile.is_following ? "secondary" : "primary"}
+                loading={followBusy}
+                onPress={() => void toggleFollow()}
+              />
+            )
           ) : null}
           <View style={styles.statRow}>
-            <Pressable onPress={() => router.push({ pathname: "/follow-list", params: { userId: String(profile.user.id), tab: "followers" } })} style={styles.statCol}>
+            <Pressable
+              onPress={() => router.push({ pathname: "/follow-list", params: { userId: String(profile.user.id), tab: "followers" } })}
+              style={styles.statCol}
+              accessibilityRole="button"
+              accessibilityLabel={t("profile.viewFollowers")}
+            >
               <Text style={styles.statVal}>{String(profile.counts.followers)}</Text>
               <Text style={styles.statLabel}>{t("profile.followers")}</Text>
             </Pressable>
-            <Pressable onPress={() => router.push({ pathname: "/follow-list", params: { userId: String(profile.user.id), tab: "following" } })} style={styles.statCol}>
+            <Pressable
+              onPress={() => router.push({ pathname: "/follow-list", params: { userId: String(profile.user.id), tab: "following" } })}
+              style={styles.statCol}
+              accessibilityRole="button"
+              accessibilityLabel={t("profile.viewFollowing")}
+            >
               <Text style={styles.statVal}>{String(profile.counts.following)}</Text>
               <Text style={styles.statLabel}>{t("profile.following")}</Text>
             </Pressable>

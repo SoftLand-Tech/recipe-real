@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "RecipeReal",
-    "slug": "recipereal",
+    "slug": "vibe-labs",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -14,13 +14,27 @@
         "action": "VIEW",
         "autoVerify": true,
         "data": [
-          { "scheme": "https", "host": "recipe-real.softland.tech", "pathPrefix": "/p" },
-          { "scheme": "https", "host": "recipe-real.softland.tech", "pathPrefix": "/r" }
+          {
+            "scheme": "https",
+            "host": "recipe-real.softland.tech",
+            "pathPrefix": "/p"
+          },
+          {
+            "scheme": "https",
+            "host": "recipe-real.softland.tech",
+            "pathPrefix": "/r"
+          }
         ],
-        "category": ["BROWSABLE", "DEFAULT"]
+        "category": [
+          "BROWSABLE",
+          "DEFAULT"
+        ]
       }
     ],
     "userInterfaceStyle": "automatic",
+    "updates": {
+      "checkAutomatically": "WEEKLY"
+    },
     "ios": {
       "icon": "./assets/images/icon.png",
       "bundleIdentifier": "com.recipereal.app"
@@ -33,7 +47,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "allowBackup": false
     },
     "web": {
       "output": "static",
@@ -44,7 +59,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#FBF8F3",
+          "backgroundColor": "#FAF8F5",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76,
           "dark": {
@@ -65,9 +80,9 @@
       "googleWebClientId": "412318680966-oo5cbharsvo1jo4fvi6824taqq6n6du5.apps.googleusercontent.com",
       "router": {},
       "eas": {
-        "projectId": "777a9ceb-79de-4f98-be53-0d3dafc9305b"
+        "projectId": "5c0acc82-1f29-48b1-a1b4-64aeecb11836"
       }
     },
-    "owner": "mamounhisham1"
+    "owner": "vibelabs0s-team"
   }
 }

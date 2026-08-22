@@ -12,7 +12,6 @@ import { router, useFocusEffect } from "expo-router";
 import {
   getCookSessions,
   hasToken,
-  logout,
 } from "@/api/client";
 import { track } from "@/analytics";
 import { refreshPaceCalibrations } from "@/db/database";
@@ -96,11 +95,11 @@ function interpretPace(t: TranslateFn, multiplier: number): string {
   return t("pace.aboutAverage");
 }
 
-/** Map a pace interpretation to a Chip tone. */
-function paceTone(multiplier: number): "accent" | "neutral" | "amber" | "danger" {
+/** Map a pace interpretation to a Chip tone. Average is neutral, not a warning. */
+function paceTone(multiplier: number): "accent" | "neutral" | "danger" {
   if (multiplier < 0.9) return "accent";
   if (multiplier > 1.1) return "danger";
-  return "amber";
+  return "neutral";
 }
 
 /** Map a history delta (%) to a Chip label + tone for the history list. */
@@ -149,8 +148,16 @@ export default function PaceScreen() {
   const coreLoadedRef = useRef<(() => void) | null>(null);
 
   const load = useCallback(async () => {
-    if (firstLoadRef.current && lastCalibrations == null && lastSessions == null) {
+    // First visit (no cache): full spinner. Retry after an error: also show
+    // the spinner so the Retry button visibly does something.
+    if (
+      firstLoadRef.current &&
+      lastCalibrations == null &&
+      lastSessions == null
+    ) {
       setState("loading");
+    } else {
+      setState((prev) => (prev === "error" ? "loading" : prev));
     }
     const coreLoaded = () => {
       const cb = coreLoadedRef.current;
@@ -179,9 +186,9 @@ export default function PaceScreen() {
       }
       lastCalibrations = paceResult;
       setState("ready");
-      // Fire-and-forget analytics: pace dashboard rendered with multipliers.
-      // Only on the first load — silent refocus refreshes don't re-count.
-      if (paceResult.length > 0 && firstLoadRef.current) {
+      // Fire-and-forget analytics: pace dashboard rendered. Once per first
+      // load — with or without calibrations (zero-data users count too).
+      if (firstLoadRef.current) {
         track("pace_viewed");
       }
       coreLoaded();
@@ -242,19 +249,9 @@ export default function PaceScreen() {
     }
   }, [load]);
 
-  const handleSignOut = useCallback(async () => {
-    try {
-      await logout();
-    } catch {
-      // logout() clears the stored token in its finally block; ignore errors.
-    }
-    clearPaceCache();
-    setAuthenticated(false);
-    setCalibrations([]);
-    setCookCount(null);
-    setCookSessions([]);
-    setState("ready");
-  }, []);
+  // NOTE: no sign-out affordance on this screen — account actions
+  // (sign-out / delete account) live in Settings only, which also clears
+  // this screen's remount cache via clearPaceCache().
 
   // Streak + history are derived from the cook-session data the load already
   // fetches; recomputed only when the session list changes.
@@ -373,9 +370,6 @@ export default function PaceScreen() {
         },
         cta: {
           marginTop: Space.sm,
-        },
-        listSignOut: {
-          marginTop: Space.xl,
         },
       }),
     [colors],
@@ -549,13 +543,6 @@ export default function PaceScreen() {
           </View>
         </View>
       ) : null}
-
-      <Button
-        title={t("common.signOut")}
-        variant="ghost"
-        onPress={handleSignOut}
-        style={styles.listSignOut}
-      />
     </ScrollView>
     </View>
   );

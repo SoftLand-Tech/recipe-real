@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -11,7 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
 import {
   blockUser,
@@ -33,6 +35,7 @@ import {
 import { track } from "@/analytics";
 import { WEB_BASE_URL } from "@/config";
 import { shareLink } from "@/utils/share";
+import { takePostPreview } from "@/utils/postPreview";
 import type { Post, PostComment, PostRecipe } from "@/types";
 import { useLang, useT, type Lang, type TranslateFn } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
@@ -84,6 +87,11 @@ const COMMENT_BODY_MAX = 1000;
 const POST_BODY_MAX = 2000;
 
 // ---- Comment row -------------------------------------------------------------
+
+/** Stable separator component (module-level so its identity never changes). */
+function ListSeparator() {
+  return <View style={{ height: Space.md }} />;
+}
 
 interface CommentRowProps {
   comment: PostComment;
@@ -233,17 +241,17 @@ const CommentRow = memo(function CommentRow({
               {mine ? (
                 <>
                   <IconPressable onPress={startEdit} hitSlop={Space.xs} accessibilityLabel={t("community.editCommentA11y")}>
-                    <Text style={s.time}>Edit</Text>
+                    <Text style={s.time}>{t("community.editAction")}</Text>
                   </IconPressable>
                   <IconPressable onPress={() => onDelete(comment)} hitSlop={Space.xs} accessibilityLabel={t("community.deleteCommentA11y")}>
-                    <Text style={s.time}>Delete</Text>
+                    <Text style={s.time}>{t("community.deleteAction")}</Text>
                   </IconPressable>
                 </>
               ) : reported ? (
                 <Ionicons name="flag" size={12} color={colors.inkFaint} />
               ) : (
                 <IconPressable onPress={() => onReport(comment)} hitSlop={Space.xs} accessibilityLabel={t("community.reportComment")}>
-                  <Text style={s.time}>Report</Text>
+                  <Text style={s.time}>{t("community.reportAction")}</Text>
                 </IconPressable>
               )}
             </View>
@@ -333,19 +341,32 @@ export default function PostDetailScreen() {
   // Sync liked state once post loads.
   const postRef = useRef<Post | null>(null);
 
-  const loadPost = useCallback(async () => {
-    setLoadState("loading");
-    try {
-      const p = await fetchPost(postId);
-      setPost(p);
-      postRef.current = p;
-      setLiked(p.liked_by_me);
-      setLikesCount(p.likes_count);
-      setLoadState("ready");
-    } catch {
-      setLoadState("error");
-    }
-  }, [postId]);
+  // Monotonic load id: only the LATEST loadPost may commit state, so a
+  // background revalidation can never clobber a newer load/retry.
+  const loadPostIdRef = useRef(0);
+
+  const loadPost = useCallback(
+    async (opts: { revalidate?: boolean } = {}) => {
+      const requestId = ++loadPostIdRef.current;
+      // A revalidate keeps the painted copy on screen (stale-while-
+      // revalidate); a cold load shows the centered spinner instead.
+      if (!opts.revalidate) setLoadState("loading");
+      try {
+        const p = await fetchPost(postId);
+        if (requestId !== loadPostIdRef.current) return;
+        setPost(p);
+        postRef.current = p;
+        setLiked(p.liked_by_me);
+        setLikesCount(p.likes_count);
+        setLoadState("ready");
+      } catch {
+        if (requestId !== loadPostIdRef.current) return;
+        // Offline revalidation: the painted copy stays on screen.
+        if (!opts.revalidate) setLoadState("error");
+      }
+    },
+    [postId],
+  );
 
   const loadComments = useCallback(
     async (targetPage: number) => {
@@ -373,32 +394,56 @@ export default function PostDetailScreen() {
   );
 
   useEffect(() => {
-    void loadPost();
+    // Instant paint when the tapped feed card already holds this Post (the
+    // feed stashes it via setPostPreview right before pushing). The network
+    // copy still revalidates behind the paint; a cold deep link (preview
+    // missing or a different id) misses and loads exactly as before.
+    const preview = takePostPreview(postId);
+    if (preview) {
+      setPost(preview);
+      postRef.current = preview;
+      setLiked(preview.liked_by_me);
+      setLikesCount(preview.likes_count);
+      setLoadState("ready");
+      void loadPost({ revalidate: true });
+    } else {
+      void loadPost();
+    }
     void loadComments(1);
-  }, [loadPost, loadComments]);
+  }, [loadPost, loadComments, postId]);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const ok = await hasToken();
-      if (!cancelled) setSignedIn(ok);
-      if (!ok) return;
-      // Best-effort id for the own-content affordances.
-      try {
-        const profile = await fetchMyProfile();
-        if (!cancelled) {
-          setMyUserId(profile.id);
-          setMyAvatar(profile.avatar_url ?? null);
-          setMyName(profile.display_name ?? profile.name ?? null);
+  // ---- Sign-in state (re-checked on every focus so returning from /login
+  // ---- refreshes affordances and clears stale auth prompts) ---------------
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        const ok = await hasToken();
+        if (cancelled) return;
+        setSignedIn(ok);
+        if (ok) {
+          // A successful sign-in resolves any pending auth prompt.
+          setNeedsAuth(false);
+          // Best-effort id for the own-content affordances.
+          try {
+            const profile = await fetchMyProfile();
+            if (!cancelled) {
+              setMyUserId(profile.id);
+              setMyAvatar(profile.avatar_url ?? null);
+              setMyName(profile.display_name ?? profile.name ?? null);
+            }
+          } catch {
+            // Non-fatal: edit/delete stay hidden, report/block still work.
+          }
+        } else {
+          setMyUserId(null);
         }
-      } catch {
-        // Non-fatal: edit/delete stay hidden, report/block still work.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
 
   /**
    * Opens the system share sheet with the post's PUBLIC WEB PAGE
@@ -643,6 +688,12 @@ export default function PostDetailScreen() {
   const openViewer = useCallback((index: number) => {
     setViewerStartIndex(index);
     setViewerOpen(true);
+  }, []);
+
+  /** Focuses the comment composer when the "Comment" action is tapped. */
+  const composerInputRef = useRef<TextInput | null>(null);
+  const focusComposer = useCallback(() => {
+    composerInputRef.current?.focus();
   }, []);
 
   const styles = useMemo(
@@ -972,7 +1023,9 @@ export default function PostDetailScreen() {
             </View>
             {post.comments_count > 0 ? (
               <Text style={styles.countsText}>
-                {post.comments_count === 1 ? "1 comment" : `${post.comments_count} comments`}
+                {post.comments_count === 1
+                  ? t("community.oneComment")
+                  : t("community.nComments", { n: post.comments_count })}
               </Text>
             ) : null}
           </View>
@@ -985,26 +1038,29 @@ export default function PostDetailScreen() {
             disabled={likeBusy}
             style={styles.action}
             hitSlop={Space.xs}
-            accessibilityLabel="Like"
+            accessibilityLabel={t("community.likeAction")}
           >
             <Ionicons
               name={liked ? "heart" : "heart-outline"}
               size={20}
               color={liked ? colors.accent : colors.inkSecondary}
             />
-            <Text style={[styles.actionCount, liked ? styles.actionCountActive : null]}>Like</Text>
+            <Text style={[styles.actionCount, liked ? styles.actionCountActive : null]}>
+              {t("community.likeAction")}
+            </Text>
           </IconPressable>
           <IconPressable
-            onPress={() => setDraft("")}
+            onPress={focusComposer}
             style={styles.action}
             hitSlop={Space.xs}
+            accessibilityLabel={t("community.commentAction")}
           >
             <Ionicons
               name="chatbubble-outline"
               size={20}
               color={colors.inkSecondary}
             />
-            <Text style={styles.actionCount}>Comment</Text>
+            <Text style={styles.actionCount}>{t("community.commentAction")}</Text>
           </IconPressable>
           <IconPressable
             onPress={() => void handleShare()}
@@ -1017,7 +1073,7 @@ export default function PostDetailScreen() {
               size={20}
               color={colors.inkSecondary}
             />
-            <Text style={styles.actionCount}>Share</Text>
+            <Text style={styles.actionCount}>{t("community.shareAction")}</Text>
           </IconPressable>
         </View>
 
@@ -1040,6 +1096,7 @@ export default function PostDetailScreen() {
           <Avatar name={myName ?? "?"} uri={myAvatar} size={32} />
           <View style={styles.composePill}>
             <TextInput
+              ref={composerInputRef}
               style={styles.composeInput}
               value={draft}
               onChangeText={setDraft}
@@ -1263,40 +1320,43 @@ export default function PostDetailScreen() {
     <View style={styles.container}>
       <PinnedHeaderBar title={t("community.postDetail")} leading={<BackChevron />} />
 
-      <FlatList
-        data={comments}
-        keyExtractor={(c) => String(c.id)}
-        renderItem={({ item }) => (
-          <CommentRow
-            comment={item}
-            mine={myUserId != null && item.user.id === myUserId}
-            reported={reportedCommentIds.includes(item.id)}
-            onSave={saveCommentEdit}
-            onDelete={requestDeleteComment}
-            onReport={requestReportComment}
-          />
-        )}
-        contentContainerStyle={styles.listContent}
-        ListHeaderComponent={ListHeader}
-        ListEmptyComponent={ListEmpty}
-        ListFooterComponent={
-          commentsHasMore ? (
-            <Button
-              title={t("detail.loadMoreNotes")}
-              variant="ghost"
-              loading={commentsLoading}
-              disabled={commentsLoading}
-              onPress={() => void loadComments(commentsPage + 1)}
-              style={styles.loadMore}
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <FlatList
+          data={comments}
+          keyExtractor={(c) => String(c.id)}
+          renderItem={({ item }) => (
+            <CommentRow
+              comment={item}
+              mine={myUserId != null && item.user.id === myUserId}
+              reported={reportedCommentIds.includes(item.id)}
+              onSave={saveCommentEdit}
+              onDelete={requestDeleteComment}
+              onReport={requestReportComment}
             />
-          ) : null
-        }
-        ItemSeparatorComponent={() => (
-          <View style={{ height: Space.md }} />
-        )}
-        initialNumToRender={10}
-        windowSize={5}
-      />
+          )}
+          contentContainerStyle={styles.listContent}
+          ListHeaderComponent={ListHeader}
+          ListEmptyComponent={ListEmpty}
+          ListFooterComponent={
+            commentsHasMore ? (
+              <Button
+                title={t("detail.loadMoreNotes")}
+                variant="ghost"
+                loading={commentsLoading}
+                disabled={commentsLoading}
+                onPress={() => void loadComments(commentsPage + 1)}
+                style={styles.loadMore}
+              />
+            ) : null
+          }
+          ItemSeparatorComponent={ListSeparator}
+          initialNumToRender={10}
+          windowSize={5}
+        />
+      </KeyboardAvoidingView>
 
       {/* Fullscreen image viewer */}
       {viewerOpen && post.images.length > 0 ? (

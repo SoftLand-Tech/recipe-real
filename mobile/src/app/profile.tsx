@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -22,9 +22,10 @@ import {
   uploadAvatar,
 } from "@/api/client";
 import type { MyProfile, Recipe } from "@/types";
-import { useLang, useLocalizedRecipe, useT, type Lang, type TranslateFn } from "@/i18n";
+import { useLang, useLocalizedRecipe, useT } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 import { bestMinutes } from "@/utils/recipeTime";
+import { memberSince } from "@/utils/format";
 import {
   Avatar,
   Button,
@@ -42,20 +43,6 @@ const DISPLAY_NAME_MIN = 2;
 const DISPLAY_NAME_MAX = 40;
 const BIO_MAX = 500;
 const SAVED_CAPTION_MS = 2400;
-
-function memberSince(t: TranslateFn, lang: Lang, iso: string): string {
-  const then = Date.parse(iso);
-  if (!Number.isFinite(then)) return "";
-  try {
-    const date = new Date(then).toLocaleDateString(
-      lang === "ar" ? "ar" : "en-US",
-      { month: "long", year: "numeric" },
-    );
-    return t("profile.memberSince", { date });
-  } catch {
-    return "";
-  }
-}
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -81,39 +68,53 @@ export default function ProfileScreen() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
+  // Ref mirror of `profile` so loadAll (stable across renders) always reads
+  // the latest value instead of a stale closure snapshot.
+  const profileRef = useRef<MyProfile | null>(null);
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
+
   const displayName = (profile?.user.display_name ?? profile?.user.name ?? "").trim();
 
-  const loadAll = useCallback(
-    async (fresh: boolean) => {
-      const ok = await hasToken();
-      setSignedIn(ok);
-      if (!ok) {
-        setProfile(null);
-        setState("ready");
-        return;
+  const loadAll = useCallback(async (fresh: boolean) => {
+    const ok = await hasToken();
+    setSignedIn(ok);
+    if (!ok) {
+      setProfile(null);
+      setState("ready");
+      return;
+    }
+    if (fresh || profileRef.current == null) setState("loading");
+    try {
+      const [me, page] = await Promise.all([fetchMyProfileFull(), fetchMyRecipes(1)]);
+      setProfile(me);
+      if (!isEditingRef.current) {
+        setEditName(me.user.display_name ?? "");
+        setEditBio(me.user.bio ?? "");
       }
-      if (fresh || profile == null) setState("loading");
-      try {
-        const [me, page] = await Promise.all([fetchMyProfileFull(), fetchMyRecipes(1)]);
-        setProfile(me);
-        if (!isEditing) {
-          setEditName(me.user.display_name ?? "");
-          setEditBio(me.user.bio ?? "");
-        }
-        setRecipes(Array.isArray(page?.data) ? page.data : []);
-        setRecipesPage(1);
-        setRecipesHasMore(
-          Number(page?.meta?.current_page ?? 1) < Number(page?.meta?.last_page ?? 1),
-        );
-        setState("ready");
-      } catch (err) {
-        console.warn("[RecipeReal] profile load failed:", err);
-        if (profile == null) setState("error");
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isEditing],
-  );
+      setRecipes(Array.isArray(page?.data) ? page.data : []);
+      setRecipesPage(1);
+      setRecipesHasMore(
+        Number(page?.meta?.current_page ?? 1) < Number(page?.meta?.last_page ?? 1),
+      );
+      setState("ready");
+    } catch (err) {
+      console.warn("[RecipeReal] profile load failed:", err);
+      if (profileRef.current == null) setState("error");
+    }
+  }, []);
+
+  // Ref mirror of `isEditing` for the same reason — loadAll stays referentially
+  // stable so focus refreshes never resurrect stale state. Initialized with a
+  // literal (not the state value) so the ref is never seeded from a hook arg.
+  const isEditingRef = useRef(false);
+  useEffect(() => {
+    // Standard latest-ref mirror (same shape as cook mode's statusRef); the
+    // immutability rule can't tell it apart from a render-phase write.
+    // eslint-disable-next-line react-hooks/immutability
+    isEditingRef.current = isEditing;
+  }, [isEditing]);
 
   useFocusEffect(useCallback(() => { void loadAll(false); }, [loadAll]));
 
@@ -195,9 +196,15 @@ export default function ProfileScreen() {
     }
     setSaving(true);
     setError(null);
+    let avatarUploadFailed = false;
     try {
       if (pickedAvatarUri) {
-        await uploadAvatar(pickedAvatarUri);
+        try {
+          await uploadAvatar(pickedAvatarUri);
+        } catch (uploadErr) {
+          avatarUploadFailed = true;
+          throw uploadErr;
+        }
       } else if (removeAvatar) {
         await updateProfile({ avatar_url: null });
       }
@@ -217,8 +224,11 @@ export default function ProfileScreen() {
       setSaved(true);
     } catch (err) {
       console.warn("[RecipeReal] profile save failed:", err);
-      const msg = err instanceof Error && /upload/i.test(err.message) ? t("profile.errUploadAvatar") : t("profile.errSaveName");
-      setError(msg);
+      setError(
+        avatarUploadFailed
+          ? t("profile.errUploadAvatar")
+          : t("profile.errSaveName"),
+      );
     } finally {
       setSaving(false);
     }
@@ -319,17 +329,19 @@ export default function ProfileScreen() {
         title={t("profile.title")}
         leading={<BackChevron />}
         rights={
-          isEditing
+          signedIn === true && isEditing
             ? [
                 <IconPressable key="close" onPress={cancelEdit} hitSlop={Space.xs} accessibilityLabel={t("common.cancel")}>
                   <Ionicons name="close" size={22} color={colors.ink} />
                 </IconPressable>,
               ]
-            : [
-                <IconPressable key="edit" onPress={enterEdit} hitSlop={Space.xs} accessibilityLabel={t("profile.editProfile")}>
-                  <Ionicons name="create-outline" size={20} color={colors.ink} />
-                </IconPressable>,
-              ]
+            : signedIn === true
+              ? [
+                  <IconPressable key="edit" onPress={enterEdit} hitSlop={Space.xs} accessibilityLabel={t("profile.editProfile")}>
+                    <Ionicons name="create-outline" size={20} color={colors.ink} />
+                  </IconPressable>,
+                ]
+              : []
         }
       />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
@@ -351,7 +363,13 @@ export default function ProfileScreen() {
             <Card style={styles.section}>
               <View style={styles.identityRow}>
                 {isEditing ? (
-                  <Pressable onPress={pickAvatar} style={styles.avatarWrap} hitSlop={Space.xs}>
+                  <Pressable
+                    onPress={pickAvatar}
+                    style={styles.avatarWrap}
+                    hitSlop={Space.xs}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("profile.tapToChangePhoto")}
+                  >
                     {previewAvatarUri ? <Avatar name={editName.trim() || displayName} uri={previewAvatarUri} size={84} /> : (
                       <View style={styles.googleFallback}><GoogleLogo size={36} /></View>
                     )}
@@ -422,7 +440,6 @@ export default function ProfileScreen() {
                   ) : (
                     <Text style={styles.bioMuted}>{t("profile.bioPlaceholder")}</Text>
                   )}
-                  {since && isEditing ? null : null}
                 </>
               )}
 
@@ -455,8 +472,8 @@ export default function ProfileScreen() {
                     [t("profile.statLikes"), profile.counts.likes_received],
                     [t("profile.statNotes"), profile.counts.public_notes],
                   ] as const
-                ).map(([label, value]) => (
-                  <View key={label} style={styles.statCol}>
+                ).map(([label, value], idx) => (
+                  <View key={`stat-${idx}`} style={styles.statCol}>
                     <Text style={styles.statValue} numberOfLines={1}>{String(value)}</Text>
                     <Text style={styles.statLabel} numberOfLines={2}>{label}</Text>
                   </View>
