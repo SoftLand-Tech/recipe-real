@@ -226,7 +226,7 @@ class TypesenseSearchTest extends TestCase
         $this->assertSame('pasta', $query['q']);
         $this->assertSame('title,title_ar,ingredients,ingredients_ar,category', $query['query_by']);
         $this->assertSame('10,10,4,4,2', $query['query_by_weights']);
-        $this->assertSame('_text_match:desc,rating:desc', $query['sort_by']);
+        $this->assertSame('has_image:desc,_text_match:desc,rating:desc', $query['sort_by']);
         $this->assertSame('category:=main dish && minutes:<=30', $query['filter_by']);
         $this->assertSame('2', $query['page']);
         $this->assertSame('5', $query['per_page']);
@@ -243,7 +243,7 @@ class TypesenseSearchTest extends TestCase
         $query = [];
         parse_str(parse_url($request->url(), PHP_URL_QUERY), $query);
 
-        $this->assertSame('minutes:asc,_text_match:desc', $query['sort_by']);
+        $this->assertSame('minutes:asc,has_image:desc,_text_match:desc', $query['sort_by']);
     }
 
     public function test_empty_q_becomes_wildcard_and_sorts_by_rating(): void
@@ -258,7 +258,7 @@ class TypesenseSearchTest extends TestCase
         parse_str(parse_url($request->url(), PHP_URL_QUERY), $query);
 
         $this->assertSame('*', $query['q']);
-        $this->assertSame('rating:desc,_text_match:desc', $query['sort_by']);
+        $this->assertSame('has_image:desc,rating:desc', $query['sort_by']);
         $this->assertSame('minutes:<=15', $query['filter_by']);
     }
 

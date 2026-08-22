@@ -157,6 +157,7 @@ class TypesenseSearch
                 is_array($recipe->keywords) ? $recipe->keywords : []
             )),
             'image_url' => (string) ($recipe->image_url ?? ''),
+            'has_image' => trim((string) ($recipe->image_url ?? '')) !== '',
             'steps_count' => (int) ($recipe->steps_count ?? 0),
             'rating' => $recipe->aggregated_rating !== null ? (float) $recipe->aggregated_rating : null,
             'minutes' => (int) round((float) (
@@ -264,18 +265,21 @@ class TypesenseSearch
         }
 
         if ($sort === 'fastest') {
-            // Fastest must stay text-relevant within each minutes bucket.
-            $sortBy = 'minutes:asc,_text_match:desc';
-        } elseif ($sort === 'most_loved') {
-            // Approximation: the index carries no review_count; most-loved
-            // degrades to rating order, text-relevance as tie-breaker.
+            // Fastest is a utility sort: minutes lead, photos break ties
+            // within each minute bucket.
+            $sortBy = 'minutes:asc,has_image:desc,_text_match:desc';
+        } elseif ($sort === 'most_loved' || $sort === 'top_rated') {
+            // EXPLICIT rating sorts are the user's exception: pure rating
+            // order, no image bias (image recipes don't get to skip queue).
             $sortBy = 'rating:desc,_text_match:desc';
         } elseif ($q === '*') {
-            // No query text: relevance has nothing to match on.
-            $sortBy = 'rating:desc,_text_match:desc';
+            // Default grid (no query): photos first, then rating — the
+            // product rule for every default list.
+            $sortBy = 'has_image:desc,rating:desc';
         } else {
-            // Relevance (default): text match leads, rating breaks ties.
-            $sortBy = '_text_match:desc,rating:desc';
+            // Search relevance: photos lead per the product rule, text
+            // match orders within each photo group, rating breaks ties.
+            $sortBy = 'has_image:desc,_text_match:desc,rating:desc';
         }
 
         $params = [
@@ -362,6 +366,9 @@ class TypesenseSearch
             ['name' => 'category', 'type' => 'string', 'facet' => true],
             ['name' => 'keywords', 'type' => 'string'],
             ['name' => 'image_url', 'type' => 'string', 'index' => false],
+            // UI-first ordering: photo recipes lead every default list; the
+            // explicit top_rated/most_loved sorts stay pure rating order.
+            ['name' => 'has_image', 'type' => 'bool', 'sortable' => true],
             ['name' => 'minutes', 'type' => 'int32', 'filterable' => true, 'sortable' => true],
             ['name' => 'rating', 'type' => 'float', 'optional' => true, 'sortable' => true],
             ['name' => 'steps_count', 'type' => 'int32', 'optional' => true],
