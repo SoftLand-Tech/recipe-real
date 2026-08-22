@@ -19,12 +19,15 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 class RecipeNoteController extends Controller
 {
     /**
-     * Paginated notes (20/page, newest first), public read.
+     * Paginated notes (20/page, newest first), public read. Moderated rows
+     * (is_public=false) stay hidden from the world — the Filament toggle must
+     * have a real effect on what this endpoint serves.
      */
     public function index(Request $request, Recipe $recipe): AnonymousResourceCollection
     {
         $notes = RecipeNote::query()
             ->where('recipe_id', $recipe->id)
+            ->where('is_public', true)
             ->with('user:id,display_name,name,avatar_url')
             ->latest('id')
             ->paginate(20);

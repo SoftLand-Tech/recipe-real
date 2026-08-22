@@ -3,17 +3,18 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Http\Resources\RecipeResource;
+use App\Http\Resources\RecipeCardResource;
 use App\Models\Recipe;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * Home-screen rails (public): four curated "best of" lists, each a light
- * RecipeResource list of 10 (no steps — the resource hides unloaded
- * relations). Cached 5 minutes: every rail sorts over the whole 520k-row
- * table, and 5 minutes of staleness is fine for curated content.
+ * Home-screen rails (public): four curated "best of" lists, each a slim
+ * RecipeCardResource card list of 10 (no steps — the card never ships the
+ * heavy detail payloads). Cached 30 minutes: every rail sorts over the
+ * whole 520k-row table, but rows carry stable id tiebreakers so longer
+ * staleness is fine for curated content (deploy-time cache:clear busts).
  */
 class HomeController extends Controller
 {
@@ -24,14 +25,14 @@ class HomeController extends Controller
         // The cache holds plain attribute arrays (this app's cache forbids
         // unserializing classes — cache.serializable_classes = false), so
         // rails are hydrated back into models before resource conversion.
-        $rails = Cache::remember('home:rails', now()->addMinutes(5), fn () => $this->buildRails());
+        $rails = Cache::remember('home:rails', now()->addMinutes(30), fn () => $this->buildRails());
 
         return response()->json([
             'data' => [
-                'top_rated' => RecipeResource::collection(Recipe::hydrate($rails['top_rated']))->resolve(),
-                'easy_wins' => RecipeResource::collection(Recipe::hydrate($rails['easy_wins']))->resolve(),
-                'most_loved' => RecipeResource::collection(Recipe::hydrate($rails['most_loved']))->resolve(),
-                'hands_off' => RecipeResource::collection(Recipe::hydrate($rails['hands_off']))->resolve(),
+                'top_rated' => RecipeCardResource::collection(Recipe::hydrate($rails['top_rated']))->resolve(),
+                'easy_wins' => RecipeCardResource::collection(Recipe::hydrate($rails['easy_wins']))->resolve(),
+                'most_loved' => RecipeCardResource::collection(Recipe::hydrate($rails['most_loved']))->resolve(),
+                'hands_off' => RecipeCardResource::collection(Recipe::hydrate($rails['hands_off']))->resolve(),
             ],
         ]);
     }
@@ -49,6 +50,7 @@ class HomeController extends Controller
             // Crowd favourites: well-rated by a meaningful number of reviewers.
             'top_rated' => Recipe::query()
                 ->qualityTier()
+                ->select(RecipeCardResource::COLUMNS)
                 ->where('review_count', '>=', 10)
                 ->orderByDesc('aggregated_rating')
                 ->orderByDesc('review_count')
@@ -62,6 +64,7 @@ class HomeController extends Controller
             // known time (community consensus over publisher claim).
             'easy_wins' => Recipe::query()
                 ->qualityTier()
+                ->select(RecipeCardResource::COLUMNS)
                 ->whereRaw('COALESCE(community_avg_minutes, publisher_time_minutes) BETWEEN 1 AND 30')
                 ->orderByRaw('COALESCE(community_avg_minutes, publisher_time_minutes) IS NULL ASC')
                 ->orderByRaw('COALESCE(community_avg_minutes, publisher_time_minutes) ASC')
@@ -75,6 +78,7 @@ class HomeController extends Controller
             // Most reviewed = most cooked.
             'most_loved' => Recipe::query()
                 ->qualityTier()
+                ->select(RecipeCardResource::COLUMNS)
                 ->where('review_count', '>=', 25)
                 ->orderByDesc('review_count')
                 ->orderBy('id')
@@ -89,6 +93,7 @@ class HomeController extends Controller
             // the EXISTS subquery cheap.
             'hands_off' => Recipe::query()
                 ->qualityTier()
+                ->select(RecipeCardResource::COLUMNS)
                 ->whereExists(function ($sub): void {
                     $sub->selectRaw('1')
                         ->from('recipe_steps')

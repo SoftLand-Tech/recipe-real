@@ -57,6 +57,10 @@ class ProfileController extends Controller
             $av = $request->input('avatar_url');
             $user->avatar_url = $av !== null && $av !== '' ? (string) $av : null;
         }
+        if (array_key_exists('gender', $data)) {
+            $gender = $request->input('gender');
+            $user->gender = $gender === 'male' || $gender === 'female' ? $gender : null;
+        }
         $user->save();
 
         return response()->json($this->payload($user->refresh()));
@@ -74,6 +78,7 @@ class ProfileController extends Controller
                 'name' => $user->name,
                 'avatar_url' => $user->avatar_url,
                 'bio' => $user->bio,
+                'gender' => $user->gender,
                 'created_at' => $user->created_at?->toIso8601String(),
             ],
             'counts' => [

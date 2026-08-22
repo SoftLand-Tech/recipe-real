@@ -30,10 +30,23 @@
     // redirects, which left the app opening with no token at all (silent
     // sign-in failure). Merging search + hash into a single '?params' query
     // survives the trip.
-    var q = window.location.search ? window.location.search.substring(1) : '';
-    var h = window.location.hash ? window.location.hash.substring(1) : '';
-    var params = [q, h].filter(Boolean).join('&');
-    window.location.replace('recipereal:///login' + (params ? '?' + params : ''));
+    //
+    // SECURITY: only KNOWN OAuth params are forwarded. This endpoint is an
+    // open redirector by construction (any /auth/callback?x=… URL funnels
+    // its params into recipereal:///login) — forwarding arbitrary keys would
+    // let any web link inject router params into the app; the allowlist
+    // keeps that surface to exactly what Google's response carries.
+    var incoming = new URLSearchParams(
+      (window.location.search ? window.location.search.substring(1) : '') +
+      (window.location.hash ? '&' + window.location.hash.substring(1) : '')
+    );
+    var ALLOWED = ['state', 'id_token', 'error', 'error_description'];
+    var forwarded = new URLSearchParams();
+    for (var i = 0; i < ALLOWED.length; i++) {
+      var v = incoming.get(ALLOWED[i]);
+      if (v !== null) forwarded.set(ALLOWED[i], v);
+    }
+    window.location.replace('recipereal:///login' + (forwarded.toString() ? '?' + forwarded.toString() : ''));
   </script>
 </body>
 </html>

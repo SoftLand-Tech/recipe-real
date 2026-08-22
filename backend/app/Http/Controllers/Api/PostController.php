@@ -16,6 +16,7 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -38,8 +39,16 @@ class PostController extends Controller
      * sanctum user blocks are excluded. Each row also embeds its newest
      * comment (`latest_comment`, null when none) so clients can render the
      * preview without a per-post comments fetch.
+     *
+     * Page 1 of sort=suggested and sort=trending is cached for 60 seconds
+     * PER USER (guests share one 'guest' bucket): these sorts run heavy
+     * correlated-subquery scoring per request, and a ≤60s-stale feed is the
+     * designed pull-to-refresh tolerance. The cache holds the FINAL,
+     * fully user-resolved response payload (after liked_by_me and the
+     * blocked-author filter are applied) so a hit is never stamped with
+     * another user's data. Page > 1 and every other sort stay uncached.
      */
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection|JsonResponse
     {
         $query = Post::query()
             ->with([
@@ -53,8 +62,28 @@ class PostController extends Controller
             $query->where('recipe_id', $request->integer('recipe_id'));
         }
 
-        // Moderation: hide posts from authors the current user blocks.
         $user = $request->user('sanctum');
+        $sort = (string) $request->string('sort');
+
+        // Feed cache gate: page 1 of the expensive sorts only. Keyed per
+        // user AND per recipe_id filter so a filtered feed never leaks
+        // into the unfiltered one's bucket.
+        $cacheKey = null;
+        if (
+            in_array($sort, ['suggested', 'trending'], true)
+            && (int) $request->query('page', 1) <= 1
+        ) {
+            $cacheKey = 'posts.feed.'.$sort
+                .'.r'.($request->filled('recipe_id') ? $request->integer('recipe_id') : 0)
+                .'.u'.($user?->id ?? 'guest');
+
+            $cached = Cache::get($cacheKey);
+            if (is_array($cached)) {
+                return response()->json($cached);
+            }
+        }
+
+        // Moderation: hide posts from authors the current user blocks.
         if ($user !== null) {
             $blockedIds = $this->blockedAuthorIds($user->id);
             if ($blockedIds !== []) {
@@ -62,7 +91,6 @@ class PostController extends Controller
             }
         }
 
-        $sort = (string) $request->string('sort');
         if ($sort === 'trending') {
             $posts = $this->paginateTrending($query);
         } elseif ($sort === 'suggested' || $sort === 'for_you') {
@@ -85,7 +113,18 @@ class PostController extends Controller
             );
         }
 
-        return PostResource::collection($posts);
+        $collection = PostResource::collection($posts);
+
+        if ($cacheKey !== null) {
+            // Store ONLY the fully user-resolved payload (resource resolved
+            // to its final JSON shape here) — never a pre-user stage.
+            $payload = $collection->toResponse($request)->getData(true);
+            Cache::put($cacheKey, $payload, 60);
+
+            return response()->json($payload);
+        }
+
+        return $collection;
     }
 
     /**
@@ -343,9 +382,13 @@ class PostController extends Controller
             ->whereNotNull('recipe_id')
             ->pluck('recipe_id')->all();
 
+        // Viewed-recipe ids feed personalization scoring only — cap the
+        // pluck so heavy viewers with huge history stay a bounded query.
         $viewedRecipeIds = DB::table('recipe_views')
             ->where('user_id', $userId)
-            ->pluck('recipe_id')->all();
+            ->limit(1000)
+            ->pluck('recipe_id')
+            ->all();
 
         $affinityRecipeIds = array_values(array_unique(array_merge($likedRecipeIds, $cookedRecipeIds, $viewedRecipeIds)));
 

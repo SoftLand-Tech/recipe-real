@@ -3,9 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\RecipeCardResource;
 use App\Http\Resources\RecipeResource;
+use App\Jobs\RecordRecipeView;
 use App\Models\Recipe;
-use App\Models\RecipeView;
 use App\Support\TypesenseSearch;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
@@ -49,8 +50,12 @@ class RecipeController extends Controller
             $query->where('publisher_time_minutes', '<=', $request->integer('max_time'));
         }
 
-        return RecipeResource::collection(
+        return RecipeCardResource::collection(
             $query
+                // Card columns only (RecipeCardResource::COLUMNS): list rows
+                // skip the multi-KB steps/ingredients_structured/keywords/
+                // description payloads the detail/seed resource ships.
+                ->select(RecipeCardResource::COLUMNS)
                 // Recipes with an image first, then stable id order within
                 // each group (imported rows without photos sink to the end).
                 ->orderByRaw('image_url IS NOT NULL DESC, id ASC')
@@ -71,7 +76,7 @@ class RecipeController extends Controller
      * (relevance|top_rated|fastest|most_loved, default relevance when q is
      * given else top_rated), page/per_page (per_page clamped to 1..50,
      * default 20). The response shape is identical on both engines:
-     * RecipeResource rows in a standard paginator meta envelope.
+     * RecipeCardResource rows in a standard paginator meta envelope.
      */
     public function search(Request $request): AnonymousResourceCollection
     {
@@ -92,13 +97,15 @@ class RecipeController extends Controller
             );
 
             if ($typesenseResult !== null) {
-                return RecipeResource::collection($typesenseResult);
+                // Card shape (the hit-id hydration itself lives in
+                // TypesenseSearch::searchRecipes, owned by another batch).
+                return RecipeCardResource::collection($typesenseResult);
             }
         } catch (Throwable $e) {
             Log::warning('typesense.search.fallback', ['error' => $e->getMessage()]);
         }
 
-        return RecipeResource::collection($this->ftsSearch($request, $perPage, $q));
+        return RecipeCardResource::collection($this->ftsSearch($request, $perPage, $q));
     }
 
     /**
@@ -123,7 +130,9 @@ class RecipeController extends Controller
                 $query = Recipe::query()
                     ->listable()
                     ->join('recipes_fts', 'recipes_fts.rowid', '=', 'recipes.id')
-                    ->select('recipes.*')
+                    // Card columns only, table-qualified for the join
+                    // (recipes_fts carries none of them).
+                    ->select($this->qualifiedCardColumns())
                     ->whereRaw('recipes_fts MATCH ?', [$match]);
 
                 $this->applySearchFilters($query, $request);
@@ -132,7 +141,7 @@ class RecipeController extends Controller
                 $results = $query->paginate($perPage);
 
                 if ($results->total() > 0) {
-                    return RecipeResource::collection($results);
+                    return RecipeCardResource::collection($results);
                 }
 
                 // Zero FTS hits: fall through to LIKE, which can still match
@@ -143,7 +152,9 @@ class RecipeController extends Controller
         }
 
         // LIKE fallback (or no q): listable applies here too.
-        $query = Recipe::query()->listable();
+        $query = Recipe::query()
+            ->listable()
+            ->select(RecipeCardResource::COLUMNS);
 
         if ($q !== '') {
             $query->where('title', 'like', "%{$q}%");
@@ -152,7 +163,7 @@ class RecipeController extends Controller
         $this->applySearchFilters($query, $request);
         $this->applySearchOrder($query, $sort, withFts: false);
 
-        return RecipeResource::collection($query->paginate($perPage));
+        return RecipeCardResource::collection($query->paginate($perPage));
     }
 
     /**
@@ -255,6 +266,20 @@ class RecipeController extends Controller
     }
 
     /**
+     * RecipeCardResource::COLUMNS qualified with the recipes table, for
+     * queries joined against recipes_fts (which shares only rowid).
+     *
+     * @return list<string>
+     */
+    private function qualifiedCardColumns(): array
+    {
+        return array_map(
+            static fn (string $column): string => 'recipes.'.$column,
+            RecipeCardResource::COLUMNS
+        );
+    }
+
+    /**
      * Bulk offline-download endpoint: recipes with their steps.
      *
      * Mobile uses paged mode (?page=N&per_page=M, per_page clamped to
@@ -304,11 +329,9 @@ class RecipeController extends Controller
         if ($user) {
             // firstOrCreate so repeat views of the same recipe this month
             // don't double-count (informational only — no limit enforced).
-            RecipeView::firstOrCreate([
-                'user_id' => $user->id,
-                'recipe_id' => $recipe->id,
-                'month_key' => now()->format('Y-m'),
-            ]);
+            // Queued off the read path: the detail response no longer awaits
+            // the RecipeView SELECT+INSERT (runs inline on sync connections).
+            RecordRecipeView::dispatch($user->id, $recipe->id, now()->format('Y-m'));
         }
 
         return new RecipeResource($recipe);

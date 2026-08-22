@@ -2,9 +2,11 @@
 
 namespace App\Support;
 
+use App\Http\Resources\RecipeCardResource;
 use App\Models\Recipe;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -27,6 +29,16 @@ class TypesenseSearch
     private const QUERY_BY = 'title,title_ar,ingredients,ingredients_ar,category';
 
     private const QUERY_BY_WEIGHTS = '10,10,4,4,2';
+
+    /**
+     * Circuit breaker: while this key is cached, search() throws before
+     * attempting ANY HTTP call — a down daemon costs one fallback, not one
+     * per request until the TTL expires. Any search-path failure (transport
+     * error, timeout, non-2xx) opens it; successful queries never do.
+     */
+    private const CIRCUIT_OPEN_KEY = 'typesense.circuit_open';
+
+    private const CIRCUIT_OPEN_TTL_SECONDS = 60;
 
     /**
      * Collection name, overridable via config for staging isolation.
@@ -228,7 +240,7 @@ class TypesenseSearch
     /**
      * Recipe search via Typesense, mapped onto /api/recipes/search's
      * contract. Returns a LengthAwarePaginator of Recipe models in
-     * Typesense hit order (the controller wraps it in RecipeResource —
+     * Typesense hit order (the controller wraps it in RecipeCardResource —
      * identical envelope to the FTS5 path), or null when the feature is
      * disabled so the caller can fall through. Throws on transport errors
      * and non-2xx responses (caller falls back + logs).
@@ -313,7 +325,12 @@ class TypesenseSearch
         // order; missing rows (deleted since indexing) drop out silently —
         // the nightly reindex heals the drift.
         $found = (int) ($body['found'] ?? count($ids));
-        $recipes = Recipe::query()->whereIn('id', $ids)->get()
+        $recipes = Recipe::query()
+            // Card columns only — the caller wraps in RecipeCardResource,
+            // so SELECT * would drag heavy TEXT/JSON columns for nothing.
+            ->select(RecipeCardResource::COLUMNS)
+            ->whereIn('id', $ids)
+            ->get()
             ->sortBy(fn (Recipe $recipe) => array_search((string) $recipe->id, $ids, true))
             ->values();
 
@@ -328,20 +345,38 @@ class TypesenseSearch
     /**
      * Run a search against the collection. Throws on any transport error
      * (timeout/connection) or non-2xx response — the caller decides how to
-     * degrade. Returns the decoded JSON body:
-     * {found, page, hits: [{document: {...}}, ...]}.
+     * degrade. Circuit breaker: every such failure caches the
+     * typesense.circuit_open flag for 60s, and while the flag is present
+     * this method throws BEFORE attempting any HTTP call (same exception
+     * contract, so RecipeController's catch falls straight through to the
+     * FTS5 path without burning the timeout budget). Returns the decoded
+     * JSON body: {found, page, hits: [{document: {...}}, ...]}.
      *
      * @param  array<string, mixed>  $params
      * @return array{found?: int, page?: int, hits?: list<array<string, mixed>>}
      */
     public function search(array $params): array
     {
-        $response = $this->get(
-            "collections/{$this->collection()}/documents/search",
-            $params
-        );
+        if (Cache::has(self::CIRCUIT_OPEN_KEY)) {
+            throw new ConnectionException(
+                'Typesense circuit open — failing fast to the FTS5 fallback.'
+            );
+        }
+
+        try {
+            $response = $this->get(
+                "collections/{$this->collection()}/documents/search",
+                $params
+            );
+        } catch (Throwable $e) {
+            $this->openCircuit();
+
+            throw $e;
+        }
 
         if (! $response->successful()) {
+            $this->openCircuit();
+
             throw new ConnectionException(
                 "Typesense search failed with HTTP {$response->status()}."
             );
@@ -349,6 +384,16 @@ class TypesenseSearch
 
         /** @var array{found?: int, page?: int, hits?: list<array<string, mixed>>} $body */
         return $response->json() ?? [];
+    }
+
+    /**
+     * Open the search circuit breaker for the TTL. Never called on the
+     * write/admin paths (upsert/delete/ensure) — those swallow their own
+     * failures and must keep syncing when the daemon comes back.
+     */
+    private function openCircuit(): void
+    {
+        Cache::put(self::CIRCUIT_OPEN_KEY, true, self::CIRCUIT_OPEN_TTL_SECONDS);
     }
 
     /**

@@ -20,6 +20,7 @@ class UpdateProfileRequest extends FormRequest
             'display_name' => ['sometimes', 'required', 'string', 'min:2', 'max:40'],
             'bio' => ['sometimes', 'nullable', 'string', 'max:500'],
             'avatar_url' => ['sometimes', 'nullable', 'string', 'max:2000', 'url'],
+            'gender' => ['sometimes', 'nullable', 'string', 'in:male,female'],
         ];
     }
 }

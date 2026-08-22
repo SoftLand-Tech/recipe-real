@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Http\Resources\RecipeResource;
+use App\Http\Resources\RecipeCardResource;
 use App\Models\Recipe;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,10 +19,11 @@ use Illuminate\Support\Facades\DB;
  *  - mode=over: faster than claimed (gap_pct ASC).
  *
  * Only recipes with a reality signal (community or estimate — the source is
- * labeled on every row via RecipeResource's reality object), a positive
+ * labeled on every row via the card resource's reality object), a positive
  * publisher claim to divide by, and quality-tier-eligible presentation
- * (>= 2 steps + an image). Cached 5 minutes: the gap-pct ordering scans
- * the matched rows, and 5 minutes of staleness is fine for a leaderboard.
+ * (>= 2 steps + an image). Cached 15 minutes: the gap-pct ordering scans
+ * the matched rows, rows carry a stable id tiebreaker, and 15 minutes of
+ * staleness is fine for a leaderboard (deploy-time cache:clear busts).
  */
 class RealityController extends Controller
 {
@@ -46,12 +47,12 @@ class RealityController extends Controller
         // same pattern as the home rails.
         $rows = Cache::remember(
             "reality:{$mode}:{$take}",
-            now()->addMinutes(5),
+            now()->addMinutes(15),
             fn () => $this->buildRows($mode, $take)
         );
 
         return response()->json([
-            'data' => RecipeResource::collection(Recipe::hydrate($rows))->resolve(),
+            'data' => RecipeCardResource::collection(Recipe::hydrate($rows))->resolve(),
         ]);
     }
 
@@ -61,6 +62,7 @@ class RealityController extends Controller
     private function buildRows(string $mode, int $take): array
     {
         return Recipe::query()
+            ->select(RecipeCardResource::COLUMNS)
             ->whereIn('reality_source', ['community', 'estimate'])
             ->where('publisher_time_minutes', '>', 0)
             // Quality-tier-eligible presentation only (the full tier also

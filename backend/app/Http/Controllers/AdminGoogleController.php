@@ -34,7 +34,9 @@ class AdminGoogleController extends Controller
         abort_if($clientId === '', 503, 'Google login is not configured.');
 
         $state = Str::random(40);
+        $nonce = Str::random(32);
         $request->session()->put('admin_google_state', $state);
+        $request->session()->put('admin_google_nonce', $nonce);
 
         $params = http_build_query([
             'client_id' => $clientId,
@@ -42,7 +44,7 @@ class AdminGoogleController extends Controller
             'response_type' => 'id_token',
             'scope' => 'openid email profile',
             'state' => $state,
-            'nonce' => Str::random(32),
+            'nonce' => $nonce,
         ]);
 
         return redirect()->away('https://accounts.google.com/o/oauth2/v2/auth?'.$params);
@@ -72,6 +74,16 @@ class AdminGoogleController extends Controller
             return $this->reject($request, 'token');
         }
 
+        // Nonce binding: the id_token must carry the exact nonce this session
+        // generated for THIS attempt — a validly-signed token minted for any
+        // other flow/replay is refused even though verification passes.
+        $expectedNonce = (string) $request->session()->pull('admin_google_nonce', '');
+        if ($expectedNonce === ''
+            || ! isset($claims->nonce)
+            || ! hash_equals($expectedNonce, (string) $claims->nonce)) {
+            return $this->reject($request, 'nonce');
+        }
+
         $email = strtolower(trim((string) ($claims->email ?? '')));
         $googleSub = (string) ($claims->sub ?? '');
 
@@ -80,17 +92,19 @@ class AdminGoogleController extends Controller
             return $this->reject($request, 'not_admin');
         }
 
-        // Same linking rule as the API login: google_sub first, verified
-        // email second. Allowlisted emails with no account yet get one
-        // created (mirroring the mobile app's first-Google-sign-in) — the
-        // allowlist is the trust boundary, not prior account existence.
+        // Identity lookup keys on google_sub ONLY. The email fallback would
+        // let any Google identity carrying an allowlisted email bind itself
+        // to the admin row — the allowlist gates the ADDRESS, but only the
+        // stored google_sub proves the ORIGINAL identity is presenting.
         $user = User::where('google_sub', $googleSub)->first();
-        if ($user === null && ! empty($claims->email_verified ?? false)) {
-            $user = User::where('email', $email)->first();
-        }
         if ($user === null) {
             if (empty($claims->email_verified ?? false)) {
                 return $this->reject($request, 'email_unverified');
+            }
+            if (User::where('email', $email)->exists()) {
+                // An existing account holds this email under a different
+                // Google identity: never link, never mint a second admin row.
+                return $this->reject($request, 'email_conflict');
             }
 
             $user = User::create([
@@ -104,6 +118,8 @@ class AdminGoogleController extends Controller
                 'avatar_url' => $claims->picture ?? null,
             ]);
             $user->refresh();
+        } elseif ((string) $user->email !== $email) {
+            return $this->reject($request, 'email_conflict');
         }
 
         Auth::login($user);
