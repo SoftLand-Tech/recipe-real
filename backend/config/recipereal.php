@@ -45,4 +45,32 @@ return [
 
     'play_store_url' => env('PLAY_STORE_URL', ''),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Typesense search engine (bilingual EN/AR recipe search)
+    |--------------------------------------------------------------------------
+    |
+    | Optional search backend. When api_key is empty the feature is DISABLED:
+    | every code path no-ops and search falls back to the SQLite FTS5 index
+    | (local dev has no daemon). Prod runs Typesense on the VPS loopback
+    | (127.0.0.1:8108). All HTTP goes through Laravel's Http facade with tight
+    | timeouts — an unreachable daemon degrades to FTS5, never a 500.
+    |
+    */
+
+    'typesense' => [
+        'host' => env('TYPESENSE_HOST', '127.0.0.1'),
+        'port' => (int) env('TYPESENSE_PORT', 8108),
+
+        // Empty = disabled: zero HTTP calls attempted anywhere.
+        'api_key' => env('TYPESENSE_API_KEY', ''),
+
+        'collection' => env('TYPESENSE_COLLECTION', 'recipes'),
+
+        // Call budgets in milliseconds; a slow daemon costs less than the
+        // FTS5 path it is supposed to beat.
+        'timeout_ms' => (int) env('TYPESENSE_TIMEOUT_MS', 1500),
+        'connect_timeout_ms' => (int) env('TYPESENSE_CONNECT_TIMEOUT_MS', 700),
+    ],
+
 ];

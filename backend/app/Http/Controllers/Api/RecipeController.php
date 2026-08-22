@@ -6,13 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\RecipeResource;
 use App\Models\Recipe;
 use App\Models\RecipeView;
+use App\Support\TypesenseSearch;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class RecipeController extends Controller
 {
@@ -55,22 +59,58 @@ class RecipeController extends Controller
     }
 
     /**
-     * Full-text search over recipes (FTS5, see migration 000017 + the
-     * recipereal:rebuild-search command).
+     * Full-text search over recipes: Typesense first when enabled
+     * (TYPESENSE_API_KEY set — see TypesenseSearch::searchRecipes), with the
+     * SQLite FTS5 index as an automatic fallback whenever the daemon is
+     * disabled/unreachable/too slow (see migration 000017 +
+     * recipereal:rebuild-search).
      *
      * Query params: q (optional), category (exact case-insensitive match on
-     * recipes.category), max_time (applies to COALESCE(community_avg_minutes,
-     * publisher_time_minutes)), sort (relevance|top_rated|fastest|most_loved,
-     * default relevance when q is given else top_rated), page/per_page
-     * (per_page clamped to 1..50, default 20).
-     *
-     * Falls back to a plain title LIKE when the FTS index is empty, missing
-     * or errors (e.g. unmatched MATCH syntax on a different sqlite build).
+     * recipes.category), max_time (applies to COALESCE(reality_minutes,
+     * community_avg_minutes, publisher_time_minutes)), sort
+     * (relevance|top_rated|fastest|most_loved, default relevance when q is
+     * given else top_rated), page/per_page (per_page clamped to 1..50,
+     * default 20). The response shape is identical on both engines:
+     * RecipeResource rows in a standard paginator meta envelope.
      */
     public function search(Request $request): AnonymousResourceCollection
     {
         $perPage = max(1, min(50, $request->integer('per_page', 20)));
         $q = trim((string) $request->string('q'));
+
+        // Preferred engine: Typesense when enabled AND reachable. Any error,
+        // timeout or disabled state degrades to the FTS5 path below — search
+        // must never 500 because of the daemon.
+        try {
+            $typesenseResult = app(TypesenseSearch::class)->searchRecipes(
+                q: $q !== '' ? $q : '*',
+                category: trim((string) $request->string('category')),
+                timeMax: $request->filled('max_time') ? $request->integer('max_time') : null,
+                sort: (string) $request->string('sort'),
+                page: max(1, $request->integer('page', 1)),
+                perPage: $perPage
+            );
+
+            if ($typesenseResult !== null) {
+                return RecipeResource::collection($typesenseResult);
+            }
+        } catch (Throwable $e) {
+            Log::warning('typesense.search.fallback', ['error' => $e->getMessage()]);
+        }
+
+        return RecipeResource::collection($this->ftsSearch($request, $perPage, $q));
+    }
+
+    /**
+     * The pre-Typesense FTS5 search, unchanged — now also the fallback path
+     * when Typesense is disabled, unreachable or too slow. Same query
+     * params as search(); $q and $perPage arrive pre-clamped.
+     *
+     * Falls back to a plain title LIKE when the FTS index is empty, missing
+     * or errors (e.g. unmatched MATCH syntax on a different sqlite build).
+     */
+    private function ftsSearch(Request $request, int $perPage, string $q): AnonymousResourceCollection
+    {
         $match = $this->ftsMatch($q);
 
         $sort = (string) $request->string('sort');

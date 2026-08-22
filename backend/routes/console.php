@@ -20,3 +20,8 @@ Schedule::command('recipereal:prune-events')->daily();
 
 // Keep the FTS index fresh after any bulk writes (imports/translations).
 Schedule::command('recipereal:rebuild-search')->daily()->at('03:00');
+
+// Typesense reindex after the FTS rebuild: heals drift from bulk writes
+// that bypass the write-through sync (ai-apply, wipe-unreviewed). No-op
+// when TYPESENSE_API_KEY is unset.
+Schedule::command('recipereal:reindex-typesense')->daily()->at('03:30');

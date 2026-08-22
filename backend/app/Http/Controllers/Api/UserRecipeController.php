@@ -10,11 +10,14 @@ use App\Jobs\RebuildSearchIndex as RebuildSearchIndexJob;
 use App\Models\Recipe;
 use App\Models\RecipeStep;
 use App\Support\HalalGate;
+use App\Support\TypesenseSearch;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * User-created recipes (community platform): create, edit and delete your
@@ -85,6 +88,11 @@ class UserRecipeController extends Controller
 
             return $recipe;
         });
+
+        // Write-through search sync (best-effort): a Typesense outage or
+        // timeout must never fail the request — log and move on. The
+        // nightly recipereal:reindex-typesense heals any drift anyway.
+        $this->syncSearch($recipe, 'upsert');
 
         return (new RecipeResource($recipe->load('recipeSteps')))
             ->response()
@@ -157,6 +165,8 @@ class UserRecipeController extends Controller
         // picks it up.
         RebuildSearchIndexJob::dispatch();
 
+        $this->syncSearch($recipe->fresh(), 'upsert');
+
         return new RecipeResource($recipe->fresh(['recipeSteps']));
     }
 
@@ -173,6 +183,8 @@ class UserRecipeController extends Controller
         });
 
         RebuildSearchIndexJob::dispatch();
+
+        $this->syncSearch($recipe, 'delete');
 
         return response()->json(null, 204);
     }
@@ -203,6 +215,37 @@ class UserRecipeController extends Controller
     {
         if ($recipe->owner_id === null || $recipe->owner_id !== $request->user()->id) {
             abort(403, 'You do not own this recipe.');
+        }
+    }
+
+    /**
+     * Best-effort Typesense write-through sync for user-recipe writes:
+     * upsert on create/update (fresh model → full doc incl. reality), a
+     * delete on destroy. Disabled daemon = no-op; failure logs a warning
+     * and never fails the request (nightly reindex heals drift).
+     */
+    private function syncSearch(?Recipe $recipe, string $op): void
+    {
+        try {
+            $typesense = app(TypesenseSearch::class);
+
+            if (! $typesense->enabled() || $recipe === null) {
+                return;
+            }
+
+            if ($op === 'delete') {
+                $typesense->deleteDoc((string) $recipe->id);
+
+                return;
+            }
+
+            $typesense->upsertDocs([$typesense->documentFor($recipe)]);
+        } catch (Throwable $e) {
+            Log::warning('typesense.sync.failed', [
+                'op' => $op,
+                'recipe_id' => $recipe?->id,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
