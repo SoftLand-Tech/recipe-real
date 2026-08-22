@@ -176,14 +176,18 @@ export default function LoginScreen() {
   // redirect goes through our domain trampoline so this works without a
   // custom-scheme return target. The request loads async; pressing the button
   // before it's ready surfaces a friendly retry error.
+  // nonce rides via extraParams (Google signs it into the id_token; the
+  // backend requires an exact match). state MUST be a top-level option —
+  // AuthRequest.makeAuthUrlAsync OVERWRITES extraParams.state with the
+  // hook's internally generated one ("These overwrite any extra params"),
+  // so a state smuggled through extraParams never reaches Google and the
+  // echoed value fails our SecureStore comparison on return.
   const [request] = Google.useAuthRequest({
     clientId: googleClientId ?? GOOGLE_CLIENT_ID_PLACEHOLDER,
     responseType: ResponseType.IdToken,
     redirectUri: oauthRedirectUri ?? undefined,
-    // nonce + state ride via extraParams (the provider's supported channel):
-    // both land in the authorization URL — Google signs the nonce into the
-    // id_token and echoes state back as a plain callback param.
-    extraParams: { nonce, state: oauthState },
+    state: oauthState,
+    extraParams: { nonce },
   });
 
   // Close any lingering auth popup on web; no-op on native.

@@ -5,32 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": [
-      "recipereal",
-      "https://recipe-real.softland.tech"
-    ],
-    "intentFilters": [
-      {
-        "action": "VIEW",
-        "autoVerify": true,
-        "data": [
-          {
-            "scheme": "https",
-            "host": "recipe-real.softland.tech",
-            "pathPrefix": "/p"
-          },
-          {
-            "scheme": "https",
-            "host": "recipe-real.softland.tech",
-            "pathPrefix": "/r"
-          }
-        ],
-        "category": [
-          "BROWSABLE",
-          "DEFAULT"
-        ]
-      }
-    ],
+    "scheme": "recipereal",
     "userInterfaceStyle": "automatic",
     "updates": {
       "checkAutomatically": "WEEKLY"
@@ -41,6 +16,28 @@
     },
     "android": {
       "package": "com.recipereal.app",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "recipe-real.softland.tech",
+              "pathPrefix": "/p"
+            },
+            {
+              "scheme": "https",
+              "host": "recipe-real.softland.tech",
+              "pathPrefix": "/r"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#FBF8F3",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
