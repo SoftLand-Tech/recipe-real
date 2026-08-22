@@ -556,7 +556,6 @@ export const ar: Record<string, string> = {
   "onboarding.female": "أنثى",
   "onboarding.continue": "متابعة",
   "onboarding.saving": "جارٍ الحفظ…",
-  "onboarding.skip": "تخطَّ الآن",
   "onboarding.errNameLength": "يجب أن يكون الاسم المعروض بين 2 و40 حرفًا.",
   "onboarding.errSave": "تعذّر حفظ ملفك الشخصي. حاول مجددًا.",
   "onboarding.photoA11y": "الصورة الشخصية",

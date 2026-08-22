@@ -392,8 +392,10 @@ export interface MyProfile {
     name: string | null;
     avatar_url: string | null;
     bio?: string | null;
-    /** Self-reported gender from onboarding; null when unset. */
+    /** Self-reported gender from onboarding; null when unset (optional). */
     gender?: "male" | "female" | null;
+    /** Raw onboarding marker: display_name typed by the user (no name fallback). */
+    has_display_name?: boolean;
     created_at: string;
   };
   counts: ProfileCounts;

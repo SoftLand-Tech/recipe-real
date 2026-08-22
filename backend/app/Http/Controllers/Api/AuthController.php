@@ -120,9 +120,12 @@ class AuthController extends Controller
                     // nullable. The hashed cast encrypts it like any other.
                     'password' => Str::random(40),
                     'google_sub' => $googleSub,
-                    // display_name only seeds on first creation; afterwards
-                    // the user owns it (PATCH /api/users/me/profile).
-                    'display_name' => $claims->name ?? null,
+                    // display_name stays NULL on creation: onboarding owns
+                    // it — the user must type a name themselves (the
+                    // has_display_name flag in ProfileController::payload
+                    // routes fresh sign-ins to /onboarding until they do).
+                    // The internal `name` column still seeds from Google.
+                    'display_name' => null,
                     'avatar_url' => $avatarUrl,
                 ]);
 

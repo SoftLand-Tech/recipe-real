@@ -564,7 +564,6 @@ export const en: Record<string, string> = {
   "onboarding.female": "Female",
   "onboarding.continue": "Continue",
   "onboarding.saving": "Saving…",
-  "onboarding.skip": "Skip for now",
   "onboarding.errNameLength": "Display name must be 2–40 characters.",
   "onboarding.errSave": "Couldn't save your profile. Please try again.",
   "onboarding.photoA11y": "Profile photo",

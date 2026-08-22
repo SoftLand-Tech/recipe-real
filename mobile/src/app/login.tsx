@@ -264,15 +264,17 @@ export default function LoginScreen() {
   }, [deepIdToken, deepState, deepError]);
 
   /**
-   * Post-auth routing. Fresh profiles (no gender yet — the onboarding
-   * marker) are routed to /onboarding to complete their details; everyone
-   * else returns to wherever they came from (home when there is no
-   * history, e.g. a cold deep-link straight into /login).
+   * Post-auth routing. Fresh profiles (no display name typed yet — the
+   * onboarding marker; the name is the one required field, gender/bio/
+   * photo are optional) are routed to /onboarding, which cannot be
+   * skipped or backed out of; everyone else returns to wherever they
+   * came from (home when there is no history, e.g. a cold deep-link
+   * straight into /login).
    */
   async function navigateAfterAuth() {
     try {
       const me = await fetchMyProfileFull();
-      if (!me.user.gender) {
+      if (me.user.has_display_name === false) {
         router.replace("/onboarding");
         return;
       }

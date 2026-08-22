@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { router } from "expo-router";
+import { usePreventRemove } from "expo-router/build/react-navigation/core";
 
 import { updateProfile, uploadAvatar } from "@/api/client";
 import { track } from "@/analytics";
@@ -31,10 +32,10 @@ type Gender = "male" | "female";
 
 /**
  * First-sign-in onboarding (/onboarding): complete the profile details —
- * display name, gender, photo and bio — before continuing into the app.
- * Pushed by the post-auth routing in login.tsx when the fresh profile has
- * no gender set yet; finishing (or skipping) pops back to wherever the
- * user came from.
+ * display name (REQUIRED), gender, photo and bio (all optional) — before
+ * continuing into the app. Pushed by the post-auth routing in login.tsx
+ * when the fresh profile has no display name typed yet; the screen cannot
+ * be skipped or backed out of — only Continue (name ≥2 chars) leaves.
  */
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
@@ -67,7 +68,14 @@ export default function OnboardingScreen() {
 
   const nameValid =
     name.trim().length >= NAME_MIN && name.trim().length <= NAME_MAX;
-  const canContinue = nameValid && gender != null && !saving;
+  // Only the name is required — gender, photo and bio are optional.
+  const canContinue = nameValid && !saving;
+
+  // Onboarding cannot be skipped or backed out of: the user must type a
+  // display name before continuing. Swallowing the removal (no dispatch,
+  // no dialog) blocks the Android back button/gesture and any
+  // programmatic pop until Continue saves the profile.
+  usePreventRemove(true, () => {});
 
   /** Leave onboarding: back to the caller, home when there is none. */
   const leave = useCallback(() => {
@@ -223,9 +231,6 @@ export default function OnboardingScreen() {
           color: colors.danger,
           textAlign: "center",
         },
-        skipBtn: {
-          marginTop: Space.xs,
-        },
       }),
     [colors, insets.bottom],
   );
@@ -347,13 +352,6 @@ export default function OnboardingScreen() {
           loading={saving}
           disabled={!canContinue}
           onPress={() => void handleContinue()}
-        />
-        <Button
-          title={t("onboarding.skip")}
-          variant="ghost"
-          onPress={leave}
-          disabled={saving}
-          style={styles.skipBtn}
         />
       </ScrollView>
     </View>

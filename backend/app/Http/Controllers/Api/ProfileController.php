@@ -75,6 +75,10 @@ class ProfileController extends Controller
             'user' => [
                 'id' => $user->id,
                 'display_name' => $user->display_name ?? $user->name,
+                // Raw marker (no name fallback): onboarding gates on this —
+                // fresh Google accounts have display_name NULL until the
+                // user types one in /onboarding.
+                'has_display_name' => $user->display_name !== null && $user->display_name !== '',
                 'name' => $user->name,
                 'avatar_url' => $user->avatar_url,
                 'bio' => $user->bio,
