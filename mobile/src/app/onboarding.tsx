@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -20,9 +20,7 @@ import {
   Avatar,
   Button,
   Card,
-  Chip,
   GoogleLogo,
-  IconPressable,
 } from "@/components/ui";
 
 const NAME_MIN = 2;
@@ -111,7 +109,7 @@ export default function OnboardingScreen() {
         },
         scrollContent: {
           paddingHorizontal: Space.lg,
-          paddingTop: Space.lg,
+          paddingTop: insets.top + Space.lg,
           paddingBottom: Space.xxl,
           gap: Space.lg,
           maxWidth: 560,
@@ -192,12 +190,33 @@ export default function OnboardingScreen() {
           color: colors.inkFaint,
           alignSelf: "flex-end",
         },
-        genderRow: {
+        genderSegment: {
           flexDirection: "row",
-          gap: Space.sm,
+          backgroundColor: colors.surfaceSoft,
+          borderWidth: 1,
+          borderColor: colors.hairline,
+          borderRadius: Radius.md,
+          overflow: "hidden",
         },
-        genderOption: {
+        genderDivider: {
+          width: 1,
+          backgroundColor: colors.hairline,
+        },
+        genderSegmentBtn: {
           flex: 1,
+          alignItems: "center",
+          paddingVertical: Space.md,
+        },
+        genderSegmentBtnActive: {
+          backgroundColor: colors.accentSoft,
+        },
+        genderSegmentLabel: {
+          ...Type.body,
+          color: colors.inkSecondary,
+        },
+        genderSegmentLabelActive: {
+          color: colors.accent,
+          fontWeight: "600",
         },
         errorText: {
           ...Type.bodySm,
@@ -266,24 +285,32 @@ export default function OnboardingScreen() {
         {/* Gender */}
         <Card style={styles.section}>
           <Text style={styles.fieldLabel}>{t("onboarding.genderLabel")}</Text>
-          <View style={styles.genderRow}>
-            {(["male", "female"] as const).map((g) => (
-              <IconPressable
-                key={g}
-                onPress={() => setGender(g)}
-                style={styles.genderOption}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  g === "male" ? t("onboarding.male") : t("onboarding.female")
-                }
-                hitSlop={Space.xs}
-              >
-                <Chip
-                  label={g === "male" ? t("onboarding.male") : t("onboarding.female")}
-                  tone={gender === g ? "accent" : "neutral"}
-                  size="md"
-                />
-              </IconPressable>
+          <View style={styles.genderSegment}>
+            {(["male", "female"] as const).map((g, index) => (
+              <Fragment key={g}>
+                {index === 1 ? <View style={styles.genderDivider} /> : null}
+                <Pressable
+                  onPress={() => setGender(g)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: gender === g }}
+                  accessibilityLabel={
+                    g === "male" ? t("onboarding.male") : t("onboarding.female")
+                  }
+                  style={[
+                    styles.genderSegmentBtn,
+                    gender === g ? styles.genderSegmentBtnActive : null,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.genderSegmentLabel,
+                      gender === g ? styles.genderSegmentLabelActive : null,
+                    ]}
+                  >
+                    {g === "male" ? t("onboarding.male") : t("onboarding.female")}
+                  </Text>
+                </Pressable>
+              </Fragment>
             ))}
           </View>
         </Card>

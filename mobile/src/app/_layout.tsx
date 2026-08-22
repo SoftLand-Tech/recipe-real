@@ -252,17 +252,13 @@ function NavigationFrame() {
           <Stack.Screen name="+not-found" options={{ headerShown: false }} />
           {/*
             First-sign-in onboarding: complete profile details (name,
-            gender, photo, bio) before continuing into the app.
+            gender, photo, bio) before continuing into the app. Renders
+            its own centered welcome headline — the native header is hidden
+            so the title starts at the top instead of below an empty bar.
           */}
           <Stack.Screen
             name="onboarding"
-            options={{
-              title: t("stack.onboarding"),
-              headerShown: true,
-              headerStyle: { backgroundColor: colors.canvas },
-              headerTintColor: colors.ink,
-              headerBackVisible: false,
-            }}
+            options={{ title: t("stack.onboarding"), headerShown: false }}
           />
         </Stack>
       </SafeAreaProvider>
