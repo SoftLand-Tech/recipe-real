@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Recipe;
 use App\Support\TypesenseSearch;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
