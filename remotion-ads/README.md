@@ -1,65 +1,32 @@
-# RecipeReal — Remotion Ads
+# RecipeReal — 60s 16:9 Ad
 
-Two 16:9 (1920×1080 @ 30fps) advertisement videos for the RecipeReal MVP:
+Remotion project for the RecipeReal app promo. Style follows the reference ad's
+motion language: hard cuts between shots (motion always mid-flight at the cut),
+dark warm stage with light app UI floating on it, breathing glow accents,
+Ken Burns full-bleed moments, overshoot chip pops, staggered card fly-ins,
+and a count-up stat burst.
 
-| Composition | File | Length | Angle |
-|---|---|---|---|
-| `ThirtyMinuteLie` | `out/ThirtyMinuteLie.mp4` | ~55s | Persona 1 (time-anxious beginner) — empathetic story, warm light palette |
-| `ItLearnsYou` | `out/ItLearnsYou.mp4` | ~54s | Persona 3 (efficiency-minded cook) — energetic feature ad, warm dark palette |
+## Timeline (30fps, 1920×1080, 1800 frames = 60s)
 
-## Pipeline
+| Shot | Frames | Time | Content |
+|------|--------|------|---------|
+| 1 · Logo glow | 0–126 | 0:00–0:04 | Breathing terracotta glow, logo pops with ripple rings, wordmark |
+| 2 · Library 20k | 126–540 | 0:04–0:18 | Three.js ring of 26 real recipe cards rotating in 3D + tilted browse phone + floating cards |
+| 3 · Cooking mode | 540–1020 | 0:18–0:34 | Full-bleed biryani Ken Burns → cook-screen close-up: stopwatch, teal ring, step advance (active→passive), alarm chip |
+| 4 · Community | 1020–1380 | 0:34–0:46 | Staggered post-card fly-in, avatar cluster pop, live like-counter, community phone |
+| 5 · Stat + CTA | 1380–1800 | 0:46–1:00 | 20,000+ count-up with glow burst and sparks → logo, store badges, CTA |
 
-Single source of truth is `src/scenes.ts` (VO copy incl. audio tags, per-scene
-lead/tail gaps, SFX cues). Everything else derives from it:
-
-```bash
-# 1. generate per-scene VO + SFX (idempotent; --force regenerates everything)
-node scripts/generate-vo.mjs [--force] [--only=ThirtyMinuteLie]
-
-# 2. measure every audio file → src/audio-durations.json + timing budget report
-node scripts/measure-audio.mjs
-
-# 3. render
-npx remotion render ThirtyMinuteLie out/ThirtyMinuteLie.mp4
-npx remotion render ItLearnsYou out/ItLearnsYou.mp4
-
-# studio (preview/edit)
-npm run dev
-```
-
-`src/timeline.ts` derives each scene's frame range from the **measured** VO
-duration, so regenerating any scene's audio automatically re-times the whole
-composition — no manual sync.
-
-## Voice / SFX providers
-
-- **Primary**: ElevenLabs (`eleven_v3`, default narrator voice — the free-tier
-  key only works with that voice). Key in `.env.local`.
-- **Fallback**: Deepgram Aura (`aura-asteria-en`) — used automatically when the
-  ElevenLabs monthly quota (10k credits) is exhausted. Key in `.env.deepgram`.
-  Both files are gitignored. `src/vo-manifest.json` records which provider
-  produced each file.
-- SFX fall back to Remotion's SFX library + locally synthesized sounds
-  (ffmpeg) under the same quota condition.
-
-**To swap everything back to ElevenLabs after the quota resets:**
+## Commands
 
 ```bash
-node scripts/generate-vo.mjs --force   # retries ElevenLabs first
-node scripts/measure-audio.mjs
-npx remotion render ThirtyMinuteLie out/ThirtyMinuteLie.mp4
-npx remotion render ItLearnsYou out/ItLearnsYou.mp4
+npm run dev                        # Remotion Studio preview
+npx remotion render RecipeRealAd out/recipereal-ad.mp4   # final render
 ```
 
-## Editing copy
+## Notes
 
-Edit the `vo` text (and `sfx` cues) for a scene in `src/scenes.ts`, then:
-
-```bash
-rm public/audio/<Ad>/<scene>.mp3   # or --force for all
-node scripts/generate-vo.mjs
-node scripts/measure-audio.mjs     # re-times everything
-```
-
-Visuals live in `src/ads/<Ad>.tsx` (one component per scene), shared design
-system in `src/theme.ts`, `src/atoms.tsx`, `src/brand.tsx`, `src/ui/`.
+- Palette mirrors `mobile/src/theme/tokens.ts` (terracotta `#E86A33`, timing teal `#287C78`, cream `#FAF8F5`, warm dark stage `#171310`).
+- Food photos in `public/food/` are real recipes from the Food.com dataset (see `recipes-dataset/`).
+- All animation is `useCurrentFrame()` + `interpolate()` — no CSS transitions; particles use a seeded PRNG so renders are deterministic.
+- 3D content (recipe ring) uses `@remotion/three` + React Three Fiber; textures load via drei's `useTexture` inside `<Suspense>`.
+- No audio track yet — add VO/music as `<Audio>` sequences if wanted.
