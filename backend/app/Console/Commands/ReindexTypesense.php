@@ -74,9 +74,13 @@ class ReindexTypesense extends Command
 
                 // Cast each row through a Recipe model so documentFor() has
                 // one payload shape everywhere (array casts on ingredients/
-                // keywords/ingredients_ar included).
+                // keywords/ingredients_ar included). setRawAttributes, NOT
+                // new Recipe($row): the constructor mass-assigns through
+                // $fillable, which EXCLUDES id/reality_minutes/etc — every
+                // doc indexed with an empty id ("The `id` should not be
+                // empty") until this was switched.
                 $docs = $rows
-                    ->map(fn ($row) => new Recipe((array) $row))
+                    ->map(fn ($row) => (new Recipe)->setRawAttributes((array) $row, true))
                     ->map(fn (Recipe $recipe) => $typesense->documentFor($recipe))
                     ->all();
 
