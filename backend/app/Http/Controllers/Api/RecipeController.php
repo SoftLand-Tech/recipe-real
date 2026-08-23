@@ -292,12 +292,13 @@ class RecipeController extends Controller
         if ($request->filled('page')) {
             $perPage = max(1, min(100, $request->integer('per_page', 50)));
 
-            // Paged mode: quality tier (>= 2 steps, image, rating >= 4,
-            // review_count >= 5) so the offline cache holds the good stuff —
-            // the total will read ~51.7k in prod, not 520k. The legacy
-            // unpaged dump below keeps its original behavior.
+            // Paged mode: the ENTIRE library (photos ordered first) — the
+            // offline cache mirrors what Browse/search serve online. This
+            // used to filter to the quality tier (image + rating + steps +
+            // reviews ≈ 2.5k of 20k), which capped every device's "full"
+            // sync at the curated subset; the tier remains a SORT input
+            // (photos first), not an inclusion rule.
             $recipes = Recipe::with('recipeSteps')
-                ->qualityTier()
                 ->orderByRaw('image_url IS NOT NULL DESC, id ASC')
                 ->paginate($perPage);
         } else {

@@ -527,13 +527,13 @@ export async function upsertRecipes(
 const SEED_PAGE_SIZE = 50;
 /**
  * Safety cap for the background seed continuation (pages 2..N). Sized to
- * cover the FULL library (~9.5k recipes = ~190 pages) with headroom — it
- * only guards against a server that never reports a last page, not a
- * target: the loop always exits at the real last page.
+ * cover the FULL library (20k recipes = ~400 pages at 50/page) with
+ * headroom — it only guards against a server that never reports a last
+ * page, not a target: the loop always exits at the real last page.
  */
-const SEED_MAX_PAGES = 400;
+const SEED_MAX_PAGES = 500;
 /** Safety cap for the light background refresh (100 light rows/page). */
-const REFRESH_MAX_PAGES = 120;
+const REFRESH_MAX_PAGES = 250;
 
 /**
  * Cold-cache seed, first page only: fetches one seed page (with steps) and
