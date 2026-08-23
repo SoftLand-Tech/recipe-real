@@ -141,6 +141,8 @@ export const ar: Record<string, string> = {
   "detail.noIngredients": "لا توجد مكونات مدرجة.",
   "detail.notesTitle": "الملاحظات",
   "detail.notesTabPersonal": "ملاحظاتك",
+  "detail.addNote": "أضف ملاحظة",
+  "detail.editNote": "تعديل",
   "detail.notesTabCommunity": "المجتمع",
   "detail.yourNotes": "ملاحظاتك",
   "detail.notesSubtitle":

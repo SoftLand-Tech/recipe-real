@@ -64,7 +64,6 @@ import {
 import {
   Avatar,
   Button,
-  Card,
   Chip,
   HeroImage,
   IconPressable,
@@ -124,6 +123,15 @@ function noteAuthorName(user: RecipeNote["user"]): string {
 /** Display name of a post author: display_name, else the account name. */
 function postAuthorName(user: Post["user"]): string {
   return (user.display_name ?? user.name ?? "").trim();
+}
+
+/** Publisher hostname ("food.com") for the hero's tiny attribution line. */
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
 }
 
 /** Rows shown before "Show all" expands the recipe's community list. */
@@ -294,6 +302,10 @@ export default function RecipeDetailScreen() {
   const [notesTab, setNotesTab] = useState<"personal" | "community">(
     "personal",
   );
+  // The personal-note editor is COLLAPSED by default: without this flag the
+  // tab shows either the saved note (tap to edit) or an "Add a note" row —
+  // the textarea/save/toggle stack only mounts while editing.
+  const [noteEditing, setNoteEditing] = useState(false);
 
   // ---- Community notes (public, paginated 20/page) -----------------------------
   const [notes, setNotes] = useState<RecipeNote[]>([]);
@@ -486,55 +498,17 @@ export default function RecipeDetailScreen() {
           borderTopRightRadius: Radius.xl,
           marginTop: -Space.huge,
           paddingHorizontal: Space.lg,
-          paddingTop: Space.xl,
-          paddingBottom: Space.huge,
+          paddingTop: Space.lg,
+          paddingBottom: Space.lg,
         },
-        statGrid: {
-          flexDirection: "row",
-          flexWrap: "wrap",
-          marginHorizontal: -Space.sm,
-          marginTop: -Space.sm,
-        },
-        statCell: {
-          width: "50%",
-          paddingHorizontal: Space.sm,
-          paddingTop: Space.sm,
-        },
-        // "Be the first!" CTA replacing the cooks-average stat when the
-        // community has no data yet. Negative margins + matching padding keep
-        // the label/value aligned with the neighbouring cells while painting
-        // the timingSoft background out to the gutter edge (quick-time is
-        // calibration data → teal, not accent).
-        statCellCta: {
-          marginHorizontal: -Space.sm,
-          marginTop: -Space.sm,
-          backgroundColor: colors.timingSoft,
-          borderRadius: Radius.md,
-          paddingHorizontal: Space.sm,
-          paddingVertical: Space.sm,
-        },
-        // ONE caption line under the two big stats: the total incl. cleanup
-        // and the "+ ~Xm cleanup after" note merged into a single muted line.
-        statCaption: {
-          ...Type.caption,
-          color: colors.inkSecondary,
-          marginTop: Space.sm,
-        },
-        // ONE compact info-chips row: reality badge, personalized pace, and
-        // cleanup-factor chips share a single wrapping row — the rating lives
-        // up in the hero overlay (no duplicate chip here).
-        infoChipRow: {
+        // ONE tight fact row: the two time StatPills + the reality badge,
+        // wrapping naturally. Replaces the old 50/50 stat grid + caption +
+        // wrapping chip row (three stacked blocks).
+        factRow: {
           flexDirection: "row",
           flexWrap: "wrap",
           alignItems: "center",
-          gap: Space.xs,
-          marginTop: Space.md,
-        },
-        // Source caption sitting inline at the end of the info chips row.
-        realityCaption: {
-          ...Type.caption,
-          color: colors.inkFaint,
-          flexShrink: 1,
+          gap: Space.sm,
         },
         // ---- Quick-time contribution (compact card with an inline form) ----
         // Trigger row: icon + "Did you make this?" + chevron. Tapping the
@@ -676,23 +650,21 @@ export default function RecipeDetailScreen() {
         timelineInfo: {
           flex: 1,
         },
-        timelineCaptionRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.xs,
+        // Bold step number leading the step text ("1. Boil the water…").
+        timelineStepNum: {
+          fontWeight: "700",
+          color: colors.inkSecondary,
         },
-        timelineStepCaption: {
+        // ONE small meta line under the step text: hands-off and/or the
+        // personalized adjusted time, plain muted text (no chips).
+        timelineMeta: {
           ...Type.caption,
-          color: colors.inkFaint,
-          fontWeight: "600",
-        },
-        timelineChipWrap: {
-          marginTop: -2,
+          color: colors.inkSecondary,
+          marginTop: Space.xs,
         },
         timelineDesc: {
           ...Type.body,
           color: colors.ink,
-          marginTop: Space.xs,
         },
         // ---- Timeline placeholder (light cache row, steps still loading) ----
         // Compact inline stand-in: a small spinner plus text-free skeleton
@@ -724,7 +696,7 @@ export default function RecipeDetailScreen() {
           backgroundColor: colors.surfaceSoft,
         },
         section: {
-          marginTop: Space.xxl,
+          marginTop: Space.xl,
         },
         bulletList: {
           gap: Space.xs,
@@ -766,19 +738,37 @@ export default function RecipeDetailScreen() {
           fontSize: 13,
           fontWeight: "700",
         },
-        // ---- Notes card (merged personal + community) ----
-        notesCardTitle: {
-          ...Type.h3,
-          color: colors.ink,
-        },
-        // The two tab chips sit in one row under the card title (row mirrors
-        // automatically in RTL).
+        // ---- Notes (personal + community tabs — the chips are the header) ----
+        // The two tab chips open their section directly (no card, no extra
+        // title above them).
         notesTabsRow: {
           flexDirection: "row",
           alignItems: "center",
           gap: Space.xs,
-          marginTop: Space.sm,
           marginBottom: Space.sm,
+        },
+        // Collapsed personal-note rows: saved note (text + "Edit note" hint)
+        // or the "Add a note" pencil row.
+        noteViewRow: {
+          flexDirection: "row",
+          alignItems: "flex-start",
+          gap: Space.sm,
+          paddingVertical: Space.xs,
+        },
+        noteViewText: {
+          flex: 1,
+          ...Type.body,
+          color: colors.ink,
+        },
+        noteEditHint: {
+          ...Type.caption,
+          color: colors.accent,
+          fontWeight: "600",
+          marginTop: Space.xs,
+        },
+        noteAddLabel: {
+          ...Type.body,
+          color: colors.inkSecondary,
         },
         noteInput: {
           ...Type.body,
@@ -801,14 +791,6 @@ export default function RecipeDetailScreen() {
           ...Type.caption,
           color: colors.success,
           fontWeight: "600",
-        },
-        // Persistent "Saved on this device ✓" caption shown above the note
-        // input whenever a saved note exists and the field is pristine.
-        noteSavedOnDevice: {
-          ...Type.caption,
-          color: colors.success,
-          fontWeight: "600",
-          marginBottom: Space.xs,
         },
         // "Make public" toggle row under the note editor.
         publicToggleRow: {
@@ -1805,6 +1787,10 @@ export default function RecipeDetailScreen() {
     if (ok) setNoteDraft("");
   }, [noteDraft, postPublicNote]);
 
+  // Tiny attribution line under the hero title — hostname only, never the
+  // full raw URL (long scraper URLs read as noise).
+  const sourceHost = recipe?.source_url ? hostOf(recipe.source_url) : null;
+
   return (
     <View style={styles.screen}>
       <ScrollView
@@ -1845,7 +1831,7 @@ export default function RecipeDetailScreen() {
                 <View style={styles.heroWrap}>
                   <HeroImage
                     uri={recipe.image_url}
-                    height={380}
+                    height={300}
                     withScrim
                     rounded={0}
                   >
@@ -1853,8 +1839,8 @@ export default function RecipeDetailScreen() {
                     style={[
                       styles.heroOverlay,
                       {
-                        paddingBottom: Space.xl,
-                        paddingTop: insets.top + Space.huge,
+                        paddingBottom: Space.lg,
+                        paddingTop: insets.top + Space.xl,
                       },
                     ]}
                   >
@@ -1887,9 +1873,9 @@ export default function RecipeDetailScreen() {
                             })}
                       </Text>
                     ) : null}
-                    {recipe.source_url ? (
+                    {sourceHost != null ? (
                       <Text style={styles.heroSource} numberOfLines={1}>
-                        {recipe.source_url}
+                        {sourceHost}
                       </Text>
                     ) : null}
                   </View>
@@ -1958,83 +1944,39 @@ export default function RecipeDetailScreen() {
                   />
                 ) : null}
 
-                {/* 1. TWO BIG STATS — "Recipe says" (neutral ink) vs "Really
-                    takes" (timing teal: honest times are calibration data).
-                    Until a real figure exists the second cell becomes the
-                    quick-time CTA ("Be the first!" — also teal). Total-incl-
-                    cleanup + the cleanup note merge into ONE caption line
-                    underneath. */}
-                <View style={styles.statGrid}>
-                  <View style={styles.statCell}>
+                {/* 1. FACT STRIP — one tight row: "Recipe says" (neutral) vs
+                    "Really takes" (timing teal — the honest-time brand pair),
+                    plus the single reality badge. Nothing else: the old
+                    cleanup caption, pace chip and cleanup-factor chips moved
+                    out (Pace tab + cook flow own those); until a real figure
+                    exists the teal cell is the quick-time CTA ("Be the
+                    first!"). */}
+                <View style={styles.factRow}>
+                  <StatPill
+                    label={t("detail.statClaimed")}
+                    value={fmtMin(publisher ?? 0)}
+                  />
+                  <Pressable
+                    onPress={reallyTakes == null ? openQuick : undefined}
+                    hitSlop={Space.xs}
+                    accessibilityRole={
+                      reallyTakes == null ? "button" : undefined
+                    }
+                  >
                     <StatPill
-                      label={t("detail.statClaimed")}
-                      value={fmtMin(publisher ?? 0)}
+                      label={t("detail.statReally")}
+                      value={
+                        reallyTakes != null
+                          ? fmtMin(reallyTakes)
+                          : t("detail.beTheFirst")
+                      }
+                      tone="timing"
                     />
-                  </View>
-                  <View style={styles.statCell}>
-                    {reallyTakes != null ? (
-                      <StatPill
-                        label={t("detail.statReally")}
-                        value={fmtMin(reallyTakes)}
-                        tone="timing"
-                      />
-                    ) : (
-                      <Pressable
-                        style={styles.statCellCta}
-                        onPress={openQuick}
-                        hitSlop={Space.xs}
-                      >
-                        <StatPill
-                          label={t("detail.statReally")}
-                          value={t("detail.beTheFirst")}
-                          tone="timing"
-                        />
-                      </Pressable>
-                    )}
-                  </View>
+                  </Pressable>
+                  {realityChip != null ? (
+                    <Chip size="sm" tone={realityChip.tone} label={realityChip.label} />
+                  ) : null}
                 </View>
-                {cleanup != null && totalInclCleanup != null ? (
-                  <Text style={styles.statCaption} numberOfLines={1}>
-                    {`${t("detail.statTotalInclCleanup")} ~${fmtMin(totalInclCleanup)} · ${t("detail.cleanupAfter", { time: fmtMin(cleanup) })}`}
-                  </Text>
-                ) : null}
-
-                {/* 1b. INFO CHIPS — reality badge, personalized pace and
-                    cleanup factors share ONE compact wrapping row (the ★
-                    rating lives in the hero overlay above, not duplicated
-                    here), with the data-source caption inline at the end. */}
-                {realityChip != null ||
-                personalTotal != null ||
-                chips.length > 0 ? (
-                  <View style={styles.infoChipRow}>
-                    {realityChip != null ? (
-                      <Chip
-                        size="sm"
-                        tone={realityChip.tone}
-                        label={realityChip.label}
-                      />
-                    ) : null}
-                    {personalTotal != null ? (
-                      <Chip
-                        tone="accent"
-                        size="sm"
-                        label={t("detail.yourPace", {
-                          time: fmtMin(personalTotal),
-                        })}
-                      />
-                    ) : null}
-                    {chips.map((label) => (
-                      <Chip key={label} tone="neutral" label={label} size="sm" />
-                    ))}
-                    {reality != null && realityChip != null ? (
-                      <Text style={styles.realityCaption}>
-                        {reality.source === "community"
-                          ? t("detail.realityFrom", { n: reality.samples })
-                          : t("detail.realityEstimate")}
-                      </Text>
-                    ) : null}
-                  </View>
-                ) : null}
 
                 {/* 2. INGREDIENTS — structured "½ cup | brown sugar, packed"
                     rows when the parsed data lines up, plain bullets otherwise. */}
@@ -2164,37 +2106,31 @@ export default function RecipeDetailScreen() {
                               ]}
                             />
                             <View style={styles.timelineInfo}>
-                              <View style={styles.timelineCaptionRow}>
-                                <Text style={styles.timelineStepCaption}>
-                                  {t("detail.stepCaption", {
-                                    n: step.step_number,
-                                  })}
-                                </Text>
-                                {passive ? (
-                                  <View style={styles.timelineChipWrap}>
-                                    <Chip
-                                      label={t("common.handsOff")}
-                                      tone="success"
-                                      size="sm"
-                                    />
-                                  </View>
-                                ) : null}
-                              </View>
                               {/* Full step text — this row IS the step list
-                                  (no separate Steps section below). */}
+                                  (no separate Steps section below). The step
+                                  number leads the text; hands-off + adjusted
+                                  notes fold into ONE small meta line. */}
                               <Text style={styles.timelineDesc}>
+                                <Text style={styles.timelineStepNum}>
+                                  {`${t("detail.stepCaption", {
+                                    n: step.step_number,
+                                  })} `}
+                                </Text>
                                 {lr.stepDescription(step)}
                               </Text>
-                              {adjusted != null ? (
-                                <View style={styles.timelineChipWrap}>
-                                  <Chip
-                                    tone="accent"
-                                    size="sm"
-                                    label={t("detail.adjustedForYou", {
-                                      time: fmtMin(adjusted),
-                                    })}
-                                  />
-                                </View>
+                              {passive || adjusted != null ? (
+                                <Text style={styles.timelineMeta}>
+                                  {[
+                                    passive ? t("common.handsOff") : null,
+                                    adjusted != null
+                                      ? t("detail.adjustedForYou", {
+                                          time: fmtMin(adjusted),
+                                        })
+                                      : null,
+                                  ]
+                                    .filter(Boolean)
+                                    .join("  ·  ")}
+                                </Text>
                               ) : null}
                             </View>
                           </View>
@@ -2233,168 +2169,153 @@ export default function RecipeDetailScreen() {
                     <SectionHeader title={t("detail.steps")} />
                     <View style={styles.stepList}>
                       {lr.steps(recipe).map((step, idx) => (
-                        <Card key={`plain-step-${idx}`} padding={Space.lg}>
-                          <View style={styles.bulletRow}>
-                            <View style={styles.stepNumber}>
-                              <Text style={styles.stepNumberText}>
-                                {idx + 1}
-                              </Text>
-                            </View>
-                            <Text style={styles.bulletText}>{step}</Text>
+                        <View key={`plain-step-${idx}`} style={styles.bulletRow}>
+                          <View style={styles.stepNumber}>
+                            <Text style={styles.stepNumberText}>
+                              {idx + 1}
+                            </Text>
                           </View>
-                        </Card>
+                          <Text style={styles.bulletText}>{step}</Text>
+                        </View>
                       ))}
                     </View>
                   </View>
                 ) : null}
 
-                {/* QUICK-TIME CONTRIBUTION — a compact card: one trigger row
-                    ("Did you make this?" + chevron) that expands the
-                    breakdown form inline below it. After a successful submit
-                    the form collapses back to the row with a one-line thanks
-                    caption. Unauthenticated submits prompt sign-in. */}
+                {/* QUICK-TIME CONTRIBUTION — one quiet expandable row (no
+                    card): "Did you make this?" + chevron opens the breakdown
+                    form inline. After a successful submit the form collapses
+                    back to the row with a one-line thanks caption.
+                    Unauthenticated submits prompt sign-in. */}
                 <View style={styles.section}>
-                  <Card padding={Space.lg}>
-                    <Pressable
-                      onPress={
-                        quickOpen ? () => setQuickOpen(false) : openQuick
-                      }
-                      onPressIn={() => setQuickPressed(true)}
-                      onPressOut={() => setQuickPressed(false)}
-                      accessibilityRole="button"
-                      accessibilityState={{ expanded: quickOpen }}
-                      hitSlop={Space.xs}
+                  <Pressable
+                    onPress={
+                      quickOpen ? () => setQuickOpen(false) : openQuick
+                    }
+                    onPressIn={() => setQuickPressed(true)}
+                    onPressOut={() => setQuickPressed(false)}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: quickOpen }}
+                    hitSlop={Space.xs}
+                    style={[
+                      styles.quickTriggerRow,
+                      quickPressed ? { opacity: 0.7 } : null,
+                    ]}
+                  >
+                    <Ionicons
+                      name="stopwatch-outline"
+                      size={20}
+                      color={colors.accent}
+                    />
+                    <Text style={styles.quickTriggerLabel} numberOfLines={1}>
+                      {t("quick.didYouMake")}
+                    </Text>
+                    <Ionicons
+                      name={quickOpen ? "chevron-up" : "chevron-down"}
+                      size={18}
+                      color={colors.inkFaint}
+                    />
+                  </Pressable>
+                  {quickDone && !quickOpen ? (
+                    <Animated.Text
                       style={[
-                        styles.quickTriggerRow,
-                        quickPressed ? { opacity: 0.7 } : null,
+                        styles.quickSuccess,
+                        { opacity: quickFadeRef.current },
                       ]}
+                      numberOfLines={1}
                     >
-                      <Ionicons
-                        name="stopwatch-outline"
-                        size={20}
-                        color={colors.accent}
+                      {quickAvg != null
+                        ? t("quick.thanksBreakdown", { time: fmtMin(quickAvg) })
+                        : // No server average (offline / sparse data): thank the
+                          // user WITHOUT dressing their own input up as an average.
+                          t("quick.thanksOwnTime")}
+                      {quickCleanupAvg != null
+                        ? ` · ${t("quick.thanksCleanup", {
+                            cleanup: fmtMin(quickCleanupAvg),
+                          })}`
+                        : ""}
+                    </Animated.Text>
+                  ) : null}
+                  {quickOpen ? (
+                    <View style={styles.quickForm}>
+                      {quickField(
+                        t("quick.plates"),
+                        quickPlates,
+                        setQuickPlates,
+                        { optional: true },
+                      )}
+                      {quickField(
+                        t("quick.handsOn"),
+                        quickHandsOn,
+                        setQuickHandsOn,
+                        { optional: true },
+                      )}
+                      {quickField(
+                        t("quick.totalQ"),
+                        quickTotal,
+                        setQuickTotal,
+                        { focusRef: true },
+                      )}
+                      {quickField(
+                        t("quick.cleanupQ"),
+                        quickCleanup,
+                        setQuickCleanup,
+                        { optional: true },
+                      )}
+                      {quickHandsOnExceeds ? (
+                        <Text style={styles.quickError}>
+                          {t("quick.handsOnTooLong")}
+                        </Text>
+                      ) : null}
+                      <Button
+                        title={t("quick.submit")}
+                        variant="primary"
+                        fullWidth
+                        disabled={!quickValid}
+                        loading={quickSubmitting}
+                        onPress={onSubmitQuickTime}
                       />
-                      <Text style={styles.quickTriggerLabel} numberOfLines={1}>
-                        {t("quick.didYouMake")}
-                      </Text>
-                      <Ionicons
-                        name={quickOpen ? "chevron-up" : "chevron-down"}
-                        size={18}
-                        color={colors.inkFaint}
-                      />
-                    </Pressable>
-                    {quickDone && !quickOpen ? (
-                      <Animated.Text
-                        style={[
-                          styles.quickSuccess,
-                          { opacity: quickFadeRef.current },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {quickAvg != null
-                          ? t("quick.thanksBreakdown", { time: fmtMin(quickAvg) })
-                          : // No server average (offline / sparse data): thank the
-                            // user WITHOUT dressing their own input up as an average.
-                            t("quick.thanksOwnTime")}
-                        {quickCleanupAvg != null
-                          ? ` · ${t("quick.thanksCleanup", {
-                              cleanup: fmtMin(quickCleanupAvg),
-                            })}`
-                          : ""}
-                      </Animated.Text>
-                    ) : null}
-                    {quickOpen ? (
-                      <View style={styles.quickForm}>
-                        {quickField(
-                          t("quick.plates"),
-                          quickPlates,
-                          setQuickPlates,
-                          { optional: true },
-                        )}
-                        {quickField(
-                          t("quick.handsOn"),
-                          quickHandsOn,
-                          setQuickHandsOn,
-                          { optional: true },
-                        )}
-                        {quickField(
-                          t("quick.totalQ"),
-                          quickTotal,
-                          setQuickTotal,
-                          { focusRef: true },
-                        )}
-                        {quickField(
-                          t("quick.cleanupQ"),
-                          quickCleanup,
-                          setQuickCleanup,
-                          { optional: true },
-                        )}
-                        {quickHandsOnExceeds ? (
-                          <Text style={styles.quickError}>
-                            {t("quick.handsOnTooLong")}
+                      {quickError != null ? (
+                        <Text style={styles.quickError}>{quickError}</Text>
+                      ) : null}
+                      {quickNeedsAuth ? (
+                        <Pressable
+                          onPress={() => router.push("/login")}
+                          hitSlop={Space.sm}
+                          style={styles.quickSignIn}
+                        >
+                          <Text style={styles.quickSignIn}>
+                            {t("quick.signIn")}
                           </Text>
-                        ) : null}
-                        <Button
-                          title={t("quick.submit")}
-                          variant="primary"
-                          fullWidth
-                          disabled={!quickValid}
-                          loading={quickSubmitting}
-                          onPress={onSubmitQuickTime}
-                        />
-                        {quickError != null ? (
-                          <Text style={styles.quickError}>{quickError}</Text>
-                        ) : null}
-                        {quickNeedsAuth ? (
-                          <Pressable
-                            onPress={() => router.push("/login")}
-                            hitSlop={Space.sm}
-                            style={styles.quickSignIn}
-                          >
-                            <Text style={styles.quickSignIn}>
-                              {t("quick.signIn")}
-                            </Text>
-                          </Pressable>
-                        ) : null}
-                      </View>
-                    ) : null}
-                  </Card>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  ) : null}
                 </View>
 
-                {/* 5. NOTES — the device-local personal note and the public
-                    community notes share ONE card, switched by two light chips
-                    in the header. Default tab: "Your notes"; each tab keeps
-                    its own data flow untouched (personal save/load; community
-                    list/post; the "Make public" toggle stays with the
-                    personal tab exactly as before). */}
+                {/* 5. NOTES — personal device-local note and public community
+                    notes under ONE pair of light tab chips (the chips are the
+                    section header — no card). Personal tab is COLLAPSED by
+                    default: saved note (tap to edit) or an "Add a note" row;
+                    the textarea/save/make-public stack only mounts while
+                    editing. Community tab keeps its list + compose row. */}
                 <View style={styles.section}>
-                  <Card padding={Space.lg}>
-                    <Text style={styles.notesCardTitle}>
-                      {t("detail.notesTitle")}
-                    </Text>
-                    <View style={styles.notesTabsRow}>
-                      <NoteTabChip
-                        label={t("detail.notesTabPersonal")}
-                        selected={notesTab === "personal"}
-                        onPress={() => setNotesTab("personal")}
-                      />
-                      <NoteTabChip
-                        label={t("detail.notesTabCommunity")}
-                        selected={notesTab === "community"}
-                        onPress={() => setNotesTab("community")}
-                      />
-                    </View>
+                  <View style={styles.notesTabsRow}>
+                    <NoteTabChip
+                      label={t("detail.notesTabPersonal")}
+                      selected={notesTab === "personal"}
+                      onPress={() => setNotesTab("personal")}
+                    />
+                    <NoteTabChip
+                      label={t("detail.notesTabCommunity")}
+                      selected={notesTab === "community"}
+                      onPress={() => setNotesTab("community")}
+                    />
+                  </View>
 
-                    {notesTab === "personal" ? (
+                  {notesTab === "personal" ? (
+                    noteEditing ? (
                       <>
-                        {/* A saved note + a pristine field: show the persistent
-                            "stored here" caption so returning users see their
-                            note is kept before they even read the textarea. */}
-                        {savedNote.length > 0 && !noteDirty ? (
-                          <Text style={styles.noteSavedOnDevice}>
-                            {t("detail.noteSavedOnDevice")}
-                          </Text>
-                        ) : null}
                         <TextInput
                           style={styles.noteInput}
                           value={note}
@@ -2405,6 +2326,7 @@ export default function RecipeDetailScreen() {
                           placeholder={t("detail.notesPlaceholder")}
                           placeholderTextColor={colors.inkFaint}
                           multiline
+                          autoFocus
                         />
                         <View style={styles.noteActions}>
                           {/* Always primary (ghost + disabled renders nearly
@@ -2440,7 +2362,42 @@ export default function RecipeDetailScreen() {
                           />
                         </View>
                       </>
+                    ) : savedNote.length > 0 ? (
+                      <Pressable
+                        onPress={() => {
+                          setNote(savedNote);
+                          setNoteEditing(true);
+                        }}
+                        hitSlop={Space.xs}
+                        accessibilityRole="button"
+                        style={styles.noteViewRow}
+                      >
+                        <Text style={styles.noteViewText}>{savedNote}</Text>
+                        <Text style={styles.noteEditHint}>
+                          {t("detail.editNote")}
+                        </Text>
+                      </Pressable>
                     ) : (
+                      <Pressable
+                        onPress={() => {
+                          setNote("");
+                          setNoteEditing(true);
+                        }}
+                        hitSlop={Space.xs}
+                        accessibilityRole="button"
+                        style={styles.noteViewRow}
+                      >
+                        <Ionicons
+                          name="pencil-outline"
+                          size={16}
+                          color={colors.inkSecondary}
+                        />
+                        <Text style={styles.noteAddLabel}>
+                          {t("detail.addNote")}
+                        </Text>
+                      </Pressable>
+                    )
+                  ) : (
                       <>
                         {notesError != null ? (
                           <View style={styles.notesCenter}>
@@ -2576,7 +2533,6 @@ export default function RecipeDetailScreen() {
                         )}
                       </>
                     )}
-                  </Card>
                 </View>
 
                 {/* 6. COMMUNITY POSTS — community posts attached to this

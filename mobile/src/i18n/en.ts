@@ -140,6 +140,8 @@ export const en: Record<string, string> = {
   "detail.noIngredients": "No ingredients listed.",
   "detail.notesTitle": "Notes",
   "detail.notesTabPersonal": "Your notes",
+  "detail.addNote": "Add a note",
+  "detail.editNote": "Edit",
   "detail.notesTabCommunity": "Community",
   "detail.yourNotes": "Your notes",
   "detail.notesSubtitle":
