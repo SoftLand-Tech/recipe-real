@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Image } from "expo-image";
 import * as SplashScreen from "expo-splash-screen";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Dimensions, StyleSheet, View } from "react-native";
 import Animated, {
   Easing,
@@ -17,26 +16,19 @@ import { scheduleOnRN } from "react-native-worklets";
 import { useThemePrefs } from "@/theme";
 
 /**
- * Animated splash reveal, layered over the whole app — AT MOST ONCE PER DAY
- * (first launch of each day; every other launch skips straight to the app).
- * Both the native splash and this overlay open as a plain canvas color (no
- * static logo anywhere), so the handoff is invisible and the sequence starts
- * immediately: accent lines sweep across the center, the lines converge into
- * a splash of rings, and the mark springs in — its first and only appearance.
- * The overlay then fades away to reveal the app. Total ≈ 2.1s.
+ * Animated splash reveal, layered over the whole app — EVERY app open
+ * (cold start). Both the native splash and this overlay open as a plain
+ * canvas color (no static logo anywhere), so the handoff is invisible and
+ * the sequence starts immediately: accent lines sweep across the center,
+ * the lines converge into a splash of rings, and the mark springs in —
+ * its first and only appearance. The overlay then fades away to reveal
+ * the app. Total ≈ 2.1s.
  */
 
 const LOGO_SOURCE = require("@/assets/images/recipereallogo.webp");
 /** Trimmed mark w/h — keep in sync with the asset (it is pre-trimmed). */
 const LOGO_ASPECT = 949 / 919;
 const FINAL_WIDTH = 132;
-
-/**
- * AsyncStorage key holding the date string of the day the sequence last
- * PLAYED. The reveal runs at most once per day: repeat launches skip the
- * overlay entirely and dismiss the native splash immediately.
- */
-const SPLASH_LAST_SHOWN_KEY = "recipereal.splashLastShown";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
@@ -73,42 +65,12 @@ const OUT_CUBIC = Easing.out(Easing.cubic);
 
 export function AnimatedSplash() {
   const { colors } = useThemePrefs();
-  // The overlay view mounts ONLY when the sequence will play. Until the
-  // once-per-day check resolves (a few ms) the NATIVE splash is still
-  // covering the screen (preventAutoHideAsync in the root layout), so there
-  // is no flash risk in either direction.
-  const [visible, setVisible] = useState(false);
+  // The overlay mounts on every cold start — the sequence plays each time
+  // the app is opened. Until it lays out, the NATIVE splash still covers
+  // the screen (preventAutoHideAsync in the root layout), so there is no
+  // flash risk in either direction.
+  const [visible, setVisible] = useState(true);
   const started = useRef(false);
-
-  // Once-per-day gate: play the full sequence only on the first launch of
-  // each day; every other launch skips the overlay and dismisses the native
-  // splash right away (never leave it stuck covering the app).
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      let lastShown: string | null = null;
-      try {
-        lastShown = await AsyncStorage.getItem(SPLASH_LAST_SHOWN_KEY);
-      } catch {
-        // Unreadable storage — treat as a fresh day so the sequence plays.
-      }
-      if (cancelled) return;
-      if (lastShown === new Date().toDateString()) {
-        // Already played today: skip the overlay entirely and hand the
-        // screen straight to the app beneath the native splash.
-        SplashScreen.hideAsync().catch(() => {
-          // Already hidden or unavailable (dev web) — nothing to do.
-        });
-        return;
-      }
-      // First ever launch / new day: mount the overlay. Its onLayout then
-      // dismisses the native splash and starts the unchanged sequence.
-      setVisible(true);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const sweep = useSharedValue(0);
   const ring1 = useSharedValue(0);
@@ -121,14 +83,6 @@ export function AnimatedSplash() {
   const start = useCallback(() => {
     if (started.current) return;
     started.current = true;
-
-    // Stamp the day the moment the sequence STARTS (not when it finishes):
-    // even if the app is killed mid-reveal, today counts as shown.
-    AsyncStorage.setItem(SPLASH_LAST_SHOWN_KEY, new Date().toDateString()).catch(
-      () => {
-        // Best-effort persistence — tomorrow's play doesn't depend on it.
-      },
-    );
 
     // Lines sweep — a linear master clock each line windows into.
     sweep.value = withDelay(
