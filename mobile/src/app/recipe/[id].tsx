@@ -712,6 +712,8 @@ export default function RecipeDetailScreen() {
           borderColor: colors.hairline,
           borderRadius: Radius.md,
           overflow: "hidden",
+          // Breathing room between the segmented header and the tab content.
+          marginBottom: Space.md,
         },
         notesSegmentDivider: {
           width: 1,
@@ -733,8 +735,7 @@ export default function RecipeDetailScreen() {
           color: colors.accent,
           fontWeight: "600",
         },
-        // Collapsed personal-note rows: saved note (text + "Edit note" hint)
-        // or the "Add a note" pencil row.
+        // Saved note row: text + "Edit" hint, tap to open the editor.
         noteViewRow: {
           flexDirection: "row",
           alignItems: "flex-start",
@@ -752,9 +753,23 @@ export default function RecipeDetailScreen() {
           fontWeight: "600",
           marginTop: Space.xs,
         },
-        noteAddLabel: {
+        // "Add a note" row styled as an EMPTY INPUT FIELD (soft fill +
+        // hairline border + placeholder-colored label) — reads as tappable
+        // even to someone who has never seen it.
+        noteAddRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+          backgroundColor: colors.surfaceSoft,
+          borderWidth: 1,
+          borderColor: colors.hairline,
+          borderRadius: Radius.md,
+          paddingVertical: Space.md,
+          paddingHorizontal: Space.md,
+        },
+        noteAddPlaceholder: {
           ...Type.body,
-          color: colors.inkSecondary,
+          color: colors.inkFaint,
         },
         noteInput: {
           ...Type.body,
@@ -767,9 +782,12 @@ export default function RecipeDetailScreen() {
           minHeight: 90,
           textAlignVertical: "top",
         },
+        // Editor actions: Save (left) + saved ✓ + "Make public" toggle INLINE
+        // at the row's end (wraps on narrow screens / long Arabic labels).
         noteActions: {
           flexDirection: "row",
           alignItems: "center",
+          flexWrap: "wrap",
           gap: Space.md,
           marginTop: Space.sm,
         },
@@ -778,17 +796,18 @@ export default function RecipeDetailScreen() {
           color: colors.success,
           fontWeight: "600",
         },
-        // "Make public" toggle row under the note editor.
-        publicToggleRow: {
+        publicToggleInline: {
           flexDirection: "row",
           alignItems: "center",
-          gap: Space.md,
-          marginTop: Space.sm,
+          gap: Space.xs,
+          marginLeft: "auto",
+          flexShrink: 1,
         },
         publicToggleLabel: {
           ...Type.bodySm,
           color: colors.ink,
           fontWeight: "600",
+          flexShrink: 1,
         },
         // ---- Community notes ----
         notesList: {
@@ -927,13 +946,25 @@ export default function RecipeDetailScreen() {
           backgroundColor: colors.hairline,
           overflow: "hidden",
         },
-        triesEmptyText: {
+        // Shared empty state (community notes + tries): soft icon circle +
+        // one muted line (+ optional CTA), centered and quiet.
+        emptyBlock: {
+          alignItems: "center",
+          gap: Space.sm,
+          paddingVertical: Space.lg,
+        },
+        emptyIconWrap: {
+          width: 48,
+          height: 48,
+          borderRadius: Radius.pill,
+          backgroundColor: colors.accentSoft,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        emptyText: {
           ...Type.bodySm,
           color: colors.inkSecondary,
-        },
-        triesEmptyCta: {
-          alignSelf: "flex-start",
-          marginTop: Space.xs,
+          textAlign: "center",
         },
         triesShowAll: {
           alignSelf: "flex-start",
@@ -2335,7 +2366,8 @@ export default function RecipeDetailScreen() {
                         <View style={styles.noteActions}>
                           {/* Always primary (ghost + disabled renders nearly
                               invisible); disabled only dims via opacity until
-                              the note is dirty. */}
+                              the note is dirty. The "Make public" toggle sits
+                              INLINE at the row's end (not its own line). */}
                           <Button
                             variant="primary"
                             disabled={!noteDirty}
@@ -2347,24 +2379,27 @@ export default function RecipeDetailScreen() {
                               {t("detail.saved")}
                             </Text>
                           ) : null}
+                          {/* "Make public": flipping it on with text present
+                              publishes the note immediately (save + community
+                              post, no separate Save press); with no text the
+                              toggle is disabled — nothing to make public. */}
+                          <View style={styles.publicToggleInline}>
+                            <Text
+                              style={styles.publicToggleLabel}
+                              numberOfLines={1}
+                            >
+                              {t("detail.notePublicToggle")}
+                            </Text>
+                            <Toggle
+                              value={notePublic}
+                              disabled={note.trim() === ""}
+                              onValueChange={onToggleNotePublic}
+                            />
+                          </View>
                         </View>
                         {noteSaveError ? (
                           <Text style={styles.noteError}>{noteSaveError}</Text>
                         ) : null}
-                        {/* "Make public": flipping it on with text present
-                            publishes the note immediately (save + community
-                            post, no separate Save press); with no text the
-                            toggle is disabled — nothing to make public. */}
-                        <View style={styles.publicToggleRow}>
-                          <Text style={styles.publicToggleLabel}>
-                            {t("detail.notePublicToggle")}
-                          </Text>
-                          <Toggle
-                            value={notePublic}
-                            disabled={note.trim() === ""}
-                            onValueChange={onToggleNotePublic}
-                          />
-                        </View>
                       </>
                     ) : savedNote.length > 0 ? (
                       <Pressable
@@ -2389,14 +2424,14 @@ export default function RecipeDetailScreen() {
                         }}
                         hitSlop={Space.xs}
                         accessibilityRole="button"
-                        style={styles.noteViewRow}
+                        style={styles.noteAddRow}
                       >
                         <Ionicons
                           name="pencil-outline"
                           size={16}
-                          color={colors.inkSecondary}
+                          color={colors.inkFaint}
                         />
-                        <Text style={styles.noteAddLabel}>
+                        <Text style={styles.noteAddPlaceholder}>
                           {t("detail.addNote")}
                         </Text>
                       </Pressable>
@@ -2420,9 +2455,18 @@ export default function RecipeDetailScreen() {
                             />
                           </View>
                         ) : notes.length === 0 ? (
-                          <Text style={styles.notesMuted}>
-                            {t("detail.notesEmpty")}
-                          </Text>
+                          <View style={styles.emptyBlock}>
+                            <View style={styles.emptyIconWrap}>
+                              <Ionicons
+                                name="chatbox-ellipses-outline"
+                                size={22}
+                                color={colors.accent}
+                              />
+                            </View>
+                            <Text style={styles.emptyText}>
+                              {t("detail.notesEmpty")}
+                            </Text>
+                          </View>
                         ) : (
                           <View style={styles.notesList}>
                             {notes.map((item) => {
@@ -2557,17 +2601,23 @@ export default function RecipeDetailScreen() {
                       }
                     />
                     {tries.length === 0 ? (
-                      <>
-                        <Text style={styles.triesEmptyText}>
+                      <View style={styles.emptyBlock}>
+                        <View style={styles.emptyIconWrap}>
+                          <Ionicons
+                            name="images-outline"
+                            size={22}
+                            color={colors.accent}
+                          />
+                        </View>
+                        <Text style={styles.emptyText}>
                           {t("detail.triesEmpty")}
                         </Text>
                         <Button
                           variant="ghost"
                           title={t("detail.shareYourTry")}
                           onPress={startShareTry}
-                          style={styles.triesEmptyCta}
                         />
-                      </>
+                      </View>
                     ) : (
                       <View style={styles.triesList}>
                         {(triesExpanded
