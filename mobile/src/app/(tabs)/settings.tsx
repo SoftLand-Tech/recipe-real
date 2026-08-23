@@ -31,6 +31,7 @@ import {
   countCachedRecipes,
   seedCacheFirstPage,
   seedCacheRemainingPages,
+  SEED_PAGE_SIZE,
 } from "@/db/database";
 import { getNudgePref, setNudgePref } from "@/utils/prefs";
 import { clearPaceCache } from "../pace";
@@ -403,20 +404,25 @@ export default function SettingsScreen() {
   }, []);
 
   /**
-   * Run a library sync. With `maxRecipes` (counting the first page) it's the
-   * "quick sync" (top 200); without it, the deep sync runs to the server's
-   * LAST PAGE — the entire offline library (~9.5k recipes), not a 1,000 cap.
+   * Library sync. "quick" ADDS the next ~200 recipes the cache doesn't
+   * cover yet (starts right past the cached page count — no re-downloading
+   * the top rows the library already has). "deep" re-walks the whole seed
+   * (first page + everything to the server's last page).
    */
   const handleSync = useCallback(
-    async (maxRecipes?: number) => {
+    async (mode: "quick" | "deep") => {
       if (syncingOption != null) return;
-      setSyncingOption(maxRecipes != null ? "quick" : "deep");
+      setSyncingOption(mode);
       setSyncDone(false);
       try {
-        await seedCacheFirstPage();
-        await seedCacheRemainingPages(
-          maxRecipes != null ? { maxRecipes } : {},
-        );
+        if (mode === "quick") {
+          const cached = await countCachedRecipes();
+          const startPage = Math.floor(cached / SEED_PAGE_SIZE) + 1;
+          await seedCacheRemainingPages({ startPage, pages: 4 });
+        } else {
+          await seedCacheFirstPage();
+          await seedCacheRemainingPages();
+        }
         setSyncDone(true);
         await reloadCachedCount();
       } catch (error) {
@@ -564,7 +570,7 @@ export default function SettingsScreen() {
             chevron
             busy={syncingOption === "quick"}
             disabled={syncingOption != null && syncingOption !== "quick"}
-            onPress={() => handleSync(200)}
+            onPress={() => handleSync("quick")}
           />
           <View style={styles.divider} />
           <SettingsRow
@@ -573,7 +579,7 @@ export default function SettingsScreen() {
             chevron
             busy={syncingOption === "deep"}
             disabled={syncingOption != null && syncingOption !== "deep"}
-            onPress={() => handleSync()}
+            onPress={() => handleSync("deep")}
           />
           <View style={styles.divider} />
           <SettingsRow

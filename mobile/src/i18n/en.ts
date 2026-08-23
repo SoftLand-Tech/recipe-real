@@ -352,7 +352,7 @@ export const en: Record<string, string> = {
   "settings.dataStorage": "Data & storage",
   "settings.offlineLibrary": "Offline library",
   "settings.recipesCached": "{n} recipes saved",
-  "settings.syncTop200": "Quick sync — top 200 recipes",
+  "settings.syncTop200": "Quick add — next 200 recipes",
   "settings.syncDeep": "Deep sync — full library",
   "settings.syncing": "Syncing…",
   "settings.syncDone": "Library re-synced ✓",

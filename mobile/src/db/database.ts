@@ -524,7 +524,7 @@ export async function upsertRecipes(
 }
 
 /** Page size for the progressive first-launch seed. */
-const SEED_PAGE_SIZE = 50;
+export const SEED_PAGE_SIZE = 50;
 /**
  * Safety cap for the background seed continuation (pages 2..N). Sized to
  * cover the FULL library (20k recipes = ~400 pages at 50/page) with
@@ -547,20 +547,21 @@ export async function seedCacheFirstPage(): Promise<Recipe[]> {
 }
 
 /**
- * Seed continuation: fetch + upsert the remaining seed pages (with steps),
- * starting at page 2, until the server's last page (the SEED_MAX_PAGES cap
- * is an infinite-loop guard, not a target). `opts.maxRecipes` (counting the
- * already-seeded first page) bounds the run for the "quick sync" option:
- * 200 → stop after page 4 (4 × 50).
+ * Seed continuation: fetch + upsert seed pages (with steps). By default it
+ * runs from page 2 to the server's last page (the SEED_MAX_PAGES cap is an
+ * infinite-loop guard, not a target). `opts.startPage` skips ahead (quick
+ * add: begin right past the pages the cache already covers) and
+ * `opts.pages` bounds the run (quick add: 4 pages = 200 recipes).
  */
 export async function seedCacheRemainingPages(
-  opts: { maxRecipes?: number } = {},
+  opts: { startPage?: number; pages?: number } = {},
 ): Promise<void> {
-  const maxPages = opts.maxRecipes
-    ? Math.max(1, Math.ceil(opts.maxRecipes / SEED_PAGE_SIZE))
-    : SEED_MAX_PAGES;
-  const cap = Math.min(maxPages, SEED_MAX_PAGES);
-  for (let page = 2; page <= cap; page++) {
+  const start = Math.max(2, Math.floor(opts.startPage ?? 2));
+  const cap =
+    opts.pages != null
+      ? Math.min(start + opts.pages - 1, SEED_MAX_PAGES)
+      : SEED_MAX_PAGES;
+  for (let page = start; page <= cap; page++) {
     const result = await fetchSeedPage(page, SEED_PAGE_SIZE);
     if (result.recipes.length === 0) break;
     await upsertRecipes(result.recipes, { withSteps: true });
