@@ -20,6 +20,7 @@ import {
   useThemeColors,
 } from "@/theme";
 import { Button, Card, Chip } from "@/components/ui";
+import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
 
 /**
  * Plan rows are DISPLAY-ONLY while billing is "coming soon": prices are
@@ -64,6 +65,9 @@ export default function UpgradeScreen() {
         container: {
           flex: 1,
           backgroundColor: colors.canvas,
+        },
+        scroll: {
+          flex: 1,
         },
         content: {
           paddingHorizontal: Space.lg,
@@ -181,13 +185,15 @@ export default function UpgradeScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={[
-        styles.content,
-        { paddingTop: Space.lg, paddingBottom: insets.bottom + 32 },
-      ]}
-    >
+    <View style={styles.container}>
+      <PinnedHeaderBar title={t("stack.premium")} leading={<BackChevron />} />
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: Space.lg, paddingBottom: insets.bottom + 32 },
+        ]}
+      >
       <View style={styles.columnWrap}>
         <Text style={styles.title}>{t("upgrade.headline")}</Text>
         <Text style={styles.subtitle}>{t("upgrade.subtitle")}</Text>
@@ -246,6 +252,7 @@ export default function UpgradeScreen() {
           fullWidth
         />
       </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }

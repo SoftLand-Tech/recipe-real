@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { router, Stack, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import axios from "axios";
 import * as Crypto from "expo-crypto";
 import Constants, { ExecutionEnvironment } from "expo-constants";
@@ -23,6 +23,7 @@ import {
   useThemeColors,
 } from "@/theme";
 import { Button, GoogleLogo } from "@/components/ui";
+import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
 
 const GOOGLE_CLIENT_ID_PLACEHOLDER = "REPLACE_WITH_GOOGLE_WEB_CLIENT_ID";
 
@@ -400,13 +401,7 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen
-        options={{
-          title: t("stack.signIn"),
-          headerStyle: { backgroundColor: colors.canvas },
-          headerTintColor: colors.ink,
-        }}
-      />
+      <PinnedHeaderBar title={t("stack.signIn")} leading={<BackChevron />} />
       <View style={styles.body}>
         <View style={styles.column}>
           <View style={styles.heading}>

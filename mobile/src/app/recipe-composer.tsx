@@ -14,13 +14,13 @@ import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import {
-  Stack,
   router,
   useFocusEffect,
   useLocalSearchParams,
   useNavigation,
 } from "expo-router";
 import { usePreventRemove } from "expo-router/build/react-navigation/core";
+import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
 
 import {
   createUserRecipe,
@@ -794,11 +794,11 @@ export default function RecipeComposerScreen() {
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      {/* Native stack header title depends on the mode — set it here. */}
-      <Stack.Screen
-        options={{
-          title: editMode ? t("stack.editRecipe") : t("stack.newRecipe"),
-        }}
+      {/* Own pinned header — the title depends on the mode. BackChevron
+          routes through usePreventRemove's discard-confirm below. */}
+      <PinnedHeaderBar
+        title={editMode ? t("stack.editRecipe") : t("stack.newRecipe")}
+        leading={<BackChevron />}
       />
       <ScrollView
         style={styles.container}

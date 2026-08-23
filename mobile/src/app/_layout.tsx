@@ -139,26 +139,20 @@ function NavigationFrame() {
           {/*
             Premium upsell. Formerly a tab; now a plain stack screen at
             /upgrade (src/app/upgrade.tsx) so pushes from pace.tsx and
-            recipe/[id].tsx keep resolving.
+            recipe/[id].tsx keep resolving. Own PinnedHeaderBar.
           */}
           <Stack.Screen
             name="upgrade"
-            options={{
-              title: t("stack.premium"),
-              headerShown: true,
-              headerStyle: { backgroundColor: colors.canvas },
-              headerTintColor: colors.ink,
-              headerTitleStyle: { fontWeight: "600" },
-            }}
+            options={{ title: t("stack.premium"), headerShown: false }}
           />
+          {/*
+            Sign-in. Own PinnedHeaderBar (native stack headers double-count
+            the status-bar inset on this device/SDK — the app-wide custom
+            headers pad correctly from the top).
+          */}
           <Stack.Screen
             name="login"
-            options={{
-              title: t("stack.signIn"),
-              headerShown: true,
-              headerStyle: { backgroundColor: colors.canvas },
-              headerTintColor: colors.ink,
-            }}
+            options={{ title: t("stack.signIn"), headerShown: false }}
           />
           {/*
             The signed-in user's profile (avatar, editable display name,
@@ -184,18 +178,13 @@ function NavigationFrame() {
             options={{ title: t("stack.recipe"), headerShown: false }}
           />
           {/*
-            Recipe composer (create/edit a user-submitted recipe). The header
-            title ("New recipe" / "Edit recipe") is finalized by the screen
-            itself via its own <Stack.Screen options> once it knows the mode.
+            Recipe composer (create/edit a user-submitted recipe). Own
+            PinnedHeaderBar; the title ("New recipe" / "Edit recipe")
+            depends on the mode, set by the screen itself.
           */}
           <Stack.Screen
             name="recipe-composer"
-            options={{
-              title: t("stack.newRecipe"),
-              headerShown: true,
-              headerStyle: { backgroundColor: colors.canvas },
-              headerTintColor: colors.ink,
-            }}
+            options={{ title: t("stack.newRecipe"), headerShown: false }}
           />
           <Stack.Screen
             name="cook/[id]"
