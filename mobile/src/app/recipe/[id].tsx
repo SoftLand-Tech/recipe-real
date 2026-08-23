@@ -1991,50 +1991,57 @@ export default function RecipeDetailScreen() {
                   />
                 ) : null}
 
-                {/* 2. INGREDIENTS — structured "½ cup | brown sugar, packed"
-                    rows when the parsed data lines up, plain bullets otherwise. */}
+                {/* 2. INGREDIENTS — card section: structured "½ cup | brown
+                    sugar, packed" rows when the parsed data lines up, plain
+                    bullets otherwise. */}
                 <View style={styles.section}>
-                  <SectionHeader title={t("detail.ingredients")} />
-                  {ingredientLines.length > 0 ? (
-                    <View style={styles.bulletList}>
-                      {ingredientLines.map((ingredient, idx) => {
-                        const structured = structuredAligned
-                          ? structuredIngredients[idx]
-                          : undefined;
-                        const qty =
-                          structured?.qty_display ??
-                          (structured?.qty != null
-                            ? String(structured.qty)
-                            : null);
-                        const unit = structured?.unit?.trim() || null;
-                        const itemText = [
-                          structured?.item?.trim(),
-                          structured?.prep?.trim(),
-                        ]
-                          .filter(Boolean)
-                          .join(", ");
-                        const qtyPart = [qty, unit].filter(Boolean).join(" ");
-                        const hasStructure = qtyPart !== "" && itemText !== "";
-                        return (
-                          <View key={`ing-${idx}`} style={styles.bulletRow}>
-                            <Text style={styles.bullet}>•</Text>
-                            {hasStructure ? (
-                              <Text style={styles.bulletText}>
-                                <Text style={styles.ingredientQty}>
-                                  {qtyPart}
+                  <Card padding={Space.lg}>
+                    <SectionHeader title={t("detail.ingredients")} />
+                    {ingredientLines.length > 0 ? (
+                      <View style={styles.bulletList}>
+                        {ingredientLines.map((ingredient, idx) => {
+                          const structured = structuredAligned
+                            ? structuredIngredients[idx]
+                            : undefined;
+                          const qty =
+                            structured?.qty_display ??
+                            (structured?.qty != null
+                              ? String(structured.qty)
+                              : null);
+                          const unit = structured?.unit?.trim() || null;
+                          const itemText = [
+                            structured?.item?.trim(),
+                            structured?.prep?.trim(),
+                          ]
+                            .filter(Boolean)
+                            .join(", ");
+                          const qtyPart = [qty, unit].filter(Boolean).join(" ");
+                          const hasStructure = qtyPart !== "" && itemText !== "";
+                          return (
+                            <View key={`ing-${idx}`} style={styles.bulletRow}>
+                              <Text style={styles.bullet}>•</Text>
+                              {hasStructure ? (
+                                <Text style={styles.bulletText}>
+                                  <Text style={styles.ingredientQty}>
+                                    {qtyPart}
+                                  </Text>
+                                  {` ${itemText}`}
                                 </Text>
-                                {` ${itemText}`}
-                              </Text>
-                            ) : (
-                              <Text style={styles.bulletText}>{ingredient}</Text>
-                            )}
-                          </View>
-                        );
-                      })}
-                    </View>
-                  ) : (
-                    <Text style={styles.muted}>{t("detail.noIngredients")}</Text>
-                  )}
+                              ) : (
+                                <Text style={styles.bulletText}>
+                                  {ingredient}
+                                </Text>
+                              )}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    ) : (
+                      <Text style={styles.muted}>
+                        {t("detail.noIngredients")}
+                      </Text>
+                    )}
+                  </Card>
                 </View>
 
                 {/* 3. WHEN'S DINNER READY? — start-now timeline + eat-at
@@ -2043,6 +2050,7 @@ export default function RecipeDetailScreen() {
                     (plan-mode, timeline reanchored to the chosen time). */}
                 {steps.length > 0 ? (
                   <View style={styles.section}>
+                    <Card padding={Space.lg}>
                     <SectionHeader title={t("detail.timelineTitle")} />
                     <Text style={styles.timelineHeadline} numberOfLines={1}>
                       {planEatAt != null
@@ -2150,22 +2158,25 @@ export default function RecipeDetailScreen() {
                         );
                       })}
                     </View>
+                    </Card>
                   </View>
                 ) : stepsPending ? (
                   // Light cached row: the fresh copy (with structured steps)
                   // is still loading — hold the section's place with a
                   // compact, text-free placeholder instead of nothing.
                   <View style={styles.section}>
-                    <SectionHeader title={t("detail.timelineTitle")} />
-                    <View style={styles.timelinePending}>
-                      <ActivityIndicator size="small" color={colors.timing} />
-                      {Array.from({ length: TIMELINE_PLACEHOLDER_ROWS }, (_, i) => (
-                        <View key={`tl-skel-${i}`} style={styles.timelineSkelRow}>
-                          <View style={styles.timelineSkelDot} />
-                          <View style={styles.timelineSkelLine} />
-                        </View>
-                      ))}
-                    </View>
+                    <Card padding={Space.lg}>
+                      <SectionHeader title={t("detail.timelineTitle")} />
+                      <View style={styles.timelinePending}>
+                        <ActivityIndicator size="small" color={colors.timing} />
+                        {Array.from({ length: TIMELINE_PLACEHOLDER_ROWS }, (_, i) => (
+                          <View key={`tl-skel-${i}`} style={styles.timelineSkelRow}>
+                            <View style={styles.timelineSkelDot} />
+                            <View style={styles.timelineSkelLine} />
+                          </View>
+                        ))}
+                      </View>
+                    </Card>
                   </View>
                 ) : null}
 
@@ -2179,28 +2190,31 @@ export default function RecipeDetailScreen() {
                 !stepsPending &&
                 lr.steps(recipe).length > 0 ? (
                   <View style={styles.section}>
-                    <SectionHeader title={t("detail.steps")} />
-                    <View style={styles.stepList}>
-                      {lr.steps(recipe).map((step, idx) => (
-                        <View key={`plain-step-${idx}`} style={styles.bulletRow}>
-                          <View style={styles.stepNumber}>
-                            <Text style={styles.stepNumberText}>
-                              {idx + 1}
-                            </Text>
-                          </View>
-                          <Text style={styles.bulletText}>{step}</Text>
+                    <Card padding={Space.lg}>
+                      <SectionHeader title={t("detail.steps")} />
+                      <View style={styles.stepList}>
+                        {lr.steps(recipe).map((step, idx) => (
+                          <View key={`plain-step-${idx}`} style={styles.bulletRow}>
+                            <View style={styles.stepNumber}>
+                              <Text style={styles.stepNumberText}>
+                                {idx + 1}
+                              </Text>
+                            </View>
+                            <Text style={styles.bulletText}>{step}</Text>
                         </View>
                       ))}
                     </View>
+                    </Card>
                   </View>
                 ) : null}
 
-                {/* QUICK-TIME CONTRIBUTION — one quiet expandable row (no
-                    card): "Did you make this?" + chevron opens the breakdown
-                    form inline. After a successful submit the form collapses
-                    back to the row with a one-line thanks caption.
-                    Unauthenticated submits prompt sign-in. */}
+                {/* QUICK-TIME CONTRIBUTION — card section: "Did you make
+                    this?" + chevron expands the breakdown form inline. After
+                    a successful submit the form collapses back to the row
+                    with a one-line thanks caption. Unauthenticated submits
+                    prompt sign-in. */}
                 <View style={styles.section}>
+                  <Card padding={Space.lg}>
                   <Pressable
                     onPress={
                       quickOpen ? () => setQuickOpen(false) : openQuick
@@ -2304,6 +2318,7 @@ export default function RecipeDetailScreen() {
                       ) : null}
                     </View>
                   ) : null}
+                  </Card>
                 </View>
 
                 {/* 5. NOTES — one CARD with a joined two-segment control as
@@ -2593,6 +2608,7 @@ export default function RecipeDetailScreen() {
                     place. Tapping a row opens the post. */}
                 {tries != null ? (
                   <View style={styles.section}>
+                    <Card padding={Space.lg}>
                     <SectionHeader
                       title={
                         triesTotal > 0
@@ -2677,6 +2693,7 @@ export default function RecipeDetailScreen() {
                         ) : null}
                       </View>
                     )}
+                    </Card>
                   </View>
                 ) : null}
               </View>
