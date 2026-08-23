@@ -269,6 +269,12 @@ export default function SettingsScreen() {
           color: colors.inkFaint,
           fontVariant: ["tabular-nums"] as ("tabular-nums")[],
         },
+        // Count + chevron at a tappable row's end.
+        endRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+        },
         blockedCaption: {
           ...Type.caption,
           color: colors.danger,
@@ -397,17 +403,20 @@ export default function SettingsScreen() {
   }, []);
 
   /**
-   * Run a library sync capped at `maxRecipes` (counting the first page):
-   * 200 → quick sync (top 200), 1000 → deep sync (the seed cap).
+   * Run a library sync. With `maxRecipes` (counting the first page) it's the
+   * "quick sync" (top 200); without it, the deep sync runs to the server's
+   * LAST PAGE — the entire offline library (~9.5k recipes), not a 1,000 cap.
    */
   const handleSync = useCallback(
-    async (maxRecipes: number) => {
+    async (maxRecipes?: number) => {
       if (syncingOption != null) return;
-      setSyncingOption(maxRecipes <= 200 ? "quick" : "deep");
+      setSyncingOption(maxRecipes != null ? "quick" : "deep");
       setSyncDone(false);
       try {
         await seedCacheFirstPage();
-        await seedCacheRemainingPages({ maxRecipes });
+        await seedCacheRemainingPages(
+          maxRecipes != null ? { maxRecipes } : {},
+        );
         setSyncDone(true);
         await reloadCachedCount();
       } catch (error) {
@@ -534,11 +543,19 @@ export default function SettingsScreen() {
             label={t("settings.offlineLibrary")}
             end={
               cachedCount != null ? (
-                <Text style={styles.countText}>
-                  {t("settings.recipesCached", { n: cachedCount })}
-                </Text>
+                <View style={styles.endRow}>
+                  <Text style={styles.countText}>
+                    {t("settings.recipesCached", { n: cachedCount })}
+                  </Text>
+                  <Ionicons
+                    name={I18nManager.isRTL ? "chevron-back" : "chevron-forward"}
+                    size={18}
+                    color={colors.inkFaint}
+                  />
+                </View>
               ) : null
             }
+            onPress={() => router.push("/browse")}
           />
           <View style={styles.divider} />
           <SettingsRow
@@ -556,7 +573,7 @@ export default function SettingsScreen() {
             chevron
             busy={syncingOption === "deep"}
             disabled={syncingOption != null && syncingOption !== "deep"}
-            onPress={() => handleSync(1000)}
+            onPress={() => handleSync()}
           />
           <View style={styles.divider} />
           <SettingsRow

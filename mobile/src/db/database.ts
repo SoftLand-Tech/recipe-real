@@ -525,10 +525,15 @@ export async function upsertRecipes(
 
 /** Page size for the progressive first-launch seed. */
 const SEED_PAGE_SIZE = 50;
-/** Hard safety cap for the background seed continuation (pages 2..N). */
-const SEED_MAX_PAGES = 20;
-/** Hard safety cap for the light background refresh. */
-const REFRESH_MAX_PAGES = 10;
+/**
+ * Safety cap for the background seed continuation (pages 2..N). Sized to
+ * cover the FULL library (~9.5k recipes = ~190 pages) with headroom — it
+ * only guards against a server that never reports a last page, not a
+ * target: the loop always exits at the real last page.
+ */
+const SEED_MAX_PAGES = 400;
+/** Safety cap for the light background refresh (100 light rows/page). */
+const REFRESH_MAX_PAGES = 120;
 
 /**
  * Cold-cache seed, first page only: fetches one seed page (with steps) and
@@ -543,10 +548,10 @@ export async function seedCacheFirstPage(): Promise<Recipe[]> {
 
 /**
  * Seed continuation: fetch + upsert the remaining seed pages (with steps),
- * starting at page 2. Stops at the last page, an empty page, or the cap.
- * `opts.maxRecipes` (counting the already-seeded first page) lowers the cap:
- * 200 → stop after page 4 (4 × 50); without it the SEED_MAX_PAGES safety cap
- * applies (20 pages = 1,000 recipes).
+ * starting at page 2, until the server's last page (the SEED_MAX_PAGES cap
+ * is an infinite-loop guard, not a target). `opts.maxRecipes` (counting the
+ * already-seeded first page) bounds the run for the "quick sync" option:
+ * 200 → stop after page 4 (4 × 50).
  */
 export async function seedCacheRemainingPages(
   opts: { maxRecipes?: number } = {},

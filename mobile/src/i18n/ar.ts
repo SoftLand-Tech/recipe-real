@@ -352,7 +352,7 @@ export const ar: Record<string, string> = {
   "settings.offlineLibrary": "مكتبة بلا اتصال",
   "settings.recipesCached": "{n} وصفة محفوظة",
   "settings.syncTop200": "مزامنة سريعة — أفضل ٢٠٠ وصفة",
-  "settings.syncDeep": "مزامنة عميقة — أفضل ١٠٠٠ وصفة",
+  "settings.syncDeep": "مزامنة عميقة — المكتبة كاملة",
   "settings.syncing": "جارٍ المزامنة…",
   "settings.syncDone": "تمت إعادة مزامنة المكتبة ✓",
   "settings.clearCache": "مسح المكتبة غير المتصلة",
