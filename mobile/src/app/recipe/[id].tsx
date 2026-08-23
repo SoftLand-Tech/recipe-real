@@ -1,6 +1,13 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useLocalSearchParams, router } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -64,6 +71,7 @@ import {
 import {
   Avatar,
   Button,
+  Card,
   Chip,
   HeroImage,
   IconPressable,
@@ -235,37 +243,6 @@ function parseStructuredIngredients(value: unknown): StructuredIngredient[] {
   );
 }
 
-/**
- * One chip of the merged notes-card tab switcher ("Your notes" / "Community").
- * Pressed feedback is the state-driven opacity dim (Android paint rules — no
- * Pressable style function; mirror Card/Button/IconPressable); the selected
- * chip takes the accent tone, the unselected one stays neutral.
- */
-function NoteTabChip({
-  label,
-  selected,
-  onPress,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  const [pressed, setPressed] = useState(false);
-  return (
-    <Pressable
-      onPress={onPress}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      hitSlop={Space.xs}
-      style={pressed ? { opacity: 0.7 } : null}
-    >
-      <Chip label={label} tone={selected ? "accent" : "neutral"} size="sm" />
-    </Pressable>
-  );
-}
-
 export default function RecipeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
@@ -405,50 +382,85 @@ export default function RecipeDetailScreen() {
           maxWidth: MaxContentWidth,
           alignSelf: "center",
         },
-        // ---- Flat page scaffolding (no full-bleed hero, no card) ----
-        // Padded document column replacing the old overlapping contentCard.
-        pagePad: {
+        // ---- Hero (full-bleed photo section) + flat padded body ----
+        heroWrap: {
+          width: "100%",
+        },
+        heroOverlay: {
           paddingHorizontal: Space.lg,
-          paddingTop: Space.sm,
-          paddingBottom: Space.lg,
         },
-        // Plain viewer-style top bar: back at the reading start, actions at
-        // the far end — scrolls with the page.
-        topBar: {
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "center",
-          paddingBottom: Space.md,
+        heroTitle: {
+          ...Type.h1,
+          // Over a photo scrim — always white, never the theme surface color.
+          color: "#FFFFFF",
+          textShadowColor: "rgba(0,0,0,0.55)",
+          textShadowOffset: { width: 0, height: 1 },
+          textShadowRadius: 6,
         },
-        topBarEnd: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.sm,
-        },
-        // Circular action buttons on canvas — visible soft fill + hairline
-        // (never transparent).
-        topBtn: {
-          width: 38,
-          height: 38,
-          borderRadius: Radius.pill,
-          backgroundColor: colors.surfaceSoft,
-          borderWidth: 1,
-          borderColor: colors.hairline,
-          alignItems: "center",
-          justifyContent: "center",
-        },
-        // Title block under the photo: ink on canvas, one meta line.
-        titleBlock: {
-          marginTop: Space.lg,
-          gap: Space.xs,
-        },
-        titleText: {
+        // No-photo heroes skip the scrim entirely, so the same texts flip to
+        // ink on the tinted fallback card.
+        heroTitlePlain: {
           ...Type.h1,
           color: colors.ink,
         },
-        titleMeta: {
+        // ★ rating · publisher meta line right under the hero title.
+        heroRating: {
+          ...Type.caption,
+          color: "#FFFFFF",
+          fontWeight: "600",
+          marginTop: Space.xs,
+          textShadowColor: "rgba(0,0,0,0.55)",
+          textShadowOffset: { width: 0, height: 1 },
+          textShadowRadius: 4,
+        },
+        heroRatingPlain: {
           ...Type.caption,
           color: colors.inkSecondary,
+          fontWeight: "600",
+          marginTop: Space.xs,
+        },
+        backButton: {
+          position: "absolute",
+          // Physical left/right don't flip in RTL — pick the side per dir so
+          // back stays at the reading-start edge, favorite at the far edge.
+          ...(dir === "rtl" ? { right: Space.lg } : { left: Space.lg }),
+          width: 38,
+          height: 38,
+          borderRadius: Radius.pill,
+          backgroundColor: "rgba(0,0,0,0.35)",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 10,
+        },
+        favButton: {
+          position: "absolute",
+          ...(dir === "rtl" ? { left: Space.lg } : { right: Space.lg }),
+          width: 38,
+          height: 38,
+          borderRadius: Radius.pill,
+          backgroundColor: "rgba(0,0,0,0.35)",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 10,
+        },
+        // Floating share button over the hero — inset one button width from
+        // the favorite (RTL-aware like the other floating buttons).
+        shareButton: {
+          position: "absolute",
+          ...(dir === "rtl" ? { left: Space.lg + 46 } : { right: Space.lg + 46 }),
+          width: 38,
+          height: 38,
+          borderRadius: Radius.pill,
+          backgroundColor: "rgba(0,0,0,0.35)",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 10,
+        },
+        // Padded flat document body under the hero (no overlapping card).
+        pagePad: {
+          paddingHorizontal: Space.lg,
+          paddingTop: Space.lg,
+          paddingBottom: Space.lg,
         },
         // ONE bordered fact piece: the two time StatPills + reality badge.
         factBox: {
@@ -456,7 +468,6 @@ export default function RecipeDetailScreen() {
           flexWrap: "wrap",
           alignItems: "center",
           gap: Space.sm,
-          marginTop: Space.md,
           padding: Space.md,
           borderWidth: 1,
           borderColor: colors.hairline,
@@ -691,14 +702,36 @@ export default function RecipeDetailScreen() {
           fontSize: 13,
           fontWeight: "700",
         },
-        // ---- Notes (personal + community tabs — the chips are the header) ----
-        // The two tab chips open their section directly (no card, no extra
-        // title above them).
-        notesTabsRow: {
+        // ---- Notes card (personal + community behind a joined segment) ----
+        // Same segmented-control pattern as onboarding: one bordered track,
+        // hairline divider, active segment fills accentSoft.
+        notesSegment: {
           flexDirection: "row",
+          backgroundColor: colors.surfaceSoft,
+          borderWidth: 1,
+          borderColor: colors.hairline,
+          borderRadius: Radius.md,
+          overflow: "hidden",
+        },
+        notesSegmentDivider: {
+          width: 1,
+          backgroundColor: colors.hairline,
+        },
+        notesSegmentBtn: {
+          flex: 1,
           alignItems: "center",
-          gap: Space.xs,
-          marginBottom: Space.sm,
+          paddingVertical: Space.md,
+        },
+        notesSegmentBtnActive: {
+          backgroundColor: colors.accentSoft,
+        },
+        notesSegmentLabel: {
+          ...Type.body,
+          color: colors.inkSecondary,
+        },
+        notesSegmentLabelActive: {
+          color: colors.accent,
+          fontWeight: "600",
         },
         // Collapsed personal-note rows: saved note (text + "Edit note" hint)
         // or the "Add a note" pencil row.
@@ -1792,78 +1825,97 @@ export default function RecipeDetailScreen() {
 
           {ready && (
             <>
-              {/* FLAT PAGE — no full-bleed hero, no overlapping card: a plain
-                  padded document. Top bar, rounded photo, ink title block,
-                  one fact box, then the sections straight on the canvas. */}
-              <View style={styles.pagePad}>
-                {/* TOP BAR — back at the reading start, favorite + share at
-                    the far end. Scrolls with the page (viewer style). */}
-                <View style={[styles.topBar, { paddingTop: insets.top + Space.xs }]}>
-                  <IconPressable
-                    style={styles.topBtn}
-                    onPress={() => router.back()}
-                    hitSlop={Space.sm}
-                    accessibilityLabel={t("detail.backA11y")}
-                  >
-                    <Ionicons
-                      name={dir === "rtl" ? "chevron-forward" : "chevron-back"}
-                      size={22}
-                      color={colors.ink}
-                    />
-                  </IconPressable>
-                  <View style={styles.topBarEnd}>
-                    <IconPressable
-                      style={styles.topBtn}
-                      onPress={onToggleFavorite}
-                      hitSlop={Space.sm}
-                      accessibilityLabel={
-                        favorited
-                          ? t("detail.favoriteRemoveA11y")
-                          : t("detail.favoriteAddA11y")
-                      }
-                    >
-                      <Ionicons
-                        name={favorited ? "heart" : "heart-outline"}
-                        size={20}
-                        color={favorited ? "#E8384F" : colors.inkSecondary}
-                      />
-                    </IconPressable>
-                    <IconPressable
-                      style={styles.topBtn}
-                      onPress={onShare}
-                      hitSlop={Space.sm}
-                      accessibilityLabel={t("detail.shareA11y")}
-                    >
-                      <Ionicons
-                        name="arrow-redo-outline"
-                        size={18}
-                        color={colors.inkSecondary}
-                      />
-                    </IconPressable>
-                  </View>
-                </View>
-
-                {/* PHOTO — rounded, in-flow. No text overlay: the title lives
-                    below in ink (readable with or without a photo). */}
+              {/* HERO — full-bleed photo section (restored: the flat in-flow
+                  photo felt weaker). Title + rating + publisher live over the
+                  scrim; floating dark-circle buttons over the photo; the body
+                  below stays a flat padded document. */}
+              <View style={styles.heroWrap}>
                 <HeroImage
                   uri={recipe.image_url}
-                  height={215}
-                  rounded={Radius.lg}
-                />
-
-                {/* TITLE BLOCK — ink on canvas: title, then ONE meta line
-                    (★ rating · publisher hostname). */}
-                <View style={styles.titleBlock}>
-                  <Text style={styles.titleText} numberOfLines={3}>
-                    {lr.title(recipe)}
-                  </Text>
-                  {ratingText != null || sourceHost != null ? (
-                    <Text style={styles.titleMeta} numberOfLines={1}>
-                      {[ratingText, sourceHost].filter(Boolean).join("  ·  ")}
+                  height={300}
+                  withScrim
+                  rounded={0}
+                >
+                  <View
+                    style={[
+                      styles.heroOverlay,
+                      {
+                        paddingBottom: Space.lg,
+                        paddingTop: insets.top + Space.xl,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={
+                        recipe.image_url
+                          ? styles.heroTitle
+                          : styles.heroTitlePlain
+                      }
+                      numberOfLines={3}
+                    >
+                      {lr.title(recipe)}
                     </Text>
-                  ) : null}
-                </View>
+                    {ratingText != null || sourceHost != null ? (
+                      <Text
+                        style={
+                          recipe.image_url
+                            ? styles.heroRating
+                            : styles.heroRatingPlain
+                        }
+                        numberOfLines={1}
+                      >
+                        {[ratingText, sourceHost].filter(Boolean).join("  ·  ")}
+                      </Text>
+                    ) : null}
+                  </View>
+                </HeroImage>
+              </View>
 
+              {/* Floating back button over the hero. */}
+              <IconPressable
+                style={[styles.backButton, { top: insets.top + Space.sm }]}
+                onPress={() => router.back()}
+                hitSlop={Space.sm}
+                accessibilityLabel={t("detail.backA11y")}
+              >
+                <Ionicons
+                  name={dir === "rtl" ? "chevron-forward" : "chevron-back"}
+                  size={24}
+                  color="#FFFFFF"
+                />
+              </IconPressable>
+
+              {/* Floating favorite toggle over the hero (mirrors the back button). */}
+              <IconPressable
+                style={[styles.favButton, { top: insets.top + Space.sm }]}
+                onPress={onToggleFavorite}
+                hitSlop={Space.sm}
+                accessibilityLabel={
+                  favorited
+                    ? t("detail.favoriteRemoveA11y")
+                    : t("detail.favoriteAddA11y")
+                }
+              >
+                <Ionicons
+                  name={favorited ? "heart" : "heart-outline"}
+                  size={20}
+                  color={favorited ? "#E8384F" : "#FFFFFF"}
+                />
+              </IconPressable>
+
+              {/* Floating share button over the hero (beside the favorite):
+                  opens the system sheet with the public web page URL. */}
+              <IconPressable
+                style={[styles.shareButton, { top: insets.top + Space.sm }]}
+                onPress={onShare}
+                hitSlop={Space.sm}
+                accessibilityLabel={t("detail.shareA11y")}
+              >
+                <Ionicons name="arrow-redo" size={18} color="#FFFFFF" />
+              </IconPressable>
+
+              {/* Flat padded body — no overlapping card. */}
+              <View style={styles.pagePad}>
                 {/* FACT BOX — ONE bordered piece: "Recipe says" (neutral) vs
                     "Really takes" (timing teal — the honest-time brand pair),
                     plus the single reality badge. Nothing else: cleanup
@@ -2223,25 +2275,47 @@ export default function RecipeDetailScreen() {
                   ) : null}
                 </View>
 
-                {/* 5. NOTES — personal device-local note and public community
-                    notes under ONE pair of light tab chips (the chips are the
-                    section header — no card). Personal tab is COLLAPSED by
+                {/* 5. NOTES — one CARD with a joined two-segment control as
+                    its header ("Your note" | "Community" — same segmented
+                    pattern as onboarding). Personal tab is COLLAPSED by
                     default: saved note (tap to edit) or an "Add a note" row;
                     the textarea/save/make-public stack only mounts while
                     editing. Community tab keeps its list + compose row. */}
                 <View style={styles.section}>
-                  <View style={styles.notesTabsRow}>
-                    <NoteTabChip
-                      label={t("detail.notesTabPersonal")}
-                      selected={notesTab === "personal"}
-                      onPress={() => setNotesTab("personal")}
-                    />
-                    <NoteTabChip
-                      label={t("detail.notesTabCommunity")}
-                      selected={notesTab === "community"}
-                      onPress={() => setNotesTab("community")}
-                    />
-                  </View>
+                  <Card padding={Space.lg}>
+                    <View style={styles.notesSegment}>
+                      {(["personal", "community"] as const).map((tab, index) => (
+                        <Fragment key={tab}>
+                          {index === 1 ? (
+                            <View style={styles.notesSegmentDivider} />
+                          ) : null}
+                          <Pressable
+                            onPress={() => setNotesTab(tab)}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: notesTab === tab }}
+                            style={[
+                              styles.notesSegmentBtn,
+                              notesTab === tab
+                                ? styles.notesSegmentBtnActive
+                                : null,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.notesSegmentLabel,
+                                notesTab === tab
+                                  ? styles.notesSegmentLabelActive
+                                  : null,
+                              ]}
+                            >
+                              {tab === "personal"
+                                ? t("detail.notesTabPersonal")
+                                : t("detail.notesTabCommunity")}
+                            </Text>
+                          </Pressable>
+                        </Fragment>
+                      ))}
+                    </View>
 
                   {notesTab === "personal" ? (
                     noteEditing ? (
@@ -2463,6 +2537,7 @@ export default function RecipeDetailScreen() {
                         )}
                       </>
                     )}
+                  </Card>
                 </View>
 
                 {/* 6. COMMUNITY POSTS — community posts attached to this
