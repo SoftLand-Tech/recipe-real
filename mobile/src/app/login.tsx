@@ -6,7 +6,6 @@ import * as Crypto from "expo-crypto";
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import * as Google from "expo-auth-session/providers/google";
 import {
-  getRedirectUrl,
   makeRedirectUri,
   ResponseType,
 } from "expo-auth-session";
@@ -26,6 +25,12 @@ import {
 import { Button, GoogleLogo } from "@/components/ui";
 
 const GOOGLE_CLIENT_ID_PLACEHOLDER = "REPLACE_WITH_GOOGLE_WEB_CLIENT_ID";
+
+/**
+ * Expo Go's Google redirect: the auth.expo.io proxy URI that is REGISTERED
+ * in the Google console (see resolveAuthRedirectUri for why it's pinned).
+ */
+const EXPO_GO_AUTH_PROXY = "https://auth.expo.io/@mamounhisham1/recipereal";
 
 /** The single-use OAuth material generated per sign-in attempt. */
 interface FlowSecret {
@@ -69,19 +74,14 @@ function resolveAuthRedirectUri(): string | null {
   if (isStandalone) {
     return `${API_BASE_URL}/auth/callback`;
   }
-  try {
-    // Prefer the explicit owner/slug from app.json — getRedirectUrl() depends
-    // on the runtime manifest exposing `originalFullName`, which Expo Go can
-    // omit (e.g. when the dev server predates a config change), leaving the
-    // Google button permanently "not ready".
-    const cfg = Constants.expoConfig;
-    if (cfg?.owner && cfg?.slug) {
-      return `https://auth.expo.io/@${cfg.owner}/${cfg.slug}`;
-    }
-    return getRedirectUrl();
-  } catch {
-    return null;
-  }
+  // PINNED, not built from owner/slug: the EAS project's slug (vibe-labs,
+  // borrowed account) must match app.json for eas-cli to work, but the
+  // proxy URI has to be one REGISTERED in the Google console. The proxy is
+  // project-agnostic (verified: it relays for any owner/slug), so we pin
+  // the original account's URI — registered, and stays correct after the
+  // post-Sep-1 account revert. If this ever 400s at Google, check the
+  // console for this exact URI.
+  return EXPO_GO_AUTH_PROXY;
 }
 
 /** Map a failed Google sign-in API call to a friendly, inline-safe message. */
