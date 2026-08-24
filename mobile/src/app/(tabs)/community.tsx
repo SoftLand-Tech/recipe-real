@@ -590,26 +590,29 @@ const PostCard = memo(function PostCard({
             disabled={likeBusy}
             style={styles.action}
             hitSlop={Space.xs}
-            accessibilityLabel="Like"
+            accessibilityLabel={t("community.likeAction")}
           >
             <Ionicons
               name={liked ? "heart" : "heart-outline"}
               size={20}
               color={liked ? colors.accent : colors.inkSecondary}
             />
-            <Text style={[styles.actionCount, liked ? styles.actionCountActive : null]}>Like</Text>
+            <Text style={[styles.actionCount, liked ? styles.actionCountActive : null]}>
+              {t("community.likeAction")}
+            </Text>
           </IconPressable>
           <IconPressable
             onPress={() => onOpenComments(post.id)}
             style={styles.action}
             hitSlop={Space.xs}
+            accessibilityLabel={t("community.commentAction")}
           >
             <Ionicons
               name="chatbubble-outline"
               size={20}
               color={colors.inkSecondary}
             />
-            <Text style={styles.actionCount}>Comment</Text>
+            <Text style={styles.actionCount}>{t("community.commentAction")}</Text>
           </IconPressable>
           <IconPressable
             onPress={() => void handleShare()}
@@ -622,7 +625,7 @@ const PostCard = memo(function PostCard({
               size={20}
               color={colors.inkSecondary}
             />
-            <Text style={styles.actionCount}>Share</Text>
+            <Text style={styles.actionCount}>{t("community.shareAction")}</Text>
           </IconPressable>
         </View>
 

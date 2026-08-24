@@ -304,7 +304,7 @@ export function CommentsSheet({ postId, visible, onClose, myAvatar, myName, onCo
           </View>
 
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>Comments</Text>
+            <Text style={styles.headerTitle}>{t("community.commentsTitle")}</Text>
             <IconPressable onPress={() => dismiss()} hitSlop={Space.xs} style={styles.headerClose}>
               <Ionicons name="close" size={18} color={colors.inkSecondary} />
             </IconPressable>

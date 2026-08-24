@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 
 import { useThemeColors } from "@/theme";
+import { useT } from "@/i18n";
 
 /**
  * Web-link bridge: shared post links (https://recipe-real.softland.tech/p/123)
@@ -12,6 +13,7 @@ import { useThemeColors } from "@/theme";
 export default function SharedPostRedirect() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colors = useThemeColors();
+  const t = useT();
 
   useEffect(() => {
     const numeric = Number(id);
@@ -25,7 +27,7 @@ export default function SharedPostRedirect() {
   return (
     <View
       style={[styles.center, { backgroundColor: colors.canvas }]}
-      accessibilityLabel="Opening post"
+      accessibilityLabel={t("a11y.openingPost")}
     >
       <ActivityIndicator size="small" color={colors.accent} />
     </View>

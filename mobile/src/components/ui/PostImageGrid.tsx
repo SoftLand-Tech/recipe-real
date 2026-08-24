@@ -17,6 +17,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Radius, type ThemeColors, useThemeColors } from "@/theme";
+import { useT } from "@/i18n";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
@@ -796,13 +797,14 @@ function RemoveBtn({
   colors: ReturnType<typeof useThemeColors>;
 }) {
   const [pressed, setPressed] = useState(false);
+  const t = useT();
   return (
     <Pressable
       onPress={disabled ? undefined : onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       disabled={disabled}
-      accessibilityLabel="Remove photo"
+      accessibilityLabel={t("a11y.removePhoto")}
       accessibilityRole="button"
       style={[
         removeBtnStyles.btn,
