@@ -291,6 +291,8 @@ export interface PostUser {
   display_name: string | null;
   name: string | null;
   avatar_url: string | null;
+  /** Feed payload only: the signed-in viewer follows this author. */
+  followed_by_me?: boolean;
 }
 
 /** Light recipe reference attached to a post (null when the post is standalone). */

@@ -896,6 +896,8 @@ function normalizePostUser(u: any): PostUser {
     display_name: u?.display_name ?? null,
     name: u?.name ?? null,
     avatar_url: u?.avatar_url ?? null,
+    // Feed-only: the server marks this for the signed-in viewer (follow pill).
+    followed_by_me: Boolean(u?.followed_by_me),
   };
 }
 

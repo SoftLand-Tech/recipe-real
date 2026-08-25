@@ -22,6 +22,9 @@ class UserPublicResource extends JsonResource
             'name' => $this->name,
             'avatar_url' => $this->avatar_url,
             'bio' => $this->bio ?? null,
+            // Set on the eager-loaded model by PostController (feed follow
+            // pill); false everywhere the controller didn't mark it.
+            'followed_by_me' => (bool) ($this->followed_by_me ?? false),
         ];
     }
 }

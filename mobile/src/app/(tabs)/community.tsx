@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -26,10 +27,12 @@ import {
   fetchMyProfile,
   fetchNotifications,
   fetchPosts,
+  followUser,
   hasToken,
   PostUnauthorizedError,
   reportPost,
   togglePostLike,
+  unfollowUser,
 } from "@/api/client";
 import { shareLink } from "@/utils/share";
 import { setPostPreview } from "@/utils/postPreview";
@@ -172,6 +175,12 @@ interface PostCardProps {
   myUserId: number | null;
   /** Drops the post from the feed (own delete / author blocked). */
   onRemove: (postId: number) => void;
+  /**
+   * Mirrors follow toggles into the FEED's post state (every row by the
+   * same author), same rationale as onLiked — card-local state alone
+   * resets on remount/recycling.
+   */
+  onFollowed: (userId: number, following: boolean) => void;
 }
 
 /**
@@ -196,6 +205,7 @@ const PostCard = memo(function PostCard({
   onLiked,
   myUserId,
   onRemove,
+  onFollowed,
 }: PostCardProps) {
   const colors = useThemeColors();
   const t = useT();
@@ -241,6 +251,36 @@ const PostCard = memo(function PostCard({
       setLikeBusy(false);
     }
   }, [likeBusy, signedIn, liked, likesCount, post.id, post.liked_by_me, post.likes_count, onLiked]);
+
+  // ---- Follow (Facebook-style pill on the author row) ------------------------
+  const [following, setFollowing] = useState(Boolean(post.user.followed_by_me));
+  const [followBusy, setFollowBusy] = useState(false);
+  useEffect(() => {
+    setFollowing(Boolean(post.user.followed_by_me));
+  }, [post.user.followed_by_me]);
+
+  const handleFollow = useCallback(() => {
+    if (followBusy) return;
+    if (signedIn === false) {
+      setNeedsAuth(true);
+      return;
+    }
+    setFollowBusy(true);
+    // Optimistic toggle mirrored into the feed (every row of this author),
+    // reverted on failure — the onLiked pattern.
+    const next = !following;
+    setFollowing(next);
+    onFollowed(post.user.id, next);
+    (next ? followUser(post.user.id) : unfollowUser(post.user.id))
+      .then(() => {
+        track(next ? "user_followed" : "user_unfollowed", { user_id: post.user.id });
+      })
+      .catch(() => {
+        setFollowing(!next);
+        onFollowed(post.user.id, !next);
+      })
+      .finally(() => setFollowBusy(false));
+  }, [followBusy, signedIn, following, post.user.id, onFollowed]);
 
   // ---- Share (system sheet → public /p/{id} web page) ------------------------
   /**
@@ -302,6 +342,29 @@ const PostCard = memo(function PostCard({
         headMain: {
           flex: 1,
           gap: 2,
+        },
+        // Facebook-style follow pill on the author row: accent-filled =
+        // "Follow" CTA; quiet soft + hairline = "Following".
+        followBtn: {
+          height: 30,
+          paddingHorizontal: Space.md,
+          borderRadius: Radius.pill,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: colors.accentSoft,
+        },
+        followBtnOn: {
+          backgroundColor: colors.surfaceSoft,
+          borderWidth: 1,
+          borderColor: colors.hairline,
+        },
+        followBtnText: {
+          fontSize: 13,
+          fontWeight: "600",
+          color: colors.accent,
+        },
+        followBtnTextOn: {
+          color: colors.inkSecondary,
         },
         author: {
           ...Type.title,
@@ -449,6 +512,33 @@ const PostCard = memo(function PostCard({
               />
             </View>
           </View>
+          {/* Follow pill (hidden on your own posts) — Facebook pattern:
+              filled accent = follow CTA, quiet hairline = already following. */}
+          {!isMine ? (
+            <Pressable
+              onPress={handleFollow}
+              disabled={followBusy}
+              accessibilityRole="button"
+              accessibilityLabel={
+                following ? t("profile.unfollow") : t("profile.follow")
+              }
+              hitSlop={Space.xs}
+              style={[
+                styles.followBtn,
+                following ? styles.followBtnOn : null,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.followBtnText,
+                  following ? styles.followBtnTextOn : null,
+                ]}
+                numberOfLines={1}
+              >
+                {following ? t("profile.following") : t("profile.follow")}
+              </Text>
+            </Pressable>
+          ) : null}
           <IconPressable
             onPress={openMenu}
             accessibilityLabel={t("community.postActions")}
@@ -1032,6 +1122,24 @@ export default function CommunityScreen() {
     [],
   );
 
+  /**
+   * Mirrors follow toggles into every feed row by the same author (the
+   * onLiked pattern): a remount or recycled card must never show a stale
+   * Follow state for an author just followed/unfollowed.
+   */
+  const applyFollowState = useCallback(
+    (userId: number, following: boolean) => {
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.user.id === userId
+            ? { ...p, user: { ...p.user, followed_by_me: following } }
+            : p,
+        ),
+      );
+    },
+    [],
+  );
+
   /** Drops a post from the feed after its own deletion or an author block. */
   const removePost = useCallback((postId: number) => {
     setPosts((prev) => prev.filter((p) => p.id !== postId));
@@ -1319,6 +1427,7 @@ export default function CommunityScreen() {
             onCommented={bumpCommentCount}
             onOpenComments={openComments}
             onLiked={applyLikeState}
+            onFollowed={applyFollowState}
             myUserId={myUserId}
             onRemove={removePost}
           />

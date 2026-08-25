@@ -113,6 +113,22 @@ class PostController extends Controller
             );
         }
 
+        // Mark user.followed_by_me the same way (drives the feed's
+        // Facebook-style Follow/Following pill; false for guests).
+        if ($user !== null && $posts->isNotEmpty()) {
+            $followedIds = DB::table('follows')
+                ->where('follower_id', $user->id)
+                ->whereIn('followed_id', $posts->getCollection()->pluck('user_id')->unique()->values()->all())
+                ->pluck('followed_id')
+                ->all();
+
+            $posts->getCollection()->each(function (Post $post) use ($followedIds): void {
+                if ($post->user !== null) {
+                    $post->user->followed_by_me = in_array($post->user_id, $followedIds);
+                }
+            });
+        }
+
         $collection = PostResource::collection($posts);
 
         if ($cacheKey !== null) {
