@@ -7,12 +7,13 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * Android App Links + the Play Store smart redirect on the public share
+ * Android App Links + the Facebook-style store banner on the public share
  * pages (/r, /p): Android BROWSERS (no app installed, link not intercepted)
- * are 302'd to the store when configured; crawlers, desktops and iOS always
- * get the real page (their WhatsApp preview cards depend on it). The
- * /.well-known/assetlinks.json statement serves every configured signing
- * fingerprint for domain verification.
+ * see the real page with an injected "Get the app" banner when
+ * PLAY_STORE_URL is configured — never a hard redirect; crawlers, desktops
+ * and iOS always get the clean page (their WhatsApp preview cards depend
+ * on it). The /.well-known/assetlinks.json statement serves every
+ * configured signing fingerprint for domain verification.
  */
 class ShareRedirectTest extends TestCase
 {
@@ -35,13 +36,17 @@ class ShareRedirectTest extends TestCase
         ]);
     }
 
-    public function test_android_browser_redirects_to_store_when_configured(): void
+    public function test_android_browser_gets_page_with_store_banner_when_configured(): void
     {
         config()->set('recipereal.play_store_url', 'https://play.google.com/store/apps/details?id=com.recipereal.app');
 
+        // Facebook-style: NO hard redirect — the visitor sees the shared
+        // content AND the injected "Get the app" banner pointing at the store.
         $this->get('/r/'.$this->recipe()->id, ['User-Agent' => self::ANDROID_CHROME])
-            ->assertStatus(302)
-            ->assertRedirect('https://play.google.com/store/apps/details?id=com.recipereal.app');
+            ->assertOk()
+            ->assertSee('rr-store-banner', false)
+            ->assertSee('https://play.google.com/store/apps/details?id=com.recipereal.app', false)
+            ->assertSee('RecipeReal', false);
     }
 
     public function test_android_browser_gets_the_page_when_store_url_unset(): void
