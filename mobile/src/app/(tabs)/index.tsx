@@ -36,6 +36,7 @@ import {
   repairCachedStepsIfNeeded,
   seedCacheFirstPage,
   seedCacheRemainingPages,
+  AUTO_SEED_PAGES,
   toggleFavorite,
   upsertRecipes,
 } from "@/db/database";
@@ -403,11 +404,13 @@ export default function HomeScreen() {
     );
   }, []);
 
-  // Background continuation after a cold first-page seed: stream the remaining
-  // seed pages into the cache, then reload. Non-blocking on purpose.
+  // Background continuation after a cold first-page seed: stream a CAPPED
+  // starter set (~1k — fast first open, light on cellular data) into the
+  // cache, then reload. The full library stays a manual Deep sync.
+  // Non-blocking on purpose.
   const continueSeedInBackground = useCallback(async () => {
     try {
-      await seedCacheRemainingPages();
+      await seedCacheRemainingPages({ pages: AUTO_SEED_PAGES });
       setRecipesIfChanged(await getCachedRecipes());
     } catch (error) {
       console.warn("[RecipeReal] home background seed continuation failed:", error);

@@ -573,6 +573,8 @@ export const en: Record<string, string> = {
   // ---- Post detail actions (row labels) ------------------------------------
   "community.likeAction": "Like",
   "community.commentAction": "Comment",
+  "community.commentCountOne": "1 comment",
+  "community.commentCount": "{n} comments",
   "community.shareAction": "Share",
   "community.commentsTitle": "Comments",
   "a11y.removePhoto": "Remove photo",

@@ -534,6 +534,12 @@ export const SEED_PAGE_SIZE = 50;
 const SEED_MAX_PAGES = 500;
 /** Safety cap for the light background refresh (100 light rows/page). */
 const REFRESH_MAX_PAGES = 250;
+/**
+ * AUTOMATIC first-launch seed depth: 20 pages × 50 = ~1k recipes in the
+ * background — fast first open, light on cellular data. The FULL library
+ * (~20k) stays a manual choice: Settings → Deep sync.
+ */
+export const AUTO_SEED_PAGES = 20;
 
 /**
  * Cold-cache seed, first page only: fetches one seed page (with steps) and
@@ -680,8 +686,11 @@ export async function repairCachedStepsIfNeeded(): Promise<boolean> {
     countCachedRecipeSteps(),
   ]);
   if (recipeCount === 0 || stepCount > 0) return false;
+  // Repair exactly the depth the cache had (page math on the row count) —
+  // never a surprise full-library download.
+  const pages = Math.max(1, Math.ceil(recipeCount / SEED_PAGE_SIZE));
   await seedCacheFirstPage();
-  await seedCacheRemainingPages();
+  await seedCacheRemainingPages({ pages });
   return true;
 }
 

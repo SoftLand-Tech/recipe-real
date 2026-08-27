@@ -565,6 +565,8 @@ export const ar: Record<string, string> = {
   // ---- أزرار تفاصيل المنشور ------------------------------------------------------
   "community.likeAction": "إعجاب",
   "community.commentAction": "تعليق",
+  "community.commentCountOne": "تعليق واحد",
+  "community.commentCount": "{n} تعليقات",
   "community.shareAction": "مشاركة",
   "community.commentsTitle": "التعليقات",
   "a11y.removePhoto": "إزالة الصورة",

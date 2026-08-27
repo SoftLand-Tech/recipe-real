@@ -667,7 +667,9 @@ const PostCard = memo(function PostCard({
             </View>
             {post.comments_count > 0 ? (
               <Text style={styles.countsText}>
-                {post.comments_count === 1 ? "1 comment" : `${post.comments_count} comments`}
+                {post.comments_count === 1
+                  ? t("community.commentCountOne")
+                  : t("community.commentCount", { n: post.comments_count })}
               </Text>
             ) : null}
           </IconPressable>
