@@ -264,6 +264,8 @@ export const en: Record<string, string> = {
   "cook.pauseCooking": "Pause",
   "cook.resumeCooking": "Resume",
   "cook.finishCooking": "Finish",
+  "cook.finishTitle": "Finish cooking?",
+  "cook.finishMessage": "Your stopwatch time will be saved as your real cook time.",
   "cook.previous": "Previous",
   "cook.next": "Next",
   "cook.hintIdle": "Press start when you begin cooking",

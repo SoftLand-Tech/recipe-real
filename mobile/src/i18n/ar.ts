@@ -263,6 +263,8 @@ export const ar: Record<string, string> = {
   "cook.pauseCooking": "إيقاف مؤقت",
   "cook.resumeCooking": "استئناف",
   "cook.finishCooking": "إنهاء",
+  "cook.finishTitle": "إنهاء الطهي؟",
+  "cook.finishMessage": "سيُحفظ وقت المؤقت كوقتك الحقيقي لهذه الوصفة.",
   "cook.previous": "السابق",
   "cook.next": "التالي",
   "cook.hintIdle": "اضغط ابدأ عندما تبدأ الطهي",

@@ -2,9 +2,7 @@ import { useLocalSearchParams, router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   BackHandler,
-  I18nManager,
   StyleSheet,
   Text,
   View,
@@ -31,9 +29,10 @@ import {
   getPendingCookSessionCount,
   upsertRecipes,
 } from "@/db/database";
-import { Button, Badge, Chip, Card, IconPressable, StepDots } from "@/components/ui";
+import { Button, Badge, Chip, Card, IconPressable, StepDots, ActionSheet } from "@/components/ui";
 import {
   useFmtMinutes,
+  useLang,
   useLocalizedRecipe,
   useT,
   stepTypeLabel,
@@ -126,6 +125,10 @@ export default function CookModeScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const t = useT();
+  // Reactive layout direction (from the language preference) — the native
+  // I18nManager flag can be stale for a session after an in-app language
+  // flip, which left the nav arrows "not quite mirrored" in Arabic.
+  const { dir } = useLang();
   const fmtMin = useFmtMinutes();
   const lr = useLocalizedRecipe();
 
@@ -443,6 +446,10 @@ export default function CookModeScreen() {
   /** Armed step alarm: id in a ref (event handlers), step number for render. */
   const armedAlarmIdRef = useRef<string | null>(null);
   const [armedStep, setArmedStep] = useState<number | null>(null);
+  // Confirmations (the app's ActionSheet — never native Alerts): finishing
+  // an active cook, and discarding one via ✕ / back.
+  const [confirmFinish, setConfirmFinish] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   // Stable per-session idempotency key (generated on first submission) so
   // retried/offline-replayed POSTs don't create duplicate cook sessions.
@@ -863,7 +870,7 @@ export default function CookModeScreen() {
    * Close (✕ / back affordance). While a cook session is actually running
    * or paused, ask before discarding — the stopwatch and per-step timings
    * are lost otherwise. Idle (never started) and post-finish phases close
-   * immediately.
+   * immediately. The ask is the app's ActionSheet (never a native Alert).
    */
   const requestClose = useCallback(() => {
     const sessionActive =
@@ -872,19 +879,8 @@ export default function CookModeScreen() {
       router.back();
       return;
     }
-    Alert.alert(
-      t("cook.discardTitle"),
-      t("cook.discardMessage"),
-      [
-        { text: t("common.cancel"), style: "cancel" },
-        {
-          text: t("cook.discardBtn"),
-          style: "destructive",
-          onPress: () => router.back(),
-        },
-      ],
-    );
-  }, [phase, cookStartAt, status, t]);
+    setConfirmDiscard(true);
+  }, [phase, cookStartAt, status]);
 
   // Intercept the Android hardware/gesture back during an active session so
   // the discard confirmation applies to it too (not just the ✕ button).
@@ -1322,7 +1318,7 @@ export default function CookModeScreen() {
                 ]}
               >
                 <Ionicons
-                  name={I18nManager.isRTL ? "chevron-forward" : "chevron-back"}
+                  name={dir === "rtl" ? "chevron-forward" : "chevron-back"}
                   size={26}
                   color={colors.inkSecondary}
                 />
@@ -1345,14 +1341,14 @@ export default function CookModeScreen() {
               </View>
 
               <IconPressable
-                onPress={nextStep}
+                onPress={onLastStep ? () => setConfirmFinish(true) : nextStep}
                 accessibilityLabel={
                   onLastStep ? t("cook.finishCooking") : t("cook.next")
                 }
                 style={onLastStep ? styles.ctrlCircleDone : styles.ctrlCircle}
               >
                 <Ionicons
-                  name={onLastStep ? "checkmark" : I18nManager.isRTL ? "chevron-back" : "chevron-forward"}
+                  name={onLastStep ? "checkmark" : dir === "rtl" ? "chevron-back" : "chevron-forward"}
                   size={onLastStep ? 26 : 26}
                   color={onLastStep ? "#FFFFFF" : colors.inkSecondary}
                 />
@@ -1364,13 +1360,52 @@ export default function CookModeScreen() {
                 title={t("cook.finishCooking")}
                 variant="ghost"
                 size="md"
-                onPress={finishCooking}
+                onPress={() => setConfirmFinish(true)}
                 style={styles.finishRow}
               />
             ) : null}
           </>
         )}
       </View>
+
+      {/* Finish confirmation — never end an active cook on a stray tap. */}
+      <ActionSheet
+        visible={confirmFinish}
+        onClose={() => setConfirmFinish(false)}
+        title={t("cook.finishTitle")}
+        message={t("cook.finishMessage")}
+        actions={[
+          {
+            key: "finish",
+            label: t("cook.finishCooking"),
+            icon: "checkmark-circle-outline",
+            onPress: () => {
+              setConfirmFinish(false);
+              finishCooking();
+            },
+          },
+        ]}
+      />
+
+      {/* Discard confirmation (✕ / hardware back on an active session). */}
+      <ActionSheet
+        visible={confirmDiscard}
+        onClose={() => setConfirmDiscard(false)}
+        title={t("cook.discardTitle")}
+        message={t("cook.discardMessage")}
+        actions={[
+          {
+            key: "discard",
+            label: t("cook.discardBtn"),
+            icon: "trash-outline",
+            tone: "destructive",
+            onPress: () => {
+              setConfirmDiscard(false);
+              router.back();
+            },
+          },
+        ]}
+      />
     </View>
   );
 }
