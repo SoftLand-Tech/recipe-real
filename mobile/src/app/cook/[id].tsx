@@ -13,6 +13,7 @@ import { useKeepAwake } from "expo-keep-awake";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
+  alarmAvailable,
   cancelStepAlarm,
   initCookEventHandlers,
   openAlarmPermissionSettings,
@@ -208,6 +209,15 @@ export default function CookModeScreen() {
           alignItems: "center",
           justifyContent: "center",
           gap: Space.sm,
+        },
+        alarmChipWrap: {
+          // Static-style wrapper so the tappable chip centers cleanly.
+        },
+        alarmNeedsApp: {
+          ...Type.caption,
+          color: colors.inkFaint,
+          textAlign: "center",
+          marginTop: -Space.sm,
         },
         timer: {
           ...Type.timer,
@@ -455,6 +465,18 @@ export default function CookModeScreen() {
   // an active cook, and discarding one via ✕ / back.
   const [confirmFinish, setConfirmFinish] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // Alarms need the NATIVE notifee module: null = still resolving,
+  // false = Expo Go / unavailable (chip renders muted + caption).
+  const [alarmsUsable, setAlarmsUsable] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    alarmAvailable().then((ok) => {
+      if (!cancelled) setAlarmsUsable(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Stable per-session idempotency key (generated on first submission) so
   // retried/offline-replayed POSTs don't create duplicate cook sessions.
@@ -1254,29 +1276,53 @@ export default function CookModeScreen() {
             label={stepTypeLabel(t, step.step_type || "active")}
             stepType={step.step_type}
           />
-          {/* Step alarm chip: only steps whose text states a time. */}
+          {/* Step ALARM chip — an explicit toggle: "Set 60 min alarm" →
+              armed ("alarm on · cancel"). In Expo Go (alarms can't run)
+              it renders muted with a one-line caption instead. */}
           {alarmMinutes != null && alarmMinutes > 0 ? (
-            <IconPressable
-              onPress={onAlarmChipPress}
-              hitSlop={Space.xs}
-              accessibilityLabel={t("cook.alarmChip", {
-                minutes: Math.round(alarmMinutes),
-              })}
-            >
-              <Chip
-                tone={alarmArmedHere ? "accent" : "amber"}
-                size="sm"
-                label={
-                  alarmArmedHere
-                    ? `${t("cook.alarmArmed")} · ${t("cook.alarmCancel")}`
-                    : t("cook.alarmChip", {
-                        minutes: Math.round(alarmMinutes),
-                      })
+            <View style={styles.alarmChipWrap}>
+              <IconPressable
+                onPress={alarmsUsable === false ? undefined : onAlarmChipPress}
+                disabled={alarmsUsable === false}
+                hitSlop={Space.xs}
+                accessibilityLabel={
+                  alarmsUsable === false
+                    ? t("cook.alarmNeedsAppCaption")
+                    : alarmArmedHere
+                      ? `${t("cook.alarmArmed")} · ${t("cook.alarmCancel")}`
+                      : t("cook.alarmSet", {
+                          minutes: Math.round(alarmMinutes),
+                        })
                 }
-              />
-            </IconPressable>
+              >
+                <Chip
+                  tone={
+                    alarmsUsable === false
+                      ? "neutral"
+                      : alarmArmedHere
+                        ? "accent"
+                        : "amber"
+                  }
+                  size="sm"
+                  label={
+                    alarmsUsable === false
+                      ? t("cook.alarmChip", {
+                          minutes: Math.round(alarmMinutes),
+                        })
+                      : alarmArmedHere
+                        ? `${t("cook.alarmArmed")} · ${t("cook.alarmCancel")}`
+                        : t("cook.alarmSet", {
+                            minutes: Math.round(alarmMinutes),
+                          })
+                  }
+                />
+              </IconPressable>
+            </View>
           ) : null}
         </View>
+        {alarmMinutes != null && alarmMinutes > 0 && alarmsUsable === false ? (
+          <Text style={styles.alarmNeedsApp}>{t("cook.alarmNeedsAppCaption")}</Text>
+        ) : null}
 
         <Text style={[styles.timer, { color: timerColor }]}>
           {formatMSS(elapsedMs)}

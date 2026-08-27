@@ -277,6 +277,9 @@ export const en: Record<string, string> = {
   "cook.vsClaim": "Recipe said {claim} — you took {actual}",
   "cook.hintPaused": "Paused",
   "cook.alarmChip": "⏲ {minutes} min",
+  "cook.alarmSet": "Set {minutes} min alarm",
+  "cook.alarmNeedsAppCaption":
+    "Step alarms need the full app — they don't run in Expo Go.",
   "cook.alarmPermTitle": "Alarm permission needed",
   "cook.alarmPermMessage":
     "Android blocks exact alarms for new apps by default. Allow \"Alarms & reminders\" for RecipeReal so step alarms can ring.",

@@ -276,6 +276,9 @@ export const ar: Record<string, string> = {
   "cook.vsClaim": "الوصفة قالت {claim} — واستغرقت {actual}",
   "cook.hintPaused": "متوقف مؤقتًا",
   "cook.alarmChip": "⏲ {minutes} دقيقة",
+  "cook.alarmSet": "اضبط منبه {minutes} دقيقة",
+  "cook.alarmNeedsAppCaption":
+    "منبه الخطوات يحتاج التطبيق الكامل — لا يعمل داخل Expo Go.",
   "cook.alarmPermTitle": "إذن التنبيهات مطلوب",
   "cook.alarmPermMessage":
     "يمنع أندرويد التنبيهات الدقيقة للتطبيقات الجديدة افتراضيًا. اسمح بـ\"التنبيهات والتذكيرات\" لتطبيق RecipeReal حتى ترن أجراس خطوات الطهي.",
