@@ -276,6 +276,10 @@ export const ar: Record<string, string> = {
   "cook.vsClaim": "الوصفة قالت {claim} — واستغرقت {actual}",
   "cook.hintPaused": "متوقف مؤقتًا",
   "cook.alarmChip": "⏲ {minutes} دقيقة",
+  "cook.alarmPermTitle": "إذن التنبيهات مطلوب",
+  "cook.alarmPermMessage":
+    "يمنع أندرويد التنبيهات الدقيقة للتطبيقات الجديدة افتراضيًا. اسمح بـ\"التنبيهات والتذكيرات\" لتطبيق RecipeReal حتى ترن أجراس خطوات الطهي.",
+  "cook.alarmPermOpen": "فتح الإعدادات",
   "cook.alarmArmed": "المنبه مفعّل",
   "cook.alarmCancel": "إلغاء",
   "cook.alarmBody": "الخطوة {n}: انتهت {minutes} دقيقة",

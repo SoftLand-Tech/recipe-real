@@ -277,6 +277,10 @@ export const en: Record<string, string> = {
   "cook.vsClaim": "Recipe said {claim} — you took {actual}",
   "cook.hintPaused": "Paused",
   "cook.alarmChip": "⏲ {minutes} min",
+  "cook.alarmPermTitle": "Alarm permission needed",
+  "cook.alarmPermMessage":
+    "Android blocks exact alarms for new apps by default. Allow \"Alarms & reminders\" for RecipeReal so step alarms can ring.",
+  "cook.alarmPermOpen": "Open settings",
   "cook.alarmArmed": "alarm on",
   "cook.alarmCancel": "cancel",
   "cook.alarmBody": "Step {n}: your {minutes} minutes are up",

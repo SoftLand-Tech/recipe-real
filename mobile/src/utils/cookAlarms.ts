@@ -218,19 +218,28 @@ export interface StepAlarmOpts {
  * Schedule a real alarm notification (channel "alarm", HIGH importance,
  * default sound + long vibration). `fullScreenAction` is intentionally NOT
  * set: it requires a registered mainComponent and misconfigures easily.
- * Returns the notification id, or null when unavailable/denied (Expo Go).
+ * Returns the notification id — or `exactAlarmDenied: true` when Android
+ * 14+ refused SCHEDULE_EXACT_ALARM (the OS "Alarms & reminders" settings
+ * screen must be opened once; see openAlarmPermissionSettings).
  */
+export interface StepAlarmResult {
+  id: string | null;
+  exactAlarmDenied: boolean;
+}
+
 export async function scheduleStepAlarm(
   opts: StepAlarmOpts,
-): Promise<string | null> {
+): Promise<StepAlarmResult> {
   const mod = await notifeeModule();
-  if (!mod || !(opts.minutes > 0)) return null;
+  if (!mod || !(opts.minutes > 0)) {
+    return { id: null, exactAlarmDenied: false };
+  }
   const t = opts.t ?? tEn;
   const fireAt =
     opts.at?.getTime() ?? Date.now() + opts.minutes * 60_000;
   try {
     await ensureChannels(mod);
-    return await mod.default.createTriggerNotification(
+    const id = await mod.default.createTriggerNotification(
       {
         title: opts.recipeTitle,
         body: t("cook.alarmBody", {
@@ -247,9 +256,30 @@ export async function scheduleStepAlarm(
         timestamp: fireAt,
       },
     );
+    return { id, exactAlarmDenied: false };
   } catch (error) {
     console.warn("[RecipeReal] scheduleStepAlarm failed:", error);
-    return null;
+    // notifee surfaces Android's SCHEDULE_EXACT_ALARM refusal with an
+    // error code mentioning the alarm permission (Android 14+ denies it
+    // by DEFAULT for new installs).
+    const code = String((error as { code?: unknown })?.code ?? "");
+    const exactAlarmDenied = code.toLowerCase().includes("alarm");
+    return { id: null, exactAlarmDenied };
+  }
+}
+
+/**
+ * Open the Android "Alarms & reminders" special-app-access screen, where
+ * the user grants SCHEDULE_EXACT_ALARM (Android 14+ revokes it by default
+ * for new installs). No-op when the API is unavailable.
+ */
+export async function openAlarmPermissionSettings(): Promise<void> {
+  const mod = await notifeeModule();
+  if (!mod) return;
+  try {
+    await mod.default.openAlarmPermissionSettings();
+  } catch {
+    // Older Android without the special-access screen — nothing to open.
   }
 }
 

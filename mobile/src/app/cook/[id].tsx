@@ -2,6 +2,7 @@ import { useLocalSearchParams, router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   BackHandler,
   StyleSheet,
   Text,
@@ -14,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   cancelStepAlarm,
   initCookEventHandlers,
+  openAlarmPermissionSettings,
   requestAlarmPermission,
   scheduleStepAlarm,
   startCookNotification,
@@ -445,6 +447,9 @@ export default function CookModeScreen() {
 
   /** Armed step alarm: id in a ref (event handlers), step number for render. */
   const armedAlarmIdRef = useRef<string | null>(null);
+  // Step the user manually DISARMED — auto-arm must not fight them on the
+  // same step (re-arms only after leaving and re-entering it).
+  const lastAutoArmStepRef = useRef<number | null>(null);
   const [armedStep, setArmedStep] = useState<number | null>(null);
   // Confirmations (the app's ActionSheet — never native Alerts): finishing
   // an active cook, and discarding one via ✕ / back.
@@ -569,36 +574,85 @@ export default function CookModeScreen() {
     await cancelStepAlarm(alarmId);
   }, []);
 
+  /** Arm the alarm for step `step` (minutes from its text). Silent no-op
+   * paths return false so the chip tap can surface a failure message. */
+  const armStepAlarm = useCallback(
+    async (step: RecipeStep): Promise<boolean> => {
+      const minutes = step.literal_minutes;
+      if (!recipe || typeof minutes !== "number" || minutes <= 0) {
+        return false;
+      }
+      await clearArmedAlarm();
+      if (!(await requestAlarmPermission())) return false;
+      const { id, exactAlarmDenied } = await scheduleStepAlarm({
+        recipeTitle: lr.title(recipe),
+        stepNumber: step.step_number,
+        minutes,
+        t,
+      });
+      if (id) {
+        armedAlarmIdRef.current = id;
+        setArmedStep(step.step_number);
+        track("alarm_armed", {
+          recipe_id: recipe.id,
+          step_number: step.step_number,
+          minutes,
+        });
+        return true;
+      }
+      // Android 14+ denies exact alarms by default for new installs —
+      // send the user to the OS switch once; silent failure helps nobody.
+      if (exactAlarmDenied) {
+        Alert.alert(
+          t("cook.alarmPermTitle"),
+          t("cook.alarmPermMessage"),
+          [
+            { text: t("common.cancel"), style: "cancel" },
+            {
+              text: t("cook.alarmPermOpen"),
+              onPress: () => void openAlarmPermissionSettings(),
+            },
+          ],
+        );
+      }
+      return false;
+    },
+    [recipe, clearArmedAlarm, lr, t],
+  );
+
   /** Arm (or cancel, when already armed) the alarm for the current step. */
   const onAlarmChipPress = useCallback(async () => {
     const step = steps[currentIndex];
-    const minutes = step?.literal_minutes;
-    if (!recipe || !step || typeof minutes !== "number" || minutes <= 0) {
-      return;
-    }
-    // One armed alarm at a time: tapping the armed chip cancels it; tapping
-    // elsewhere replaces the previous one.
+    if (!step) return;
+    // One armed alarm at a time: tapping the armed chip cancels it (and
+    // stamps the step so auto-arm doesn't instantly re-arm against the
+    // user's wish); tapping a disarmed chip re-arms.
     if (armedStep === step.step_number) {
+      lastAutoArmStepRef.current = step.step_number;
       await clearArmedAlarm();
       return;
     }
-    await clearArmedAlarm();
-    if (!(await requestAlarmPermission())) return;
-    const alarmId = await scheduleStepAlarm({
-      recipeTitle: lr.title(recipe),
-      stepNumber: step.step_number,
-      minutes,
-      t,
-    });
-    if (!alarmId) return;
-    armedAlarmIdRef.current = alarmId;
-    setArmedStep(step.step_number);
-    track("alarm_armed", {
-      recipe_id: recipe.id,
-      step_number: step.step_number,
-      minutes,
-    });
-  }, [steps, currentIndex, recipe, armedStep, clearArmedAlarm, lr, t]);
+    lastAutoArmStepRef.current = null;
+    await armStepAlarm(step);
+  }, [steps, currentIndex, armedStep, clearArmedAlarm, armStepAlarm]);
+
+  // AUTO-ARM: entering a timed step while the stopwatch is running starts
+  // its alarm automatically — an alarm you must know to arm is barely an
+  // alarm. A manual cancel on this step suppresses the re-arm until the
+  // user leaves and comes back.
+  useEffect(() => {
+    if (phase !== "cooking" || status !== "running") return;
+    const step = steps[currentIndex];
+    if (!step) return;
+    const minutes = step.literal_minutes;
+    if (typeof minutes !== "number" || minutes <= 0) return;
+    if (armedStep != null) return;
+    if (lastAutoArmStepRef.current === step.step_number) return;
+    void armStepAlarm(step);
+    // Deliberately not keyed on armStepAlarm/armedStep: this fires on step
+    // ENTRY (and run resume) only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex, status, phase, steps]);
 
   // ---- Stopwatch actions -----------------------------------------------------
 
