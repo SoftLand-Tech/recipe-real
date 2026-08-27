@@ -4,10 +4,12 @@ import {
   ActivityIndicator,
   Alert,
   BackHandler,
+  I18nManager,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useKeepAwake } from "expo-keep-awake";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -19,6 +21,7 @@ import {
   startCookNotification,
   stopCookNotification,
 } from "@/utils/cookAlarms";
+import { stepMinutes } from "@/utils/recipeTime";
 
 import { getRecipe, submitCookSession } from "@/api/client";
 import { track } from "@/analytics";
@@ -235,19 +238,87 @@ export default function CookModeScreen() {
         controlRow: {
           flexDirection: "row",
           alignItems: "center",
-          gap: Space.sm,
+          gap: Space.md,
         },
         primaryBtn: {
           flex: 1,
         },
-        navRow: {
-          flexDirection: "row",
+        // Circular step-nav buttons flanking the Pause/Resume pill —
+        // visible soft fill + hairline (never transparent), static styles.
+        ctrlCircle: {
+          width: 52,
+          height: 52,
+          borderRadius: Radius.pill,
+          backgroundColor: colors.surfaceSoft,
+          borderWidth: 1,
+          borderColor: colors.hairline,
           alignItems: "center",
-          gap: Space.sm,
+          justifyContent: "center",
         },
-        navNextBtn: {
-          flex: 1,
-          flexDirection: "column",
+        ctrlCircleDisabled: {
+          opacity: 0.4,
+        },
+        // Last step: the forward circle becomes a filled accent ✓ (finish).
+        ctrlCircleDone: {
+          width: 52,
+          height: 52,
+          borderRadius: Radius.pill,
+          backgroundColor: colors.accent,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        finishRow: {
+          marginTop: Space.xs,
+        },
+        // Step pace bar: teal fill toward the step's expected duration,
+        // amber when past it.
+        stepPaceWrap: {
+          width: "100%",
+          gap: Space.xs,
+          marginTop: Space.xl,
+        },
+        stepTrack: {
+          height: 6,
+          borderRadius: Radius.pill,
+          backgroundColor: colors.surfaceSoft,
+          overflow: "hidden",
+        },
+        stepFill: {
+          height: "100%",
+          borderRadius: Radius.pill,
+          backgroundColor: colors.timing,
+        },
+        stepFillOver: {
+          height: "100%",
+          borderRadius: Radius.pill,
+          backgroundColor: colors.amber,
+        },
+        stepPaceText: {
+          ...Type.caption,
+          fontWeight: "600",
+          textAlign: "center",
+        },
+        // Next-step preview under the description card.
+        nextWrap: {
+          width: "100%",
+          gap: Space.xs,
+          marginTop: Space.md,
+        },
+        nextLabel: {
+          ...Type.caption,
+          color: colors.inkFaint,
+          fontWeight: "700",
+          textTransform: "uppercase",
+        },
+        nextText: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+        },
+        // "Recipe said X — you took Y" reality check on the feedback screen.
+        vsClaim: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+          textAlign: "center",
         },
         // Feedback phase
         feedbackWrap: {
@@ -942,6 +1013,17 @@ export default function CookModeScreen() {
             ) : null}
           </View>
 
+          {/* Reality check — the brand moment: the publisher's claim vs the
+              stopwatch truth this session just recorded. */}
+          {recipe?.publisher_time_minutes != null && totalCooked > 0 ? (
+            <Text style={styles.vsClaim}>
+              {t("cook.vsClaim", {
+                claim: fmtMin(Math.round(recipe.publisher_time_minutes)),
+                actual: fmtMin(totalCooked),
+              })}
+            </Text>
+          ) : null}
+
           {cleanupEstimate != null ? (
             <Text style={styles.cleanupEstimate}>
               {t("cook.cleanupEstimate", { n: Math.round(cleanupEstimate) })}
@@ -1044,6 +1126,27 @@ export default function CookModeScreen() {
   const step = steps[currentIndex];
   const alarmMinutes = step.literal_minutes ?? null;
   const alarmArmedHere = armedStep != null && armedStep === step.step_number;
+  const onLastStep = currentIndex === steps.length - 1;
+  const upcomingStep = onLastStep ? null : steps[currentIndex + 1];
+
+  // Expected duration for THIS step (best known estimate) and the
+  // pause-adjusted time already spent on it — drive the step pace bar.
+  const expectedMin = stepMinutes(step);
+  const stepExpectedMs =
+    expectedMin != null && expectedMin > 0 ? expectedMin * 60_000 : null;
+  const stepMark = stepMarksRef.current[step.step_number] ?? null;
+  const stepElapsedMs =
+    cookStartAt != null && stepMark != null
+      ? adjust(stepMark, pausedAt ?? now, pausesRef.current)
+      : 0;
+  const stepOverMin =
+    stepExpectedMs != null && stepElapsedMs > stepExpectedMs
+      ? Math.max(1, Math.round((stepElapsedMs - stepExpectedMs) / 60_000))
+      : 0;
+  const stepPct =
+    stepExpectedMs != null
+      ? Math.min(1, stepElapsedMs / stepExpectedMs)
+      : null;
 
   const timerColor =
     status === "running"
@@ -1128,16 +1231,67 @@ export default function CookModeScreen() {
         <Text style={[styles.timer, { color: timerColor }]}>
           {formatMSS(elapsedMs)}
         </Text>
-        <Text style={styles.statusHint}>{statusHint}</Text>
+        <Text
+          style={[
+            styles.statusHint,
+            step.step_type === "passive" && status === "running"
+              ? { color: colors.success }
+              : null,
+          ]}
+        >
+          {step.step_type === "passive" && status === "running"
+            ? t("cook.hintHandsOff")
+            : statusHint}
+        </Text>
+
+        {/* Step pace bar — the honest-time glance: teal fill toward this
+            step's expected duration; amber + over-count once past it. */}
+        {stepExpectedMs != null && status !== "idle" ? (
+          <View style={styles.stepPaceWrap}>
+            <View style={styles.stepTrack}>
+              <View
+                style={[
+                  stepOverMin > 0 ? styles.stepFillOver : styles.stepFill,
+                  { width: `${Math.round((stepPct ?? 0) * 100)}%` },
+                ]}
+              />
+            </View>
+            <Text
+              style={[
+                styles.stepPaceText,
+                { color: stepOverMin > 0 ? colors.amber : colors.timing },
+              ]}
+            >
+              {stepOverMin > 0
+                ? t("cook.stepOver", { n: stepOverMin })
+                : t("cook.stepExpected", {
+                    n: Math.round(stepExpectedMs / 60_000),
+                  })}
+            </Text>
+          </View>
+        ) : null}
 
         <Card style={styles.descCard} padding={Space.xl} shadow="card">
           <Text style={styles.stepDescription}>
             {lr.stepDescription(step)}
           </Text>
         </Card>
+
+        {/* Next-step preview — glance ahead while the pot simmers. */}
+        {upcomingStep != null ? (
+          <View style={styles.nextWrap}>
+            <Text style={styles.nextLabel}>{t("cook.nextStep")}</Text>
+            <Text style={styles.nextText} numberOfLines={2}>
+              {lr.stepDescription(upcomingStep)}
+            </Text>
+          </View>
+        ) : null}
       </View>
 
-      {/* Footer: stopwatch control + navigation row */}
+      {/* Footer — ONE primary control per state. While cooking: circular
+          step nav (⏮ / ⏭, ✓ on the last step = finish) flanking the big
+          Pause/Resume pill; "Finish" stays available as a quiet row so you
+          never have to page to the last step to end an early cook. */}
       <View
         style={[
           styles.footer,
@@ -1156,55 +1310,66 @@ export default function CookModeScreen() {
             onPress={startCooking}
           />
         ) : (
-          <View style={styles.controlRow}>
-            {/* flex on the wrapper View (never on the Pressable itself) so
-                the button stretches without the Android paint quirk. */}
-            <View style={styles.primaryBtn}>
-              <Button
-                title={
-                  status === "running"
-                    ? t("cook.pauseCooking")
-                    : t("cook.resumeCooking")
-                }
-                variant={status === "running" ? "secondary" : "primary"}
-                size="lg"
-                fullWidth
-                onPress={togglePauseResume}
-              />
-            </View>
-            <Button
-              title={t("cook.finishCooking")}
-              variant="ghost"
-              size="lg"
-              onPress={finishCooking}
-            />
-          </View>
-        )}
+          <>
+            <View style={styles.controlRow}>
+              <IconPressable
+                onPress={currentIndex === 0 ? undefined : prevStep}
+                disabled={currentIndex === 0}
+                accessibilityLabel={t("cook.previous")}
+                style={[
+                  styles.ctrlCircle,
+                  currentIndex === 0 ? styles.ctrlCircleDisabled : null,
+                ]}
+              >
+                <Ionicons
+                  name={I18nManager.isRTL ? "chevron-forward" : "chevron-back"}
+                  size={26}
+                  color={colors.inkSecondary}
+                />
+              </IconPressable>
 
-        <View style={styles.navRow}>
-          <Button
-            title={t("cook.previous")}
-            variant="ghost"
-            size="md"
-            disabled={currentIndex === 0}
-            onPress={prevStep}
-          />
-          {/* flex on the wrapper View (never on the Pressable itself) so the
-              button stretches without the Android paint-collapse quirk. */}
-          <View style={styles.navNextBtn}>
-            <Button
-              title={
-                currentIndex === steps.length - 1
-                  ? t("cook.finishCooking")
-                  : t("cook.next")
-              }
-              variant="primary"
-              size="lg"
-              fullWidth
-              onPress={nextStep}
-            />
-          </View>
-        </View>
+              {/* flex on the wrapper View (never on the Pressable itself) so
+                  the button stretches without the Android paint quirk. */}
+              <View style={styles.primaryBtn}>
+                <Button
+                  title={
+                    status === "running"
+                      ? t("cook.pauseCooking")
+                      : t("cook.resumeCooking")
+                  }
+                  variant={status === "running" ? "secondary" : "primary"}
+                  size="lg"
+                  fullWidth
+                  onPress={togglePauseResume}
+                />
+              </View>
+
+              <IconPressable
+                onPress={nextStep}
+                accessibilityLabel={
+                  onLastStep ? t("cook.finishCooking") : t("cook.next")
+                }
+                style={onLastStep ? styles.ctrlCircleDone : styles.ctrlCircle}
+              >
+                <Ionicons
+                  name={onLastStep ? "checkmark" : I18nManager.isRTL ? "chevron-back" : "chevron-forward"}
+                  size={onLastStep ? 26 : 26}
+                  color={onLastStep ? "#FFFFFF" : colors.inkSecondary}
+                />
+              </IconPressable>
+            </View>
+
+            {!onLastStep ? (
+              <Button
+                title={t("cook.finishCooking")}
+                variant="ghost"
+                size="md"
+                onPress={finishCooking}
+                style={styles.finishRow}
+              />
+            ) : null}
+          </>
+        )}
       </View>
     </View>
   );
