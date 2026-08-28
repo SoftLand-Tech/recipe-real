@@ -1,12 +1,17 @@
 import { useEffect } from "react";
-import { Stack } from "expo-router";
+import { router, Stack } from "expo-router";
 import {
   DarkTheme,
   DefaultTheme,
   ThemeProvider,
   type Theme,
 } from "expo-router";
-import { I18nManager } from "react-native";
+import {
+  I18nManager,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import {
   SafeAreaProvider,
   initialWindowMetrics,
@@ -18,6 +23,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import "@/global.css";
 import { track } from "@/analytics";
 import { AnimatedSplash } from "@/components/AnimatedSplash";
+import { Button } from "@/components/ui";
 import { initDatabase } from "@/db/database";
 import { useLang, useT } from "@/i18n";
 import {
@@ -34,6 +40,42 @@ import {
 // before the overlay's first paint.
 void SplashScreen.preventAutoHideAsync().catch(() => {
   // Already prevented or unavailable (dev web) — fine.
+});
+
+/**
+ * ROOT ERROR BOUNDARY (expo-router convention): without this, an uncaught
+ * render error in a release build dies silently — no red screen, just a
+ * blank app. This renders a themed "something went wrong" surface with a
+ * retry (remount) and a home escape hatch. Never throws of its own.
+ */
+export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
+  const colors = useThemePrefs().colors;
+  const t = useT();
+  return (
+    <View style={ebStyles.screen}>
+      <Text style={[ebStyles.title, { color: colors.ink }]}>
+        {t("common.somethingWentWrong")}
+      </Text>
+      <Text style={[ebStyles.message, { color: colors.inkSecondary }]} numberOfLines={3}>
+        {error.message || t("common.couldNotLoadRecipe")}
+      </Text>
+      <View style={ebStyles.actions}>
+        <Button title={t("common.retry")} onPress={retry} />
+        <Button
+          title={t("common.goHome")}
+          variant="ghost"
+          onPress={() => router.replace("/")}
+        />
+      </View>
+    </View>
+  );
+}
+
+const ebStyles = StyleSheet.create({
+  screen: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, backgroundColor: "#FAF8F5", padding: 24 },
+  title: { fontSize: 18, fontWeight: "700", textAlign: "center" },
+  message: { fontSize: 13, textAlign: "center" },
+  actions: { flexDirection: "row", gap: 12, marginTop: 8 },
 });
 
 /**
@@ -83,12 +125,41 @@ export default function RootLayout() {
  * `allowRTL(true)` always, and `forceRTL` for Arabic layout. Direction
  * changes only take effect after a JS reload — the language setter in the
  * theme provider triggers that restart flow whenever the resolved dir flips.
+ *
+ * FIRST-LAUNCH MISMATCH: forceRTL set at cold start does not affect the
+ * ALREADY-COMPOSING first session, so a fresh install on an Arabic-locale
+ * device renders one fully-LTR-layout session with Arabic strings. Detect
+ * the persisted-vs-native mismatch ONCE and silently reload (an
+ * AsyncStorage guard prevents any reload loop; it resets whenever the
+ * layout matches so future explicit language flips can reload again).
  */
+const RTL_LAYOUT_DIR_KEY = "recipereal.rtlLayoutDir";
+
 function RtlDirection() {
   const { dir } = useLang();
   useEffect(() => {
     I18nManager.allowRTL(true);
     I18nManager.forceRTL(dir === "rtl");
+    let cancelled = false;
+    (async () => {
+      try {
+        const applied = await AsyncStorage.getItem(RTL_LAYOUT_DIR_KEY);
+        if (cancelled) return;
+        if (applied === dir) return;
+        await AsyncStorage.setItem(RTL_LAYOUT_DIR_KEY, dir);
+        if (cancelled) return;
+        // Reload not possible in Expo Go's dev client surface — fall back
+        // to continuing this session mirrored next launch.
+        await import("expo-updates").then((Updates) =>
+          Updates.reloadAsync().catch(() => {}),
+        );
+      } catch {
+        // Storage or reload unavailable — continue unmirrored this session.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [dir]);
   return null;
 }

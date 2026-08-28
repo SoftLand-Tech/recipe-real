@@ -549,9 +549,9 @@ export default function HomeScreen() {
       return true;
     } catch (error) {
       console.warn("[RecipeReal] home loadFromCache failed:", error);
-      setErrorMessage(
-        error instanceof Error ? error.message : t("common.loadFailedRecipes"),
-      );
+      // Localized copy only — a raw error.message would be English in the
+      // Arabic UI ("Network Error").
+      setErrorMessage(t("common.loadFailedRecipes"));
       setState("error");
       return false;
     }

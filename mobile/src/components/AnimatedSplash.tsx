@@ -1,4 +1,9 @@
-import { useCallback, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Image } from "expo-image";
 import * as SplashScreen from "expo-splash-screen";
 import { Dimensions, StyleSheet, View } from "react-native";
@@ -71,6 +76,17 @@ export function AnimatedSplash() {
   // flash risk in either direction.
   const [visible, setVisible] = useState(true);
   const started = useRef(false);
+
+  // SAFETY NET: the overlay normally unmounts via the Reanimation
+  // finished-callback, but if the JS side dies mid-reveal that callback
+  // never fires — and this full-screen view would strand the app under it
+  // forever (no red screens in release). 5s is comfortably past the ~2.1s
+  // sequence, so a healthy run always dismisses itself first.
+  useEffect(() => {
+    if (!visible) return;
+    const fallback = setTimeout(() => setVisible(false), 5000);
+    return () => clearTimeout(fallback);
+  }, [visible]);
 
   const sweep = useSharedValue(0);
   const ring1 = useSharedValue(0);

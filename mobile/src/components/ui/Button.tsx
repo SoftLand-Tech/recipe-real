@@ -1,7 +1,7 @@
 import { useMemo, useState, type ComponentProps, type ReactNode } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 
 import { Space, Type, useThemeColors, type ThemeColors } from "@/theme";
 
