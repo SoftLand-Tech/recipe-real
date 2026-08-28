@@ -630,7 +630,7 @@ provenance.
                                         <div class="mini-rail">
                                             @foreach (array_slice($under, 0, 2) as $row)
                                                 <div class="mini-card">
-                                                    @if ($row['img'])<img src="{{ $row['img'] }}" alt="" loading="lazy">@else<span class="mini-ph"></span>@endif
+                                                    @if (!empty($row['img']))<img src="{{ $row['img'] }}" alt="" loading="lazy">@else<span class="mini-ph"></span>@endif
                                                     <b>{{ \Illuminate\Support\Str::limit($row['title'], 26) }}</b>
                                                     <span class="pair"><s>{{ $row['claimed'] }}</s><i class="t">{{ $row['real'] }}</i></span>
                                                 </div>
@@ -653,7 +653,7 @@ provenance.
                                             @foreach ($under as $i => $row)
                                                 @if ($i < 4)
                                                     <div class="m-card">
-                                                        @if ($row['img'])<img src="{{ $row['img'] }}" alt="" loading="lazy">@else<span class="mini-ph"></span>@endif
+                                                        @if (!empty($row['img']))<img src="{{ $row['img'] }}" alt="" loading="lazy">@else<span class="mini-ph"></span>@endif
                                                         <b>{{ \Illuminate\Support\Str::limit($row['title'], 24) }}</b>
                                                         <span class="pair"><s>{{ $row['claimed'] }}</s><i class="t">{{ $row['real'] }}</i></span>
                                                         <em class="gap fast">{{ $row['delta'] }}</em>
@@ -662,7 +662,7 @@ provenance.
                                             @endforeach
                                             @foreach (array_slice($over, 0, 2) as $row)
                                                 <div class="m-card">
-                                                    @if ($row['img'])<img src="{{ $row['img'] }}" alt="" loading="lazy">@else<span class="mini-ph"></span>@endif
+                                                    @if (!empty($row['img']))<img src="{{ $row['img'] }}" alt="" loading="lazy">@else<span class="mini-ph"></span>@endif
                                                     <b>{{ \Illuminate\Support\Str::limit($row['title'], 24) }}</b>
                                                     <span class="pair"><s>{{ $row['claimed'] }}</s><i class="t">{{ $row['real'] }}</i></span>
                                                     <em class="gap slow">{{ $row['delta'] }}</em>
@@ -700,7 +700,7 @@ provenance.
                                         <div class="board-grid-m">
                                             @foreach (array_slice($under, 0, 2) as $row)
                                                 <div class="m-card">
-                                                    @if ($row['img'])<img src="{{ $row['img'] }}" alt="" loading="lazy">@else<span class="mini-ph"></span>@endif
+                                                    @if (!empty($row['img']))<img src="{{ $row['img'] }}" alt="" loading="lazy">@else<span class="mini-ph"></span>@endif
                                                     <b>{{ \Illuminate\Support\Str::limit($row['title'], 24) }}</b>
                                                     <svg class="heart-on" width="16" height="16" viewBox="0 0 24 24" fill="#E8384F"><path d="M12 21s-7.5-4.7-10-9.3C.6 8.6 2.4 5 5.7 5c2 0 3.4 1 4.3 2.5h4C14.9 6 16.3 5 18.3 5c3.3 0 5.1 3.6 3.7 6.7C19.5 16.3 12 21 12 21Z"/></svg>
                                                 </div>
