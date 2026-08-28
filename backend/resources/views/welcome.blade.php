@@ -144,8 +144,14 @@
                then transform-scaled to the landing column. Every inner size
                is a REAL app-scale size (no zoom hacks). ---- */
             .phone-shell { position: relative; justify-self: center;
-                height: 646px; display: flex; align-items: flex-start;
+                height: 664px; display: flex; align-items: flex-start;
                 justify-content: center; }
+            /* caption: absolute below the phone — a flex sibling gets squeezed
+               into a narrow column on wide screens and wraps letter-per-line */
+            .phone-cap { position: absolute; top: 100%; left: 50%;
+                transform: translateX(-50%); margin: 12px 0 0; white-space: nowrap;
+                font-size: 10.5px; letter-spacing: .12em;
+                color: var(--ink-3); text-transform: uppercase; text-align: center; }
             .iphone {
                 position: relative; width: 410px; flex: none;
                 background: #050505; border-radius: 56px; padding: 10px;
