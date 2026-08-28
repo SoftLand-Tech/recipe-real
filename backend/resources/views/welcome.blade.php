@@ -7,6 +7,9 @@
         <meta name="description" content="RecipeReal clock-checks 20,089 halal-friendly recipes against what cooks actually spend in the kitchen. Claim vs reality on every recipe, offline library, guided Cook Mode with step alarms. Free Android app.">
         <link rel="canonical" href="https://recipe-real.softland.tech/">
         <meta name="theme-color" content="#171310">
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+        <link rel="icon" type="image/x-icon" href="/favicon.ico">
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png">
         <meta property="og:type" content="website">
         <meta property="og:site_name" content="RecipeReal">
         <meta property="og:title" content="RecipeReal — Recipes lie about time. We keep the real clock.">
@@ -84,14 +87,17 @@
             .btn-line { background: transparent; color: var(--print); border-color: #4A3F35; }
             .btn-line:hover { border-color: var(--print); }
             .btn-sm { padding: 10px 18px; font-size: 13.5px; }
+            /* Small nav CTA: white label must stay readable on the accent at
+               small sizes — deep accent ground + heavy weight. */
+            .nav .btn-accent { background: var(--accent-deep); color: #fff; font-weight: 800; }
+            .nav .btn-accent:hover { background: #A8481D; }
 
             /* ---------- nav ---------- */
             .nav { border-bottom: 1px solid var(--hair-dark); }
             .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 68px; }
             .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
-            .brand-tile { width: 38px; height: 38px; border-radius: 9px; background: var(--print);
-                display: flex; align-items: center; justify-content: center; }
-            .brand-tile img { width: 30px; height: 30px; }
+            .brand-mark { width: 36px; height: 36px; object-fit: contain;
+                filter: drop-shadow(0 2px 8px rgba(0,0,0,.45)); }
             .brand b { font-family: var(--font-display); font-weight: 700; font-size: 24px;
                 letter-spacing: .02em; text-transform: uppercase; }
             .brand b em { font-style: normal; color: var(--accent); }
@@ -102,6 +108,15 @@
 
             /* ---------- hero ---------- */
             .hero { padding: 84px 0 72px; position: relative; overflow: hidden; }
+            .hero-bg { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+            .hero-bg img { width: 100%; height: 100%; object-fit: cover; object-position: center 65%;
+                filter: saturate(.92) brightness(.34) contrast(1.05); }
+            .hero-bg::after { content: ""; position: absolute; inset: 0;
+                background:
+                    linear-gradient(90deg, rgba(23,19,16,.97) 0%, rgba(23,19,16,.88) 42%, rgba(23,19,16,.55) 100%),
+                    linear-gradient(0deg, var(--board) 0%, rgba(23,19,16,0) 34%);
+                }
+            .hero > .wrap { position: relative; z-index: 1; }
             .hero .wrap { display: grid; grid-template-columns: 1.08fr .92fr; gap: 56px; align-items: center; }
             h1 {
                 font-family: var(--font-display);
@@ -125,7 +140,83 @@
             .hero-proof span { font-size: 11.5px; color: var(--ink-3); letter-spacing: .06em; text-transform: uppercase; }
 
             /* timing strip — the mechanism, demonstrated */
-            .strip-shell { position: relative; }
+            /* ---- interactive Cook Mode phone ---- */
+            .phone-shell { position: relative; justify-self: center; }
+            .phone {
+                width: 296px; background: #0D0B09; border-radius: 38px;
+                border: 1px solid #3A3129;
+                padding: 10px;
+                box-shadow: 0 40px 90px -30px rgba(0,0,0,.85), inset 0 0 0 2px #000;
+            }
+            .phone-notch { width: 96px; height: 22px; background: #000; border-radius: 999px;
+                margin: 4px auto 8px; }
+            .phone-screen { background: var(--board); border-radius: 26px; overflow: hidden;
+                padding: 14px 16px calc(18px); min-height: 480px;
+                display: flex; flex-direction: column; }
+            .phone-cap { margin: 14px 4px 0; font-size: 10.5px; letter-spacing: .12em;
+                color: var(--ink-3); text-transform: uppercase; text-align: center; }
+            .cm-head { display: flex; align-items: center; gap: 10px; }
+            .cm-x { background: none; border: 0; color: var(--ink-3); font-size: 20px;
+                line-height: 1; cursor: pointer; padding: 2px 6px; }
+            .cm-x:hover { color: var(--print); }
+            .cm-over { flex: 1; text-align: center; font-size: 11.5px; letter-spacing: .14em;
+                color: var(--ink-3); }
+            .cm-demo { font-size: 9.5px; letter-spacing: .12em; color: var(--ink-3);
+                border: 1px solid var(--hair-dark); border-radius: 3px; padding: 2px 6px; }
+            .cm-dots { display: flex; justify-content: center; gap: 7px; padding: 12px 0 4px; }
+            .cm-dot { width: 9px; height: 9px; border-radius: 99px; background: var(--hair-dark); }
+            .cm-dot.current { background: var(--accent); transform: scale(1.25); }
+            .cm-dot.done { background: var(--accent-deep); }
+            .cm-body { flex: 1; display: flex; flex-direction: column; align-items: center;
+                text-align: center; padding-top: 8px; }
+            .cm-chips { display: flex; gap: 8px; align-items: center; min-height: 26px; }
+            .cm-badge { font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+                letter-spacing: .12em; padding: 4px 10px; border-radius: 4px;
+                background: rgba(95,189,177,.12); color: var(--timing-lit);
+                border: 1px solid rgba(95,189,177,.35); }
+            .cm-badge.passive { background: rgba(61,139,90,.14); color: #7FC49A;
+                border-color: rgba(61,139,90,.4); }
+            .cm-alarm { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+                padding: 4px 10px; border-radius: 4px; cursor: pointer;
+                background: rgba(214,154,45,.13); color: #E5B96B;
+                border: 1px solid rgba(214,154,45,.4); }
+            .cm-alarm.armed { background: rgba(232,106,51,.15); color: #F0B39C;
+                border-color: rgba(232,106,51,.45); }
+            .cm-timer { font-family: var(--font-display); font-weight: 800;
+                font-size: 74px; line-height: 1; letter-spacing: .02em;
+                color: var(--print); font-variant-numeric: tabular-nums; margin-top: 10px; }
+            .cm-timer.paused { color: var(--ink-3); }
+            .cm-hint { font-size: 12px; color: var(--ink-3); margin-top: 6px; min-height: 18px; }
+            .cm-hint.handsoff { color: #7FC49A; }
+            .cm-desc { margin-top: 16px; width: 100%; background: var(--board-2);
+                border: 1px solid var(--hair-dark); border-radius: 10px;
+                padding: 16px 14px; font-size: 13.5px; line-height: 1.55; color: var(--print);
+                min-height: 96px; }
+            .cm-foot { border-top: 1px solid var(--hair-dark); padding-top: 14px; }
+            .cm-ctrl { display: flex; align-items: center; gap: 10px; }
+            .cm-circle { width: 46px; height: 46px; border-radius: 99px; flex: none;
+                background: var(--board-2); border: 1px solid var(--hair-dark);
+                color: var(--ink-3); display: flex; align-items: center; justify-content: center;
+                cursor: pointer; transition: opacity .12s ease; }
+            .cm-circle:hover { color: var(--print); border-color: #4A3F35; }
+            .cm-circle:disabled { opacity: .35; cursor: default; }
+            .cm-circle.done { background: var(--accent); border-color: var(--accent); color: #fff; }
+            .cm-pause { flex: 1; padding: 14px 10px; border-radius: 4px; border: 0;
+                font-weight: 800; font-size: 14.5px; cursor: pointer;
+                background: var(--accent); color: #fff; }
+            .cm-pause:hover { background: var(--accent-deep); }
+            .cm-pause.running { background: #2A231D; color: var(--print);
+                border: 1px solid var(--hair-dark); }
+            .cm-finish { width: 100%; margin-top: 10px; background: none; border: 0;
+                color: var(--ink-3); font-size: 12.5px; font-weight: 600; cursor: pointer;
+                padding: 6px 0; }
+            .cm-finish:hover { color: var(--print); }
+            .cm-summary { text-align: center; padding: 8px 0 4px; }
+            .cm-summary b { font-family: var(--font-display); font-weight: 800;
+                font-size: 44px; color: var(--timing-lit); font-variant-numeric: tabular-nums; }
+            .cm-summary span { display: block; font-size: 12.5px; color: var(--ink-3);
+                margin-top: 4px; }
+            @media (max-width: 940px) { .phone-shell { max-width: none; } }
             .strip {
                 background: var(--board-2);
                 border: 1px solid var(--hair-dark);
@@ -299,14 +390,26 @@
             .dl-meta { font-family: var(--font-mono); font-size: 13px; color: var(--ink-3); margin: 0 0 24px; }
             .dl-meta b { color: var(--print); }
 
-            /* FAQ */
+            /* FAQ — native details accordion, closed by default */
             .faq-list { max-width: 780px; }
-            .faq-item { border-top: 1px solid var(--hair-dark); padding: 26px 0; }
-            .faq-item:last-child { border-bottom: 1px solid var(--hair-dark); }
-            .faq-item h3 { margin: 0 0 10px; font-size: 17.5px; font-weight: 700; }
-            .faq-item p { margin: 0; color: #CFC4B8; max-width: 62ch; }
-            /* FAQ sits on the paper reversal — answers must be ink, not board-gray. */
-            .paper .faq-item h3 { color: var(--ink); }
+            .faq-item { border-top: 1px solid var(--hair-dark); }
+            .faq-item:last-of-type { border-bottom: 1px solid var(--hair-dark); }
+            .faq-item summary {
+                list-style: none; cursor: pointer;
+                display: flex; align-items: center; justify-content: space-between; gap: 16px;
+                padding: 24px 0; font-size: 17.5px; font-weight: 700; color: var(--print);
+            }
+            .faq-item summary::-webkit-details-marker { display: none; }
+            .faq-item summary:hover { color: var(--timing-lit); }
+            .faq-chev { flex: none; color: var(--ink-3); transition: transform .2s ease; }
+            .faq-item[open] .faq-chev { transform: rotate(180deg); color: var(--timing-lit); }
+            .faq-item[open] summary { color: var(--timing-lit); }
+            .faq-item p { margin: -6px 0 24px; color: #CFC4B8; max-width: 62ch; }
+            /* FAQ sits on the paper reversal — ink, not board-gray */
+            .paper .faq-item summary { color: var(--ink); }
+            .paper .faq-item summary:hover { color: var(--accent-deep); }
+            .paper .faq-item[open] summary { color: var(--accent-deep); }
+            .paper .faq-chev { color: var(--ink-3); }
             .paper .faq-item p { color: var(--ink-2); }
 
             footer { border-top: 1px solid var(--hair-dark); padding: 30px 0 40px; }
@@ -346,7 +449,7 @@ provenance.
         <div class="nav">
             <div class="wrap nav-inner">
                 <a class="brand" href="/">
-                    <span class="brand-tile"><img src="/img/recipereallogo.webp" alt="" width="30" height="30"></span>
+                    <img class="brand-mark" src="/img/recipereallogo.webp" alt="RecipeReal logo" width="34" height="34">
                     <b>Recipe<em>Real</em></b>
                 </a>
                 <nav class="nav-links" aria-label="Page">
@@ -359,6 +462,9 @@ provenance.
         </div>
 
         <header class="hero">
+            <div class="hero-bg" aria-hidden="true">
+                <img src="/img/hero-dish.jpg" alt="" loading="eager">
+            </div>
             <div class="wrap">
                 <div>
                     <h1>
@@ -384,27 +490,41 @@ provenance.
                     </div>
                 </div>
 
-                <div class="strip-shell">
-                    <div class="strip" aria-label="Product demonstration: a recipe timing strip">
-                        <div class="strip-head">
-                            <span class="live">Timing board</span>
-                            <span>demo row</span>
+<div class="phone-shell">
+                    <div class="phone" aria-label="Interactive demo of Cook Mode — try the stopwatch, pause and step buttons">
+                        <div class="phone-notch"></div>
+                        <div class="phone-screen">
+                            <div class="cm-head">
+                                <button type="button" class="cm-x" data-act="reset" aria-label="Reset demo">×</button>
+                                <span class="cm-over mono" id="cm-step-of">STEP 1 / 3</span>
+                                <span class="cm-demo mono">DEMO</span>
+                            </div>
+                            <div class="cm-dots" id="cm-dots" aria-hidden="true"></div>
+                            <div class="cm-body">
+                                <div class="cm-chips">
+                                    <span class="cm-badge" id="cm-badge">ACTIVE</span>
+                                    <button type="button" class="cm-alarm mono" id="cm-alarm" hidden>⏲ 15:00</button>
+                                </div>
+                                <div class="cm-timer mono" id="cm-timer">00:00</div>
+                                <div class="cm-hint" id="cm-hint">Press start — the clock runs even if you leave</div>
+                                <div class="cm-desc" id="cm-desc">Marinate the chicken in yogurt, garlic, ginger and the spices for 30 minutes.</div>
+                            </div>
+                            <div class="cm-foot">
+                                <div class="cm-ctrl">
+                                    <button type="button" class="cm-circle" data-act="prev" id="cm-prev" aria-label="Previous step" disabled>
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                                    </button>
+                                    <button type="button" class="cm-pause" data-act="toggle" id="cm-toggle">Start cooking</button>
+                                    <button type="button" class="cm-circle" data-act="next" id="cm-next" aria-label="Next step">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                                    </button>
+                                </div>
+                                <button type="button" class="cm-finish" data-act="finish" id="cm-finish">Finish cooking</button>
+                            </div>
                         </div>
-                        <div class="strip-dish">
-                            <span>Butter chicken</span>
-                            <small>DEMO</small>
-                        </div>
-                        <div class="lane">
-                            <small class="claimed-l">Recipe says</small>
-                            <span class="claimed mono">25:00</span>
-                            <small class="really-l">Really takes</small>
-                            <span class="really" data-settle="38:12" aria-label="Really takes 38 minutes 12 seconds">
-                                <span class="ghost">88:88</span><span class="lit">38:12</span>
-                            </span>
-                            <span class="who">community clock · pause-adjusted</span>
-                            <span class="delta">+13:12 over claim</span>
-                        </div>
-                        <div class="strip-foot">Clock keeps running with the screen off</div>
+                    </div>
+                    <p class="phone-cap mono">REAL COOK MODE · TRY IT — CLOCK, ALARMS, STEPS</p>
+                </div>
                     </div>
                 </div>
             </div>
@@ -622,32 +742,31 @@ provenance.
                 <h2>Asked, answered.</h2>
                 <p class="sec-lede">Short answers here; the long versions live in the app.</p>
                 <div class="faq-list">
-                    <div class="faq-item">
-                        <h3>What is RecipeReal?</h3>
+                    <details class="faq-item">
+                        <summary>What is RecipeReal?<svg class="faq-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
                         <p>RecipeReal is a recipe app for Android that checks cookbook claims against a stopwatch. Recipes state a time; cooks measure what actually happens in guided Cook Mode; every recipe ends up with a claim and a reality, and estimates tune themselves to your pace.</p>
-                    </div>
-                    <div class="faq-item">
-                        <h3>Why do recipe times lie?</h3>
+                    </details>
+                    <details class="faq-item">
+                        <summary>Why do recipe times lie?<svg class="faq-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
                         <p>Published times usually cover only the ideal case: a professional stove, prep done off-camera, and no cleanup. RecipeReal records the whole span — prep to plate — and shows the gap between claim and reality on every recipe.</p>
-                    </div>
-                    <div class="faq-item">
-                        <h3>Are the recipes halal?</h3>
+                    </details>
+                    <details class="faq-item">
+                        <summary>Are the recipes halal?<svg class="faq-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
                         <p>Yes — that is the point of the product. The library is screened against explicit pork and alcohol rules before it ever reaches the app, and community posts and notes pass the same gate.</p>
-                    </div>
-                    <div class="faq-item">
-                        <h3>Does it work without internet?</h3>
+                    </details>
+                    <details class="faq-item">
+                        <summary>Does it work without internet?<svg class="faq-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
                         <p>Yes. The library downloads to your phone — recipes, steps and the cooking clock all run locally, so a dead zone in the kitchen never stops dinner.</p>
-                    </div>
-                    <div class="faq-item">
-                        <h3>How much does it cost?</h3>
+                    </details>
+                    <details class="faq-item">
+                        <summary>How much does it cost?<svg class="faq-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
                         <p>The app is free to use with a monthly recipe allowance. Premium (US $5.99/month or $49.99/year) adds unlimited cooking and pace calibration, and is clearly marked inside the app before anything is charged.</p>
-                    </div>
-                    <div class="faq-item">
-                        <h3>Is there an iPhone version?</h3>
+                    </details>
+                    <details class="faq-item">
+                        <summary>Is there an iPhone version?<svg class="faq-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
                         <p>Android first — the direct APK installs on Android 7.0 and newer. An iOS build is on the roadmap once the Android experience is settled.</p>
-                    </div>
+                    </details>
                 </div>
-            </div>
         </section>
 
         <footer>
@@ -716,41 +835,158 @@ provenance.
         </script>
 
         <script>
-        // THE CLOCK SETTLES — signature moment. On first view, the "really
-        // takes" digits flip through provisional splits (instant swaps, the
-        // seven-segment way) and settle on the real community value.
+        // INTERACTIVE COOK MODE — the hero phone runs the app's real loop:
+        // start/pause stopwatch (wall-clock derived), step lanes with dots,
+        // armable step alarms, and a finish summary. Faithful to the app's
+        // footer grammar: prev circle | pause pill | next circle.
         (function () {
-            var target = document.querySelector(".really[data-settle]");
-            if (!target || !("IntersectionObserver" in window)) return;
-            var lit = target.querySelector(".lit");
-            if (!lit) return;
-            var final = target.getAttribute("data-settle");
-            var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-            function swap(v) {
-                var s = target.querySelector(".ghost");
-                if (s) s.parentNode.removeChild(s);
-                lit.textContent = v;
+            var STEPS = [
+                { badge: "ACTIVE", passive: false, alarm: null,
+                  text: "Marinate the chicken in yogurt, garlic, ginger and the spices — 30 minutes on the counter." },
+                { badge: "PASSIVE", passive: true, alarm: 15,
+                  text: "Simmer the sauce gently for 15 minutes, stirring now and then so it never catches." },
+                { badge: "ACTIVE", passive: false, alarm: 5,
+                  text: "Stir in the cream, simmer 5 more minutes, and finish with crushed fenugreek leaves." }
+            ];
+            var $ = function (id) { return document.getElementById(id); };
+            var root = document.querySelector(".phone");
+            if (!root) return;
+            var idx = 0, running = false, elapsed = 0, lastTick = null, timer = null, finished = false;
+            var alarmLeft = 0, alarmTimer = null;
+
+            function fmt(sec) {
+                sec = Math.max(0, Math.floor(sec));
+                return Math.floor(sec / 60) + ":" + ("0" + (sec % 60)).slice(-2);
             }
-            function run() {
-                if (reduced) { swap(final); return; }
-                var i = 0;
-                var picks = ["41:07", "33:48", "52:19", "36:55", "44:02", "39:31"];
-                var timer = setInterval(function () {
-                    if (i < picks.length) { swap(picks[i++]); return; }
-                    clearInterval(timer);
-                    swap(final);
-                    var chip = document.querySelector(".strip .delta");
-                    if (chip) { chip.style.opacity = "0"; chip.style.transition = "opacity .3s";
-                        requestAnimationFrame(function () { chip.style.opacity = "1"; }); }
-                }, 90);
-            }
-            var seen = false;
-            var io = new IntersectionObserver(function (entries) {
-                entries.forEach(function (e) {
-                    if (e.isIntersecting && !seen) { seen = true; run(); io.disconnect(); }
+            function renderDots() {
+                var el = $("cm-dots"); el.innerHTML = "";
+                STEPS.forEach(function (_, i) {
+                    var d = document.createElement("span");
+                    d.className = "cm-dot" + (i === idx ? " current" : (i < idx ? " done" : ""));
+                    el.appendChild(d);
                 });
-            }, { threshold: 0.4 });
-            io.observe(target);
+            }
+            function renderStep() {
+                var s = STEPS[idx];
+                $("cm-step-of").textContent = "STEP " + (idx + 1) + " / " + STEPS.length;
+                var badge = $("cm-badge");
+                badge.textContent = s.badge;
+                badge.className = "cm-badge" + (s.passive ? " passive" : "");
+                $("cm-desc").textContent = s.text;
+                $("cm-prev").disabled = idx === 0;
+                var next = $("cm-next");
+                next.classList.toggle("done", idx === STEPS.length - 1);
+                var alarm = $("cm-alarm");
+                stopAlarm();
+                if (s.alarm) {
+                    alarm.hidden = false;
+                    alarm.classList.remove("armed");
+                    alarm.textContent = "⏲ " + s.alarm + ":00 — tap to arm";
+                } else {
+                    alarm.hidden = true;
+                }
+                renderDots();
+            }
+            function renderTimer() {
+                var t = $("cm-timer");
+                t.textContent = fmt(elapsed / 1000);
+                t.classList.toggle("paused", !running && !finished && elapsed > 0);
+            }
+            function tick() {
+                var now = Date.now();
+                elapsed += now - lastTick;
+                lastTick = now;
+                renderTimer();
+            }
+            function stopAlarm() {
+                if (alarmTimer) { clearInterval(alarmTimer); alarmTimer = null; }
+                alarmLeft = 0;
+            }
+            function setToggle() {
+                var b = $("cm-toggle");
+                b.textContent = finished ? "Start cooking" : (running ? "Pause" : (elapsed > 0 ? "Resume" : "Start cooking"));
+                b.classList.toggle("running", running);
+            }
+            function setHint() {
+                var h = $("cm-hint");
+                var s = STEPS[idx];
+                if (finished) { h.textContent = "Logged to your pace"; h.className = "cm-hint"; return; }
+                if (s.passive && running) { h.textContent = "Hands-off — you can step away"; h.className = "cm-hint handsoff"; return; }
+                h.textContent = running ? "Timing your whole cook…" : (elapsed > 0 ? "Paused" : "Press start — the clock runs even if you leave");
+                h.className = "cm-hint";
+            }
+            function act(action) {
+                if (action === "toggle") {
+                    if (finished) { reset(); return; }
+                    running = !running;
+                    if (running) { lastTick = Date.now(); timer = setInterval(tick, 250); }
+                    else { clearInterval(timer); timer = null; elapsed += 0; }
+                    setToggle(); setHint(); renderTimer();
+                    return;
+                }
+                if (action === "next") {
+                    if (idx < STEPS.length - 1) { idx++; renderStep(); setHint(); }
+                    else { finish(); }
+                    return;
+                }
+                if (action === "prev") {
+                    if (idx > 0) { idx--; renderStep(); setHint(); }
+                    return;
+                }
+                if (action === "finish") { finish(); return; }
+                if (action === "reset") { reset(); return; }
+            }
+            function finish() {
+                running = false;
+                if (timer) { clearInterval(timer); timer = null; }
+                stopAlarm();
+                finished = true;
+                var body = root.querySelector(".cm-body");
+                body.innerHTML = '<div class="cm-summary"><b>' + fmt(elapsed / 1000) +
+                    '</b><span>total measured — this is what calibrates your next estimate</span></div>';
+                $("cm-step-of").textContent = "COOK LOGGED";
+                $("cm-toggle").textContent = "Run it again";
+                $("cm-finish").hidden = true;
+                setHint();
+            }
+            function reset() {
+                running = false; finished = false; elapsed = 0; idx = 0;
+                if (timer) { clearInterval(timer); timer = null; }
+                var body = root.querySelector(".cm-body");
+                body.innerHTML =
+                    '<div class="cm-chips">' +
+                        '<span class="cm-badge" id="cm-badge">ACTIVE</span>' +
+                        '<button type="button" class="cm-alarm mono" id="cm-alarm" hidden>⏲ 15:00</button>' +
+                    '</div>' +
+                    '<div class="cm-timer mono" id="cm-timer">00:00</div>' +
+                    '<div class="cm-hint" id="cm-hint"></div>' +
+                    '<div class="cm-desc" id="cm-desc"></div>';
+                var f = $("cm-finish"); if (f) f.hidden = false;
+                renderStep(); renderTimer(); setToggle(); setHint();
+            }
+            root.addEventListener("click", function (e) {
+                var btn = e.target.closest("[data-act]");
+                if (btn) { act(btn.getAttribute("data-act")); return; }
+                var alarm = e.target.closest("#cm-alarm");
+                if (alarm && !alarm.hidden) {
+                    if (alarmTimer) { stopAlarm(); alarm.classList.remove("armed"); alarm.textContent = "⏲ " + STEPS[idx].alarm + ":00 — tap to arm"; return; }
+                    var minutes = STEPS[idx].alarm;
+                    if (!minutes) return;
+                    alarmLeft = minutes * 60;
+                    alarm.classList.add("armed");
+                    alarmTimer = setInterval(function () {
+                        alarmLeft -= 1;
+                        if (alarmLeft <= 0) {
+                            stopAlarm();
+                            alarm.textContent = "⏲ Time!";
+                            setTimeout(function () { if (!alarmTimer) { alarm.classList.remove("armed"); alarm.textContent = "⏲ " + STEPS[idx].alarm + ":00 — tap to arm"; } }, 2500);
+                            return;
+                        }
+                        alarm.textContent = "⏲ " + fmt(alarmLeft) + " · tap to cancel";
+                    }, 1000);
+                }
+            });
+            renderStep(); renderTimer(); setToggle(); setHint();
         })();
         </script>
     </body>
