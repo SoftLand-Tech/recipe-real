@@ -1,10 +1,12 @@
 <?php
 
+use App\Models\AppRelease;
 use App\Models\Post;
 use App\Models\Recipe;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 
 /*
  | ---- Android App Links + Play Store smart redirect -----------------------
@@ -114,8 +116,35 @@ Route::get('/.well-known/assetlinks.json', function () {
     ]);
 });
 
+/*
+ | ---- Direct APK distribution (no Play Store) ------------------------------
+ | The admin panel's "App releases" page uploads signed builds into the
+ * app_releases table; /download streams the newest one. HEAD works (curl
+ * -I for size checks). 404 while no release exists yet.
+ */
+Route::get('/download', function () {
+    $release = AppRelease::latest();
+
+    abort_unless($release !== null, 404);
+
+    return $release->toDownloadResponse();
+})->name('app.download');
+
+// Per-release download from the admin table (same private-disk stream).
+Route::get('/admin/app-releases/{release}/download', function (AppRelease $release) {
+    $disk = Storage::disk('local');
+    abort_unless($disk->exists($release->file_path), 404);
+
+    return response()->download(
+        $disk->path($release->file_path),
+        "RecipeReal-{$release->version}.apk",
+        ['Content-Type' => 'application/vnd.android.package-archive'],
+    );
+})->middleware(['auth'])->name('app.download.release');
+
 Route::get('/', function () {
-    return view('welcome');
+    // The landing's download card adapts to whether a build exists.
+    return view('welcome', ['latestRelease' => AppRelease::latest()]);
 });
 
 /*
