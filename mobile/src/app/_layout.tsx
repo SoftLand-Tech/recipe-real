@@ -126,40 +126,21 @@ export default function RootLayout() {
  * changes only take effect after a JS reload — the language setter in the
  * theme provider triggers that restart flow whenever the resolved dir flips.
  *
- * FIRST-LAUNCH MISMATCH: forceRTL set at cold start does not affect the
- * ALREADY-COMPOSING first session, so a fresh install on an Arabic-locale
- * device renders one fully-LTR-layout session with Arabic strings. Detect
- * the persisted-vs-native mismatch ONCE and silently reload (an
- * AsyncStorage guard prevents any reload loop; it resets whenever the
- * layout matches so future explicit language flips can reload again).
+ * ⚠️ NO boot-time reload here. An earlier version auto-reloaded when the
+ * persisted dir didn't match a fresh install's first session (cosmetic:
+ * one LTR-layout session with Arabic strings). In the shipped release
+ * build the reload fired before its own guard-flag flushed to disk, so
+ * EVERY cold start looked "mismatched" and reloaded again — an invisible
+ * boot loop the user experiences as a permanent black screen. A slightly
+ * unmirrored first session is infinitely better than that; it self-heals
+ * on the next natural restart (or the explicit language flip, which has
+ * its own battle-tested reload in ThemeProvider).
  */
-const RTL_LAYOUT_DIR_KEY = "recipereal.rtlLayoutDir";
-
 function RtlDirection() {
   const { dir } = useLang();
   useEffect(() => {
     I18nManager.allowRTL(true);
     I18nManager.forceRTL(dir === "rtl");
-    let cancelled = false;
-    (async () => {
-      try {
-        const applied = await AsyncStorage.getItem(RTL_LAYOUT_DIR_KEY);
-        if (cancelled) return;
-        if (applied === dir) return;
-        await AsyncStorage.setItem(RTL_LAYOUT_DIR_KEY, dir);
-        if (cancelled) return;
-        // Reload not possible in Expo Go's dev client surface — fall back
-        // to continuing this session mirrored next launch.
-        await import("expo-updates").then((Updates) =>
-          Updates.reloadAsync().catch(() => {}),
-        );
-      } catch {
-        // Storage or reload unavailable — continue unmirrored this session.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
   }, [dir]);
   return null;
 }
