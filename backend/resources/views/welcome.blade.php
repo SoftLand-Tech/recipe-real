@@ -159,167 +159,72 @@
                 color: var(--ink);
             }
             .ip-statusbar { display: flex; align-items: center; justify-content: space-between;
-                padding: 14px 26px 4px; flex: none; }
-            .ip-time { font-size: 13px; font-weight: 700; letter-spacing: .02em; }
-            .ip-island { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
-                width: 88px; height: 25px; background: #000; border-radius: 999px; }
+                padding: 12px 20px 6px; flex: none; }
+            .ip-time { font-size: 11px; font-weight: 600; color: var(--ink); }
             .ip-signals { display: inline-flex; align-items: center; gap: 5px; color: var(--ink); }
+            .ip-punch { position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+                width: 12px; height: 12px; background: #000; border-radius: 99px; }
 
-            .app { flex: 1; position: relative; overflow: hidden; }
-            .app-view { position: absolute; inset: 0; overflow-y: auto; display: none;
-                scrollbar-width: none; }
-            .app-view::-webkit-scrollbar { display: none; }
-            .app-view.active { display: block; }
-            .app-view.cook-view.active { display: flex; flex-direction: column; }
-            .scr-pad { padding: 10px 14px 20px; }
-            .scr-title { margin: 4px 0 2px; font-family: var(--font-display); font-weight: 800;
-                text-transform: uppercase; font-size: 24px; letter-spacing: .01em; }
-            .scr-sub { margin: 0 0 12px; font-size: 12px; color: var(--ink-2); }
-            .cnt { font-family: var(--font-mono); font-size: 12px; color: var(--accent-deep);
-                background: var(--accent-soft); border-radius: 99px; padding: 2px 8px;
-                vertical-align: 2px; }
-
-            /* home */
-            .home-kicker { margin: 4px 0 8px; font-family: var(--font-display); font-weight: 800;
-                text-transform: uppercase; font-size: 22px; line-height: 1.02;
-                letter-spacing: .01em; }
-            .home-search { display: flex; align-items: center; gap: 7px; color: var(--ink-3);
-                background: #fff; border: 1px solid var(--hair-light); border-radius: 10px;
-                padding: 9px 12px; font-size: 12px; margin-bottom: 12px; }
-            .feat-card { position: relative; border-radius: 14px; overflow: hidden;
-                box-shadow: 0 12px 28px -14px rgba(36,29,23,.4); }
-            .feat-card img { width: 100%; height: 132px; object-fit: cover; display: block; }
-            .feat-body { position: absolute; inset-inline: 0; bottom: 0; padding: 26px 12px 10px;
-                background: linear-gradient(transparent, rgba(20,14,10,.86)); color: #fff; }
-            .feat-body b { display: block; font-size: 14.5px; margin-bottom: 3px; }
-            .feat-start { margin-top: 8px; background: var(--accent); color: #fff; border: 0;
-                font-weight: 700; font-size: 12px; border-radius: 7px; padding: 7px 12px;
-                cursor: pointer; }
-            .feat-start:hover { background: var(--accent-deep); }
-            .pair { font-family: var(--font-mono); font-size: 11px; font-variant-numeric: tabular-nums; }
-            .pair s { color: rgba(255,255,255,.75); margin-inline-end: 6px; }
-            .pair .t { color: #7FC49A; font-weight: 700; font-style: normal; }
-            .mini-card .pair s { color: var(--ink-3); }
-            .rail-label { margin: 14px 0 8px; font-family: var(--font-mono); font-size: 10px;
-                letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
-            .mini-rail { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-            .mini-card { background: #fff; border: 1px solid var(--hair-light); border-radius: 10px;
-                overflow: hidden; padding-bottom: 6px; }
-            .mini-card img, .mini-card .mini-ph { width: 100%; height: 52px; object-fit: cover;
-                display: block; }
-            .mini-ph { background: var(--accent-soft); }
-            .mini-card b { display: block; font-size: 9.5px; padding: 5px 6px 2px;
-                line-height: 1.25; }
-            .mini-card .pair { padding: 0 6px; font-size: 9.5px; }
-
-            /* browse board grid */
-            .board-grid-m { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-            .m-card { position: relative; background: #fff; border: 1px solid var(--hair-light);
-                border-radius: 10px; overflow: hidden; }
-            .m-card img, .m-card .mini-ph { width: 100%; height: 64px; object-fit: cover; display: block; }
-            .m-card b { display: block; font-size: 10px; padding: 6px 7px 2px; line-height: 1.25; }
-            .m-card .pair { padding: 0 7px 6px; font-size: 10px; display: block; }
-            .m-card .gap { position: absolute; top: 6px; inset-inline-end: 6px;
-                font-family: var(--font-mono); font-size: 9px; font-weight: 700;
-                border-radius: 3px; padding: 2px 6px; font-style: normal; }
-            .m-card .gap.fast { color: var(--timing); background: #E4F0EF; }
-            .m-card .gap.slow { color: var(--accent-deep); background: var(--accent-soft); }
-            .heart-on { position: absolute; top: 6px; inset-inline-start: 6px; }
-
-            /* pace */
-            .pace-card { background: #fff; border: 1px solid var(--hair-light); border-radius: 10px;
-                padding: 10px 12px; margin-bottom: 8px; }
-            .pace-card span { font-size: 11.5px; color: var(--ink-2); }
-            .pace-card b { float: inline-end; font-size: 11.5px; }
-            .pace-bar { clear: both; height: 6px; border-radius: 99px; background: var(--accent-soft);
-                margin-top: 8px; overflow: hidden; }
-            .pace-bar i { display: block; height: 100%; border-radius: 99px; background: var(--accent); }
-            .pace-note { font-size: 10.5px; color: var(--ink-3); margin-top: 10px; }
-
-            /* settings */
-            .set-group { margin: 10px 0 6px; font-family: var(--font-mono); font-size: 9.5px;
-                letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
-            .set-card { background: #fff; border: 1px solid var(--hair-light); border-radius: 10px;
-                overflow: hidden; }
-            .set-row { display: flex; justify-content: space-between; align-items: center;
-                padding: 10px 12px; font-size: 12.5px; border-bottom: 1px solid #F1EBE4; }
-            .set-row:last-child { border-bottom: 0; }
-            .set-row em { font-style: normal; color: var(--ink-3); font-size: 11.5px; }
-            .set-row em.t { color: var(--timing); font-weight: 700; }
-
-            /* tab bar */
-            .tabbar { flex: none; display: flex; background: rgba(250,247,241,.96);
-                border-top: 1px solid var(--hair-light); padding: 6px 4px 2px; }
-            .tab-btn { flex: 1; background: none; border: 0; cursor: pointer;
-                display: flex; flex-direction: column; align-items: center; gap: 2px;
-                color: var(--ink-3); font-size: 8.5px; font-weight: 600; padding: 3px 0; }
-            .tab-btn.active { color: var(--accent-deep); }
+            /* the exact Home screen, replicated */
+            .ip-home { flex: 1; overflow: hidden; padding: 2px 14px 0; }
+            .ip-header { display: flex; align-items: center; justify-content: space-between;
+                padding: 4px 0 10px; }
+            .ip-logo { width: 42px; height: 42px; }
+            .ip-header-icons { display: inline-flex; align-items: center; gap: 16px;
+                color: var(--ink); }
+            .ip-search { display: flex; align-items: center; gap: 9px; color: var(--ink-3);
+                background: #F1EBE4; border-radius: 14px; padding: 13px 16px;
+                font-size: 13.5px; margin-bottom: 14px; }
+            .ip-feat { background: #fff; border: 1px solid var(--hair-light);
+                border-radius: 18px; padding: 10px 10px 14px;
+                box-shadow: 0 10px 26px -18px rgba(36,29,23,.35); }
+            .ip-feat-img { position: relative; border-radius: 12px; overflow: hidden; }
+            .ip-feat-img img { width: 100%; height: 190px; object-fit: cover; display: block; }
+            .ip-heart { position: absolute; top: 12px; inset-inline-end: 12px;
+                filter: drop-shadow(0 1px 4px rgba(0,0,0,.5)); }
+            .ip-feat-body { display: flex; flex-direction: column; padding: 12px 6px 0; }
+            .ip-feat-body h3 { margin: 0 0 10px; font-size: 21px; font-weight: 800;
+                letter-spacing: -.01em; color: var(--ink); }
+            .ip-lab { font-size: 12px; color: var(--ink-2); }
+            .ip-real { font-size: 32px; font-weight: 800; color: var(--timing);
+                line-height: 1.15; letter-spacing: -.01em; }
+            .ip-est { font-size: 12px; color: var(--ink-2); margin-bottom: 14px; }
+            .ip-start { display: block; text-align: center; background: var(--accent);
+                color: #fff; font-weight: 800; font-size: 15.5px; border-radius: 999px;
+                padding: 13px 0; }
+            .ip-rail-head { display: flex; align-items: baseline; justify-content: space-between;
+                margin: 16px 0 8px; }
+            .ip-rail-head b { font-size: 16.5px; font-weight: 800; color: var(--ink); }
+            .ip-rail-head span { font-size: 12.5px; font-weight: 700; color: var(--accent-deep); }
+            .ip-rail { display: flex; gap: 10px; overflow: hidden; }
+            .ip-mini { flex: none; width: 148px; background: #fff;
+                border: 1px solid var(--hair-light); border-radius: 12px; overflow: hidden;
+                padding-bottom: 8px; }
+            .ip-mini-img { position: relative; }
+            .ip-mini-img img { width: 100%; height: 86px; object-fit: cover; display: block; }
+            .ip-gap { position: absolute; top: 6px; inset-inline-end: 6px;
+                font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+                font-style: normal; background: #DFF0E4; color: var(--success);
+                border-radius: 6px; padding: 2px 6px; }
+            .ip-mini b { display: block; font-size: 12px; line-height: 1.3;
+                padding: 7px 8px 6px; color: var(--ink); }
+            .ip-chip { display: inline-flex; align-items: center; gap: 4px;
+                font-size: 10px; font-weight: 600; color: var(--ink-2);
+                background: #F1EBE4; border-radius: 99px; padding: 3px 8px;
+                margin: 0 3px 3px 8px; }
+            .ip-chip.ip-star { color: var(--ink); }
+            .ip-tabbar { flex: none; display: flex; border-top: 1px solid var(--hair-light);
+                background: var(--paper); padding: 7px 6px 4px; }
+            .ip-tab { flex: 1; display: flex; flex-direction: column; align-items: center;
+                gap: 3px; font-size: 9.5px; font-weight: 600; color: var(--ink-3); }
+            .ip-tab.active { color: var(--accent-deep); }
             .home-indicator { flex: none; width: 110px; height: 4.5px; border-radius: 99px;
                 background: rgba(36,29,23,.85); margin: 4px auto 7px; }
 
             /* ---- Cook Mode view (light, app-faithful) ---- */
             .cook-view { background: var(--paper); }
             .cook-view .scr-pad { display: flex; flex-direction: column; flex: 1; padding-bottom: 8px; }
-            .cm-head { display: flex; align-items: center; gap: 10px; }
-            .cm-x { background: none; border: 0; color: var(--ink-2); font-size: 20px;
-                line-height: 1; cursor: pointer; padding: 2px 6px; }
-            .cm-x:hover { color: var(--ink); }
-            .cm-over { flex: 1; text-align: center; font-size: 11px; letter-spacing: .14em;
-                color: var(--ink-2); }
-            .cm-demo { font-size: 9px; letter-spacing: .12em; color: var(--ink-3);
-                border: 1px solid var(--hair-light); border-radius: 3px; padding: 2px 6px; }
-            .cm-dots { display: flex; justify-content: center; gap: 7px; padding: 12px 0 4px; }
-            .cm-dot { width: 9px; height: 9px; border-radius: 99px; background: var(--hair-light); }
-            .cm-dot.current { background: var(--accent); transform: scale(1.25); }
-            .cm-dot.done { background: var(--accent-deep); }
-            .cm-body { flex: 1; display: flex; flex-direction: column; align-items: center;
-                text-align: center; padding-top: 8px; }
-            .cm-chips { display: flex; gap: 8px; align-items: center; min-height: 26px; }
-            .cm-badge { font-family: var(--font-mono); font-size: 10px; font-weight: 700;
-                letter-spacing: .12em; padding: 4px 10px; border-radius: 4px;
-                background: var(--timing-dim); color: var(--timing);
-                border: 1px solid rgba(40,124,120,.35); }
-            .cm-badge.passive { background: rgba(61,139,90,.1); color: var(--success);
-                border-color: rgba(61,139,90,.35); }
-            .cm-alarm { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
-                padding: 4px 10px; border-radius: 4px; cursor: pointer;
-                background: #F7ECD4; color: #8A5A12; border: 1px solid #E4D2A8; }
-            .cm-alarm.armed { background: var(--accent-soft); color: var(--accent-deep);
-                border-color: var(--accent); }
-            .cm-timer { font-family: var(--font-display); font-weight: 800;
-                font-size: 78px; line-height: 1; letter-spacing: .02em;
-                color: var(--ink); font-variant-numeric: tabular-nums; margin-top: 10px; }
-            .cm-timer.paused { color: var(--ink-3); }
-            .cm-hint { font-size: 11.5px; color: var(--ink-2); margin-top: 6px; min-height: 18px; }
-            .cm-hint.handsoff { color: var(--success); }
-            .cm-desc { margin-top: 16px; width: 100%; background: #fff;
-                border: 1px solid var(--hair-light); border-radius: 10px;
-                padding: 14px; font-size: 12.5px; line-height: 1.55; color: var(--ink);
-                min-height: 88px; }
-            .cm-foot { border-top: 1px solid var(--hair-light); padding-top: 12px; }
-            .cm-ctrl { display: flex; align-items: center; gap: 10px; }
-            .cm-circle { width: 44px; height: 44px; border-radius: 99px; flex: none;
-                background: #fff; border: 1px solid var(--hair-light);
-                color: var(--ink-2); display: flex; align-items: center; justify-content: center;
-                cursor: pointer; transition: opacity .12s ease; }
-            .cm-circle:hover { color: var(--ink); border-color: #D5CCC3; }
-            .cm-circle:disabled { opacity: .35; cursor: default; }
-            .cm-circle.done { background: var(--accent); border-color: var(--accent); color: #fff; }
-            .cm-pause { flex: 1; padding: 13px 10px; border-radius: 4px; border: 0;
-                font-weight: 800; font-size: 14px; cursor: pointer;
-                background: var(--accent); color: #fff; }
-            .cm-pause:hover { background: var(--accent-deep); }
-            .cm-pause.running { background: #fff; color: var(--ink);
-                border: 1px solid var(--hair-light); }
-            .cm-finish { width: 100%; margin-top: 8px; background: none; border: 0;
-                color: var(--ink-2); font-size: 12px; font-weight: 600; cursor: pointer;
-                padding: 5px 0; }
-            .cm-finish:hover { color: var(--ink); }
-            .cm-summary { text-align: center; padding: 8px 0 4px; }
-            .cm-summary b { font-family: var(--font-display); font-weight: 800;
-                font-size: 44px; color: var(--timing); font-variant-numeric: tabular-nums; }
-            .cm-summary span { display: block; font-size: 11.5px; color: var(--ink-2);
-                margin-top: 4px; }
+
             @media (max-width: 940px) { .phone-shell { max-width: none; } }
             .strip {
                 background: var(--board-2);
@@ -598,189 +503,100 @@ provenance.
                     <div class="iphone" aria-label="Interactive iPhone demo of the RecipeReal app — navigate the tabs like the real app">
                         <div class="ip-action vol-up"></div><div class="ip-action vol-down"></div><div class="ip-action power"></div>
                         <div class="ip-screen">
-                            <div class="ip-statusbar">
-                                <span class="ip-time mono">9:41</span>
-                                <span class="ip-island" aria-hidden="true"></span>
+<div class="ip-statusbar">
+                                <span class="ip-time mono">15:27&nbsp;|&nbsp;2.9KB/s</span>
                                 <span class="ip-signals" aria-hidden="true">
-                                    <svg width="15" height="10" viewBox="0 0 15 10" fill="currentColor"><rect x="0" y="6" width="2.6" height="4" rx="0.8"/><rect x="4" y="4" width="2.6" height="6" rx="0.8"/><rect x="8" y="2" width="2.6" height="8" rx="0.8"/><rect x="12" y="0" width="2.6" height="10" rx="0.8" opacity=".35"/></svg>
-                                    <svg width="14" height="10" viewBox="0 0 24 18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M2 6.5C5.5 3 10 1.5 12 1.5S18.5 3 22 6.5"/><path d="M5.5 10.5C8 8.3 10.5 7.5 12 7.5s4 .8 6.5 3"/><path d="M9 14.5c1-1 2.2-1.5 3-1.5s2 .5 3 1.5"/></svg>
-                                    <svg width="20" height="10" viewBox="0 0 27 13" fill="none"><rect x="0.5" y="0.5" width="21" height="12" rx="3.5" stroke="currentColor" opacity=".4"/><rect x="2.5" y="2.5" width="13" height="8" rx="2" fill="currentColor"/><path d="M24.5 4.5v4a2.2 2.2 0 0 0 0-4Z" fill="currentColor" opacity=".4"/></svg>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="13" r="7.5"/><path d="M12 9.5V13l2.5 2"/><path d="M9.5 3.5h5"/><path d="m17.5 5.5 1.5 1.5"/><path d="m5 5.5 -1.5 1.5"/></svg>
+                                    <svg width="11" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M6.5 2v20M17.5 2v20M6.5 12h11" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" fill="none"/><path d="m6 12 11.5-8.5v17L6 12Z" fill="currentColor" stroke="none"/></svg>
+                                    <svg width="14" height="11" viewBox="0 0 24 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M2 6.5C5.5 3 10 1.5 12 1.5S18.5 3 22 6.5"/><path d="M5.5 10.5C8 8.3 10.5 7.5 12 7.5s4 .8 6.5 3"/><path d="M9 14.5c1-1 2.2-1.5 3-1.5s2 .5 3 1.5"/></svg>
+                                    <svg width="22" height="12" viewBox="0 0 30 14" fill="none"><rect x="0.5" y="0.5" width="24" height="13" rx="4" stroke="#2E9E5B"/><rect x="2" y="2" width="21" height="10" rx="2.6" fill="#2E9E5B"/><path d="M26.5 4.5v5a2.4 2.4 0 0 0 0-5Z" fill="#2E9E5B"/><text x="7.5" y="10.6" font-size="7.5" font-weight="800" fill="#fff" font-family="sans-serif">100</text></svg>
                                 </span>
                             </div>
 
-                            <div class="app" id="app">
-                                <!-- HOME -->
-                                <section class="app-view active" data-view="home">
-                                    <div class="scr-pad">
-                                        <div class="home-hero">
-                                            <div>
-                                                <p class="home-kicker">What do you want to cook?</p>
-                                                <div class="home-search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search 20,089 recipes</div>
-                                            </div>
-                                        </div>
-                                        <div class="feat-card" data-open-cook>
-                                            <img src="/img/hero-dish.jpg" alt="">
-                                            <div class="feat-body">
-                                                <b>Butter chicken</b>
-                                                <span class="pair"><s>25:00</s><i class="t">38:12</i></span>
-                                                <button type="button" class="feat-start" data-open-cook>Start cooking</button>
-                                            </div>
-                                        </div>
-                                        <p class="rail-label">Quick cook tonight</p>
-                                        <div class="mini-rail">
-                                            @foreach (array_slice($under, 0, 2) as $row)
-                                                <div class="mini-card">
-                                                    @if (!empty($row['img']))<img src="{{ $row['img'] }}" alt="" loading="lazy">@else<span class="mini-ph"></span>@endif
-                                                    <b>{{ \Illuminate\Support\Str::limit($row['title'], 26) }}</b>
-                                                    <span class="pair"><s>{{ $row['claimed'] }}</s><i class="t">{{ $row['real'] }}</i></span>
-                                                </div>
-                                            @endforeach
-                                            <div class="mini-card">
-                                                <span class="mini-ph"></span>
-                                                <b>Gingerbread cookies</b>
-                                                <span class="pair"><s>45:00</s><i class="t">52:00</i></span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </section>
+                            <div class="ip-home">
+                                <div class="ip-header">
+                                    <img class="ip-logo" src="/img/recipereallogo.webp" alt="RecipeReal">
+                                    <span class="ip-header-icons">
+                                        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 20a2 2 0 0 1-3.4 0"/></svg>
+                                        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c1.6-3.4 4.2-5 7.5-5s5.9 1.6 7.5 5"/></svg>
+                                    </span>
+                                </div>
+                                <div class="ip-search">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                                    What do you want to cook?
+                                </div>
 
-                                <!-- BROWSE / THE BOARD -->
-                                <section class="app-view" data-view="browse">
-                                    <div class="scr-pad">
-                                        <p class="scr-title">The board</p>
-                                        <p class="scr-sub">Claim vs the clock — live</p>
-                                        <div class="board-grid-m">
-                                            @foreach ($under as $i => $row)
-                                                @if ($i < 4)
-                                                    <div class="m-card">
-                                                        @if (!empty($row['img']))<img src="{{ $row['img'] }}" alt="" loading="lazy">@else<span class="mini-ph"></span>@endif
-                                                        <b>{{ \Illuminate\Support\Str::limit($row['title'], 24) }}</b>
-                                                        <span class="pair"><s>{{ $row['claimed'] }}</s><i class="t">{{ $row['real'] }}</i></span>
-                                                        <em class="gap fast">{{ $row['delta'] }}</em>
-                                                    </div>
-                                                @endif
-                                            @endforeach
-                                            @foreach (array_slice($over, 0, 2) as $row)
-                                                <div class="m-card">
-                                                    @if (!empty($row['img']))<img src="{{ $row['img'] }}" alt="" loading="lazy">@else<span class="mini-ph"></span>@endif
-                                                    <b>{{ \Illuminate\Support\Str::limit($row['title'], 24) }}</b>
-                                                    <span class="pair"><s>{{ $row['claimed'] }}</s><i class="t">{{ $row['real'] }}</i></span>
-                                                    <em class="gap slow">{{ $row['delta'] }}</em>
-                                                </div>
-                                            @endforeach
-                                        </div>
+                                <div class="ip-feat">
+                                    <div class="ip-feat-img">
+                                        <img src="/img/tiger-butter.jpg" alt="">
+                                        <svg class="ip-heart" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7.5-4.7-10-9.3C.6 8.6 2.4 5 5.7 5c2 0 3.4 1 4.3 2.5h4C14.9 6 16.3 5 18.3 5c3.3 0 5.1 3.6 3.7 6.7C19.5 16.3 12 21 12 21Z"/></svg>
                                     </div>
-                                </section>
-
-                                <!-- PACE -->
-                                <section class="app-view" data-view="pace">
-                                    <div class="scr-pad">
-                                        <p class="scr-title">Your pace</p>
-                                        <p class="scr-sub">The clock learns how you cook.</p>
-                                        <div class="pace-card">
-                                            <span>Prep pace</span><b>+18% slower</b>
-                                            <div class="pace-bar"><i style="width:62%"></i></div>
-                                        </div>
-                                        <div class="pace-card">
-                                            <span>Simmer pace</span><b>on target</b>
-                                            <div class="pace-bar"><i style="width:88%;background:var(--timing)"></i></div>
-                                        </div>
-                                        <div class="pace-card">
-                                            <span>Cleanup pace</span><b>+6% faster</b>
-                                            <div class="pace-bar"><i style="width:74%"></i></div>
-                                        </div>
-                                        <p class="pace-note">Every cook you finish tightens these estimates.</p>
+                                    <div class="ip-feat-body">
+                                        <h3>Tiger Butter Fudge Candy</h3>
+                                        <span class="ip-lab">Really takes</span>
+                                        <span class="ip-real">50m</span>
+                                        <span class="ip-est">AI estimate — cooks will replace it</span>
+                                        <span class="ip-start">Start cooking</span>
                                     </div>
-                                </section>
+                                </div>
 
-                                <!-- FAVORITES -->
-                                <section class="app-view" data-view="favorites">
-                                    <div class="scr-pad">
-                                        <p class="scr-title">Favorites <span class="cnt">2</span></p>
-                                        <div class="board-grid-m">
-                                            @foreach (array_slice($under, 0, 2) as $row)
-                                                <div class="m-card">
-                                                    @if (!empty($row['img']))<img src="{{ $row['img'] }}" alt="" loading="lazy">@else<span class="mini-ph"></span>@endif
-                                                    <b>{{ \Illuminate\Support\Str::limit($row['title'], 24) }}</b>
-                                                    <svg class="heart-on" width="16" height="16" viewBox="0 0 24 24" fill="#E8384F"><path d="M12 21s-7.5-4.7-10-9.3C.6 8.6 2.4 5 5.7 5c2 0 3.4 1 4.3 2.5h4C14.9 6 16.3 5 18.3 5c3.3 0 5.1 3.6 3.7 6.7C19.5 16.3 12 21 12 21Z"/></svg>
-                                                </div>
-                                            @endforeach
-                                        </div>
-                                    </div>
-                                </section>
-
-                                <!-- SETTINGS -->
-                                <section class="app-view" data-view="settings">
-                                    <div class="scr-pad">
-                                        <p class="scr-title">Settings</p>
-                                        <p class="set-group">Appearance</p>
-                                        <div class="set-card">
-                                            <div class="set-row"><span>Theme</span><em>System</em></div>
-                                            <div class="set-row"><span>Language</span><em>English</em></div>
-                                        </div>
-                                        <p class="set-group">Data &amp; storage</p>
-                                        <div class="set-card">
-                                            <div class="set-row"><span>Offline library</span><em>20,089 saved</em></div>
-                                            <div class="set-row"><span>Deep sync</span><em class="t">Full library</em></div>
-                                        </div>
-                                    </div>
-                                </section>
-
-                                <!-- COOK MODE (opens over the tabs) -->
-                                <section class="app-view cook-view" data-view="cook">
-                                    <div class="scr-pad">
-                                        <div class="cm-head">
-                                            <button type="button" class="cm-x" data-act="reset" aria-label="Back to home">×</button>
-                                            <span class="cm-over mono" id="cm-step-of">STEP 1 / 3</span>
-                                            <span class="cm-demo mono">DEMO</span>
-                                        </div>
-                                        <div class="cm-dots" id="cm-dots" aria-hidden="true"></div>
-                                        <div class="cm-body">
-                                            <div class="cm-chips">
-                                                <span class="cm-badge" id="cm-badge">ACTIVE</span>
-                                                <button type="button" class="cm-alarm mono" id="cm-alarm" hidden>⏲ 15:00</button>
+                                <div class="ip-rail-head">
+                                    <b>Quick tonight</b>
+                                    <span>See all</span>
+                                </div>
+                                <div class="ip-rail">
+                                    @foreach ($over as $row)
+                                        <div class="ip-mini">
+                                            <div class="ip-mini-img">
+                                                @if (!empty($row['img']))<img src="{{ $row['img'] }}" alt="" loading="lazy">@endif
+                                                <em class="ip-gap">{{ $row['delta'] }}</em>
                                             </div>
-                                            <div class="cm-timer mono" id="cm-timer">00:00</div>
-                                            <div class="cm-hint" id="cm-hint">Press start — the clock runs even if you leave</div>
-                                            <div class="cm-desc" id="cm-desc">Marinate the chicken in yogurt, garlic, ginger and the spices for 30 minutes.</div>
+                                            <b>{{ \Illuminate\Support\Str::limit($row['title'], 28) }}</b>
+                                            <span class="ip-chip">
+                                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                                                Focused {{ $row['claim_m'] }}m
+                                            </span>
+                                            <span class="ip-chip ip-star">★ {{ $row['rating'] ?? '5.0' }}</span>
                                         </div>
-                                        <div class="cm-foot">
-                                            <div class="cm-ctrl">
-                                                <button type="button" class="cm-circle" data-act="prev" id="cm-prev" aria-label="Previous step" disabled>
-                                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-                                                </button>
-                                                <button type="button" class="cm-pause" data-act="toggle" id="cm-toggle">Start cooking</button>
-                                                <button type="button" class="cm-circle" data-act="next" id="cm-next" aria-label="Next step">
-                                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6 6-6"/></svg>
-                                                </button>
-                                            </div>
-                                            <button type="button" class="cm-finish" data-act="finish" id="cm-finish">Finish cooking</button>
-                                        </div>
+                                    @endforeach
+                                    <div class="ip-mini">
+                                        <div class="ip-mini-img"><img src="/img/hero-dish.jpg" alt="" loading="lazy"></div>
+                                        <b>Butter chicken</b>
+                                        <span class="ip-chip">
+                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                                            Focused 40m
+                                        </span>
+                                        <span class="ip-chip ip-star">★ 4.9</span>
                                     </div>
-                                </section>
+                                </div>
+
+                                <div class="ip-rail-head" style="margin-top:14px">
+                                    <b>Middle Eastern favorites</b>
+                                    <span>See all</span>
+                                </div>
                             </div>
 
-                            <div class="tabbar" role="tablist" aria-label="App tabs">
-                                <button type="button" class="tab-btn active" data-tab="home">
-                                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10.5 9-7.5 9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1v-9.5Z"/></svg>
-                                    <span>Home</span>
-                                </button>
-                                <button type="button" class="tab-btn" data-tab="browse">
-                                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg>
-                                    <span>Board</span>
-                                </button>
-                                <button type="button" class="tab-btn" data-tab="pace">
-                                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4.5 17.5a9 9 0 1 1 15 0"/><path d="m12 14 4-5.5"/><circle cx="12" cy="14.5" r="1.6"/></svg>
-                                    <span>Pace</span>
-                                </button>
-                                <button type="button" class="tab-btn" data-tab="favorites">
-                                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7.5-4.7-10-9.3C.6 8.6 2.4 5 5.7 5c2 0 3.4 1 4.3 2.5h4C14.9 6 16.3 5 18.3 5c3.3 0 5.1 3.6 3.7 6.7C19.5 16.3 12 21 12 21Z"/></svg>
-                                    <span>Favorites</span>
-                                </button>
-                                <button type="button" class="tab-btn" data-tab="settings">
-                                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M19 12a7 7 0 0 0-.14-1.4l2-1.55-2-3.46-2.35.95a7 7 0 0 0-2.42-1.4L13.7 2.6h-3.4l-.4 2.54a7 7 0 0 0-2.4 1.4l-2.36-.94-2 3.45 2 1.55A7 7 0 0 0 5 12c0 .48.05.94.14 1.4l-2 1.55 2 3.46 2.35-.95a7 7 0 0 0 2.42 1.4l.39 2.54h3.4l.4-2.54a7 7 0 0 0 2.4-1.4l2.36.95 2-3.45-2-1.55c.09-.46.14-.92.14-1.4Z"/></svg>
-                                    <span>Settings</span>
-                                </button>
+                            <div class="ip-tabbar">
+                                <span class="ip-tab active">
+                                    <svg width="21" height="21" viewBox="0 0 24 24" fill="currentColor"><path d="m3 10.5 9-7.5 9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1v-9.5Z"/></svg>
+                                    Home
+                                </span>
+                                <span class="ip-tab">
+                                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                                    Browse
+                                </span>
+                                <span class="ip-tab">
+                                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7.5-4.7-10-9.3C.6 8.6 2.4 5 5.7 5c2 0 3.4 1 4.3 2.5h4C14.9 6 16.3 5 18.3 5c3.3 0 5.1 3.6 3.7 6.7C19.5 16.3 12 21 12 21Z"/></svg>
+                                    Favorites
+                                </span>
+                                <span class="ip-tab">
+                                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19c1.2-2.8 3.6-4.2 6.5-4.2s5.3 1.4 6.5 4.2"/><circle cx="17" cy="9" r="2.6"/><path d="M16.5 14.6c2.4.2 4.2 1.5 5 3.9"/></svg>
+                                    Community
+                                </span>
+                                <span class="ip-tab">
+                                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.14-1.4l2-1.55-2-3.46-2.35.95a7 7 0 0 0-2.42-1.4L13.7 2.6h-3.4l-.4 2.54a7 7 0 0 0-2.4 1.4l-2.36-.94-2 3.45 2 1.55A7 7 0 0 0 5 12c0 .48.05.94.14 1.4l-2 1.55 2 3.46 2.35-.95a7 7 0 0 0 2.42 1.4l.39 2.54h3.4l.4-2.54a7 7 0 0 0 2.4-1.4l2.36.95 2-3.45-2-1.55c.09-.46.14-.92.14-1.4Z"/></svg>
+                                    Settings
+                                </span>
                             </div>
                             <div class="home-indicator" aria-hidden="true"></div>
                         </div>
@@ -1096,176 +912,5 @@ provenance.
         }
         </script>
 
-        <script>
-        // THE MINI APP — tab navigation like the real app, plus the live
-        // Cook Mode stopwatch inside its own screen. Vanilla, no deps.
-        (function () {
-            var app = document.getElementById("app");
-            if (!app) return;
-            var STEPS = [
-                { badge: "ACTIVE", passive: false, alarm: null,
-                  text: "Marinate the chicken in yogurt, garlic, ginger and the spices — 30 minutes on the counter." },
-                { badge: "PASSIVE", passive: true, alarm: 15,
-                  text: "Simmer the sauce gently for 15 minutes, stirring now and then so it never catches." },
-                { badge: "ACTIVE", passive: false, alarm: 5,
-                  text: "Stir in the cream, simmer 5 more minutes, and finish with crushed fenugreek leaves." }
-            ];
-            var $ = function (id) { return document.getElementById(id); };
-            var idx = 0, running = false, elapsed = 0, lastTick = null, timer = null, finished = false;
-            var alarmLeft = 0, alarmTimer = null;
-
-            // ---- tab navigation ----
-            function openTab(name) {
-                app.querySelectorAll(".app-view").forEach(function (v) {
-                    v.classList.toggle("active", v.getAttribute("data-view") === name || (name !== "cook" && v.getAttribute("data-view") === name));
-                });
-                document.querySelectorAll(".tab-btn").forEach(function (b) {
-                    b.classList.toggle("active", b.getAttribute("data-tab") === name);
-                });
-                var view = app.querySelector('[data-view="' + name + '"]');
-                if (view) view.scrollTop = 0;
-            }
-            document.querySelectorAll(".tab-btn").forEach(function (b) {
-                b.addEventListener("click", function () { openTab(b.getAttribute("data-tab")); });
-            });
-            document.querySelectorAll("[data-open-cook]").forEach(function (b) {
-                b.addEventListener("click", function () { reset(); openTab("cook"); });
-            });
-            var cmX = document.querySelector(".cook-view .cm-x");
-            if (cmX) cmX.addEventListener("click", function () { openTab("home"); });
-
-            // ---- cook mode engine ----
-            function fmt(sec) {
-                sec = Math.max(0, Math.floor(sec));
-                return Math.floor(sec / 60) + ":" + ("0" + (sec % 60)).slice(-2);
-            }
-            function renderDots() {
-                var el = $("cm-dots"); if (!el) return; el.innerHTML = "";
-                STEPS.forEach(function (_, i) {
-                    var d = document.createElement("span");
-                    d.className = "cm-dot" + (i === idx ? " current" : (i < idx ? " done" : ""));
-                    el.appendChild(d);
-                });
-            }
-            function renderStep() {
-                var s = STEPS[idx];
-                $("cm-step-of").textContent = "STEP " + (idx + 1) + " / " + STEPS.length;
-                var badge = $("cm-badge");
-                badge.textContent = s.badge;
-                badge.className = "cm-badge" + (s.passive ? " passive" : "");
-                $("cm-desc").textContent = s.text;
-                $("cm-prev").disabled = idx === 0;
-                var next = $("cm-next");
-                next.classList.toggle("done", idx === STEPS.length - 1);
-                var alarm = $("cm-alarm");
-                stopAlarm();
-                if (s.alarm) {
-                    alarm.hidden = false;
-                    alarm.classList.remove("armed");
-                    alarm.textContent = "⏲ " + s.alarm + ":00 — tap to arm";
-                } else { alarm.hidden = true; }
-                renderDots();
-            }
-            function renderTimer() {
-                var t = $("cm-timer");
-                t.textContent = fmt(elapsed / 1000);
-                t.classList.toggle("paused", !running && !finished && elapsed > 0);
-            }
-            function tick() {
-                var now = Date.now();
-                elapsed += now - lastTick; lastTick = now;
-                renderTimer();
-            }
-            function stopAlarm() {
-                if (alarmTimer) { clearInterval(alarmTimer); alarmTimer = null; }
-                alarmLeft = 0;
-            }
-            function setToggle() {
-                var b = $("cm-toggle");
-                b.textContent = finished ? "Start cooking" : (running ? "Pause" : (elapsed > 0 ? "Resume" : "Start cooking"));
-                b.classList.toggle("running", running);
-            }
-            function setHint() {
-                var h = $("cm-hint"); var s = STEPS[idx];
-                if (finished) { h.textContent = "Logged to your pace"; h.className = "cm-hint"; return; }
-                if (s.passive && running) { h.textContent = "Hands-off — you can step away"; h.className = "cm-hint handsoff"; return; }
-                h.textContent = running ? "Timing your whole cook…" : (elapsed > 0 ? "Paused" : "Press start — the clock runs even if you leave");
-                h.className = "cm-hint";
-            }
-            function act(action) {
-                if (action === "toggle") {
-                    if (finished) { reset(); return; }
-                    running = !running;
-                    if (running) { lastTick = Date.now(); timer = setInterval(tick, 250); }
-                    else { clearInterval(timer); timer = null; }
-                    setToggle(); setHint(); renderTimer();
-                    return;
-                }
-                if (action === "next") {
-                    if (idx < STEPS.length - 1) { idx++; renderStep(); setHint(); }
-                    else { finish(); }
-                    return;
-                }
-                if (action === "prev") { if (idx > 0) { idx--; renderStep(); setHint(); } return; }
-                if (action === "finish") { finish(); return; }
-                if (action === "reset") { reset(); return; }
-            }
-            function finish() {
-                running = false;
-                if (timer) { clearInterval(timer); timer = null; }
-                stopAlarm(); finished = true;
-                var body = app.querySelector(".cook-view .cm-body");
-                body.innerHTML = '<div class="cm-summary"><b>' + fmt(elapsed / 1000) +
-                    '</b><span>total measured — this calibrates your next estimate</span></div>';
-                $("cm-step-of").textContent = "COOK LOGGED";
-                $("cm-toggle").textContent = "Run it again";
-                $("cm-finish").hidden = true;
-                setHint();
-            }
-            function reset() {
-                running = false; finished = false; elapsed = 0; idx = 0;
-                if (timer) { clearInterval(timer); timer = null; }
-                var body = app.querySelector(".cook-view .cm-body");
-                body.innerHTML =
-                    '<div class="cm-chips">' +
-                        '<span class="cm-badge" id="cm-badge">ACTIVE</span>' +
-                        '<button type="button" class="cm-alarm mono" id="cm-alarm" hidden>⏲ 15:00</button>' +
-                    '</div>' +
-                    '<div class="cm-timer mono" id="cm-timer">00:00</div>' +
-                    '<div class="cm-hint" id="cm-hint"></div>' +
-                    '<div class="cm-desc" id="cm-desc"></div>';
-                var f = $("cm-finish"); if (f) f.hidden = false;
-                renderStep(); renderTimer(); setToggle(); setHint();
-            }
-            app.addEventListener("click", function (e) {
-                var btn = e.target.closest("[data-act]");
-                if (btn) { act(btn.getAttribute("data-act")); return; }
-                var alarm = e.target.closest("#cm-alarm");
-                if (alarm && !alarm.hidden) {
-                    if (alarmTimer) {
-                        stopAlarm();
-                        alarm.classList.remove("armed");
-                        alarm.textContent = "⏲ " + STEPS[idx].alarm + ":00 — tap to arm";
-                        return;
-                    }
-                    var minutes = STEPS[idx].alarm;
-                    if (!minutes) return;
-                    alarmLeft = minutes * 60;
-                    alarm.classList.add("armed");
-                    alarmTimer = setInterval(function () {
-                        alarmLeft -= 1;
-                        if (alarmLeft <= 0) {
-                            stopAlarm();
-                            alarm.textContent = "⏲ Time!";
-                            setTimeout(function () { if (!alarmTimer) { alarm.classList.remove("armed"); alarm.textContent = "⏲ " + STEPS[idx].alarm + ":00 — tap to arm"; } }, 2500);
-                            return;
-                        }
-                        alarm.textContent = "⏲ " + fmt(alarmLeft) + " · tap to cancel";
-                    }, 1000);
-                }
-            });
-            renderStep(); renderTimer(); setToggle(); setHint();
-        })();
-        </script>
     </body>
 </html>

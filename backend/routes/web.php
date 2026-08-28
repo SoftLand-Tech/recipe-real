@@ -93,7 +93,7 @@ Route::get('/', function () {
         $fmt = function (string $mode): array {
             return Recipe::query()
                 ->select('id', 'title', 'image_url', 'publisher_time_minutes', 'reality_minutes',
-                    'reality_source', 'reality_samples')
+                    'reality_source', 'reality_samples', 'aggregated_rating')
                 ->whereIn('reality_source', ['community', 'estimate'])
                 ->where('publisher_time_minutes', '>', 0)
                 ->where('steps_count', '>=', 2)
@@ -124,6 +124,8 @@ Route::get('/', function () {
                         'claimed' => $mm($cl),
                         'real' => $mm($re),
                         'delta' => ($gap >= 0 ? '+' : '').$gap.'%',
+                        'rating' => $r->aggregated_rating !== null ? number_format((float) $r->aggregated_rating, 1) : null,
+                        'claim_m' => $cl,
                         'src' => ($r->reality_source === 'community'
                             ? 'measured by '.$r->reality_samples.' cook'.($r->reality_samples == 1 ? '' : 's')
                             : 'estimated from step data'),
