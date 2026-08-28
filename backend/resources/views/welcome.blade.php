@@ -305,6 +305,9 @@
             .faq-item:last-child { border-bottom: 1px solid var(--hair-dark); }
             .faq-item h3 { margin: 0 0 10px; font-size: 17.5px; font-weight: 700; }
             .faq-item p { margin: 0; color: #CFC4B8; max-width: 62ch; }
+            /* FAQ sits on the paper reversal — answers must be ink, not board-gray. */
+            .paper .faq-item h3 { color: var(--ink); }
+            .paper .faq-item p { color: var(--ink-2); }
 
             footer { border-top: 1px solid var(--hair-dark); padding: 30px 0 40px; }
             .foot-inner { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px;
