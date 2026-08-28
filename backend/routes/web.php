@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\AppRelease;
+use App\Models\ContactMessage;
 use App\Models\Post;
 use App\Models\Recipe;
 use Illuminate\Http\Request;
@@ -116,6 +117,51 @@ Route::get('/', function () {
         'popular' => $popular,
     ]);
 });
+
+/*
+ | ---- Real content pages (every footer link is a real page) ---------------
+ | Static-but-honest pages behind the landing's footer. Blog articles are
+ | plain view files keyed by slug — no CMS, nothing dynamic to break.
+ */
+Route::view('/about', 'pages.about')->name('pages.about');
+Route::view('/careers', 'pages.careers')->name('pages.careers');
+Route::view('/press', 'pages.press')->name('pages.press');
+Route::view('/pricing', 'pages.pricing')->name('pages.pricing');
+Route::view('/tips', 'pages.tips')->name('pages.tips');
+Route::view('/help', 'pages.help')->name('pages.help');
+Route::view('/terms', 'pages.terms')->name('pages.terms');
+
+Route::get('/blog', function () {
+    return view('pages.blog');
+})->name('pages.blog');
+
+Route::get('/blog/{slug}', function (string $slug) {
+    // Only the articles that actually exist resolve — everything else 404s.
+    $articles = [
+        'why-recipe-times-lie',
+        'where-the-time-goes',
+        'plan-backwards-from-maghrib',
+    ];
+    abort_unless(in_array($slug, $articles, true), 404);
+
+    return view('pages.blog.'.$slug);
+})->name('pages.blog.show');
+
+Route::get('/contact', function () {
+    return view('pages.contact');
+})->name('pages.contact');
+
+Route::post('/contact', function (Request $request) {
+    $data = $request->validate([
+        'name' => ['nullable', 'string', 'max:100'],
+        'email' => ['required', 'email:rfc', 'max:200'],
+        'message' => ['required', 'string', 'min:10', 'max:2000'],
+    ]);
+
+    ContactMessage::create($data);
+
+    return redirect()->route('pages.contact', ['sent' => 1]).'#form';
+})->middleware('throttle:6,1')->name('pages.contact.submit');
 
 /*
  | Public web recipe page (GET /r/{recipe}): the share target behind the

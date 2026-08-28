@@ -462,7 +462,7 @@
 
             /* ---------- footer ---------- */
             footer { background: var(--dark-2); color: var(--dark-muted); padding: 62px 0 34px; }
-            .foot-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr .9fr; gap: 34px; }
+            .foot-grid { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 34px; }
             .foot-brand .brand b { color: #fff; }
             .foot-brand p { margin: 14px 0 0; font-size: 14px; line-height: 1.65; max-width: 15em; }
             .foot-col h4 { margin: 4px 0 16px; font-size: 13px; font-weight: 800; letter-spacing: .1em;
@@ -470,10 +470,6 @@
             .foot-col a { display: block; text-decoration: none; font-size: 14px; color: var(--dark-muted);
                 padding: 4.5px 0; }
             .foot-col a:hover { color: #fff; }
-            .socials { display: flex; gap: 10px; }
-            .socials a { width: 36px; height: 36px; border-radius: 99px; background: #2A3140; color: #D6DBE4;
-                display: inline-flex; align-items: center; justify-content: center; transition: background .15s ease, color .15s ease; }
-            .socials a:hover { background: var(--orange); color: #fff; }
             .foot-bottom { border-top: 1px solid #2C3342; margin-top: 46px; padding-top: 22px;
                 display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 13px; color: #8B93A3; }
             .foot-bottom a { color: inherit; text-decoration: none; }
@@ -534,23 +530,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the
 finish review, the verdict, DESIGN.md, and every shipping raster carrying its
 provenance.
 -->
-        <div class="nav">
-            <div class="wrap nav-inner">
-                <a class="brand" href="/" aria-label="RecipeReal home">
-                    <img class="brand-mark" src="/img/recipereallogo.webp" alt="" width="34" height="34">
-                    <b>Recipe<em>Real</em></b>
-                </a>
-                <nav class="nav-links" aria-label="Page">
-                    <a href="/" class="active">Home</a>
-                    <a href="#features">Features</a>
-                    <a href="#how">How It Works</a>
-                    <a href="#recipes">Recipes</a>
-                    <a href="#community">Community</a>
-                    <a href="#download">Pricing</a>
-                    <a href="#download" class="btn btn-accent">Get the App</a>
-                </nav>
-            </div>
-        </div>
+        @include('partials.site-nav')
 
         <header class="hero">
             <div class="wrap">
@@ -995,63 +975,7 @@ provenance.
             </div>
         </section>
 
-        <footer>
-            <div class="wrap">
-                <div class="foot-grid">
-                    <div class="foot-brand">
-                        <a class="brand" href="/">
-                            <img class="brand-mark" src="/img/recipereallogo.webp" alt="" width="34" height="34">
-                            <b>Recipe<em>Real</em></b>
-                        </a>
-                        <p>Accurate recipes. Real cooking times. Real results.</p>
-                    </div>
-                    <nav class="foot-col" aria-label="Explore">
-                        <h4>Explore</h4>
-                        <a href="#recipes">Recipes</a>
-                        <a href="#how">How It Works</a>
-                        <a href="#features">Features</a>
-                        <a href="#download">Pricing</a>
-                        <a href="#community">Community</a>
-                    </nav>
-                    <nav class="foot-col" aria-label="Resources">
-                        <h4>Resources</h4>
-                        <a href="#">Blog</a>
-                        <a href="#">Cooking Tips</a>
-                        <a href="#">Help Center</a>
-                        <a href="#">Contact Us</a>
-                        <a href="/privacy">Privacy Policy</a>
-                    </nav>
-                    <nav class="foot-col" aria-label="Company">
-                        <h4>Company</h4>
-                        <a href="#">About Us</a>
-                        <a href="#">Careers</a>
-                        <a href="#">Press Kit</a>
-                        <a href="#">Terms of Service</a>
-                    </nav>
-                    <div class="foot-col">
-                        <h4>Follow Us</h4>
-                        <div class="socials">
-                            <a href="#" aria-label="Instagram (coming soon)">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1.1" fill="currentColor" stroke="none"/></svg>
-                            </a>
-                            <a href="#" aria-label="TikTok (coming soon)">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M16.6 3c.4 2.1 1.8 3.6 3.9 3.9v3c-1.5 0-2.8-.4-3.9-1.2v5.6c0 3.6-2.4 5.9-5.6 5.9A5.4 5.4 0 0 1 5.5 15c0-3.2 2.5-5.5 5.9-5.4v3.1c-1.6-.2-2.9.8-2.9 2.3 0 1.4 1 2.4 2.4 2.4 1.5 0 2.6-1 2.6-2.9V3h3.1Z"/></svg>
-                            </a>
-                            <a href="#" aria-label="YouTube (coming soon)">
-                                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M22 12c0-2.4-.3-4-.6-4.8-.3-.9-1-1.5-1.9-1.7C17.9 5.1 12 5.1 12 5.1s-5.9 0-7.5.4c-.9.2-1.6.8-1.9 1.7C2.3 8 2 9.6 2 12s.3 4 .6 4.8c.3.9 1 1.5 1.9 1.7 1.6.4 7.5.4 7.5.4s5.9 0 7.5-.4c.9-.2 1.6-.8 1.9-1.7.3-.8.6-2.4.6-4.8ZM10 8.8l5.5 3.2L10 15.2V8.8Z"/></svg>
-                            </a>
-                            <a href="#" aria-label="Facebook (coming soon)">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 21v-7h2.4l.4-2.8h-2.8V9.4c0-.8.3-1.4 1.5-1.4h1.4V5.5c-.3 0-1.1-.1-2-.1-2 0-3.4 1.2-3.4 3.5v2.3H8.5V14H11v7h2.5Z"/></svg>
-                            </a>
-                        </div>
-                    </div>
-                </div>
-                <div class="foot-bottom">
-                    <span>© {{ date('Y') }} RecipeReal. All rights reserved.</span>
-                    <span><a href="/privacy">Privacy</a></span>
-                </div>
-            </div>
-        </footer>
+        @include('partials.site-footer')
 
         <script type="application/ld+json">
         {
