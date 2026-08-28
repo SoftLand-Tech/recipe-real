@@ -5,7 +5,6 @@ use App\Models\Post;
 use App\Models\Recipe;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 
@@ -84,70 +83,37 @@ Route::get('/admin/app-releases/{release}/download', function (AppRelease $relea
 })->middleware(['auth'])->name('app.download.release');
 
 Route::get('/', function () {
-    // The landing's download card adapts to whether a build exists.
-    // The Reality Index board runs the SAME query as /api/reality (sanity
-    // bounds, ordering, id tiebreaker), cached 15 min — the landing proves
-    // the mechanism with real rows instead of claiming it. Direct DB read:
-    // a self-HTTP sub-call deadlocks artisan serve and adds a hop on prod.
-    $board = Cache::remember('landing:board', now()->addMinutes(15), function () {
-        $fmt = function (string $mode): array {
-            return Recipe::query()
-                ->select('id', 'title', 'image_url', 'publisher_time_minutes', 'reality_minutes',
-                    'reality_source', 'reality_samples', 'aggregated_rating')
-                ->whereIn('reality_source', ['community', 'estimate'])
-                ->where('publisher_time_minutes', '>', 0)
-                ->where('steps_count', '>=', 2)
-                ->whereNotNull('image_url')
-                ->where('image_url', '!=', '')
-                ->whereBetween('reality_minutes', [1, 480])
-                ->whereBetween(
-                    DB::raw('(reality_minutes - publisher_time_minutes) * 100.0 / publisher_time_minutes'),
-                    [-80, 400],
-                )
-                ->orderByRaw(
-                    '(reality_minutes - publisher_time_minutes) * 100.0 / publisher_time_minutes '
-                    .($mode === 'under' ? 'DESC' : 'ASC')
-                )
-                ->orderBy('id')
-                ->limit(5)
-                ->get()
-                ->map(function ($r) {
-                    $cl = (int) $r->publisher_time_minutes;
-                    $re = (int) $r->reality_minutes;
-                    $gap = (int) round(($re - $cl) * 100.0 / $cl);
-                    $mm = fn (int $m) => sprintf('%d:%02d', intdiv($m, 60), $m % 60);
-
-                    return [
-                        'id' => $r->id,
-                        'title' => $r->title,
-                        'img' => $r->image_url,
-                        'claimed' => $mm($cl),
-                        'real' => $mm($re),
-                        'delta' => ($gap >= 0 ? '+' : '').$gap.'%',
-                        'rating' => $r->aggregated_rating !== null ? number_format((float) $r->aggregated_rating, 1) : null,
-                        'claim_m' => $cl,
-                        'src' => ($r->reality_source === 'community'
-                            ? 'measured by '.$r->reality_samples.' cook'.($r->reality_samples == 1 ? '' : 's')
-                            : 'estimated from step data'),
-                    ];
-                })
-                ->all();
-        };
-
-        return ['over' => $fmt('over'), 'under' => $fmt('under')];
+    // "Browse Popular Recipes" grid: real rows on prod (top-rated,
+    // image-backed, with a claim time), cached 15 min. The view renders
+    // a static preview set when this comes back empty (fresh dev DBs) —
+    // prod never sees the fallback.
+    $popular = Cache::remember('landing:popular', now()->addMinutes(15), function () {
+        return Recipe::query()
+            ->select('id', 'title', 'image_url', 'publisher_time_minutes', 'reality_minutes', 'aggregated_rating')
+            ->whereNotNull('image_url')
+            ->where('image_url', '!=', '')
+            ->where('publisher_time_minutes', '>', 0)
+            ->whereNotNull('aggregated_rating')
+            ->where('aggregated_rating', '>', 0)
+            ->orderByDesc('aggregated_rating')
+            ->orderBy('id')
+            ->limit(5)
+            ->get()
+            ->map(fn ($r) => [
+                'id' => $r->id,
+                'title' => $r->title,
+                'img' => $r->image_url,
+                'minutes' => (int) $r->publisher_time_minutes,
+                'really' => $r->reality_minutes !== null ? (int) $r->reality_minutes : null,
+                'rating' => number_format((float) $r->aggregated_rating, 1),
+            ])
+            ->all();
     });
 
-    // Ticker interleaves both directions for the ambient strip.
-    $ticker = collect([$board['over'], $board['under']])
-        ->flatten(1)
-        ->take(10)
-        ->all();
-
+    // The landing's download badges adapt to whether a build exists.
     return view('welcome', [
         'latestRelease' => AppRelease::latest(),
-        'over' => $board['over'],
-        'under' => $board['under'],
-        'ticker' => $ticker,
+        'popular' => $popular,
     ]);
 });
 
