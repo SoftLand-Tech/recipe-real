@@ -67,7 +67,16 @@
       "expo-secure-store",
       "expo-localization",
       "expo-image",
-      "./plugins/arm64-only"
+      "./plugins/arm64-only",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
