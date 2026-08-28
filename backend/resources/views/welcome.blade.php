@@ -181,10 +181,11 @@
             .ip-feat-img { position: relative; border-radius: 12px; overflow: hidden; }
             .ip-feat-img img { width: 100%; height: 190px; object-fit: cover; display: block; }
             .ip-heart { position: absolute; top: 12px; inset-inline-end: 12px;
-                filter: drop-shadow(0 1px 4px rgba(0,0,0,.5)); }
+                background: rgba(20,14,10,.35); border-radius: 10px; padding: 5px; }
             .ip-feat-body { display: flex; flex-direction: column; padding: 12px 6px 0; }
-            .ip-feat-body h3 { margin: 0 0 10px; font-size: 21px; font-weight: 800;
-                letter-spacing: -.01em; color: var(--ink); }
+            .ip-feat-body h3 { margin: 0 0 10px; font-size: 17.5px; font-weight: 800;
+                letter-spacing: -.01em; color: var(--ink); white-space: nowrap;
+                overflow: hidden; }
             .ip-lab { font-size: 12px; color: var(--ink-2); }
             .ip-real { font-size: 32px; font-weight: 800; color: var(--timing);
                 line-height: 1.15; letter-spacing: -.01em; }
