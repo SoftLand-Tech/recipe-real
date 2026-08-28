@@ -1,6 +1,6 @@
 <x-filament-panels::page>
     <div class="fi-section">
-        <form wire:submit="upload" class="fi-form grid gap-6">
+        <form wire:submit="publish" class="fi-form grid gap-6">
             {{ $this->form }}
 
             <div class="flex justify-start">

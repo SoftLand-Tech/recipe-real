@@ -62,7 +62,14 @@ class ManageAppReleases extends Page
             ->statePath('data');
     }
 
-    public function upload(): void
+    /**
+     * Publish the uploaded build. NOTE the name: never call this action
+     * `upload` — that collides with Livewire's client-side $wire.upload()
+     * file-helper, and wire:submit="upload" then runs the JS helper with
+     * undefined args ("Cannot read properties of undefined (reading
+     * 'name')" in supportFileUploads) instead of this method.
+     */
+    public function publish(): void
     {
         $data = $this->form->getState();
         $disk = Storage::disk('local');
