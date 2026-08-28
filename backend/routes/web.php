@@ -5,6 +5,7 @@ use App\Models\Post;
 use App\Models\Recipe;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 
@@ -84,7 +85,67 @@ Route::get('/admin/app-releases/{release}/download', function (AppRelease $relea
 
 Route::get('/', function () {
     // The landing's download card adapts to whether a build exists.
-    return view('welcome', ['latestRelease' => AppRelease::latest()]);
+    // The Reality Index board runs the SAME query as /api/reality (sanity
+    // bounds, ordering, id tiebreaker), cached 15 min — the landing proves
+    // the mechanism with real rows instead of claiming it. Direct DB read:
+    // a self-HTTP sub-call deadlocks artisan serve and adds a hop on prod.
+    $board = Cache::remember('landing:board', now()->addMinutes(15), function () {
+        $fmt = function (string $mode): array {
+            return Recipe::query()
+                ->select('id', 'title', 'publisher_time_minutes', 'reality_minutes',
+                    'reality_source', 'reality_samples')
+                ->whereIn('reality_source', ['community', 'estimate'])
+                ->where('publisher_time_minutes', '>', 0)
+                ->where('steps_count', '>=', 2)
+                ->whereNotNull('image_url')
+                ->where('image_url', '!=', '')
+                ->whereBetween('reality_minutes', [1, 480])
+                ->whereBetween(
+                    DB::raw('(reality_minutes - publisher_time_minutes) * 100.0 / publisher_time_minutes'),
+                    [-80, 400],
+                )
+                ->orderByRaw(
+                    '(reality_minutes - publisher_time_minutes) * 100.0 / publisher_time_minutes '
+                    .($mode === 'under' ? 'DESC' : 'ASC')
+                )
+                ->orderBy('id')
+                ->limit(5)
+                ->get()
+                ->map(function ($r) {
+                    $cl = (int) $r->publisher_time_minutes;
+                    $re = (int) $r->reality_minutes;
+                    $gap = (int) round(($re - $cl) * 100.0 / $cl);
+                    $mm = fn (int $m) => sprintf('%d:%02d', intdiv($m, 60), $m % 60);
+
+                    return [
+                        'id' => $r->id,
+                        'title' => $r->title,
+                        'claimed' => $mm($cl),
+                        'real' => $mm($re),
+                        'delta' => ($gap >= 0 ? '+' : '').$gap.'%',
+                        'src' => ($r->reality_source === 'community'
+                            ? 'measured by '.$r->reality_samples.' cook'.($r->reality_samples == 1 ? '' : 's')
+                            : 'estimated from step data'),
+                    ];
+                })
+                ->all();
+        };
+
+        return ['over' => $fmt('over'), 'under' => $fmt('under')];
+    });
+
+    // Ticker interleaves both directions for the ambient strip.
+    $ticker = collect([$board['over'], $board['under']])
+        ->flatten(1)
+        ->take(10)
+        ->all();
+
+    return view('welcome', [
+        'latestRelease' => AppRelease::latest(),
+        'over' => $board['over'],
+        'under' => $board['under'],
+        'ticker' => $ticker,
+    ]);
 });
 
 /*
