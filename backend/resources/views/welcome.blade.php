@@ -157,6 +157,9 @@
                 position: relative; height: 612px;
                 display: flex; flex-direction: column;
                 color: var(--ink);
+                /* the phone is ~55% of a real phone's pixel width — shrink the
+                   whole UI uniformly so text/elements match the app's scale */
+                zoom: 0.78;
             }
             .ip-statusbar { display: flex; align-items: center; justify-content: space-between;
                 padding: 12px 20px 6px; flex: none; }
