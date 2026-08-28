@@ -140,95 +140,92 @@
             .hero-proof span { font-size: 11.5px; color: var(--ink-3); letter-spacing: .06em; text-transform: uppercase; }
 
             /* timing strip — the mechanism, demonstrated */
-            /* ---- THE IPHONE — a working miniature of the app ---- */
-            .phone-shell { position: relative; justify-self: center; }
+            /* ---- THE IPHONE — designed at the app's native 390px viewport,
+               then transform-scaled to the landing column. Every inner size
+               is a REAL app-scale size (no zoom hacks). ---- */
+            .phone-shell { position: relative; justify-self: center;
+                height: 646px; display: flex; align-items: flex-start;
+                justify-content: center; }
             .iphone {
-                position: relative; width: 306px; margin: 0 auto;
-                background: #050505; border-radius: 56px; padding: 9px;
+                position: relative; width: 410px; flex: none;
+                background: #050505; border-radius: 56px; padding: 10px;
                 border: 1px solid #3A3129;
+                transform: scale(.76); transform-origin: top center;
                 box-shadow: 0 50px 110px -34px rgba(0,0,0,.9), inset 0 0 0 2px #000, inset 0 0 0 4px #17120e;
             }
             .ip-action { position: absolute; background: #2A2420; border-radius: 2px; }
-            .ip-action.vol-up   { left: -2.5px; top: 128px; width: 3px; height: 34px; }
-            .ip-action.vol-down { left: -2.5px; top: 170px; width: 3px; height: 34px; }
-            .ip-action.power    { right: -2.5px; top: 150px; width: 3px; height: 58px; }
+            .ip-action.vol-up   { left: -3px; top: 150px; width: 4px; height: 44px; }
+            .ip-action.vol-down { left: -3px; top: 204px; width: 4px; height: 44px; }
+            .ip-action.power    { right: -3px; top: 178px; width: 4px; height: 72px; }
             .ip-screen {
                 background: var(--paper); border-radius: 46px; overflow: hidden;
-                position: relative; height: 612px;
+                position: relative; width: 390px; height: 812px;
                 display: flex; flex-direction: column;
                 color: var(--ink);
-                /* the phone is ~55% of a real phone's pixel width — shrink the
-                   whole UI uniformly so text/elements match the app's scale */
-                zoom: 0.78;
             }
             .ip-statusbar { display: flex; align-items: center; justify-content: space-between;
-                padding: 12px 20px 6px; flex: none; }
-            .ip-time { font-size: 11px; font-weight: 600; color: var(--ink); }
-            .ip-signals { display: inline-flex; align-items: center; gap: 5px; color: var(--ink); }
-            .ip-punch { position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
-                width: 12px; height: 12px; background: #000; border-radius: 99px; }
+                padding: 16px 30px 8px; flex: none; }
+            .ip-time { font-size: 14px; font-weight: 600; color: var(--ink); }
+            .ip-signals { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); }
+            .ip-punch { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+                width: 13px; height: 13px; background: #000; border-radius: 99px; }
 
-            /* the exact Home screen, replicated */
-            .ip-home { flex: 1; overflow: hidden; padding: 2px 14px 0; }
+            /* the exact Home screen, replicated at app scale */
+            .ip-home { flex: 1; overflow: hidden; padding: 4px 16px 0; }
             .ip-header { display: flex; align-items: center; justify-content: space-between;
-                padding: 4px 0 10px; }
-            .ip-logo { width: 42px; height: 42px; }
-            .ip-header-icons { display: inline-flex; align-items: center; gap: 16px;
+                padding: 4px 0 12px; }
+            .ip-logo { width: 46px; height: 46px; }
+            .ip-header-icons { display: inline-flex; align-items: center; gap: 18px;
                 color: var(--ink); }
-            .ip-search { display: flex; align-items: center; gap: 9px; color: var(--ink-3);
+            .ip-search { display: flex; align-items: center; gap: 10px; color: var(--ink-3);
                 background: #F1EBE4; border-radius: 14px; padding: 13px 16px;
-                font-size: 13.5px; margin-bottom: 14px; }
+                font-size: 14px; margin-bottom: 16px; }
             .ip-feat { background: #fff; border: 1px solid var(--hair-light);
-                border-radius: 18px; padding: 10px 10px 14px;
+                border-radius: 18px; padding: 10px 10px 16px;
                 box-shadow: 0 10px 26px -18px rgba(36,29,23,.35); }
             .ip-feat-img { position: relative; border-radius: 12px; overflow: hidden; }
-            .ip-feat-img img { width: 100%; height: 190px; object-fit: cover; display: block; }
-            .ip-heart { position: absolute; top: 12px; inset-inline-end: 12px;
-                background: rgba(20,14,10,.35); border-radius: 10px; padding: 5px; }
-            .ip-feat-body { display: flex; flex-direction: column; padding: 12px 6px 0; }
-            .ip-feat-body h3 { margin: 0 0 10px; font-size: 17.5px; font-weight: 800;
+            .ip-feat-img img { width: 100%; height: 210px; object-fit: cover; display: block; }
+            .ip-heart { position: absolute; top: 14px; inset-inline-end: 14px;
+                background: rgba(20,14,10,.35); border-radius: 10px; padding: 6px; }
+            .ip-feat-body { display: flex; flex-direction: column; padding: 14px 6px 0; }
+            .ip-feat-body h3 { margin: 0 0 12px; font-size: 20px; font-weight: 800;
                 letter-spacing: -.01em; color: var(--ink); white-space: nowrap;
                 overflow: hidden; }
-            .ip-lab { font-size: 12px; color: var(--ink-2); }
-            .ip-real { font-size: 32px; font-weight: 800; color: var(--timing);
+            .ip-lab { font-size: 13px; color: var(--ink-2); }
+            .ip-real { font-size: 34px; font-weight: 800; color: var(--timing);
                 line-height: 1.15; letter-spacing: -.01em; }
-            .ip-est { font-size: 12px; color: var(--ink-2); margin-bottom: 14px; }
+            .ip-est { font-size: 13px; color: var(--ink-2); margin-bottom: 16px; }
             .ip-start { display: block; text-align: center; background: var(--accent);
-                color: #fff; font-weight: 800; font-size: 15.5px; border-radius: 999px;
-                padding: 13px 0; }
+                color: #fff; font-weight: 800; font-size: 16px; border-radius: 999px;
+                padding: 14px 0; }
             .ip-rail-head { display: flex; align-items: baseline; justify-content: space-between;
-                margin: 16px 0 8px; }
-            .ip-rail-head b { font-size: 16.5px; font-weight: 800; color: var(--ink); }
-            .ip-rail-head span { font-size: 12.5px; font-weight: 700; color: var(--accent-deep); }
+                margin: 18px 0 10px; }
+            .ip-rail-head b { font-size: 17px; font-weight: 800; color: var(--ink); }
+            .ip-rail-head span { font-size: 13px; font-weight: 700; color: var(--accent-deep); }
             .ip-rail { display: flex; gap: 10px; overflow: hidden; }
-            .ip-mini { flex: none; width: 148px; background: #fff;
+            .ip-mini { flex: none; width: 158px; background: #fff;
                 border: 1px solid var(--hair-light); border-radius: 12px; overflow: hidden;
-                padding-bottom: 8px; }
+                padding-bottom: 10px; }
             .ip-mini-img { position: relative; }
-            .ip-mini-img img { width: 100%; height: 86px; object-fit: cover; display: block; }
-            .ip-gap { position: absolute; top: 6px; inset-inline-end: 6px;
-                font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+            .ip-mini-img img { width: 100%; height: 92px; object-fit: cover; display: block; }
+            .ip-gap { position: absolute; top: 8px; inset-inline-end: 8px;
+                font-family: var(--font-mono); font-size: 11px; font-weight: 700;
                 font-style: normal; background: #DFF0E4; color: var(--success);
-                border-radius: 6px; padding: 2px 6px; }
-            .ip-mini b { display: block; font-size: 12px; line-height: 1.3;
-                padding: 7px 8px 6px; color: var(--ink); }
+                border-radius: 6px; padding: 2px 7px; }
+            .ip-mini b { display: block; font-size: 13px; line-height: 1.3;
+                padding: 8px 9px 6px; color: var(--ink); }
             .ip-chip { display: inline-flex; align-items: center; gap: 4px;
-                font-size: 10px; font-weight: 600; color: var(--ink-2);
-                background: #F1EBE4; border-radius: 99px; padding: 3px 8px;
-                margin: 0 3px 3px 8px; }
+                font-size: 11px; font-weight: 600; color: var(--ink-2);
+                background: #F1EBE4; border-radius: 99px; padding: 3px 9px;
+                margin: 0 3px 3px 9px; }
             .ip-chip.ip-star { color: var(--ink); }
             .ip-tabbar { flex: none; display: flex; border-top: 1px solid var(--hair-light);
-                background: var(--paper); padding: 7px 6px 4px; }
+                background: var(--paper); padding: 9px 8px 4px; }
             .ip-tab { flex: 1; display: flex; flex-direction: column; align-items: center;
-                gap: 3px; font-size: 9.5px; font-weight: 600; color: var(--ink-3); }
+                gap: 3px; font-size: 10.5px; font-weight: 600; color: var(--ink-3); }
             .ip-tab.active { color: var(--accent-deep); }
-            .home-indicator { flex: none; width: 110px; height: 4.5px; border-radius: 99px;
-                background: rgba(36,29,23,.85); margin: 4px auto 7px; }
-
-            /* ---- Cook Mode view (light, app-faithful) ---- */
-            .cook-view { background: var(--paper); }
-            .cook-view .scr-pad { display: flex; flex-direction: column; flex: 1; padding-bottom: 8px; }
-
+            .home-indicator { flex: none; width: 124px; height: 5px; border-radius: 99px;
+                background: rgba(36,29,23,.85); margin: 5px auto 9px; }
             @media (max-width: 940px) { .phone-shell { max-width: none; } }
             .strip {
                 background: var(--board-2);
@@ -521,8 +518,8 @@ provenance.
                                 <div class="ip-header">
                                     <img class="ip-logo" src="/img/recipereallogo.webp" alt="RecipeReal">
                                     <span class="ip-header-icons">
-                                        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 20a2 2 0 0 1-3.4 0"/></svg>
-                                        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c1.6-3.4 4.2-5 7.5-5s5.9 1.6 7.5 5"/></svg>
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 20a2 2 0 0 1-3.4 0"/></svg>
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c1.6-3.4 4.2-5 7.5-5s5.9 1.6 7.5 5"/></svg>
                                     </span>
                                 </div>
                                 <div class="ip-search">
@@ -533,7 +530,7 @@ provenance.
                                 <div class="ip-feat">
                                     <div class="ip-feat-img">
                                         <img src="/img/tiger-butter.jpg" alt="">
-                                        <svg class="ip-heart" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7.5-4.7-10-9.3C.6 8.6 2.4 5 5.7 5c2 0 3.4 1 4.3 2.5h4C14.9 6 16.3 5 18.3 5c3.3 0 5.1 3.6 3.7 6.7C19.5 16.3 12 21 12 21Z"/></svg>
+                                        <svg class="ip-heart" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7.5-4.7-10-9.3C.6 8.6 2.4 5 5.7 5c2 0 3.4 1 4.3 2.5h4C14.9 6 16.3 5 18.3 5c3.3 0 5.1 3.6 3.7 6.7C19.5 16.3 12 21 12 21Z"/></svg>
                                     </div>
                                     <div class="ip-feat-body">
                                         <h3>Tiger Butter Fudge Candy</h3>
