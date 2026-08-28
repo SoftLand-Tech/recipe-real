@@ -140,31 +140,136 @@
             .hero-proof span { font-size: 11.5px; color: var(--ink-3); letter-spacing: .06em; text-transform: uppercase; }
 
             /* timing strip — the mechanism, demonstrated */
-            /* ---- interactive Cook Mode phone ---- */
+            /* ---- THE IPHONE — a working miniature of the app ---- */
             .phone-shell { position: relative; justify-self: center; }
-            .phone {
-                width: 296px; background: #0D0B09; border-radius: 38px;
+            .iphone {
+                position: relative; width: 306px; margin: 0 auto;
+                background: #050505; border-radius: 56px; padding: 9px;
                 border: 1px solid #3A3129;
-                padding: 10px;
-                box-shadow: 0 40px 90px -30px rgba(0,0,0,.85), inset 0 0 0 2px #000;
+                box-shadow: 0 50px 110px -34px rgba(0,0,0,.9), inset 0 0 0 2px #000, inset 0 0 0 4px #17120e;
             }
-            .phone-notch { width: 96px; height: 22px; background: #000; border-radius: 999px;
-                margin: 4px auto 8px; }
-            .phone-screen { background: var(--board); border-radius: 26px; overflow: hidden;
-                padding: 14px 16px calc(18px); min-height: 480px;
-                display: flex; flex-direction: column; }
-            .phone-cap { margin: 14px 4px 0; font-size: 10.5px; letter-spacing: .12em;
-                color: var(--ink-3); text-transform: uppercase; text-align: center; }
+            .ip-action { position: absolute; background: #2A2420; border-radius: 2px; }
+            .ip-action.vol-up   { left: -2.5px; top: 128px; width: 3px; height: 34px; }
+            .ip-action.vol-down { left: -2.5px; top: 170px; width: 3px; height: 34px; }
+            .ip-action.power    { right: -2.5px; top: 150px; width: 3px; height: 58px; }
+            .ip-screen {
+                background: var(--paper); border-radius: 46px; overflow: hidden;
+                position: relative; height: 612px;
+                display: flex; flex-direction: column;
+                color: var(--ink);
+            }
+            .ip-statusbar { display: flex; align-items: center; justify-content: space-between;
+                padding: 14px 26px 4px; flex: none; }
+            .ip-time { font-size: 13px; font-weight: 700; letter-spacing: .02em; }
+            .ip-island { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+                width: 88px; height: 25px; background: #000; border-radius: 999px; }
+            .ip-signals { display: inline-flex; align-items: center; gap: 5px; color: var(--ink); }
+
+            .app { flex: 1; position: relative; overflow: hidden; }
+            .app-view { position: absolute; inset: 0; overflow-y: auto; display: none;
+                scrollbar-width: none; }
+            .app-view::-webkit-scrollbar { display: none; }
+            .app-view.active { display: block; }
+            .app-view.cook-view.active { display: flex; flex-direction: column; }
+            .scr-pad { padding: 10px 14px 20px; }
+            .scr-title { margin: 4px 0 2px; font-family: var(--font-display); font-weight: 800;
+                text-transform: uppercase; font-size: 24px; letter-spacing: .01em; }
+            .scr-sub { margin: 0 0 12px; font-size: 12px; color: var(--ink-2); }
+            .cnt { font-family: var(--font-mono); font-size: 12px; color: var(--accent-deep);
+                background: var(--accent-soft); border-radius: 99px; padding: 2px 8px;
+                vertical-align: 2px; }
+
+            /* home */
+            .home-kicker { margin: 4px 0 8px; font-family: var(--font-display); font-weight: 800;
+                text-transform: uppercase; font-size: 22px; line-height: 1.02;
+                letter-spacing: .01em; }
+            .home-search { display: flex; align-items: center; gap: 7px; color: var(--ink-3);
+                background: #fff; border: 1px solid var(--hair-light); border-radius: 10px;
+                padding: 9px 12px; font-size: 12px; margin-bottom: 12px; }
+            .feat-card { position: relative; border-radius: 14px; overflow: hidden;
+                box-shadow: 0 12px 28px -14px rgba(36,29,23,.4); }
+            .feat-card img { width: 100%; height: 132px; object-fit: cover; display: block; }
+            .feat-body { position: absolute; inset-inline: 0; bottom: 0; padding: 26px 12px 10px;
+                background: linear-gradient(transparent, rgba(20,14,10,.86)); color: #fff; }
+            .feat-body b { display: block; font-size: 14.5px; margin-bottom: 3px; }
+            .feat-start { margin-top: 8px; background: var(--accent); color: #fff; border: 0;
+                font-weight: 700; font-size: 12px; border-radius: 7px; padding: 7px 12px;
+                cursor: pointer; }
+            .feat-start:hover { background: var(--accent-deep); }
+            .pair { font-family: var(--font-mono); font-size: 11px; font-variant-numeric: tabular-nums; }
+            .pair s { color: rgba(255,255,255,.75); margin-inline-end: 6px; }
+            .pair .t { color: #7FC49A; font-weight: 700; font-style: normal; }
+            .mini-card .pair s { color: var(--ink-3); }
+            .rail-label { margin: 14px 0 8px; font-family: var(--font-mono); font-size: 10px;
+                letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+            .mini-rail { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+            .mini-card { background: #fff; border: 1px solid var(--hair-light); border-radius: 10px;
+                overflow: hidden; padding-bottom: 6px; }
+            .mini-card img, .mini-card .mini-ph { width: 100%; height: 52px; object-fit: cover;
+                display: block; }
+            .mini-ph { background: var(--accent-soft); }
+            .mini-card b { display: block; font-size: 9.5px; padding: 5px 6px 2px;
+                line-height: 1.25; }
+            .mini-card .pair { padding: 0 6px; font-size: 9.5px; }
+
+            /* browse board grid */
+            .board-grid-m { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+            .m-card { position: relative; background: #fff; border: 1px solid var(--hair-light);
+                border-radius: 10px; overflow: hidden; }
+            .m-card img, .m-card .mini-ph { width: 100%; height: 64px; object-fit: cover; display: block; }
+            .m-card b { display: block; font-size: 10px; padding: 6px 7px 2px; line-height: 1.25; }
+            .m-card .pair { padding: 0 7px 6px; font-size: 10px; display: block; }
+            .m-card .gap { position: absolute; top: 6px; inset-inline-end: 6px;
+                font-family: var(--font-mono); font-size: 9px; font-weight: 700;
+                border-radius: 3px; padding: 2px 6px; font-style: normal; }
+            .m-card .gap.fast { color: var(--timing); background: #E4F0EF; }
+            .m-card .gap.slow { color: var(--accent-deep); background: var(--accent-soft); }
+            .heart-on { position: absolute; top: 6px; inset-inline-start: 6px; }
+
+            /* pace */
+            .pace-card { background: #fff; border: 1px solid var(--hair-light); border-radius: 10px;
+                padding: 10px 12px; margin-bottom: 8px; }
+            .pace-card span { font-size: 11.5px; color: var(--ink-2); }
+            .pace-card b { float: inline-end; font-size: 11.5px; }
+            .pace-bar { clear: both; height: 6px; border-radius: 99px; background: var(--accent-soft);
+                margin-top: 8px; overflow: hidden; }
+            .pace-bar i { display: block; height: 100%; border-radius: 99px; background: var(--accent); }
+            .pace-note { font-size: 10.5px; color: var(--ink-3); margin-top: 10px; }
+
+            /* settings */
+            .set-group { margin: 10px 0 6px; font-family: var(--font-mono); font-size: 9.5px;
+                letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+            .set-card { background: #fff; border: 1px solid var(--hair-light); border-radius: 10px;
+                overflow: hidden; }
+            .set-row { display: flex; justify-content: space-between; align-items: center;
+                padding: 10px 12px; font-size: 12.5px; border-bottom: 1px solid #F1EBE4; }
+            .set-row:last-child { border-bottom: 0; }
+            .set-row em { font-style: normal; color: var(--ink-3); font-size: 11.5px; }
+            .set-row em.t { color: var(--timing); font-weight: 700; }
+
+            /* tab bar */
+            .tabbar { flex: none; display: flex; background: rgba(250,247,241,.96);
+                border-top: 1px solid var(--hair-light); padding: 6px 4px 2px; }
+            .tab-btn { flex: 1; background: none; border: 0; cursor: pointer;
+                display: flex; flex-direction: column; align-items: center; gap: 2px;
+                color: var(--ink-3); font-size: 8.5px; font-weight: 600; padding: 3px 0; }
+            .tab-btn.active { color: var(--accent-deep); }
+            .home-indicator { flex: none; width: 110px; height: 4.5px; border-radius: 99px;
+                background: rgba(36,29,23,.85); margin: 4px auto 7px; }
+
+            /* ---- Cook Mode view (light, app-faithful) ---- */
+            .cook-view { background: var(--paper); }
+            .cook-view .scr-pad { display: flex; flex-direction: column; flex: 1; padding-bottom: 8px; }
             .cm-head { display: flex; align-items: center; gap: 10px; }
-            .cm-x { background: none; border: 0; color: var(--ink-3); font-size: 20px;
+            .cm-x { background: none; border: 0; color: var(--ink-2); font-size: 20px;
                 line-height: 1; cursor: pointer; padding: 2px 6px; }
-            .cm-x:hover { color: var(--print); }
-            .cm-over { flex: 1; text-align: center; font-size: 11.5px; letter-spacing: .14em;
-                color: var(--ink-3); }
-            .cm-demo { font-size: 9.5px; letter-spacing: .12em; color: var(--ink-3);
-                border: 1px solid var(--hair-dark); border-radius: 3px; padding: 2px 6px; }
+            .cm-x:hover { color: var(--ink); }
+            .cm-over { flex: 1; text-align: center; font-size: 11px; letter-spacing: .14em;
+                color: var(--ink-2); }
+            .cm-demo { font-size: 9px; letter-spacing: .12em; color: var(--ink-3);
+                border: 1px solid var(--hair-light); border-radius: 3px; padding: 2px 6px; }
             .cm-dots { display: flex; justify-content: center; gap: 7px; padding: 12px 0 4px; }
-            .cm-dot { width: 9px; height: 9px; border-radius: 99px; background: var(--hair-dark); }
+            .cm-dot { width: 9px; height: 9px; border-radius: 99px; background: var(--hair-light); }
             .cm-dot.current { background: var(--accent); transform: scale(1.25); }
             .cm-dot.done { background: var(--accent-deep); }
             .cm-body { flex: 1; display: flex; flex-direction: column; align-items: center;
@@ -172,49 +277,48 @@
             .cm-chips { display: flex; gap: 8px; align-items: center; min-height: 26px; }
             .cm-badge { font-family: var(--font-mono); font-size: 10px; font-weight: 700;
                 letter-spacing: .12em; padding: 4px 10px; border-radius: 4px;
-                background: rgba(95,189,177,.12); color: var(--timing-lit);
-                border: 1px solid rgba(95,189,177,.35); }
-            .cm-badge.passive { background: rgba(61,139,90,.14); color: #7FC49A;
-                border-color: rgba(61,139,90,.4); }
+                background: var(--timing-dim); color: var(--timing);
+                border: 1px solid rgba(40,124,120,.35); }
+            .cm-badge.passive { background: rgba(61,139,90,.1); color: var(--success);
+                border-color: rgba(61,139,90,.35); }
             .cm-alarm { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
                 padding: 4px 10px; border-radius: 4px; cursor: pointer;
-                background: rgba(214,154,45,.13); color: #E5B96B;
-                border: 1px solid rgba(214,154,45,.4); }
-            .cm-alarm.armed { background: rgba(232,106,51,.15); color: #F0B39C;
-                border-color: rgba(232,106,51,.45); }
+                background: #F7ECD4; color: #8A5A12; border: 1px solid #E4D2A8; }
+            .cm-alarm.armed { background: var(--accent-soft); color: var(--accent-deep);
+                border-color: var(--accent); }
             .cm-timer { font-family: var(--font-display); font-weight: 800;
-                font-size: 74px; line-height: 1; letter-spacing: .02em;
-                color: var(--print); font-variant-numeric: tabular-nums; margin-top: 10px; }
+                font-size: 78px; line-height: 1; letter-spacing: .02em;
+                color: var(--ink); font-variant-numeric: tabular-nums; margin-top: 10px; }
             .cm-timer.paused { color: var(--ink-3); }
-            .cm-hint { font-size: 12px; color: var(--ink-3); margin-top: 6px; min-height: 18px; }
-            .cm-hint.handsoff { color: #7FC49A; }
-            .cm-desc { margin-top: 16px; width: 100%; background: var(--board-2);
-                border: 1px solid var(--hair-dark); border-radius: 10px;
-                padding: 16px 14px; font-size: 13.5px; line-height: 1.55; color: var(--print);
-                min-height: 96px; }
-            .cm-foot { border-top: 1px solid var(--hair-dark); padding-top: 14px; }
+            .cm-hint { font-size: 11.5px; color: var(--ink-2); margin-top: 6px; min-height: 18px; }
+            .cm-hint.handsoff { color: var(--success); }
+            .cm-desc { margin-top: 16px; width: 100%; background: #fff;
+                border: 1px solid var(--hair-light); border-radius: 10px;
+                padding: 14px; font-size: 12.5px; line-height: 1.55; color: var(--ink);
+                min-height: 88px; }
+            .cm-foot { border-top: 1px solid var(--hair-light); padding-top: 12px; }
             .cm-ctrl { display: flex; align-items: center; gap: 10px; }
-            .cm-circle { width: 46px; height: 46px; border-radius: 99px; flex: none;
-                background: var(--board-2); border: 1px solid var(--hair-dark);
-                color: var(--ink-3); display: flex; align-items: center; justify-content: center;
+            .cm-circle { width: 44px; height: 44px; border-radius: 99px; flex: none;
+                background: #fff; border: 1px solid var(--hair-light);
+                color: var(--ink-2); display: flex; align-items: center; justify-content: center;
                 cursor: pointer; transition: opacity .12s ease; }
-            .cm-circle:hover { color: var(--print); border-color: #4A3F35; }
+            .cm-circle:hover { color: var(--ink); border-color: #D5CCC3; }
             .cm-circle:disabled { opacity: .35; cursor: default; }
             .cm-circle.done { background: var(--accent); border-color: var(--accent); color: #fff; }
-            .cm-pause { flex: 1; padding: 14px 10px; border-radius: 4px; border: 0;
-                font-weight: 800; font-size: 14.5px; cursor: pointer;
+            .cm-pause { flex: 1; padding: 13px 10px; border-radius: 4px; border: 0;
+                font-weight: 800; font-size: 14px; cursor: pointer;
                 background: var(--accent); color: #fff; }
             .cm-pause:hover { background: var(--accent-deep); }
-            .cm-pause.running { background: #2A231D; color: var(--print);
-                border: 1px solid var(--hair-dark); }
-            .cm-finish { width: 100%; margin-top: 10px; background: none; border: 0;
-                color: var(--ink-3); font-size: 12.5px; font-weight: 600; cursor: pointer;
-                padding: 6px 0; }
-            .cm-finish:hover { color: var(--print); }
+            .cm-pause.running { background: #fff; color: var(--ink);
+                border: 1px solid var(--hair-light); }
+            .cm-finish { width: 100%; margin-top: 8px; background: none; border: 0;
+                color: var(--ink-2); font-size: 12px; font-weight: 600; cursor: pointer;
+                padding: 5px 0; }
+            .cm-finish:hover { color: var(--ink); }
             .cm-summary { text-align: center; padding: 8px 0 4px; }
             .cm-summary b { font-family: var(--font-display); font-weight: 800;
-                font-size: 44px; color: var(--timing-lit); font-variant-numeric: tabular-nums; }
-            .cm-summary span { display: block; font-size: 12.5px; color: var(--ink-3);
+                font-size: 44px; color: var(--timing); font-variant-numeric: tabular-nums; }
+            .cm-summary span { display: block; font-size: 11.5px; color: var(--ink-2);
                 margin-top: 4px; }
             @media (max-width: 940px) { .phone-shell { max-width: none; } }
             .strip {
@@ -491,39 +595,197 @@ provenance.
                 </div>
 
 <div class="phone-shell">
-                    <div class="phone" aria-label="Interactive demo of Cook Mode — try the stopwatch, pause and step buttons">
-                        <div class="phone-notch"></div>
-                        <div class="phone-screen">
-                            <div class="cm-head">
-                                <button type="button" class="cm-x" data-act="reset" aria-label="Reset demo">×</button>
-                                <span class="cm-over mono" id="cm-step-of">STEP 1 / 3</span>
-                                <span class="cm-demo mono">DEMO</span>
+                    <div class="iphone" aria-label="Interactive iPhone demo of the RecipeReal app — navigate the tabs like the real app">
+                        <div class="ip-action vol-up"></div><div class="ip-action vol-down"></div><div class="ip-action power"></div>
+                        <div class="ip-screen">
+                            <div class="ip-statusbar">
+                                <span class="ip-time mono">9:41</span>
+                                <span class="ip-island" aria-hidden="true"></span>
+                                <span class="ip-signals" aria-hidden="true">
+                                    <svg width="15" height="10" viewBox="0 0 15 10" fill="currentColor"><rect x="0" y="6" width="2.6" height="4" rx="0.8"/><rect x="4" y="4" width="2.6" height="6" rx="0.8"/><rect x="8" y="2" width="2.6" height="8" rx="0.8"/><rect x="12" y="0" width="2.6" height="10" rx="0.8" opacity=".35"/></svg>
+                                    <svg width="14" height="10" viewBox="0 0 24 18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M2 6.5C5.5 3 10 1.5 12 1.5S18.5 3 22 6.5"/><path d="M5.5 10.5C8 8.3 10.5 7.5 12 7.5s4 .8 6.5 3"/><path d="M9 14.5c1-1 2.2-1.5 3-1.5s2 .5 3 1.5"/></svg>
+                                    <svg width="20" height="10" viewBox="0 0 27 13" fill="none"><rect x="0.5" y="0.5" width="21" height="12" rx="3.5" stroke="currentColor" opacity=".4"/><rect x="2.5" y="2.5" width="13" height="8" rx="2" fill="currentColor"/><path d="M24.5 4.5v4a2.2 2.2 0 0 0 0-4Z" fill="currentColor" opacity=".4"/></svg>
+                                </span>
                             </div>
-                            <div class="cm-dots" id="cm-dots" aria-hidden="true"></div>
-                            <div class="cm-body">
-                                <div class="cm-chips">
-                                    <span class="cm-badge" id="cm-badge">ACTIVE</span>
-                                    <button type="button" class="cm-alarm mono" id="cm-alarm" hidden>⏲ 15:00</button>
-                                </div>
-                                <div class="cm-timer mono" id="cm-timer">00:00</div>
-                                <div class="cm-hint" id="cm-hint">Press start — the clock runs even if you leave</div>
-                                <div class="cm-desc" id="cm-desc">Marinate the chicken in yogurt, garlic, ginger and the spices for 30 minutes.</div>
+
+                            <div class="app" id="app">
+                                <!-- HOME -->
+                                <section class="app-view active" data-view="home">
+                                    <div class="scr-pad">
+                                        <div class="home-hero">
+                                            <div>
+                                                <p class="home-kicker">What do you want to cook?</p>
+                                                <div class="home-search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search 20,089 recipes</div>
+                                            </div>
+                                        </div>
+                                        <div class="feat-card" data-open-cook>
+                                            <img src="/img/hero-dish.jpg" alt="">
+                                            <div class="feat-body">
+                                                <b>Butter chicken</b>
+                                                <span class="pair"><s>25:00</s><i class="t">38:12</i></span>
+                                                <button type="button" class="feat-start" data-open-cook>Start cooking</button>
+                                            </div>
+                                        </div>
+                                        <p class="rail-label">Quick cook tonight</p>
+                                        <div class="mini-rail">
+                                            @foreach (array_slice($under, 0, 2) as $row)
+                                                <div class="mini-card">
+                                                    @if ($row['img'])<img src="{{ $row['img'] }}" alt="" loading="lazy">@else<span class="mini-ph"></span>@endif
+                                                    <b>{{ \Illuminate\Support\Str::limit($row['title'], 26) }}</b>
+                                                    <span class="pair"><s>{{ $row['claimed'] }}</s><i class="t">{{ $row['real'] }}</i></span>
+                                                </div>
+                                            @endforeach
+                                            <div class="mini-card">
+                                                <span class="mini-ph"></span>
+                                                <b>Gingerbread cookies</b>
+                                                <span class="pair"><s>45:00</s><i class="t">52:00</i></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <!-- BROWSE / THE BOARD -->
+                                <section class="app-view" data-view="browse">
+                                    <div class="scr-pad">
+                                        <p class="scr-title">The board</p>
+                                        <p class="scr-sub">Claim vs the clock — live</p>
+                                        <div class="board-grid-m">
+                                            @foreach ($under as $i => $row)
+                                                @if ($i < 4)
+                                                    <div class="m-card">
+                                                        @if ($row['img'])<img src="{{ $row['img'] }}" alt="" loading="lazy">@else<span class="mini-ph"></span>@endif
+                                                        <b>{{ \Illuminate\Support\Str::limit($row['title'], 24) }}</b>
+                                                        <span class="pair"><s>{{ $row['claimed'] }}</s><i class="t">{{ $row['real'] }}</i></span>
+                                                        <em class="gap fast">{{ $row['delta'] }}</em>
+                                                    </div>
+                                                @endif
+                                            @endforeach
+                                            @foreach (array_slice($over, 0, 2) as $row)
+                                                <div class="m-card">
+                                                    @if ($row['img'])<img src="{{ $row['img'] }}" alt="" loading="lazy">@else<span class="mini-ph"></span>@endif
+                                                    <b>{{ \Illuminate\Support\Str::limit($row['title'], 24) }}</b>
+                                                    <span class="pair"><s>{{ $row['claimed'] }}</s><i class="t">{{ $row['real'] }}</i></span>
+                                                    <em class="gap slow">{{ $row['delta'] }}</em>
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <!-- PACE -->
+                                <section class="app-view" data-view="pace">
+                                    <div class="scr-pad">
+                                        <p class="scr-title">Your pace</p>
+                                        <p class="scr-sub">The clock learns how you cook.</p>
+                                        <div class="pace-card">
+                                            <span>Prep pace</span><b>+18% slower</b>
+                                            <div class="pace-bar"><i style="width:62%"></i></div>
+                                        </div>
+                                        <div class="pace-card">
+                                            <span>Simmer pace</span><b>on target</b>
+                                            <div class="pace-bar"><i style="width:88%;background:var(--timing)"></i></div>
+                                        </div>
+                                        <div class="pace-card">
+                                            <span>Cleanup pace</span><b>+6% faster</b>
+                                            <div class="pace-bar"><i style="width:74%"></i></div>
+                                        </div>
+                                        <p class="pace-note">Every cook you finish tightens these estimates.</p>
+                                    </div>
+                                </section>
+
+                                <!-- FAVORITES -->
+                                <section class="app-view" data-view="favorites">
+                                    <div class="scr-pad">
+                                        <p class="scr-title">Favorites <span class="cnt">2</span></p>
+                                        <div class="board-grid-m">
+                                            @foreach (array_slice($under, 0, 2) as $row)
+                                                <div class="m-card">
+                                                    @if ($row['img'])<img src="{{ $row['img'] }}" alt="" loading="lazy">@else<span class="mini-ph"></span>@endif
+                                                    <b>{{ \Illuminate\Support\Str::limit($row['title'], 24) }}</b>
+                                                    <svg class="heart-on" width="16" height="16" viewBox="0 0 24 24" fill="#E8384F"><path d="M12 21s-7.5-4.7-10-9.3C.6 8.6 2.4 5 5.7 5c2 0 3.4 1 4.3 2.5h4C14.9 6 16.3 5 18.3 5c3.3 0 5.1 3.6 3.7 6.7C19.5 16.3 12 21 12 21Z"/></svg>
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <!-- SETTINGS -->
+                                <section class="app-view" data-view="settings">
+                                    <div class="scr-pad">
+                                        <p class="scr-title">Settings</p>
+                                        <p class="set-group">Appearance</p>
+                                        <div class="set-card">
+                                            <div class="set-row"><span>Theme</span><em>System</em></div>
+                                            <div class="set-row"><span>Language</span><em>English</em></div>
+                                        </div>
+                                        <p class="set-group">Data &amp; storage</p>
+                                        <div class="set-card">
+                                            <div class="set-row"><span>Offline library</span><em>20,089 saved</em></div>
+                                            <div class="set-row"><span>Deep sync</span><em class="t">Full library</em></div>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <!-- COOK MODE (opens over the tabs) -->
+                                <section class="app-view cook-view" data-view="cook">
+                                    <div class="scr-pad">
+                                        <div class="cm-head">
+                                            <button type="button" class="cm-x" data-act="reset" aria-label="Back to home">×</button>
+                                            <span class="cm-over mono" id="cm-step-of">STEP 1 / 3</span>
+                                            <span class="cm-demo mono">DEMO</span>
+                                        </div>
+                                        <div class="cm-dots" id="cm-dots" aria-hidden="true"></div>
+                                        <div class="cm-body">
+                                            <div class="cm-chips">
+                                                <span class="cm-badge" id="cm-badge">ACTIVE</span>
+                                                <button type="button" class="cm-alarm mono" id="cm-alarm" hidden>⏲ 15:00</button>
+                                            </div>
+                                            <div class="cm-timer mono" id="cm-timer">00:00</div>
+                                            <div class="cm-hint" id="cm-hint">Press start — the clock runs even if you leave</div>
+                                            <div class="cm-desc" id="cm-desc">Marinate the chicken in yogurt, garlic, ginger and the spices for 30 minutes.</div>
+                                        </div>
+                                        <div class="cm-foot">
+                                            <div class="cm-ctrl">
+                                                <button type="button" class="cm-circle" data-act="prev" id="cm-prev" aria-label="Previous step" disabled>
+                                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                                                </button>
+                                                <button type="button" class="cm-pause" data-act="toggle" id="cm-toggle">Start cooking</button>
+                                                <button type="button" class="cm-circle" data-act="next" id="cm-next" aria-label="Next step">
+                                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6 6-6"/></svg>
+                                                </button>
+                                            </div>
+                                            <button type="button" class="cm-finish" data-act="finish" id="cm-finish">Finish cooking</button>
+                                        </div>
+                                    </div>
+                                </section>
                             </div>
-                            <div class="cm-foot">
-                                <div class="cm-ctrl">
-                                    <button type="button" class="cm-circle" data-act="prev" id="cm-prev" aria-label="Previous step" disabled>
-                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-                                    </button>
-                                    <button type="button" class="cm-pause" data-act="toggle" id="cm-toggle">Start cooking</button>
-                                    <button type="button" class="cm-circle" data-act="next" id="cm-next" aria-label="Next step">
-                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-                                    </button>
-                                </div>
-                                <button type="button" class="cm-finish" data-act="finish" id="cm-finish">Finish cooking</button>
+
+                            <div class="tabbar" role="tablist" aria-label="App tabs">
+                                <button type="button" class="tab-btn active" data-tab="home">
+                                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10.5 9-7.5 9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1v-9.5Z"/></svg>
+                                    <span>Home</span>
+                                </button>
+                                <button type="button" class="tab-btn" data-tab="browse">
+                                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg>
+                                    <span>Board</span>
+                                </button>
+                                <button type="button" class="tab-btn" data-tab="pace">
+                                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4.5 17.5a9 9 0 1 1 15 0"/><path d="m12 14 4-5.5"/><circle cx="12" cy="14.5" r="1.6"/></svg>
+                                    <span>Pace</span>
+                                </button>
+                                <button type="button" class="tab-btn" data-tab="favorites">
+                                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7.5-4.7-10-9.3C.6 8.6 2.4 5 5.7 5c2 0 3.4 1 4.3 2.5h4C14.9 6 16.3 5 18.3 5c3.3 0 5.1 3.6 3.7 6.7C19.5 16.3 12 21 12 21Z"/></svg>
+                                    <span>Favorites</span>
+                                </button>
+                                <button type="button" class="tab-btn" data-tab="settings">
+                                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M19 12a7 7 0 0 0-.14-1.4l2-1.55-2-3.46-2.35.95a7 7 0 0 0-2.42-1.4L13.7 2.6h-3.4l-.4 2.54a7 7 0 0 0-2.4 1.4l-2.36-.94-2 3.45 2 1.55A7 7 0 0 0 5 12c0 .48.05.94.14 1.4l-2 1.55 2 3.46 2.35-.95a7 7 0 0 0 2.42 1.4l.39 2.54h3.4l.4-2.54a7 7 0 0 0 2.4-1.4l2.36.95 2-3.45-2-1.55c.09-.46.14-.92.14-1.4Z"/></svg>
+                                    <span>Settings</span>
+                                </button>
                             </div>
+                            <div class="home-indicator" aria-hidden="true"></div>
                         </div>
                     </div>
-                    <p class="phone-cap mono">REAL COOK MODE · TRY IT — CLOCK, ALARMS, STEPS</p>
+                    <p class="phone-cap mono">THE REAL APP · NAVIGATE THE TABS — IT WORKS</p>
                 </div>
                     </div>
                 </div>
@@ -835,11 +1097,11 @@ provenance.
         </script>
 
         <script>
-        // INTERACTIVE COOK MODE — the hero phone runs the app's real loop:
-        // start/pause stopwatch (wall-clock derived), step lanes with dots,
-        // armable step alarms, and a finish summary. Faithful to the app's
-        // footer grammar: prev circle | pause pill | next circle.
+        // THE MINI APP — tab navigation like the real app, plus the live
+        // Cook Mode stopwatch inside its own screen. Vanilla, no deps.
         (function () {
+            var app = document.getElementById("app");
+            if (!app) return;
             var STEPS = [
                 { badge: "ACTIVE", passive: false, alarm: null,
                   text: "Marinate the chicken in yogurt, garlic, ginger and the spices — 30 minutes on the counter." },
@@ -849,17 +1111,36 @@ provenance.
                   text: "Stir in the cream, simmer 5 more minutes, and finish with crushed fenugreek leaves." }
             ];
             var $ = function (id) { return document.getElementById(id); };
-            var root = document.querySelector(".phone");
-            if (!root) return;
             var idx = 0, running = false, elapsed = 0, lastTick = null, timer = null, finished = false;
             var alarmLeft = 0, alarmTimer = null;
 
+            // ---- tab navigation ----
+            function openTab(name) {
+                app.querySelectorAll(".app-view").forEach(function (v) {
+                    v.classList.toggle("active", v.getAttribute("data-view") === name || (name !== "cook" && v.getAttribute("data-view") === name));
+                });
+                document.querySelectorAll(".tab-btn").forEach(function (b) {
+                    b.classList.toggle("active", b.getAttribute("data-tab") === name);
+                });
+                var view = app.querySelector('[data-view="' + name + '"]');
+                if (view) view.scrollTop = 0;
+            }
+            document.querySelectorAll(".tab-btn").forEach(function (b) {
+                b.addEventListener("click", function () { openTab(b.getAttribute("data-tab")); });
+            });
+            document.querySelectorAll("[data-open-cook]").forEach(function (b) {
+                b.addEventListener("click", function () { reset(); openTab("cook"); });
+            });
+            var cmX = document.querySelector(".cook-view .cm-x");
+            if (cmX) cmX.addEventListener("click", function () { openTab("home"); });
+
+            // ---- cook mode engine ----
             function fmt(sec) {
                 sec = Math.max(0, Math.floor(sec));
                 return Math.floor(sec / 60) + ":" + ("0" + (sec % 60)).slice(-2);
             }
             function renderDots() {
-                var el = $("cm-dots"); el.innerHTML = "";
+                var el = $("cm-dots"); if (!el) return; el.innerHTML = "";
                 STEPS.forEach(function (_, i) {
                     var d = document.createElement("span");
                     d.className = "cm-dot" + (i === idx ? " current" : (i < idx ? " done" : ""));
@@ -882,9 +1163,7 @@ provenance.
                     alarm.hidden = false;
                     alarm.classList.remove("armed");
                     alarm.textContent = "⏲ " + s.alarm + ":00 — tap to arm";
-                } else {
-                    alarm.hidden = true;
-                }
+                } else { alarm.hidden = true; }
                 renderDots();
             }
             function renderTimer() {
@@ -894,8 +1173,7 @@ provenance.
             }
             function tick() {
                 var now = Date.now();
-                elapsed += now - lastTick;
-                lastTick = now;
+                elapsed += now - lastTick; lastTick = now;
                 renderTimer();
             }
             function stopAlarm() {
@@ -908,8 +1186,7 @@ provenance.
                 b.classList.toggle("running", running);
             }
             function setHint() {
-                var h = $("cm-hint");
-                var s = STEPS[idx];
+                var h = $("cm-hint"); var s = STEPS[idx];
                 if (finished) { h.textContent = "Logged to your pace"; h.className = "cm-hint"; return; }
                 if (s.passive && running) { h.textContent = "Hands-off — you can step away"; h.className = "cm-hint handsoff"; return; }
                 h.textContent = running ? "Timing your whole cook…" : (elapsed > 0 ? "Paused" : "Press start — the clock runs even if you leave");
@@ -920,7 +1197,7 @@ provenance.
                     if (finished) { reset(); return; }
                     running = !running;
                     if (running) { lastTick = Date.now(); timer = setInterval(tick, 250); }
-                    else { clearInterval(timer); timer = null; elapsed += 0; }
+                    else { clearInterval(timer); timer = null; }
                     setToggle(); setHint(); renderTimer();
                     return;
                 }
@@ -929,21 +1206,17 @@ provenance.
                     else { finish(); }
                     return;
                 }
-                if (action === "prev") {
-                    if (idx > 0) { idx--; renderStep(); setHint(); }
-                    return;
-                }
+                if (action === "prev") { if (idx > 0) { idx--; renderStep(); setHint(); } return; }
                 if (action === "finish") { finish(); return; }
                 if (action === "reset") { reset(); return; }
             }
             function finish() {
                 running = false;
                 if (timer) { clearInterval(timer); timer = null; }
-                stopAlarm();
-                finished = true;
-                var body = root.querySelector(".cm-body");
+                stopAlarm(); finished = true;
+                var body = app.querySelector(".cook-view .cm-body");
                 body.innerHTML = '<div class="cm-summary"><b>' + fmt(elapsed / 1000) +
-                    '</b><span>total measured — this is what calibrates your next estimate</span></div>';
+                    '</b><span>total measured — this calibrates your next estimate</span></div>';
                 $("cm-step-of").textContent = "COOK LOGGED";
                 $("cm-toggle").textContent = "Run it again";
                 $("cm-finish").hidden = true;
@@ -952,7 +1225,7 @@ provenance.
             function reset() {
                 running = false; finished = false; elapsed = 0; idx = 0;
                 if (timer) { clearInterval(timer); timer = null; }
-                var body = root.querySelector(".cm-body");
+                var body = app.querySelector(".cook-view .cm-body");
                 body.innerHTML =
                     '<div class="cm-chips">' +
                         '<span class="cm-badge" id="cm-badge">ACTIVE</span>' +
@@ -964,12 +1237,17 @@ provenance.
                 var f = $("cm-finish"); if (f) f.hidden = false;
                 renderStep(); renderTimer(); setToggle(); setHint();
             }
-            root.addEventListener("click", function (e) {
+            app.addEventListener("click", function (e) {
                 var btn = e.target.closest("[data-act]");
                 if (btn) { act(btn.getAttribute("data-act")); return; }
                 var alarm = e.target.closest("#cm-alarm");
                 if (alarm && !alarm.hidden) {
-                    if (alarmTimer) { stopAlarm(); alarm.classList.remove("armed"); alarm.textContent = "⏲ " + STEPS[idx].alarm + ":00 — tap to arm"; return; }
+                    if (alarmTimer) {
+                        stopAlarm();
+                        alarm.classList.remove("armed");
+                        alarm.textContent = "⏲ " + STEPS[idx].alarm + ":00 — tap to arm";
+                        return;
+                    }
                     var minutes = STEPS[idx].alarm;
                     if (!minutes) return;
                     alarmLeft = minutes * 60;

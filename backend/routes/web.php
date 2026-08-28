@@ -92,7 +92,7 @@ Route::get('/', function () {
     $board = Cache::remember('landing:board', now()->addMinutes(15), function () {
         $fmt = function (string $mode): array {
             return Recipe::query()
-                ->select('id', 'title', 'publisher_time_minutes', 'reality_minutes',
+                ->select('id', 'title', 'image_url', 'publisher_time_minutes', 'reality_minutes',
                     'reality_source', 'reality_samples')
                 ->whereIn('reality_source', ['community', 'estimate'])
                 ->where('publisher_time_minutes', '>', 0)
@@ -120,6 +120,7 @@ Route::get('/', function () {
                     return [
                         'id' => $r->id,
                         'title' => $r->title,
+                        'img' => $r->image_url,
                         'claimed' => $mm($cl),
                         'real' => $mm($re),
                         'delta' => ($gap >= 0 ? '+' : '').$gap.'%',
