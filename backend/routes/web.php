@@ -112,7 +112,9 @@ Route::get('/', function () {
     });
 
     // The landing's download badges adapt to whether a build exists.
-    return view('welcome', [
+    // Rendered by the Tailwind twin (welcome-tw.blade.php + welcome-tw.css,
+    // built by Vite — deploy must ship backend/public/build or @vite 500s).
+    return view('welcome-tw', [
         'latestRelease' => AppRelease::latest(),
         'popular' => $popular,
     ]);
