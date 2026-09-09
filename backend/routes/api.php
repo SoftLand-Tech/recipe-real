@@ -76,7 +76,7 @@ Route::middleware('throttle:240,1')->group(function (): void {
 });
 
 // Protected routes.
-Route::middleware(['throttle:60,1', 'auth:sanctum'])->group(function (): void {
+Route::middleware(['throttle:60,1', 'auth:sanctum', 'not_banned'])->group(function (): void {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
 
     Route::get('/user', UserController::class);
@@ -141,13 +141,13 @@ Route::middleware(['throttle:60,1', 'auth:sanctum'])->group(function (): void {
 
 // Image uploads (authed, halal-safe by construction — binary images), with
 // a tighter throttle than the general API: 20/min per user+IP.
-Route::middleware(['throttle:20,1', 'auth:sanctum'])->group(function (): void {
+Route::middleware(['throttle:20,1', 'auth:sanctum', 'not_banned'])->group(function (): void {
     Route::post('/uploads', UploadController::class);
     Route::post('/users/me/avatar', AvatarController::class);
 });
 
 // Protected billing + usage routes.
-Route::middleware(['throttle:60,1', 'auth:sanctum'])->group(function (): void {
+Route::middleware(['throttle:60,1', 'auth:sanctum', 'not_banned'])->group(function (): void {
     Route::post('/billing/checkout', [BillingController::class, 'checkout']);
     Route::post('/billing/portal', [BillingController::class, 'portal']);
     Route::get('/usage', UsageController::class);

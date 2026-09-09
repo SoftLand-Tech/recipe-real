@@ -45,7 +45,16 @@ class User extends Authenticatable implements FilamentUser
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'banned_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Whether the account is currently suspended by a moderator.
+     */
+    public function isBanned(): bool
+    {
+        return $this->banned_at !== null;
     }
 
     public function profile(): HasOne

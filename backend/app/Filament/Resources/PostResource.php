@@ -8,7 +8,10 @@ use UnitEnum;
 use App\Filament\Resources\PostResource\Pages;
 use App\Filament\Resources\PostResource\RelationManagers\CommentsRelationManager;
 use App\Filament\Resources\PostResource\RelationManagers\LikesRelationManager;
+use App\Filament\Resources\PostResource\RelationManagers\ReportsRelationManager;
 use App\Models\Post;
+use App\Services\ModerationService;
+use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\TextInput;
@@ -20,6 +23,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
 
 class PostResource extends Resource
@@ -29,6 +33,8 @@ class PostResource extends Resource
     protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedNewspaper;
 
     protected static string | UnitEnum | null $navigationGroup = 'Community';
+
+    protected static ?int $navigationSort = 1;
 
     protected static ?string $recordTitleAttribute = 'body';
 
@@ -105,14 +111,51 @@ class PostResource extends Resource
                     ->label('Comments')
                     ->counts('comments')
                     ->sortable(),
+                TextColumn::make('reports_count')
+                    ->label('Reports')
+                    ->counts('reports')
+                    ->sortable()
+                    ->badge()
+                    ->color(fn ($state): string => ((int) $state) > 0 ? 'danger' : 'gray'),
                 TextColumn::make('created_at')
                     ->since()
                     ->sortable(),
             ])
-            ->filters([])
+            ->filters([
+                Filter::make('reported')
+                    ->label('Reported only')
+                    ->query(fn ($query) => $query->has('reports')),
+            ])
             ->defaultSort('id', 'desc')
             ->recordActions([
                 ViewAction::make(),
+                Action::make('dismissReports')
+                    ->label('Dismiss reports')
+                    ->icon('heroicon-o-check')
+                    ->color('success')
+                    ->requiresConfirmation()
+                    ->modalHeading('Dismiss all reports on this post?')
+                    ->modalDescription('The post stays up.')
+                    ->visible(fn (Post $record): bool => $record->reports()->exists())
+                    ->action(fn (Post $record): int => app(ModerationService::class)->dismissPostReports($record))
+                    ->successNotificationTitle('Reports dismissed'),
+                Action::make('removeWithNotice')
+                    ->label('Remove + notify')
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('Remove this post?')
+                    ->modalDescription('The post is deleted and the author is notified in their inbox.')
+                    ->form([
+                        Textarea::make('reason')
+                            ->label('Reason (sent to the author)')
+                            ->rows(2)
+                            ->maxLength(500),
+                    ])
+                    ->action(function (Post $record, array $data): void {
+                        app(ModerationService::class)->removePost($record, $data['reason'] ?? null);
+                    })
+                    ->successNotificationTitle('Post removed, author notified'),
                 DeleteAction::make(),
             ]);
     }
@@ -120,6 +163,7 @@ class PostResource extends Resource
     public static function getRelations(): array
     {
         return [
+            ReportsRelationManager::class,
             CommentsRelationManager::class,
             LikesRelationManager::class,
         ];

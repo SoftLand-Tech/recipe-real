@@ -407,8 +407,8 @@ export interface MyProfile {
 
 // ---- Notifications ------------------------------------------------------------
 
-/** Notification kinds: someone liked or commented on one of your posts. */
-export type NotificationType = "like" | "comment";
+/** Notification kinds: likes/comments on your posts, plus moderator notices. */
+export type NotificationType = "like" | "comment" | "moderation";
 
 /** Who triggered the notification; null once the actor deleted their account. */
 export interface NotificationActor {
@@ -434,6 +434,8 @@ export interface NotificationRow {
   /** ISO timestamp once marked read; null while unread. */
   read_at: string | null;
   created_at: string;
+  /** Moderator notice text (takedowns, suspensions); null for like/comment. */
+  message: string | null;
   actor: NotificationActor | null;
   post: NotificationPostRef | null;
 }

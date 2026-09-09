@@ -1380,11 +1380,18 @@ export class NotificationUnauthorizedError extends Error {
 
 /** Normalize one inbox row defensively (actor/post blocks may be null). */
 function normalizeNotification(n: any): NotificationRow {
+  const rawType = n?.type;
   return {
     id: Number(n?.id),
-    type: n?.type === "comment" ? "comment" : "like",
+    type:
+      rawType === "comment"
+        ? "comment"
+        : rawType === "moderation"
+          ? "moderation"
+          : "like",
     read_at: typeof n?.read_at === "string" ? n.read_at : null,
     created_at: typeof n?.created_at === "string" ? n.created_at : "",
+    message: typeof n?.message === "string" && n.message.trim() !== "" ? n.message : null,
     actor:
       n?.actor != null
         ? {

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PostComment extends Model
 {
@@ -31,5 +32,14 @@ class PostComment extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Moderation reports filed against this comment (append-only rows from
+     * PostCommentController::report). Cascade-deleted with the comment.
+     */
+    public function reports(): HasMany
+    {
+        return $this->hasMany(CommentReport::class, 'post_comment_id');
     }
 }

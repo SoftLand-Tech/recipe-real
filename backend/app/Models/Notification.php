@@ -12,8 +12,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class Notification extends Model
 {
-    /** See migration 000030: like|comment. */
-    public const TYPES = ['like', 'comment'];
+    /** See migration 000030: like|comment. Migration 000032 adds moderation. */
+    public const TYPES = ['like', 'comment', 'moderation'];
 
     /** created_at only — no updated_at column. */
     public const UPDATED_AT = null;
@@ -23,6 +23,7 @@ class Notification extends Model
         'type',
         'actor_id',
         'post_id',
+        'message',
         'read_at',
         'created_at',
     ];

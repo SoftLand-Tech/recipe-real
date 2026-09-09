@@ -5,7 +5,6 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
-
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
@@ -14,6 +13,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Suspended accounts are rejected from every authed API route (the
+        // alias is attached to the auth:sanctum groups in routes/api.php).
+        $middleware->alias([
+            'not_banned' => \App\Http\Middleware\EnsureNotBanned::class,
+        ]);
         // Admin-panel (web) guests are sent to the panel login; API guests
         // get null (no redirect target) so the render handler below can
         // answer with JSON 401 instead of "Route [login] not defined."

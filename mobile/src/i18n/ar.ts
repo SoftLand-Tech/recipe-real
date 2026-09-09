@@ -554,6 +554,8 @@ export const ar: Record<string, string> = {
   "notif.commentedYourPost": "علّق {name} على منشورك",
   "notif.someone": "شخص ما",
   "notif.markAllRead": "تحديد الكل كمقروء",
+  "notif.moderationTitle": "تنبيه إشرافي",
+  "notif.moderationDefault": "اتخذ المشرف إجراءً بشأن المحتوى الخاص بك.",
   "notif.empty": "لا إشعارات بعد",
   "notif.emptyCaption": "الإعجابات والتعليقات على منشوراتك ستظهر هنا.",
   "notif.loadFailed": "تعذّر تحميل الإشعارات.",

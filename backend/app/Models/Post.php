@@ -47,6 +47,15 @@ class Post extends Model
     }
 
     /**
+     * Moderation reports filed against this post (append-only rows from
+     * PostController::report). Cascade-deleted with the post.
+     */
+    public function reports(): HasMany
+    {
+        return $this->hasMany(PostReport::class);
+    }
+
+    /**
      * The newest comment on this post (hasOne ordered by id desc). Eager-
      * loaded by PostController::index/show so feed rows can embed a
      * latest-comment preview in ONE extra query per page instead of an

@@ -562,6 +562,8 @@ export const en: Record<string, string> = {
   "notif.commentedYourPost": "{name} commented on your post",
   "notif.someone": "Someone",
   "notif.markAllRead": "Mark all read",
+  "notif.moderationTitle": "Moderation notice",
+  "notif.moderationDefault": "A moderator took action on your content.",
   "notif.empty": "No notifications yet",
   "notif.emptyCaption": "Likes and comments on your posts will show up here.",
   "notif.loadFailed": "Couldn't load the notifications.",

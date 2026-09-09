@@ -162,6 +162,14 @@ class AuthController extends Controller
             }
         }
 
+        // Suspended accounts cannot mint fresh tokens (banning revokes the
+        // old ones; without this check the user would sign straight back in).
+        if ($user->isBanned()) {
+            throw ValidationException::withMessages([
+                'id_token' => ['Your account has been suspended. Contact support if you think this is a mistake.'],
+            ]);
+        }
+
         $token = $user->createToken('mobile')->plainTextToken;
 
         return response()->json([

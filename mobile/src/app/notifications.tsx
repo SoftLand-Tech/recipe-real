@@ -57,9 +57,11 @@ function relativeDate(t: TranslateFn, iso: string): string {
   }
 }
 
-/** Per-type icon: heart tinted accent for likes, timing teal chat for comments. */
+/** Per-type icon: heart for likes, chat for comments, shield for moderation. */
 function notifIcon(name: NotificationType): keyof typeof Ionicons.glyphMap {
-  return name === "comment" ? "chatbubble" : "heart";
+  if (name === "comment") return "chatbubble";
+  if (name === "moderation") return "shield-checkmark";
+  return "heart";
 }
 
 // ---- Row ------------------------------------------------------------------------
@@ -79,19 +81,35 @@ const NotificationRowView = memo(function NotificationRowView({
 
   const unread = row.read_at == null;
   const isLike = row.type === "like";
+  const isModeration = row.type === "moderation";
   // Actor may be gone (deleted account) — fall back to a generic "Someone".
   const name = row.actor != null
     ? ((row.actor.display_name ?? row.actor.name ?? "").trim() ||
         t("notif.someone"))
     : t("notif.someone");
   const snippet = (row.post?.body ?? "").trim();
-  const text = isLike
-    ? t("notif.likedYourPost", { name })
-    : snippet.length > 0
-      ? t("notif.commented", { name, snippet })
-      // Post deleted: no snippet to quote, keep the sentence natural.
-      : t("notif.commentedYourPost", { name });
+  // Moderation notices carry their own server-composed message and usually
+  // no actor/post (removed content unlinks). Fall back to a generic line.
+  const text = isModeration
+    ? (row.message ?? t("notif.moderationDefault"))
+    : isLike
+      ? t("notif.likedYourPost", { name })
+      : snippet.length > 0
+        ? t("notif.commented", { name, snippet })
+        // Post deleted: no snippet to quote, keep the sentence natural.
+        : t("notif.commentedYourPost", { name });
   const rel = relativeDate(t, row.created_at);
+
+  const iconBg = isModeration
+    ? colors.dangerSoft
+    : isLike
+      ? colors.accentSoft
+      : colors.timingSoft;
+  const iconColor = isModeration
+    ? colors.danger
+    : isLike
+      ? colors.accent
+      : colors.timing;
 
   const styles = useMemo(
     () =>
@@ -117,7 +135,7 @@ const NotificationRowView = memo(function NotificationRowView({
           borderRadius: Radius.pill,
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: isLike ? colors.accentSoft : colors.timingSoft,
+          backgroundColor: iconBg,
         },
         main: {
           flex: 1,
@@ -132,7 +150,7 @@ const NotificationRowView = memo(function NotificationRowView({
           color: colors.inkFaint,
         },
       }),
-    [colors, isLike],
+    [colors, iconBg],
   );
 
   return (
@@ -147,7 +165,7 @@ const NotificationRowView = memo(function NotificationRowView({
           <Ionicons
             name={notifIcon(row.type)}
             size={17}
-            color={isLike ? colors.accent : colors.timing}
+            color={iconColor}
           />
         </View>
         <View style={styles.main}>
@@ -250,8 +268,9 @@ export default function NotificationsScreen() {
 
   /**
    * Row tap: mark exactly that notification read (optimistic, fire-and-forget
-   * server call) and open the post when it still exists. Deleted posts get
-   * explicit feedback instead of a silent no-op.
+   * server call) and open the post when it still exists. Moderation rows
+   * without a post (removed content, suspensions) show their notice text
+   * instead; deleted posts get explicit feedback instead of a silent no-op.
    */
   const handleOpen = useCallback((row: NotificationRow) => {
     if (row.read_at == null) {
@@ -266,6 +285,11 @@ export default function NotificationsScreen() {
     }
     if (row.post != null) {
       router.push(`/post/${row.post.id}`);
+    } else if (row.type === "moderation") {
+      Alert.alert(
+        t("notif.moderationTitle"),
+        row.message ?? t("notif.moderationDefault"),
+      );
     } else {
       // The underlying post was deleted — say so instead of doing nothing.
       Alert.alert(t("community.detailLoadFailed"));

@@ -22,7 +22,7 @@ echo "==> migrate --force"
 ( cd backend && php artisan migrate --force )
 
 echo "==> warm caches"
-( cd backend && php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan event:cache )
+( cd backend && php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan event:cache && php artisan filament:cache-components )
 
 echo "==> permissions"
 chown -R www-data:www-data "$ROOT"

@@ -20,11 +20,12 @@ class NotificationController extends Controller
      * Paginated inbox (20/page, newest first) for the authed user, plus the
      * unread count in the meta block (drives the header bell badge).
      *
-     * Row shape: {id, type, read_at, created_at, actor: {id, display_name,
+     * Row shape: {id, type, read_at, created_at, message, actor: {id, display_name,
      * name, avatar_url}|null, post: {id, body (first 80 chars)}|null}.
      * The actor is null once the liker/commenter deleted their account; the
      * post reference is null once the post is gone (rows survive both as
-     * gentle history).
+     * gentle history). Moderation rows (takedowns, suspensions) always carry
+     * `message` and usually no actor/post.
      */
     public function index(Request $request): JsonResponse
     {
@@ -104,6 +105,7 @@ class NotificationController extends Controller
             'type'       => $notification->type,
             'read_at'    => $notification->read_at?->toIso8601String(),
             'created_at' => $notification->created_at?->toIso8601String(),
+            'message'    => $notification->message,
             'actor'      => $actor !== null ? [
                 'id'           => $actor->id,
                 'display_name' => $actor->display_name ?? $actor->name,
