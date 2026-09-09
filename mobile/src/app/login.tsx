@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import axios from "axios";
 import * as Crypto from "expo-crypto";
@@ -10,12 +10,12 @@ import {
   ResponseType,
 } from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
-import * as SecureStore from "expo-secure-store";
 
 import { loginWithGoogle, fetchMyProfileFull } from "@/api/client";
 import { track } from "@/analytics";
 import { API_BASE_URL, OAUTH_FLOW_KEY } from "@/config";
 import { useT, type TranslateFn } from "@/i18n";
+import { secureStore } from "@/utils/secureStore";
 import {
   MaxContentWidth,
   Space,
@@ -113,9 +113,17 @@ export default function LoginScreen() {
   // Domain flow: Google redirects straight to OUR trampoline
   // (<API_BASE_URL>/auth/callback — branded, HTTPS, the only kind Google's
   // web client accepts) which forwards the response to recipereal:///login.
-  const oauthRedirectUri = isStandalone
-    ? `${API_BASE_URL}/auth/callback`
-    : proxyRedirectUri;
+  // On web the OAuth popup must land back on THIS origin: expo-web-browser
+  // completes the session via postMessage and rejects cross-origin senders,
+  // and the domain trampoline can only bounce to a recipereal:// app link a
+  // browser cannot open. So web redirects straight to the /login route
+  // (must be an authorized redirect URI in the Google console — plain
+  // http://localhost is accepted for development).
+  const oauthRedirectUri = Platform.OS === "web"
+    ? makeRedirectUri({ path: "login" })
+    : isStandalone
+      ? `${API_BASE_URL}/auth/callback`
+      : proxyRedirectUri;
 
   const styles = useMemo(
     () =>
@@ -184,7 +192,10 @@ export default function LoginScreen() {
   // so a state smuggled through extraParams never reaches Google and the
   // echoed value fails our SecureStore comparison on return.
   const [request] = Google.useAuthRequest({
-    clientId: googleClientId ?? GOOGLE_CLIENT_ID_PLACEHOLDER,
+    // Never feed the placeholder literal into the hook: with no real client
+    // ID the request stays un-ready and the button surfaces errNotConfigured
+    // instead of building a bogus Google URL.
+    clientId: googleClientId ?? "",
     responseType: ResponseType.IdToken,
     redirectUri: oauthRedirectUri ?? undefined,
     state: oauthState,
@@ -245,8 +256,8 @@ export default function LoginScreen() {
         }
         setGoogleBusy(true);
         // Verify + consume the flow secret BEFORE any sign-in call.
-        const raw = await SecureStore.getItemAsync(OAUTH_FLOW_KEY);
-        await SecureStore.deleteItemAsync(OAUTH_FLOW_KEY); // single use
+        const raw = await secureStore.getItemAsync(OAUTH_FLOW_KEY);
+        await secureStore.deleteItemAsync(OAUTH_FLOW_KEY); // single use
         const secret: FlowSecret | null = raw ? JSON.parse(raw) : null;
         if (!secret || !deepState || !timingSafeEqual(deepState, secret.state)) {
           setError(t("login.errNoToken"));
@@ -263,6 +274,59 @@ export default function LoginScreen() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepIdToken, deepState, deepError]);
+
+  /**
+   * WEB popup completion. Some embedded browsers (the dev preview's
+   * in-app browser) open window.open targets as tabs with NO opener link,
+   * so expo-web-browser's postMessage handshake can never deliver the
+   * OAuth result to the tab that started the flow — the token just sits
+   * in this page's URL fragment. When this page loads carrying the
+   * fragment and has no opener to hand it to, complete the sign-in HERE,
+   * guarded by the same single-use SecureStore material the deep-link
+   * path uses (state must match; the secret is consumed on read).
+   */
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof window === "undefined") return;
+    // With a live opener the standard popup handshake completes in the
+    // opening tab — completing here too would submit the token twice.
+    if (window.opener != null) return;
+    const hash = window.location.hash;
+    if (!hash.includes("id_token=") || !hash.includes("state=")) return;
+    if (completedRef.current) return;
+    completedRef.current = true;
+
+    const params = new URLSearchParams(hash.replace(/^#/, ""));
+    const idToken = params.get("id_token");
+    const returnedState = params.get("state");
+    // Strip the credentials from the address bar and history immediately.
+    window.history.replaceState(null, "", window.location.pathname);
+    (async () => {
+      try {
+        setGoogleBusy(true);
+        // Verify + consume the flow secret BEFORE any sign-in call.
+        const raw = await secureStore.getItemAsync(OAUTH_FLOW_KEY);
+        await secureStore.deleteItemAsync(OAUTH_FLOW_KEY); // single use
+        const secret: FlowSecret | null = raw ? JSON.parse(raw) : null;
+        if (
+          !idToken ||
+          !secret ||
+          !returnedState ||
+          !timingSafeEqual(returnedState, secret.state)
+        ) {
+          setError(t("login.errNoToken"));
+          return;
+        }
+        await loginWithGoogle(idToken, secret.nonce);
+        track("signed_in", { method: "google" });
+        navigateAfterAuth();
+      } catch (e) {
+        setError(friendlyError(e, t));
+      } finally {
+        setGoogleBusy(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /**
    * Post-auth routing. Fresh profiles (no display name typed yet — the
@@ -308,7 +372,7 @@ export default function LoginScreen() {
       // Google: the deep-link completion (possibly a cold start, fresh JS
       // context) verifies state and reads the nonce from here.
       const flowSecret: FlowSecret = { nonce, state: oauthState };
-      await SecureStore.setItemAsync(
+      await secureStore.setItemAsync(
         OAUTH_FLOW_KEY,
         JSON.stringify(flowSecret),
       );
@@ -399,6 +463,15 @@ export default function LoginScreen() {
     }
   }
 
+  // Config/readiness failures (missing Web Client ID, hook not loaded yet)
+  // are retryable — surface an explicit Retry button under the error instead
+  // of leaving the user with a dead message. Compared by resolved message so
+  // no error-key plumbing has to change at the call sites.
+  const isConfigError =
+    error != null &&
+    (error === t("login.errNotConfigured") ||
+      error === t("login.errNotReady"));
+
   return (
     <View style={styles.container}>
       <PinnedHeaderBar title={t("stack.signIn")} leading={<BackChevron />} />
@@ -418,9 +491,21 @@ export default function LoginScreen() {
               leftIcon={<GoogleGlyph />}
               onPress={handleGoogle}
               loading={googleBusy}
+              disabled={googleBusy}
             />
             <Text style={styles.caption}>{t("login.googleCaption")}</Text>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            {isConfigError ? (
+              <Button
+                title={t("common.retry")}
+                variant="secondary"
+                size="md"
+                fullWidth
+                onPress={handleGoogle}
+                loading={googleBusy}
+                disabled={googleBusy}
+              />
+            ) : null}
           </View>
         </View>
       </View>

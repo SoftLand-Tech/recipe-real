@@ -1,11 +1,11 @@
 import { useMemo, type ReactNode } from "react";
-import { Animated, I18nManager, StyleSheet, Text, View } from "react-native";
+import { Animated, StyleSheet, Text, View } from "react-native";
 import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 
-import { useT } from "@/i18n";
+import { useLang, useT } from "@/i18n";
 import { Space, Type, useThemeColors } from "@/theme";
 import { IconPressable } from "@/components/ui";
 
@@ -132,6 +132,9 @@ export function PinnedHeaderBar({ title, titleContent, hidden, leading, rights }
 export function BackChevron() {
   const colors = useThemeColors();
   const t = useT();
+  // Reactive direction from the language preference — I18nManager.isRTL can
+  // be stale for a session after an in-app flip (same fix as cook mode).
+  const { dir } = useLang();
   return (
     <IconPressable
       onPress={() => router.back()}
@@ -139,7 +142,7 @@ export function BackChevron() {
       hitSlop={Space.xs}
     >
       <Ionicons
-        name={I18nManager.isRTL ? "chevron-forward" : "chevron-back"}
+        name={dir === "rtl" ? "chevron-forward" : "chevron-back"}
         size={26}
         color={colors.accent}
       />

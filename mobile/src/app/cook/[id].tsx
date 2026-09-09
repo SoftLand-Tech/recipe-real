@@ -1,13 +1,16 @@
 import { useLocalSearchParams, router } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   BackHandler,
   StyleSheet,
   Text,
+  type TextStyle,
   View,
+  type ViewStyle,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useKeepAwake } from "expo-keep-awake";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -15,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   alarmAvailable,
   cancelStepAlarm,
+  formatCookElapsed,
   initCookEventHandlers,
   openAlarmPermissionSettings,
   requestAlarmPermission,
@@ -53,20 +57,56 @@ type Phase = "cooking" | "feedback" | "submitting" | "done";
 /** Whole-recipe stopwatch state (replaces the old per-step timers). */
 type CookStatus = "idle" | "running" | "paused" | "finished";
 
-const TICK_MS = 250;
+/**
+ * Live-tick interval (ms). The display only resolves to whole seconds, so
+ * 500ms is plenty smooth and halves the wakeups vs the old 250ms — and the
+ * tick state lives inside the memoized children below, never in the screen.
+ */
+const TICK_MS = 500;
 
-/** Format an elapsed duration (ms) as `M:SS`. */
-function formatMSS(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
+// ---- Whole-recipe stopwatch math ---------------------------------------------
+
+/** One closed pause interval of the stopwatch, in wall-clock epoch ms. */
+interface PauseInterval {
+  from: number;
+  to: number;
+}
+
+/**
+ * One visit to a step: wall-clock entry instant + exit instant (null while
+ * the visit is still open). Revisits append new entries — per-step time is
+ * the SUM of a step's visits, so Back-then-Next loiter is attributed to
+ * the step actually on screen, never to the step you left.
+ */
+interface StepVisit {
+  stepNumber: number;
+  from: number;
+  to: number | null;
 }
 
 /** Round to 2 decimals (matches the submission spec). */
 function round2(v: number): number {
   return Math.round(v * 100) / 100;
 }
+
+/** AsyncStorage shape for a cook session that must survive an OS kill. */
+interface PersistedCookSession {
+  v: 1;
+  recipeId: number;
+  cookStartAt: number;
+  pausedAt: number | null;
+  pausedMsTotal: number;
+  pauses: PauseInterval[];
+  stepMarks: Record<number, number>;
+  visits: StepVisit[];
+  currentIndex: number;
+  status: CookStatus;
+  armedAlarmId: string | null;
+  armedStep: number | null;
+}
+
+/** Sessions older than this are never restored (stale kill residue). */
+const MAX_RESTORE_AGE_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Generate a UUID v4. Uses the native Web Crypto API when available, falling
@@ -112,6 +152,110 @@ function adjust(from: number, to: number, pauses: PauseInterval[]): number {
   }
   return Math.max(0, ms - overlap);
 }
+
+// ---- Memoized live-timer children -------------------------------------------
+// The tick state lives HERE, not in the screen: while the stopwatch runs,
+// only these small components re-render every TICK_MS. The parent screen
+// re-renders only on real state changes (step nav, pause/resume, arming).
+
+interface ElapsedTimerProps {
+  cookStartAt: number | null;
+  pausedAt: number | null;
+  pausedMsTotal: number;
+  /** Tick only while true (running + cooking phase). */
+  running: boolean;
+  timerStyle: TextStyle;
+  color: string;
+}
+
+/** Whole-recipe stopwatch readout. Owns its tick; parent never re-renders. */
+const ElapsedTimer = memo(function ElapsedTimer({
+  cookStartAt,
+  pausedAt,
+  pausedMsTotal,
+  running,
+  timerStyle,
+  color,
+}: ElapsedTimerProps) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!running || cookStartAt == null || pausedAt != null) return;
+    setNow(Date.now());
+    const handle = setInterval(() => setNow(Date.now()), TICK_MS);
+    return () => clearInterval(handle);
+  }, [running, cookStartAt, pausedAt]);
+  const elapsedMs =
+    cookStartAt == null
+      ? 0
+      : Math.max(0, (pausedAt ?? now) - cookStartAt - pausedMsTotal);
+  return (
+    <Text style={[timerStyle, { color }]}>{formatCookElapsed(elapsedMs)}</Text>
+  );
+});
+
+interface StepPaceBarProps {
+  /** Tick only while true; otherwise the frozen snapshot is shown. */
+  running: boolean;
+  /** Pause-adjusted elapsed to show while NOT running (fresh at pause). */
+  frozenMs: number;
+  /** Pause-adjusted elapsed for the live tick (stable callback over refs). */
+  getElapsedMs: (now: number) => number;
+  expectedMs: number;
+  wrapStyle: ViewStyle;
+  trackStyle: ViewStyle;
+  fillStyle: ViewStyle;
+  fillOverStyle: ViewStyle;
+  textStyle: TextStyle;
+  overColor: string;
+  normalColor: string;
+}
+
+/** Per-step pace bar. Owns its tick; parent never re-renders for it. */
+const StepPaceBar = memo(function StepPaceBar({
+  running,
+  frozenMs,
+  getElapsedMs,
+  expectedMs,
+  wrapStyle,
+  trackStyle,
+  fillStyle,
+  fillOverStyle,
+  textStyle,
+  overColor,
+  normalColor,
+}: StepPaceBarProps) {
+  const t = useT();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!running) return;
+    setNow(Date.now());
+    const handle = setInterval(() => setNow(Date.now()), TICK_MS);
+    return () => clearInterval(handle);
+  }, [running]);
+  const elapsedMs = running ? getElapsedMs(now) : frozenMs;
+  const overMin =
+    elapsedMs > expectedMs
+      ? Math.max(1, Math.round((elapsedMs - expectedMs) / 60_000))
+      : 0;
+  const pct = Math.min(1, expectedMs > 0 ? elapsedMs / expectedMs : 0);
+  return (
+    <View style={wrapStyle}>
+      <View style={trackStyle}>
+        <View
+          style={[
+            overMin > 0 ? fillOverStyle : fillStyle,
+            { width: `${Math.round(pct * 100)}%` },
+          ]}
+        />
+      </View>
+      <Text style={[textStyle, { color: overMin > 0 ? overColor : normalColor }]}>
+        {overMin > 0
+          ? t("cook.stepOver", { n: overMin })
+          : t("cook.stepExpected", { n: Math.round(expectedMs / 60_000) })}
+      </Text>
+    </View>
+  );
+});
 
 /** Submission summary — the exact shape the calibration pipeline consumes. */
 interface CookSummary {
@@ -432,8 +576,15 @@ export default function CookModeScreen() {
   /** Set while paused (the instant the pause began); null while running. */
   const [pausedAt, setPausedAt] = useState<number | null>(null);
   const [status, setStatus] = useState<CookStatus>("idle");
-  /** Re-render tick: only updated while running, to drive the live display. */
-  const [now, setNow] = useState(Date.now());
+  /**
+   * Session-persistence hydration gate: the restore-from-AsyncStorage effect
+   * sets this once it has attempted a restore, and the persist effect stays
+   * silent until then — so the initial empty state can never clobber a
+   * session saved before an OS kill. No tick state lives here anymore: the
+   * memoized ElapsedTimer/StepPaceBar children own their intervals, so the
+   * whole screen no longer re-renders every tick.
+   */
+  const [hydrated, setHydrated] = useState(false);
 
   /**
    * Ref mirror of `status` so async callbacks (the background recipe
@@ -449,11 +600,24 @@ export default function CookModeScreen() {
   const pausesRef = useRef<PauseInterval[]>([]);
   /**
    * Wall-clock instant each step was FIRST entered (keyed by step_number).
-   * Recorded on initial start and on every Next/Prev/jump once the cook has
-   * started; converted to pause-adjusted elapsed via adjust() at finish.
+   * Drives the visited-dots only — per-step DURATIONS come from the visit
+   * log below, so Back-then-Next loiter can't leak into the wrong step.
    * Steps never entered have no mark and submit 0 minutes.
    */
   const stepMarksRef = useRef<Record<number, number>>({});
+  /**
+   * Segment log: every (enter, exit) visit per step. goToStep closes the
+   * open visit and opens a new one; finishCooking closes the last visit at
+   * the finish instant. Durations = sum of pause-adjusted visits per step.
+   */
+  const visitsRef = useRef<StepVisit[]>([]);
+  /**
+   * Monotonic alarm-arm generation: every clearArmedAlarm() bumps it and
+   * every armStepAlarm() claims the latest value after each await — a stale
+   * (superseded by fast Next/Back taps) arm aborts instead of committing,
+   * so only the latest arm owns the armed alarm id.
+   */
+  const armGenRef = useRef(0);
 
   /** Armed step alarm: id in a ref (event handlers), step number for render. */
   const armedAlarmIdRef = useRef<string | null>(null);
@@ -493,6 +657,153 @@ export default function CookModeScreen() {
     () => recipe?.recipe_steps ?? [],
     [recipe],
   );
+
+  // ---- Session persistence (survive background kill) -------------------------
+  // cookStartAt / pauses / visit log used to live only in state+refs: an OS
+  // kill reset the stopwatch to idle and the timings were gone. They are now
+  // written to AsyncStorage on every change and restored on mount, so after
+  // a kill the session restores its elapsed and the user can resume or
+  // submit from the restored screen.
+  //
+  // Wall-clock note: elapsed derives from Date.now() stamps, so a manual
+  // clock change mid-cook still skews it — no monotonic clock survives a
+  // kill to persist against. Persistence guarantees the session SURVIVES,
+  // not that it is immune to clock edits.
+  const sessionKey = `cook-session:${String(id)}`;
+  const clearPersistedSession = useCallback(() => {
+    void AsyncStorage.removeItem(sessionKey).catch(() => {});
+  }, [sessionKey]);
+
+  // Restore once, when the recipe is ready. Stale (>24h) or foreign-recipe
+  // snapshots are discarded; the armed alarm id is restored too so an alarm
+  // scheduled before the kill can still be cancelled (its fire time was
+  // absolute, so it still fires correctly).
+  const restoreAttemptedRef = useRef(false);
+  useEffect(() => {
+    if (loadState !== "ready" || !recipe || restoreAttemptedRef.current) return;
+    restoreAttemptedRef.current = true;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(sessionKey);
+        if (raw != null) {
+          const saved = JSON.parse(raw) as PersistedCookSession;
+          const fresh =
+            saved != null &&
+            saved.v === 1 &&
+            saved.recipeId === recipe.id &&
+            typeof saved.cookStartAt === "number" &&
+            Date.now() - saved.cookStartAt < MAX_RESTORE_AGE_MS;
+          if (!fresh) {
+            await AsyncStorage.removeItem(sessionKey).catch(() => {});
+          } else if (statusRef.current === "idle") {
+            pausesRef.current = Array.isArray(saved.pauses)
+              ? saved.pauses.filter(
+                  (p) =>
+                    p != null &&
+                    typeof p.from === "number" &&
+                    typeof p.to === "number",
+                )
+              : [];
+            stepMarksRef.current =
+              saved.stepMarks != null && typeof saved.stepMarks === "object"
+                ? saved.stepMarks
+                : {};
+            // Kept as-is INCLUDING the still-open visit (to == null): the
+            // wall clock kept running while dead, exactly as when
+            // backgrounded, so its time accrues to the current step.
+            visitsRef.current = Array.isArray(saved.visits)
+              ? saved.visits.filter(
+                  (seg) =>
+                    seg != null &&
+                    typeof seg.stepNumber === "number" &&
+                    typeof seg.from === "number" &&
+                    (seg.to == null || typeof seg.to === "number"),
+                )
+              : [];
+            const paused = saved.status === "paused";
+            setCookStartAt(saved.cookStartAt);
+            setPausedAt(paused ? (saved.pausedAt ?? saved.cookStartAt) : null);
+            setPausedMsTotal(
+              typeof saved.pausedMsTotal === "number"
+                ? saved.pausedMsTotal
+                : 0,
+            );
+            setStatus(paused ? "paused" : "running");
+            setCurrentIndex(
+              Math.min(
+                Math.max(0, saved.currentIndex ?? 0),
+                Math.max(0, steps.length - 1),
+              ),
+            );
+            if (saved.armedAlarmId != null && saved.armedStep != null) {
+              armedAlarmIdRef.current = saved.armedAlarmId;
+              setArmedStep(saved.armedStep);
+            }
+            // Re-post the Android notification so the chronometer and quick
+            // actions live again for the restored session.
+            void startCookNotification({
+              recipeTitle: lr.title(recipe),
+              recipeId: recipe.id,
+              startedAt: saved.cookStartAt,
+              pausedMs:
+                typeof saved.pausedMsTotal === "number"
+                  ? saved.pausedMsTotal
+                  : 0,
+              paused,
+              t,
+            });
+          }
+        }
+      } catch {
+        // Corrupt snapshot: start idle, never crash the screen.
+      }
+      setHydrated(true);
+    })();
+    // Runs once per mount (restoreAttemptedRef); recipe/steps are the
+    // mount-time values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadState, recipe, sessionKey]);
+
+  // Persist on every change (refs are read synchronously here — each of them
+  // only ever mutates alongside one of these state updates). Skipped until
+  // hydration completes so the initial idle state can't wipe a snapshot,
+  // and skipped after finish (finishCooking clears the key explicitly).
+  useEffect(() => {
+    if (!hydrated || phase !== "cooking" || status === "finished") return;
+    if (cookStartAt == null) {
+      void AsyncStorage.removeItem(sessionKey).catch(() => {});
+      return;
+    }
+    const payload: PersistedCookSession = {
+      v: 1,
+      recipeId: recipe?.id ?? Number(id),
+      cookStartAt,
+      pausedAt,
+      pausedMsTotal,
+      pauses: pausesRef.current,
+      stepMarks: stepMarksRef.current,
+      visits: visitsRef.current,
+      currentIndex,
+      status,
+      armedAlarmId: armedAlarmIdRef.current,
+      armedStep,
+    };
+    void AsyncStorage.setItem(sessionKey, JSON.stringify(payload)).catch(
+      () => {},
+    );
+  }, [
+    hydrated,
+    phase,
+    status,
+    cookStartAt,
+    pausedMsTotal,
+    pausedAt,
+    currentIndex,
+    armedStep,
+    recipe,
+    id,
+    sessionKey,
+  ]);
 
   // ---- Load recipe ---------------------------------------------------------
   // Monotonic load id: only the LATEST loadRecipe may commit state, so a
@@ -567,29 +878,21 @@ export default function CookModeScreen() {
     }
   }, [steps, recipe]);
 
-  // ---- Pause-adjusted elapsed (derived from timestamps) ---------------------
-  // Deriving the display from cookStartAt/pausedAt/pausedMsTotal means the
-  // correct elapsed reappears after ANY amount of backgrounded time: the
-  // wall clock kept running and pauses are explicit intervals.
-  const elapsedMs = useMemo(() => {
-    if (cookStartAt == null) return 0;
-    // While paused the display freezes at the pause instant.
-    const end = pausedAt ?? now;
-    return Math.max(0, end - cookStartAt - pausedMsTotal);
-  }, [cookStartAt, pausedAt, pausedMsTotal, now]);
-
-  // ---- Live ticking --------------------------------------------------------
-  // Only tick while the stopwatch is actively running.
-  useEffect(() => {
-    if (phase !== "cooking" || status !== "running") return;
-    const handle = setInterval(() => setNow(Date.now()), TICK_MS);
-    return () => clearInterval(handle);
-  }, [phase, status]);
+  // ---- Pause-adjusted elapsed ----------------------------------------------
+  // The live display derives from cookStartAt/pausedAt/pausedMsTotal, so the
+  // correct elapsed reappears after ANY amount of backgrounded time — and it
+  // is computed inside the memoized ElapsedTimer/StepPaceBar children, which
+  // own the tick (see above). Nothing in this screen re-renders on a timer.
 
   // ---- Step alarms (notifee; no-op in Expo Go) ------------------------------
 
-  /** Cancel the armed step alarm, if any. Idempotent; never throws. */
+  /**
+   * Cancel the armed step alarm, if any. Idempotent; never throws. Bumps
+   * the arm generation so any in-flight armStepAlarm() aborts instead of
+   * committing a stale alarm after this cancel.
+   */
   const clearArmedAlarm = useCallback(async () => {
+    armGenRef.current++;
     const alarmId = armedAlarmIdRef.current;
     armedAlarmIdRef.current = null;
     setArmedStep(null);
@@ -605,13 +908,25 @@ export default function CookModeScreen() {
         return false;
       }
       await clearArmedAlarm();
+      // Claim the latest arm generation AFTER the clear's own bump: any arm
+      // started earlier (fast Next/Back taps racing these awaits) now holds
+      // a stale token and must abort instead of committing.
+      const gen = armGenRef.current + 1;
+      armGenRef.current = gen;
       if (!(await requestAlarmPermission())) return false;
+      if (gen !== armGenRef.current) return false;
       const { id, exactAlarmDenied } = await scheduleStepAlarm({
         recipeTitle: lr.title(recipe),
         stepNumber: step.step_number,
         minutes,
         t,
       });
+      if (gen !== armGenRef.current) {
+        // Superseded while the schedule await was in flight: cancel the
+        // orphan so a stale alarm can't fire on the wrong step.
+        if (id) await cancelStepAlarm(id);
+        return false;
+      }
       if (id) {
         armedAlarmIdRef.current = id;
         setArmedStep(step.step_number);
@@ -678,15 +993,29 @@ export default function CookModeScreen() {
 
   // ---- Stopwatch actions -----------------------------------------------------
 
-  /** Record the entry mark for step `i` (first entry only, post-Start). */
+  /**
+   * Enter step `i` (post-Start): close the currently open visit at `at`,
+   * stamp the first-entry mark (visited dots), and open a new visit for
+   * this step. Revisits append visits — durations sum them — so loitering
+   * via Back/Next is attributed to the step actually on screen.
+   */
   const recordMark = useCallback(
     (i: number) => {
       if (cookStartAt == null) return;
       const stepNumber = steps[i]?.step_number;
       if (stepNumber == null) return;
-      if (stepMarksRef.current[stepNumber] == null) {
-        stepMarksRef.current[stepNumber] = Date.now();
+      const at = Date.now();
+      const visits = visitsRef.current;
+      for (let k = visits.length - 1; k >= 0; k--) {
+        if (visits[k].to == null) {
+          visits[k].to = Math.max(at, visits[k].from);
+          break;
+        }
       }
+      if (stepMarksRef.current[stepNumber] == null) {
+        stepMarksRef.current[stepNumber] = at;
+      }
+      visits.push({ stepNumber, from: at, to: null });
     },
     [cookStartAt, steps],
   );
@@ -698,7 +1027,6 @@ export default function CookModeScreen() {
     setPausedMsTotal(0);
     setPausedAt(null);
     setStatus("running");
-    setNow(at);
     recordMark(currentIndex);
     // Persistent Android notification with the ticking chronometer (no-op
     // in Expo Go / iOS — the in-app stopwatch is unaffected).
@@ -739,7 +1067,6 @@ export default function CookModeScreen() {
       }
       setPausedAt(null);
       setStatus("running");
-      setNow(at);
       void startCookNotification({
         recipeTitle: lr.title(recipe),
         recipeId: recipe.id,
@@ -753,10 +1080,10 @@ export default function CookModeScreen() {
 
   /**
    * Finish the cook: freeze the stopwatch, derive per-step durations from
-   * the entry marks (mark[next] - mark[this], pause-adjusted via adjust();
-   * the last step ends at the finish elapsed; unvisited steps submit 0) and
-   * move to the feedback phase. Same handler for the Finish button, Next on
-   * the last step, and the notification quick action.
+   * the VISIT LOG (each step's pause-adjusted visit segments summed via
+   * adjust(); unvisited steps submit 0) and move to the feedback phase.
+   * Same handler for the Finish button, Next on the last step, and the
+   * notification quick action.
    */
   const finishCooking = useCallback(() => {
     if (!recipe || phase !== "cooking") return;
@@ -772,19 +1099,24 @@ export default function CookModeScreen() {
         total_actual_minutes: 0,
       };
     } else {
-      const marks = stepMarksRef.current;
-      const finishElapsed = adjust(startAt, endWall, pauses);
-      const perStep = steps.map((step, i) => {
-        const startWall = marks[step.step_number];
-        if (startWall == null) return { step, actual_minutes: 0 };
-        const startAdj = adjust(startAt, startWall, pauses);
-        const nextWall =
-          i + 1 < steps.length ? marks[steps[i + 1].step_number] : undefined;
-        const endAdj =
-          nextWall != null ? adjust(startAt, nextWall, pauses) : finishElapsed;
+      // Close the still-open visit at the finish instant so the tail of the
+      // current step is counted exactly once.
+      const visits = visitsRef.current;
+      for (let k = visits.length - 1; k >= 0; k--) {
+        if (visits[k].to == null) {
+          visits[k].to = Math.max(endWall, visits[k].from);
+          break;
+        }
+      }
+      const perStep = steps.map((step) => {
+        let ms = 0;
+        for (const seg of visits) {
+          if (seg.stepNumber !== step.step_number || seg.to == null) continue;
+          ms += adjust(seg.from, seg.to, pauses);
+        }
         return {
           step,
-          actual_minutes: round2(Math.max(0, endAdj - startAdj) / 60000),
+          actual_minutes: round2(Math.max(0, ms) / 60000),
         };
       });
       const cleanupSum =
@@ -812,7 +1144,17 @@ export default function CookModeScreen() {
     });
     void clearArmedAlarm();
     void stopCookNotification();
-  }, [recipe, phase, cookStartAt, pausedAt, steps, clearArmedAlarm]);
+    // Session over: drop the persisted snapshot so a later visit starts idle.
+    clearPersistedSession();
+  }, [
+    recipe,
+    phase,
+    cookStartAt,
+    pausedAt,
+    steps,
+    clearArmedAlarm,
+    clearPersistedSession,
+  ]);
 
   // ---- Notification quick actions -> same handlers as the buttons ----------
   // Latest-handler refs: the wiring effect runs once, the callbacks change.
@@ -859,6 +1201,25 @@ export default function CookModeScreen() {
   const prevStep = useCallback(() => {
     goToStep(Math.max(0, currentIndex - 1));
   }, [goToStep, currentIndex]);
+
+  /**
+   * Pause-adjusted time spent ON step `stepNumber` up to wall instant `at`:
+   * closed visits summed plus the open visit's live portion. Stable (reads
+   * refs only) — shared by the frozen parent snapshot and passed to the
+   * ticking StepPaceBar child.
+   */
+  const stepVisitElapsedMs = useCallback(
+    (stepNumber: number, at: number): number => {
+      let ms = 0;
+      for (const seg of visitsRef.current) {
+        if (seg.stepNumber !== stepNumber) continue;
+        const end = seg.to ?? at;
+        if (end >= seg.from) ms += adjust(seg.from, end, pausesRef.current);
+      }
+      return Math.max(0, ms);
+    },
+    [],
+  );
 
   // Recipe cleanup estimate shown as context on the feedback phase.
   const cleanupEstimate =
@@ -952,11 +1313,18 @@ export default function CookModeScreen() {
     const sessionActive =
       phase === "cooking" && cookStartAt != null && status !== "finished";
     if (!sessionActive) {
-      router.back();
+      // Deep-link entry has no history — a bare back() would be a no-op
+      // leaving the user stranded, so replace with the recipe detail.
+      // Never PUSH a duplicate detail on top.
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace(`/recipe/${id}`);
+      }
       return;
     }
     setConfirmDiscard(true);
-  }, [phase, cookStartAt, status]);
+  }, [phase, cookStartAt, status, id]);
 
   // Intercept the Android hardware/gesture back during an active session so
   // the discard confirmation applies to it too (not just the ✕ button).
@@ -966,10 +1334,16 @@ export default function CookModeScreen() {
         requestClose();
         return true;
       }
+      // Deep-link entry has no history: the system back would exit the app —
+      // route back to the recipe instead. Otherwise let the system pop.
+      if (!router.canGoBack()) {
+        router.replace(`/recipe/${id}`);
+        return true;
+      }
       return false;
     });
     return () => sub.remove();
-  }, [phase, cookStartAt, requestClose]);
+  }, [phase, cookStartAt, requestClose, id]);
 
   // ---- Render --------------------------------------------------------------
   if (loadState === "loading") {
@@ -1020,7 +1394,13 @@ export default function CookModeScreen() {
       <View style={[styles.fullScreen, { paddingTop: insets.top + Space.md }]}>
         <View style={styles.headerRow}>
           <IconPressable
-            onPress={() => router.back()}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace(`/recipe/${id}`);
+              }
+            }}
             hitSlop={Space.md}
             accessibilityLabel={t("cook.closeA11y")}
           >
@@ -1201,24 +1581,16 @@ export default function CookModeScreen() {
   const onLastStep = currentIndex === steps.length - 1;
   const upcomingStep = onLastStep ? null : steps[currentIndex + 1];
 
-  // Expected duration for THIS step (best known estimate) and the
-  // pause-adjusted time already spent on it — drive the step pace bar.
+  // Expected duration for THIS step (best known estimate). The live
+  // pause-adjusted time on it ticks inside StepPaceBar; the parent keeps
+  // only this frozen snapshot (fresh: the parent re-renders on pause/nav).
   const expectedMin = stepMinutes(step);
   const stepExpectedMs =
     expectedMin != null && expectedMin > 0 ? expectedMin * 60_000 : null;
-  const stepMark = stepMarksRef.current[step.step_number] ?? null;
-  const stepElapsedMs =
-    cookStartAt != null && stepMark != null
-      ? adjust(stepMark, pausedAt ?? now, pausesRef.current)
+  const stepFrozenMs =
+    cookStartAt != null
+      ? stepVisitElapsedMs(step.step_number, pausedAt ?? Date.now())
       : 0;
-  const stepOverMin =
-    stepExpectedMs != null && stepElapsedMs > stepExpectedMs
-      ? Math.max(1, Math.round((stepElapsedMs - stepExpectedMs) / 60_000))
-      : 0;
-  const stepPct =
-    stepExpectedMs != null
-      ? Math.min(1, stepElapsedMs / stepExpectedMs)
-      : null;
 
   const timerColor =
     status === "running"
@@ -1324,9 +1696,14 @@ export default function CookModeScreen() {
           <Text style={styles.alarmNeedsApp}>{t("cook.alarmNeedsAppCaption")}</Text>
         ) : null}
 
-        <Text style={[styles.timer, { color: timerColor }]}>
-          {formatMSS(elapsedMs)}
-        </Text>
+        <ElapsedTimer
+          cookStartAt={cookStartAt}
+          pausedAt={pausedAt}
+          pausedMsTotal={pausedMsTotal}
+          running={status === "running"}
+          timerStyle={styles.timer}
+          color={timerColor}
+        />
         <Text
           style={[
             styles.statusHint,
@@ -1343,28 +1720,21 @@ export default function CookModeScreen() {
         {/* Step pace bar — the honest-time glance: teal fill toward this
             step's expected duration; amber + over-count once past it. */}
         {stepExpectedMs != null && status !== "idle" ? (
-          <View style={styles.stepPaceWrap}>
-            <View style={styles.stepTrack}>
-              <View
-                style={[
-                  stepOverMin > 0 ? styles.stepFillOver : styles.stepFill,
-                  { width: `${Math.round((stepPct ?? 0) * 100)}%` },
-                ]}
-              />
-            </View>
-            <Text
-              style={[
-                styles.stepPaceText,
-                { color: stepOverMin > 0 ? colors.amber : colors.timing },
-              ]}
-            >
-              {stepOverMin > 0
-                ? t("cook.stepOver", { n: stepOverMin })
-                : t("cook.stepExpected", {
-                    n: Math.round(stepExpectedMs / 60_000),
-                  })}
-            </Text>
-          </View>
+          <StepPaceBar
+            running={status === "running"}
+            frozenMs={stepFrozenMs}
+            getElapsedMs={(nowMs) =>
+              stepVisitElapsedMs(step.step_number, nowMs)
+            }
+            expectedMs={stepExpectedMs}
+            wrapStyle={styles.stepPaceWrap}
+            trackStyle={styles.stepTrack}
+            fillStyle={styles.stepFill}
+            fillOverStyle={styles.stepFillOver}
+            textStyle={styles.stepPaceText}
+            overColor={colors.amber}
+            normalColor={colors.timing}
+          />
         ) : null}
 
         <Card style={styles.descCard} padding={Space.xl} shadow="card">
@@ -1501,7 +1871,13 @@ export default function CookModeScreen() {
             tone: "destructive",
             onPress: () => {
               setConfirmDiscard(false);
-              router.back();
+              // Discarded by the user: must not resurrect on next visit.
+              clearPersistedSession();
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace(`/recipe/${id}`);
+              }
             },
           },
         ]}

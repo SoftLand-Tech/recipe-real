@@ -11,12 +11,15 @@ import { useT } from "@/i18n";
  * to the real post screen without adding a history entry.
  */
 export default function SharedPostRedirect() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id } = useLocalSearchParams<{ id: string | string[] }>();
   const colors = useThemeColors();
   const t = useT();
 
   useEffect(() => {
-    const numeric = Number(id);
+    // useLocalSearchParams can hand back an array for a repeated query key —
+    // take the first value before coercing.
+    const raw = Array.isArray(id) ? id[0] : id;
+    const numeric = Number(raw);
     if (Number.isFinite(numeric) && numeric > 0) {
       router.replace(`/post/${numeric}`);
     } else {

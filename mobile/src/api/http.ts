@@ -1,7 +1,7 @@
 import axios, { type AxiosInstance } from "axios";
-import * as SecureStore from "expo-secure-store";
 
 import { API_BASE_URL, AUTH_TOKEN_KEY } from "@/config";
+import { secureStore } from "@/utils/secureStore";
 import type {
   CleanupFactors,
   PaceCalibration,
@@ -47,7 +47,7 @@ let authToken: string | null | undefined;
 /** The bearer token, read from SecureStore at most once per session. */
 export async function getAuthToken(): Promise<string | null> {
   if (authToken === undefined) {
-    authToken = await SecureStore.getItemAsync(AUTH_TOKEN_KEY);
+    authToken = await secureStore.getItemAsync(AUTH_TOKEN_KEY);
   }
   return authToken;
 }
@@ -59,9 +59,16 @@ export function setAuthTokenCache(token: string | null): void {
 
 /** Attach the bearer token from SecureStore to every request, if present. */
 http.interceptors.request.use(async (config) => {
-  const now = Date.now();
-  if (now < cooldownUntil) {
-    await new Promise((resolve) => setTimeout(resolve, cooldownUntil - now));
+  if (Date.now() < cooldownUntil) {
+    // Fail fast: NEVER sleep inside the interceptor — stalling here blocks
+    // every queued request for up to 60s. Throw an axios-style error with no
+    // `.response` so `isOfflineError()` matches and callers fall back to the
+    // offline cache / pending queue path immediately.
+    throw new axios.AxiosError(
+      "Request cooling down after a 429 — failing fast",
+      "ERR_NETWORK",
+      config,
+    );
   }
   const token = await getAuthToken();
   if (token) {
@@ -103,7 +110,7 @@ http.interceptors.response.use(
   async (error) => {
     if (error?.response?.status === 401) {
       try {
-        await SecureStore.deleteItemAsync(AUTH_TOKEN_KEY);
+        await secureStore.deleteItemAsync(AUTH_TOKEN_KEY);
       } catch {
         // Swallow: don't let a failed clear mask the original 401.
       }
@@ -136,6 +143,26 @@ http.interceptors.response.use(
  */
 export function isOfflineError(error: unknown): boolean {
   return axios.isAxiosError(error) && error.response === undefined;
+}
+
+/**
+ * Thrown by the community/write API functions (posts, likes, comments,
+ * recipe notes, quick-time contributions, image uploads) when the device is
+ * offline (a genuine network-level failure — see `isOfflineError`).
+ *
+ * The offline QUEUE is cook-sessions-only for now (`submitCookSession` /
+ * `flushPendingCookSessions`): these calls are NOT queued, so callers must
+ * NEVER discard the user's composed text when they catch this — keep the
+ * draft in state (and, for the post composer, in AsyncStorage) and surface
+ * `message` so the user knows to retry when back online.
+ */
+export class OfflineError extends Error {
+  constructor(
+    message = "You're offline — your text is kept. Try again when you're back online.",
+  ) {
+    super(message);
+    this.name = "OfflineError";
+  }
 }
 
 /**

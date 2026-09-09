@@ -1,13 +1,15 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as SecureStore from "expo-secure-store";
+import { Platform } from "react-native";
 
 import { AUTH_TOKEN_KEY } from "@/config";
 import { enqueuePendingCookSession } from "@/db/database";
 import { clearPostPreview } from "@/utils/postPreview";
+import { secureStore } from "@/utils/secureStore";
 import {
   http,
   isOfflineError,
+  OfflineError,
   postCookSessionRaw,
   seedRecipes,
   getPaceCalibrations,
@@ -23,7 +25,7 @@ import {
 // existing `import { ... } from "@/api/client"` calls keep working. The
 // implementations live in `@/api/http` to avoid a circular import between the
 // client and `@/db/database`.
-export { http, postCookSessionRaw, seedRecipes, getPaceCalibrations };
+export { http, postCookSessionRaw, seedRecipes, getPaceCalibrations, OfflineError };
 export type { RecipePage } from "@/api/http";
 
 // Use the shared instance for all calls below.
@@ -86,7 +88,7 @@ export async function loginWithGoogle(
     nonce,
   });
   if (data?.token) {
-    await SecureStore.setItemAsync(AUTH_TOKEN_KEY, data.token);
+    await secureStore.setItemAsync(AUTH_TOKEN_KEY, data.token);
     // Keep the http layer's in-memory mirror in sync (see getAuthToken).
     setAuthTokenCache(data.token);
   }
@@ -110,7 +112,7 @@ export async function logout(): Promise<void> {
   try {
     await api.post("/api/auth/logout");
   } finally {
-    await SecureStore.deleteItemAsync(AUTH_TOKEN_KEY);
+    await secureStore.deleteItemAsync(AUTH_TOKEN_KEY);
     setAuthTokenCache(null);
     clearAccountScopedCaches();
   }
@@ -128,7 +130,7 @@ export async function deleteAccount(): Promise<void> {
   try {
     await api.delete("/api/account");
   } finally {
-    await SecureStore.deleteItemAsync(AUTH_TOKEN_KEY);
+    await secureStore.deleteItemAsync(AUTH_TOKEN_KEY);
     setAuthTokenCache(null);
     clearAccountScopedCaches();
   }
@@ -359,6 +361,14 @@ export async function submitQuickTime(
       cleanup_avg_minutes: toNum(data?.cleanup_avg_minutes),
     };
   } catch (error) {
+    // Not queued (the offline queue is cook-sessions-only): the caller keeps
+    // the typed breakdown values in the form and shows `message` as retry
+    // guidance.
+    if (isOfflineError(error)) {
+      throw new OfflineError(
+        "You're offline — your times are kept in the form. Try again when you're back online.",
+      );
+    }
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       throw new QuickTimeUnauthorizedError();
     }
@@ -399,6 +409,12 @@ function normalizeCookSession(s: any): CookSessionSummary {
  * offline. A server 4xx/5xx answer (has `.response`) or a non-axios throw
  * (e.g. a SecureStore failure in the request interceptor) can never succeed
  * on retry, so it is rethrown for the caller to surface.
+ *
+ * NOTE: cook sessions are the ONLY offline-queued write. Every other
+ * mutation (posts, likes, comments, recipe notes, quick-time, uploads)
+ * throws `OfflineError` when offline instead of queueing — callers must keep
+ * the user's composed text (never clear a draft on failure) and surface the
+ * error message so the user can retry when back online.
  */
 export async function submitCookSession(
   payload: CookSessionPayload,
@@ -683,12 +699,35 @@ export async function uploadImage(uri: string): Promise<string> {
         : "image/jpeg";
   const name = `photo.${ext === "png" || ext === "webp" ? ext : "jpg"}`;
   const form = new FormData();
-  // React Native's FormData accepts `{uri, name, type}` file parts at runtime;
-  // the DOM lib types only know Blob, hence the cast.
-  form.append("image", { uri, name, type } as unknown as Blob);
-  const { data } = await api.post<{ url?: string }>("/api/uploads", form, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+  if (Platform.OS === "web") {
+    // Web pickers hand out blob:/data: URLs and the browser's FormData knows
+    // nothing about RN's {uri, name, type} parts — the server then sees no
+    // file at all (422 "must be a file"). Fetch a real Blob and append it.
+    const blob = await (await fetch(uri)).blob();
+    const realType = blob.type || type;
+    const realExt =
+      realType === "image/png" ? "png" : realType === "image/webp" ? "webp" : "jpg";
+    form.append("image", blob, `photo.${realExt}`);
+  } else {
+    // React Native's FormData accepts `{uri, name, type}` file parts at
+    // runtime; the DOM lib types only know Blob, hence the cast.
+    form.append("image", { uri, name, type } as unknown as Blob);
+  }
+  let data: { url?: string };
+  try {
+    ({ data } = await api.post<{ url?: string }>("/api/uploads", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    }));
+  } catch (error) {
+    // Not queued (the offline queue is cook-sessions-only): throw a typed
+    // error so the caller keeps the picked images and shows a retry message.
+    if (isOfflineError(error)) {
+      throw new OfflineError(
+        "You're offline — the photo couldn't be uploaded. Your post text and selected photos are kept.",
+      );
+    }
+    throw error;
+  }
   const url = data?.url;
   if (typeof url !== "string" || url.length === 0) {
     throw new Error("Upload failed: no URL returned");
@@ -738,6 +777,8 @@ export async function fetchRecipeNotes(
  * Post a community note (POST /api/recipes/{id}/notes, authed,
  * body 1..1000) → the created note. A 401 maps to
  * RecipeNoteUnauthorizedError; a halal 422 maps to HalalRejectionError.
+ * Offline maps to OfflineError — not queued (the offline queue is
+ * cook-sessions-only), so the caller must keep the draft text.
  */
 export async function postRecipeNote(
   recipeId: number,
@@ -747,6 +788,11 @@ export async function postRecipeNote(
     const { data } = await api.post(`/api/recipes/${recipeId}/notes`, { body });
     return normalizeNote((data as { data?: unknown })?.data ?? data);
   } catch (error) {
+    if (isOfflineError(error)) {
+      throw new OfflineError(
+        "You're offline — your note draft is kept. Try again when you're back online.",
+      );
+    }
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       throw new RecipeNoteUnauthorizedError();
     }
@@ -1029,13 +1075,20 @@ export async function fetchPost(id: number): Promise<Post> {
 /**
  * Publish a community post (POST /api/posts, authed, body 1..2000) → the
  * created post. A 401 maps to PostUnauthorizedError; a halal 422 maps to
- * HalalRejectionError.
+ * HalalRejectionError. Offline maps to OfflineError — not queued (the
+ * offline queue is cook-sessions-only), so the caller must keep the composer
+ * draft (in state + AsyncStorage) and never clear it on failure.
  */
 export async function createPost(input: PostInput): Promise<Post> {
   try {
     const { data } = await api.post("/api/posts", input);
     return normalizePost((data as { data?: unknown })?.data ?? data);
   } catch (error) {
+    if (isOfflineError(error)) {
+      throw new OfflineError(
+        "You're offline — your post draft is kept. Try again when you're back online.",
+      );
+    }
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       throw new PostUnauthorizedError();
     }
@@ -1048,7 +1101,9 @@ export async function createPost(input: PostInput): Promise<Post> {
 /**
  * Toggle the signed-in user's like on a post (POST /api/posts/{id}/like,
  * authed) → the new {liked, likes_count}. A 401 maps to
- * PostUnauthorizedError.
+ * PostUnauthorizedError. Offline maps to OfflineError — not queued (the
+ * offline queue is cook-sessions-only); callers roll back the optimistic
+ * update and show the message.
  */
 export async function togglePostLike(
   postId: number,
@@ -1062,6 +1117,11 @@ export async function togglePostLike(
       likes_count: toNum(data?.likes_count) ?? 0,
     };
   } catch (error) {
+    if (isOfflineError(error)) {
+      throw new OfflineError(
+        "You're offline — the like wasn't sent. Try again when you're back online.",
+      );
+    }
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       throw new PostUnauthorizedError();
     }
@@ -1090,7 +1150,9 @@ export async function fetchPostComments(
 /**
  * Comment on a post (POST /api/posts/{id}/comments, authed, body 1..1000) →
  * the created comment. A 401 maps to PostUnauthorizedError; a halal 422 maps
- * to HalalRejectionError.
+ * to HalalRejectionError. Offline maps to OfflineError — not queued (the
+ * offline queue is cook-sessions-only), so the caller must keep the draft
+ * text and never clear it on failure.
  */
 export async function createPostComment(
   postId: number,
@@ -1100,6 +1162,11 @@ export async function createPostComment(
     const { data } = await api.post(`/api/posts/${postId}/comments`, { body });
     return normalizePostComment((data as { data?: unknown })?.data ?? data);
   } catch (error) {
+    if (isOfflineError(error)) {
+      throw new OfflineError(
+        "You're offline — your comment draft is kept. Try again when you're back online.",
+      );
+    }
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       throw new PostUnauthorizedError();
     }

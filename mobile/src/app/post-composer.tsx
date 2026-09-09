@@ -20,11 +20,13 @@ import {
   useNavigation,
 } from "expo-router";
 import { usePreventRemove } from "expo-router/build/react-navigation/core";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import {
   createPost,
   hasToken,
   HalalRejectionError,
+  OfflineError,
   searchRecipes,
   uploadImage,
 } from "@/api/client";
@@ -46,6 +48,22 @@ const POST_BODY_MAX = 2000;
 const RECIPE_PICK_RESULTS = 5;
 const RECIPE_SEARCH_DEBOUNCE_MS = 350;
 const MAX_IMAGES = 6;
+
+/**
+ * AsyncStorage key for the post-composer draft. Community writes are NOT
+ * offline-queued (the offline queue is cook-sessions-only), so the draft —
+ * body text plus the attached recipe — is persisted on every change and
+ * restored on mount. It is removed only after a successful post, meaning an
+ * offline failure, an app kill, or navigating away never silently loses
+ * composed text (the unsaved-changes guard below covers in-session leaves).
+ */
+const POST_COMPOSER_DRAFT_KEY = "recipereal.postComposerDraft";
+
+interface PostComposerDraft {
+  body: string;
+  recipeId: number | null;
+  recipeTitle: string;
+}
 
 function useLocalizedTitle(): (recipe: Recipe) => string {
   const { lang } = useLang();
@@ -107,6 +125,78 @@ export default function PostComposerScreen() {
     });
     // Run once per param pair — params are stable for this screen's life.
   }, [params.recipeId, params.recipeTitle]);
+
+  // Restore a persisted draft (body + attached recipe) from an earlier
+  // session — e.g. an offline failure or an app kill. A recipe prefill via
+  // params (recipe page's "Share your try") always wins over the draft's
+  // recipe; the drafted body text is restored either way.
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(POST_COMPOSER_DRAFT_KEY)
+      .then((raw) => {
+        if (cancelled || !raw) return;
+        try {
+          const draft = JSON.parse(raw) as PostComposerDraft;
+          if (typeof draft.body === "string" && draft.body.length > 0) {
+            setBody(draft.body);
+          }
+          const draftRecipeId = draft.recipeId;
+          // A param prefill ("Share your try") wins: its effect runs on the
+          // same mount, so only restore the draft's recipe when no prefill
+          // was requested.
+          const prefilled = (params.recipeId ?? "").trim().length > 0;
+          if (
+            !prefilled &&
+            draftRecipeId != null &&
+            Number.isFinite(draftRecipeId) &&
+            draftRecipeId > 0
+          ) {
+            setSelectedRecipe({
+              id: draftRecipeId,
+              title:
+                typeof draft.recipeTitle === "string" ? draft.recipeTitle : "",
+              source_url: null,
+              ingredients: [],
+              steps: [],
+              publisher_time_minutes: null,
+              community_avg_minutes: null,
+              cleanup_avg_minutes: null,
+            });
+          }
+        } catch {
+          // Corrupt draft: ignore it (it gets overwritten on next change).
+        }
+      })
+      .catch(() => {
+        // Best-effort: the composer works fine without a restored draft.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Mount-only: params are stable for this screen's life, and the prefill
+    // effect above owns param-driven selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist the draft on every change so composed text survives offline
+  // failures and app kills. An empty composer clears the stored draft.
+  useEffect(() => {
+    if (body.trim().length === 0 && selectedRecipe == null) {
+      AsyncStorage.removeItem(POST_COMPOSER_DRAFT_KEY).catch(() => {});
+      return;
+    }
+    const snapshot: PostComposerDraft = {
+      body,
+      recipeId: selectedRecipe?.id ?? null,
+      recipeTitle: selectedRecipe?.title ?? "",
+    };
+    AsyncStorage.setItem(
+      POST_COMPOSER_DRAFT_KEY,
+      JSON.stringify(snapshot),
+    ).catch(() => {
+      // Best-effort persistence.
+    });
+  }, [body, selectedRecipe]);
 
   const [posting, setPosting] = useState(false);
   const [uploadCaption, setUploadCaption] = useState<string | null>(null);
@@ -219,8 +309,14 @@ export default function PostComposerScreen() {
           try {
             const url = await uploadImage(pickedUris[i]);
             uploadedUrls.push(url);
-          } catch {
-            setError(t("community.errImageUpload"));
+          } catch (uploadError) {
+            // Draft is kept (body/pickedUris/selectedRecipe untouched):
+            // surface the offline message verbatim when that's the cause.
+            setError(
+              uploadError instanceof OfflineError
+                ? uploadError.message
+                : t("community.errImageUpload"),
+            );
             return;
           }
         }
@@ -237,14 +333,29 @@ export default function PostComposerScreen() {
         image_count: uploadedUrls.length,
         has_recipe: selectedRecipe != null,
       });
+      // Success: the persisted draft is stale — drop it so the next compose
+      // starts clean.
+      AsyncStorage.removeItem(POST_COMPOSER_DRAFT_KEY).catch(() => {});
       // Navigate back; community tab regains focus → useFocusEffect refreshes feed.
-      router.back();
+      // Web: GO_BACK can silently no-op in browsers (nothing to pop after a
+      // reload/auth replace), leaving the composer open — a second Post press
+      // then creates a duplicate. Routing to the feed explicitly always works;
+      // the composer's only other entry (recipe share) lands on the feed too.
+      if (Platform.OS === "web") {
+        router.replace("/community");
+      } else {
+        router.back();
+      }
       // Optionally surface the created post id via params for immediate prepend
       // — the focus-based refresh covers it without extra coupling.
       void created;
     } catch (err) {
       if (err instanceof HalalRejectionError) {
         setHalalTerms(err.terms);
+      } else if (err instanceof OfflineError) {
+        // Offline (createPost is not queued): the draft stays in state AND
+        // in AsyncStorage — show the retry message, never clear the text.
+        setError(err.message);
       } else {
         console.warn("[RecipeReal] post creation failed:", err);
         setError(t("community.postFailed"));
@@ -376,7 +487,13 @@ export default function PostComposerScreen() {
     pickedUris.length > 0 ||
     selectedRecipe != null;
   const navigation = useNavigation();
-  usePreventRemove(dirty && !posting, ({ data }) => {
+  // Web: never arm the guard. react-native-web's Alert.alert is a stub, so a
+  // blocked removal shows NO dialog and every exit from the composer (✕, the
+  // post-success navigation) is silently swallowed. The draft is already
+  // persisted to AsyncStorage on every change, so nothing is lost.
+  usePreventRemove(
+    Platform.OS !== "web" && dirty && !posting,
+    ({ data }) => {
     Alert.alert(
       t("composer.discardTitle"),
       t("composer.discardPostMessage"),

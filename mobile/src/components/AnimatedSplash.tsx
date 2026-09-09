@@ -6,7 +6,7 @@ import {
 } from "react";
 import { Image } from "expo-image";
 import * as SplashScreen from "expo-splash-screen";
-import { Dimensions, StyleSheet, View } from "react-native";
+import { Dimensions, Platform, StyleSheet, View } from "react-native";
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -257,8 +257,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-    // Sweep direction must not mirror under RTL.
-    direction: "ltr",
+    // Sweep direction must not mirror under RTL. Native-only prop:
+    // react-native-web logs "Invalid style property" for it.
+    ...(Platform.OS === "web" ? null : { direction: "ltr" as const }),
   },
   centerLayer: {
     ...StyleSheet.absoluteFill,

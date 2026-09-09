@@ -5,7 +5,9 @@ import {
   fetchRecipePage,
   fetchSeedPage,
   getPaceCalibrations,
+  http,
   isOfflineError,
+  normalizeRecipe,
   postCookSessionRaw,
 } from "@/api/http";
 import type {
@@ -687,10 +689,14 @@ export async function repairCachedStepsIfNeeded(): Promise<boolean> {
   ]);
   if (recipeCount === 0 || stepCount > 0) return false;
   // Repair exactly the depth the cache had (page math on the row count) —
-  // never a surprise full-library download.
+  // never a surprise full-library download. Page 1 is seeded above, so the
+  // continuation starts at page 2 with (pages - 1) pages remaining; when the
+  // whole cache fits in one page there is nothing left to fetch.
   const pages = Math.max(1, Math.ceil(recipeCount / SEED_PAGE_SIZE));
   await seedCacheFirstPage();
-  await seedCacheRemainingPages({ pages });
+  if (pages > 1) {
+    await seedCacheRemainingPages({ startPage: 2, pages: pages - 1 });
+  }
   return true;
 }
 
@@ -724,8 +730,18 @@ export async function isFavorite(id: number): Promise<boolean> {
  * Accepts a full Recipe so server-driven surfaces (search results, rails —
  * recipes the local cache may never have stored) can pass the object they
  * already hold: hearting an uncached recipe would otherwise fail the
- * favorites FOREIGN KEY. A light copy is cached first (BEFORE any serialized
+ * favorites FOREIGN KEY. A copy is cached first (BEFORE any serialized
  * section — upsertRecipes takes the same write mutex, nesting deadlocks).
+ *
+ * A step-less (light) copy must NEVER become the authoritative cached row —
+ * Cook Mode reads `getCachedRecipe` and would serve it as "no steps". So an
+ * uncached recipe that already carries a non-empty `recipe_steps` array is
+ * cached with `withSteps: true`; otherwise the full recipe is fetched from
+ * the network and cached with steps when possible. Only when that fetch
+ * fails (offline) does a light copy land in the cache — and the detail
+ * screen already treats a step-less cached row as light (the `stepsPending`
+ * placeholder + background revalidation in `recipe/[id].tsx`), so the fresh
+ * copy (with structured steps) still swaps in once the device is online.
  */
 export async function toggleFavorite(
   input: number | Recipe,
@@ -738,7 +754,29 @@ export async function toggleFavorite(
       id,
     );
     if (!known) {
-      await upsertRecipes([input], { withSteps: false });
+      if (Array.isArray(input.recipe_steps) && input.recipe_steps.length > 0) {
+        await upsertRecipes([input], { withSteps: true });
+      } else {
+        // Light object (search rail, deep link): try the full recipe first.
+        let cachedFull = false;
+        try {
+          const { data } = await http.get(`/api/recipes/${id}`);
+          const body = (data as { data?: unknown } | undefined)?.data ?? data;
+          const fetched = normalizeRecipe(body);
+          if (
+            Array.isArray(fetched.recipe_steps) &&
+            fetched.recipe_steps.length > 0
+          ) {
+            await upsertRecipes([fetched], { withSteps: true });
+            cachedFull = true;
+          }
+        } catch {
+          // Offline / fetch failed: fall through to the light copy below.
+        }
+        if (!cachedFull) {
+          await upsertRecipes([input], { withSteps: false });
+        }
+      }
     }
   }
   const existing = await db.getFirstAsync<{ recipe_id: number }>(
@@ -757,17 +795,46 @@ export async function toggleFavorite(
 }
 
 /**
- * Full Recipe objects for all favorites, newest favorite first. The INNER JOIN
- * skips favorite ids whose recipe row is missing from the cache.
+ * Full Recipe objects for all favorites, newest favorite first. Uses a LEFT
+ * JOIN so favorite ids whose recipe row is missing from the cache (orphans —
+ * e.g. after `clearRecipeCache` wipes recipes but keeps favorites) still
+ * come back: orphans are returned as light fallback rows (id + empty
+ * content) rather than vanishing, and the next sync re-links them when the
+ * deterministic re-seed restores the recipe ids.
  */
 export async function getFavoriteRecipes(): Promise<Recipe[]> {
   const db = await getDb();
-  const rows = await db.getAllAsync<RecipeRow>(
-    `SELECT recipes.* FROM favorites
-       INNER JOIN recipes ON recipes.id = favorites.recipe_id
+  const rows = await db.getAllAsync<Partial<RecipeRow> & { recipe_id: number }>(
+    `SELECT favorites.recipe_id AS recipe_id, recipes.* FROM favorites
+       LEFT JOIN recipes ON recipes.id = favorites.recipe_id
      ORDER BY favorites.created_at DESC, favorites.recipe_id DESC;`,
   );
-  return rows.map(parseRecipe);
+  return rows.map((row) =>
+    row.id == null ? orphanRecipe(row.recipe_id) : parseRecipe(row as RecipeRow),
+  );
+}
+
+/**
+ * Minimal stand-in for a favorited/noted recipe whose cache row is missing.
+ * Carries the real id (so re-fetch and navigation keep working) with empty
+ * content; callers render it as a placeholder until the re-seed restores the
+ * full row. Never treated as an authoritative (step-less) copy.
+ */
+function orphanRecipe(id: number): Recipe {
+  return {
+    id,
+    title: "",
+    source_url: null,
+    image_url: null,
+    ingredients: [],
+    steps: [],
+    title_ar: null,
+    ingredients_ar: null,
+    steps_ar: null,
+    publisher_time_minutes: null,
+    community_avg_minutes: null,
+    cleanup_avg_minutes: null,
+  };
 }
 
 // ---- Personal recipe notes (local) -----------------------------------------
@@ -812,23 +879,29 @@ export async function getNotedRecipeIds(): Promise<number[]> {
 }
 
 /**
- * Full Recipe objects together with their notes, newest note first. The INNER
- * JOIN skips note ids whose recipe row is missing from the cache (orphans).
+ * Full Recipe objects together with their notes, newest note first. Uses a
+ * LEFT JOIN so noted ids whose recipe row is missing from the cache (orphans
+ * — e.g. after `clearRecipeCache`) still come back with their note text
+ * intact: the recipe is a light fallback row (see `orphanRecipe`) until the
+ * next sync restores the full row, so a saved note is never hidden by a
+ * cache wipe.
  */
 export async function getNotedRecipes(): Promise<
   { recipe: Recipe; note: string; updatedAt: number }[]
 > {
   const db = await getDb();
   const rows = await db.getAllAsync<
-    RecipeRow & { note: string; updated_at: number }
+    Partial<RecipeRow> & { recipe_id: number; note: string; updated_at: number }
   >(
-    `SELECT recipes.*, notes.note AS note, notes.updated_at AS updated_at
+    `SELECT notes.recipe_id AS recipe_id, notes.note AS note,
+            notes.updated_at AS updated_at, recipes.*
        FROM notes
-       INNER JOIN recipes ON recipes.id = notes.recipe_id
+       LEFT JOIN recipes ON recipes.id = notes.recipe_id
      ORDER BY notes.updated_at DESC, notes.recipe_id DESC;`,
   );
   return rows.map((row) => ({
-    recipe: parseRecipe(row),
+    recipe:
+      row.id == null ? orphanRecipe(row.recipe_id) : parseRecipe(row as RecipeRow),
     note: row.note,
     updatedAt: row.updated_at,
   }));
@@ -869,10 +942,15 @@ export async function getPendingCookSessionCount(): Promise<number> {
  * Attempt to upload every queued cook session. Walks rows oldest-first; on
  * success deletes the row. On a network failure (no server reply — still
  * offline) it stops, since later rows would fail too. A row the SERVER
- * rejects (4xx/5xx — including 401 from an expired token, which would keep
- * failing without re-auth) is DEAD-LETTERED: deleted with a warning so one
- * bad row can't block every session behind it, and the flush continues with
- * the next row. Returns the number of rows successfully flushed.
+ * rejects with a 4xx (other than 429 — including 401 from an expired token,
+ * which would keep failing without re-auth) is DEAD-LETTERED: deleted with a
+ * warning so one bad row can't block every session behind it, and the flush
+ * continues with the next row. Anything else is KEPT and the flush stops: a
+ * 429 (rate-limited — retrying now only extends the throttle), a 5xx
+ * (server-side, likely transient), or a non-axios throw (e.g. a SecureStore
+ * failure in the request interceptor, which says nothing about the payload)
+ * must never silently delete history — the rows retry on the next flush.
+ * Returns the number of rows successfully flushed.
  *
  * Uses `postCookSessionRaw` directly (which throws on any failure) rather than
  * `submitCookSession`, so a failure here doesn't re-enqueue and loop.
@@ -905,21 +983,44 @@ export async function flushPendingCookSessions(): Promise<number> {
         return flushed;
       }
 
-      // The server answered and rejected this row (a non-axios throw, e.g.
-      // a SecureStore failure, lands here too). Dead-letter it: delete the
-      // row so one bad row can't block the sessions behind it, then keep
-      // flushing the rest.
-      const status =
-        axios.isAxiosError(error) && error.response != null
-          ? error.response.status
-          : "n/a";
+      if (axios.isAxiosError(error) && error.response != null) {
+        const status = error.response.status;
+        if (status === 429) {
+          // Rate-limited: retrying now only extends the throttle. Keep the
+          // row and stop — it retries on the next flush after the cooldown.
+          console.warn(
+            `[RecipeReal] Cook session ${payload.idempotency_key} hit 429 (rate-limited); keeping it in the pending queue and stopping this flush.`,
+          );
+          return flushed;
+        }
+        if (status >= 400 && status < 500) {
+          // The server answered and permanently rejected this row — one bad
+          // row must not block the sessions behind it. Dead-letter it and
+          // keep flushing the rest.
+          console.warn(
+            `[RecipeReal] Dead-lettering cook session ${payload.idempotency_key}: server rejected it (status ${status}); removing it from the pending queue.`,
+          );
+          await db.runAsync(`DELETE FROM pending_cook_sessions WHERE id = ?;`, [
+            row.id,
+          ]);
+          continue;
+        }
+        // 5xx: the server failed, not the payload — keep the row and stop so
+        // history is never silently lost; it retries on the next flush.
+        console.warn(
+          `[RecipeReal] Cook session ${payload.idempotency_key} failed with server error (status ${status}); keeping it in the pending queue and stopping this flush.`,
+        );
+        return flushed;
+      }
+
+      // A non-axios throw (e.g. a SecureStore failure in the request
+      // interceptor) says nothing about the payload — keep the row and stop
+      // so history is never silently lost; it retries on the next flush.
       console.warn(
-        `[RecipeReal] Dead-lettering cook session ${payload.idempotency_key}: server rejected it (status ${status}); removing it from the pending queue.`,
+        `[RecipeReal] Cook session ${payload.idempotency_key} could not be sent (non-network error); keeping it in the pending queue and stopping this flush.`,
+        error,
       );
-      await db.runAsync(`DELETE FROM pending_cook_sessions WHERE id = ?;`, [
-        row.id,
-      ]);
-      continue;
+      return flushed;
     }
 
     await db.runAsync(`DELETE FROM pending_cook_sessions WHERE id = ?;`, [

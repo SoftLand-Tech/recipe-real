@@ -1,6 +1,6 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { Tabs } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Animated, StyleSheet } from "react-native";
 import { BottomTabBar } from "expo-router/build/react-navigation/bottom-tabs/views/BottomTabBar";
 import type { BottomTabBarProps } from "expo-router/build/react-navigation/bottom-tabs/types";
@@ -14,7 +14,23 @@ import {
 
 function ChromeTabBar(props: BottomTabBarProps) {
   const { hidden } = useScrollChromeContext();
-  const [barHeight, setBarHeight] = useState(0);
+  // Fallback until onLayout measures the real height: the outputRange starts
+  // at this value, so a chrome that mounts hidden is already off-screen
+  // instead of flashing visible for a frame. Overshoot is harmless (further
+  // off-screen); undershoot would flash a sliver. Corrected on layout.
+  const [barHeight, setBarHeight] = useState(96);
+  // Mirror the animated value into state so the slid-away bar drops out of
+  // the touch tree (pointerEvents) and the screen-reader tree (accessible +
+  // platform hidden flags) while hidden.
+  const [isHidden, setIsHidden] = useState(false);
+  useEffect(() => {
+    const id = hidden.addListener(({ value }) => {
+      setIsHidden(value > 0.5);
+    });
+    return () => {
+      hidden.removeListener(id);
+    };
+  }, [hidden]);
 
   const onLayout = useCallback(
     (e: { nativeEvent: { layout: { height: number } } }) => {
@@ -42,6 +58,10 @@ function ChromeTabBar(props: BottomTabBarProps) {
   return (
     <Animated.View
       onLayout={onLayout}
+      pointerEvents={isHidden ? "none" : "auto"}
+      accessible={isHidden ? false : undefined}
+      accessibilityElementsHidden={isHidden}
+      importantForAccessibility={isHidden ? "no-hide-descendants" : "auto"}
       style={[
         styles.tabBarWrap,
         {

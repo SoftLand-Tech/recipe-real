@@ -18,6 +18,22 @@ type NotifeeApi = NotifeeModule["default"];
 /** Fallback translator (English) when a caller doesn't supply one. */
 const tEn: TranslateFn = (key, params) => translate("en", key, params);
 
+/**
+ * Format an elapsed duration (ms) for display: `M:SS` under an hour,
+ * `H:MM:SS` at/over an hour (a 65-minute cook used to read "65:00").
+ * Pure — shared by the in-app stopwatch and the frozen notification body.
+ */
+export function formatCookElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  }
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
 let modPromise: Promise<NotifeeModule | null> | null = null;
 
 /** Lazily import the whole notifee namespace (api + enums); null in Expo Go. */
@@ -123,9 +139,15 @@ export interface StartCookNotificationOpts {
 
 /**
  * Module mirror of the last posted cook notification. Background quick
- * actions (headless JS, no React state) re-post from this snapshot; if the
- * OS killed the app it is stale/empty and the actions degrade to
- * cancel-only (documented v1 limitation).
+ * actions (headless JS, no React state) re-post from this snapshot.
+ *
+ * OS-kill note: this mirror is in-memory, so a headless action after a kill
+ * starts with it empty. The cook session itself, however, is persisted by
+ * the Cook Mode screen (AsyncStorage: cookStartAt / pauses / visit log),
+ * so relaunching the app restores the elapsed stopwatch and the user can
+ * resume or submit from the restored screen — the killed-background action
+ * path stays cancel-only (finish still cancels the notification), but the
+ * session is no longer lost with it.
  */
 let cookNotifState: StartCookNotificationOpts | null = null;
 /** When the notification was last flipped paused<->running (wall ms). */
@@ -135,10 +157,19 @@ let cookNotifToggledAt = 0;
  * Post/refresh the Android ongoing "cooking session" notification with a
  * chronometer whose base (`timestamp: startedAt + pausedMs`) reflects the
  * pause-adjusted elapsed. Re-posting on pause/resume swaps the action title
- * (Pause <-> Resume) and the base; while paused the OS chronometer keeps
- * ticking visually and snaps back to the correct elapsed on the next
- * re-post — Android notification chronometers cannot truly freeze.
- * iOS: silently skipped (returns false). Never throws.
+ * (Pause <-> Resume) and the base.
+ *
+ * Paused state does NOT show a ticking chronometer: Android notification
+ * chronometers cannot freeze, and leaving one running while paused would
+ * display ever-growing time that isn't real cooking time. Instead the
+ * paused post hides the chronometer and bakes the frozen pause-adjusted
+ * elapsed into the body text, so the notification shows the truth and
+ * snaps back to the live ticker on resume.
+ *
+ * iOS: silently skipped (returns false). Ongoing notifications with
+ * chronometers + quick actions are an Android-only construct here; on iOS
+ * the in-app stopwatch is the timer (no OS countdown is posted, so nothing
+ * drifts or lies — the paused/finished state is purely in-app). Never throws.
  */
 export async function startCookNotification(
   opts: StartCookNotificationOpts,
@@ -151,17 +182,23 @@ export async function startCookNotification(
     await ensureChannels(mod);
     cookNotifState = opts;
     cookNotifToggledAt = Date.now();
+    // Frozen elapsed baked into the paused body (computed at post time —
+    // static text can't drift, which is exactly what "paused" means).
+    const pausedBody = opts.paused
+      ? `${t("cook.cookNotifBody")} · ${formatCookElapsed(Date.now() - opts.startedAt - opts.pausedMs)}`
+      : t("cook.cookNotifBody");
     await mod.default.displayNotification({
       id: COOK_NOTIFICATION_ID,
       title: t("cook.cookNotifTitle", { title: opts.recipeTitle }),
-      body: t("cook.cookNotifBody"),
+      body: pausedBody,
       android: {
         channelId: COOK_CHANNEL_ID,
         ongoing: true,
         showTimestamp: false,
-        showChronometer: true,
+        // Live ticker while running; hidden while paused (see above).
+        showChronometer: !opts.paused,
         // Chronometer base = start + paused-so-far, so the ticker shows the
-        // pause-adjusted elapsed (see the pause-drift note above).
+        // pause-adjusted elapsed. Ignored while paused (chronometer hidden).
         timestamp: opts.startedAt + opts.pausedMs,
         color: ACCENT,
         colorized: true,
@@ -259,12 +296,54 @@ export async function scheduleStepAlarm(
     return { id, exactAlarmDenied: false };
   } catch (error) {
     console.warn("[RecipeReal] scheduleStepAlarm failed:", error);
-    // notifee surfaces Android's SCHEDULE_EXACT_ALARM refusal with an
-    // error code mentioning the alarm permission (Android 14+ denies it
-    // by DEFAULT for new installs).
-    const code = String((error as { code?: unknown })?.code ?? "");
-    const exactAlarmDenied = code.toLowerCase().includes("alarm");
-    return { id: null, exactAlarmDenied };
+    // Android 12+ refuses exact-alarm triggers when the user hasn't granted
+    // SCHEDULE_EXACT_ALARM (denied by DEFAULT for new installs on 14+).
+    // Matched by EXACT code equality — never substring — then confirmed
+    // against the OS setting, which is authoritative: native error codes
+    // vary across notifee/OS versions, the setting does not.
+    const rawCode = (error as { code?: unknown })?.code;
+    const code =
+      typeof rawCode === "string" ? rawCode.trim().toLowerCase() : "";
+    if (EXACT_ALARM_DENIED_CODES.has(code)) {
+      return { id: null, exactAlarmDenied: true };
+    }
+    const allowed = await canScheduleExactAlarms();
+    return { id: null, exactAlarmDenied: allowed === false };
+  }
+}
+
+/**
+ * Known notifee/OS error codes meaning "exact alarm refused"
+ * (SCHEDULE_EXACT_ALARM not granted). Compared by exact equality after
+ * lowercase+trim. This list is a fast path only — an unrecognized code
+ * falls through to the authoritative canScheduleExactAlarms() check.
+ */
+const EXACT_ALARM_DENIED_CODES: ReadonlySet<string> = new Set([
+  "exact_alarms_not_permitted",
+  "alarm_permission_denied",
+  "schedule_exact_alarm_denied",
+  "android_alarm_denied",
+]);
+
+/**
+ * Ask the OS whether exact-alarm triggers can currently be scheduled, via
+ * notifee's getNotificationSettings().android.alarm ("whether triggers can
+ * be created"; pre-Android-12 this reports ENABLED). Returns null when the
+ * answer is unknowable (non-Android, Expo Go, NOT_SUPPORTED) — callers must
+ * treat null as "don't nag", not as denial.
+ */
+export async function canScheduleExactAlarms(): Promise<boolean | null> {
+  if (Platform.OS !== "android") return null;
+  const mod = await notifeeModule();
+  if (!mod) return null;
+  try {
+    const settings = await mod.default.getNotificationSettings();
+    const alarm = settings?.android?.alarm;
+    if (alarm == null) return null;
+    if (alarm === mod.AndroidNotificationSetting.NOT_SUPPORTED) return null;
+    return alarm === mod.AndroidNotificationSetting.ENABLED;
+  } catch {
+    return null;
   }
 }
 
@@ -314,8 +393,10 @@ export interface CookEventHandlers {
  *   notification with the flipped action + refreshed chronometer base;
  *   finish cancels it. When the OS KILLED the app that mirror is gone (the
  *   headless JS starts fresh), so pause/resume can only no-op and finish
- *   still cancels the notification — the cook session itself is NOT
- *   submitted in that case.
+ *   still cancels the notification — but the cook session itself is NOT
+ *   lost: it is persisted (AsyncStorage) on every change, so the next
+ *   launch restores the elapsed stopwatch and the user can resume or
+ *   submit from the restored Cook Mode screen instead of only cancelling.
  *
  * Returns an unsubscribe function for the foreground listener.
  */

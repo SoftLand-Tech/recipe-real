@@ -21,6 +21,7 @@ import {
   createPostComment,
   fetchPostComments,
   HalalRejectionError,
+  OfflineError,
   PostUnauthorizedError,
 } from "@/api/client";
 import type { PostComment } from "@/types";
@@ -193,8 +194,12 @@ export function CommentsSheet({ postId, visible, onClose, myAvatar, myName, onCo
       setDraft("");
       onCommented?.(postId);
     } catch (e) {
+      // The draft is kept on every failure (cleared only on success above):
+      // offline (not queued — the queue is cook-sessions-only) shows the
+      // retry message verbatim.
       if (e instanceof HalalRejectionError) setHalalTerms(e.terms);
       else if (e instanceof PostUnauthorizedError) setError(t("community.signInPrompt"));
+      else if (e instanceof OfflineError) setError(e.message);
       else setError(t("community.commentFailed"));
     } finally {
       setPosting(false);

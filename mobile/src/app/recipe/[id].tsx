@@ -28,6 +28,7 @@ import {
   getRecipe,
   hasToken,
   HalalRejectionError,
+  OfflineError,
   postRecipeNote,
   QuickTimeUnauthorizedError,
   RecipeNoteUnauthorizedError,
@@ -1210,6 +1211,10 @@ export default function RecipeDetailScreen() {
           setNotePostError(
             t("detail.noteHalalBlocked", { terms: error.terms.join(", ") }),
           );
+        } else if (error instanceof OfflineError) {
+          // Offline (not queued — the queue is cook-sessions-only): the
+          // draft is kept (cleared only on success), show the retry message.
+          setNotePostError(error.message);
         } else {
           setNotePostError(t("detail.notePostFailed"));
         }
@@ -1336,6 +1341,10 @@ export default function RecipeDetailScreen() {
       if (error instanceof QuickTimeUnauthorizedError) {
         setQuickNeedsAuth(true);
         setQuickError(t("quick.signInRequired"));
+      } else if (error instanceof OfflineError) {
+        // Offline (not queued — the queue is cook-sessions-only): the typed
+        // values stay in the form, show the retry message.
+        setQuickError(error.message);
       } else {
         setQuickError(t("quick.error"));
       }
