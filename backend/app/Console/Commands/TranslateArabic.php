@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Recipe;
+use App\Support\ArabicFoodGlossary;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\DB;
@@ -212,6 +213,15 @@ class TranslateArabic extends Command
                 return false;
             }
             $stepDescriptions[$step->id] = $translated;
+        }
+
+        // Raw MT transliterates common food words ("Cranberry Scones" →
+        // "سكون الكرانبيري") — normalize to established culinary terms.
+        $titleAr = ArabicFoodGlossary::apply($titleAr);
+        $ingredientsAr = array_map([ArabicFoodGlossary::class, 'apply'], $ingredientsAr);
+        $stepsAr = array_map([ArabicFoodGlossary::class, 'apply'], $stepsAr);
+        foreach ($stepDescriptions as $id => $description) {
+            $stepDescriptions[$id] = ArabicFoodGlossary::apply($description);
         }
 
         DB::transaction(function () use ($recipe, $titleAr, $ingredientsAr, $stepsAr, $stepDescriptions): void {
