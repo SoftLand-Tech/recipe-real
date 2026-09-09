@@ -1,7 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
-import { Radius, Space, Type, useThemeColors, type ThemeColors } from "@/theme";
+import { Radius, Shadow, Space, Type, useThemeColors, type ThemeColors } from "@/theme";
 
 export interface ChipProps {
   label: string;
@@ -80,6 +80,9 @@ export function Chip({
             : Space.xs + 2,
           paddingHorizontal: small ? Space.sm : Space.md,
         },
+        // Raised = tappable. Tags stay flat; action pills lift off the
+        // screen (the one cue that separates them at a glance).
+        outline ? Shadow.card : null,
       ]}
     >
       {icon ? <View style={styles.icon}>{icon}</View> : null}

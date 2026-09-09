@@ -1648,11 +1648,13 @@ export default function CookModeScreen() {
             label={stepTypeLabel(t, step.step_type || "active")}
             stepType={step.step_type}
           />
-          {/* Step ALARM chip — an explicit toggle: outlined "⏰ Set 60 min
-              alarm" → filled "alarm on · cancel". The outline + icon keep it
-              reading as a BUTTON next to the borderless step-type tag. In
-              Expo Go (alarms can't run) it renders as a muted tag with a
-              one-line caption instead. */}
+          {/* Step ALARM chip — an explicit toggle, styled as an ACTION, not
+              a tag: accent color (the app's button family — same family as
+              the Pause button), outlined + raised while unarmed, filled
+              accent pill with the filled icon when armed. The step-type
+              Badge beside it stays amber/muted so actions and tags never
+              share a color. In Expo Go (alarms can't run) it renders as a
+              muted tag with a one-line caption instead. */}
           {alarmMinutes != null && alarmMinutes > 0 ? (
             <View style={styles.alarmChipWrap}>
               <IconPressable
@@ -1673,9 +1675,7 @@ export default function CookModeScreen() {
                   tone={
                     alarmsUsable === false
                       ? "neutral"
-                      : alarmArmedHere
-                        ? "accent"
-                        : "amber"
+                      : "accent"
                   }
                   size="sm"
                   variant={
@@ -1690,9 +1690,7 @@ export default function CookModeScreen() {
                       color={
                         alarmsUsable === false
                           ? colors.inkSecondary
-                          : alarmArmedHere
-                            ? colors.accent
-                            : colors.stepTones.active.fg
+                          : colors.accent
                       }
                     />
                   }
