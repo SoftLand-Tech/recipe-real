@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # RecipeReal backend — run ON the VPS (as root) from /var/www/recipe-real.
-# Pulls latest main, reinstalls prod deps, migrates, re-caches, restarts the
-# queue worker, and health-checks.
+# Pulls latest main, reinstalls prod deps, migrates, builds frontend assets,
+# re-caches, restarts the queue worker, and health-checks.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,11 +18,14 @@ git pull --ff-only origin main
 echo "==> composer install (prod)"
 ( cd backend && composer install --no-dev --optimize-autoloader --no-interaction )
 
-echo "==> frontend build (vite)"
-( cd backend && npm ci --no-audit --no-fund && npm run build )
-
 echo "==> migrate --force"
 ( cd backend && php artisan migrate --force )
+
+# Frontend first: the Vite manifest (panel theme, landing CSS/JS) must exist
+# BEFORE the caches are warmed, otherwise cached views reference assets
+# that are not in the manifest yet.
+echo "==> frontend build (vite)"
+( cd backend && npm ci --no-audit --no-fund && npm run build )
 
 echo "==> warm caches"
 ( cd backend && php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan event:cache && php artisan filament:cache-components )
