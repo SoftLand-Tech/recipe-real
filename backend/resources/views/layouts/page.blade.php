@@ -92,6 +92,23 @@
             }
             @media (max-width: 860px) { .nav-links a:not(.btn) { display: none; } }
 
+            /* Small screens: brand + CTA pill + (collapsed) language toggle
+               must share one 60px bar without overflowing. */
+            @media (max-width: 560px) {
+                .wrap { padding: 0 16px; }
+                .nav-inner { gap: 10px; height: 60px; }
+                .brand { white-space: nowrap; }
+                .brand-mark { width: 28px; height: 28px; }
+                .brand b { font-size: 19px; }
+                .nav-links { gap: 10px; }
+                .nav .btn-accent { padding: 9px 14px; font-size: 13px; white-space: nowrap; }
+            }
+            @media (max-width: 380px) {
+                .brand-mark { width: 24px; height: 24px; }
+                .brand b { font-size: 17px; }
+                .nav .btn-accent { padding: 8px 12px; font-size: 12px; }
+            }
+
             /* page body */
             .page { max-width: 760px; margin: 0 auto; padding: 56px 28px 80px; }
             .page h1 {
