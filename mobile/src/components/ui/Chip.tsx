@@ -8,6 +8,12 @@ export interface ChipProps {
   tone?: "neutral" | "accent" | "success" | "danger" | "amber" | "timing";
   icon?: ReactNode;
   size?: "sm" | "md";
+  /**
+   * "outline" turns the chip into a tappable-looking action pill: colored
+   * border, heavier label, taller body. Use only for chips that are buttons
+   * — informational tags stay filled/borderless so the two never read alike.
+   */
+  variant?: "filled" | "outline";
 }
 
 function tones(
@@ -26,10 +32,17 @@ function tones(
   };
 }
 
-export function Chip({ label, tone = "neutral", icon, size = "md" }: ChipProps) {
+export function Chip({
+  label,
+  tone = "neutral",
+  icon,
+  size = "md",
+  variant = "filled",
+}: ChipProps) {
   const colors = useThemeColors();
   const toneColors = tones(colors)[tone];
   const small = size === "sm";
+  const outline = variant === "outline";
   const styles = useMemo(
     () =>
       StyleSheet.create({
@@ -45,12 +58,12 @@ export function Chip({ label, tone = "neutral", icon, size = "md" }: ChipProps) 
           marginEnd: Space.xs,
         },
         label: {
-          fontWeight: "600",
+          fontWeight: outline ? "700" : "600",
         },
         labelSm: { fontSize: Type.caption.fontSize },
         labelMd: { fontSize: Type.bodySm.fontSize },
       }),
-    [],
+    [outline],
   );
   return (
     <View
@@ -58,7 +71,13 @@ export function Chip({ label, tone = "neutral", icon, size = "md" }: ChipProps) 
         styles.base,
         {
           backgroundColor: toneColors.bg,
-          paddingVertical: small ? Space.xs / 2 : Space.xs + 2,
+          borderWidth: outline ? 1.5 : 0,
+          borderColor: toneColors.fg,
+          paddingVertical: small
+            ? outline
+              ? Space.xs + 2
+              : Space.xs / 2
+            : Space.xs + 2,
           paddingHorizontal: small ? Space.sm : Space.md,
         },
       ]}

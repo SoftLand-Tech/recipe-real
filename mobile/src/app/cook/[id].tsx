@@ -1648,9 +1648,11 @@ export default function CookModeScreen() {
             label={stepTypeLabel(t, step.step_type || "active")}
             stepType={step.step_type}
           />
-          {/* Step ALARM chip — an explicit toggle: "Set 60 min alarm" →
-              armed ("alarm on · cancel"). In Expo Go (alarms can't run)
-              it renders muted with a one-line caption instead. */}
+          {/* Step ALARM chip — an explicit toggle: outlined "⏰ Set 60 min
+              alarm" → filled "alarm on · cancel". The outline + icon keep it
+              reading as a BUTTON next to the borderless step-type tag. In
+              Expo Go (alarms can't run) it renders as a muted tag with a
+              one-line caption instead. */}
           {alarmMinutes != null && alarmMinutes > 0 ? (
             <View style={styles.alarmChipWrap}>
               <IconPressable
@@ -1676,6 +1678,24 @@ export default function CookModeScreen() {
                         : "amber"
                   }
                   size="sm"
+                  variant={
+                    alarmsUsable === false || alarmArmedHere
+                      ? "filled"
+                      : "outline"
+                  }
+                  icon={
+                    <Ionicons
+                      name={alarmArmedHere ? "alarm" : "alarm-outline"}
+                      size={14}
+                      color={
+                        alarmsUsable === false
+                          ? colors.inkSecondary
+                          : alarmArmedHere
+                            ? colors.accent
+                            : colors.stepTones.active.fg
+                      }
+                    />
+                  }
                   label={
                     alarmsUsable === false
                       ? t("cook.alarmChip", {

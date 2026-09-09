@@ -22,6 +22,10 @@ export interface IconPressableProps {
  * devices never render) or a background-color swap (which some devices fail
  * to repaint). This guarantees the user always sees the tap acknowledged,
  * even when the onPress handler itself is slow.
+ *
+ * On web (React Native Web fires onHoverIn/onHoverOut, native ignores them)
+ * the same dim applies on hover so buttons announce themselves to a mouse
+ * before the click.
  */
 export function IconPressable({
   children,
@@ -33,6 +37,7 @@ export function IconPressable({
   style,
 }: IconPressableProps) {
   const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
   return (
     <Pressable
       onPress={disabled ? undefined : onPress}
@@ -42,7 +47,9 @@ export function IconPressable({
       hitSlop={hitSlop}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
-      style={[style, pressed && !disabled ? { opacity: 0.6 } : null]}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      style={[style, !disabled && (pressed || hovered) ? { opacity: 0.6 } : null]}
     >
       {children}
     </Pressable>
