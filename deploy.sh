@@ -18,6 +18,9 @@ git pull --ff-only origin main
 echo "==> composer install (prod)"
 ( cd backend && composer install --no-dev --optimize-autoloader --no-interaction )
 
+echo "==> frontend build (vite)"
+( cd backend && npm ci --no-audit --no-fund && npm run build )
+
 echo "==> migrate --force"
 ( cd backend && php artisan migrate --force )
 
