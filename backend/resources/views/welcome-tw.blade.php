@@ -38,8 +38,17 @@
                 BlinkMacSystemFont, "Segoe UI", Tahoma, "Noto Sans Arabic", "Cairo", sans-serif; }
             [dir="rtl"] h1, [dir="rtl"] h2, [dir="rtl"] h3, [dir="rtl"] h4,
             [dir="rtl"] b { letter-spacing: 0 !important; }
-            [dir="rtl"] .hero-art { left: auto !important; right: -30px; }
+            [dir="rtl"] .hero-art { left: min(-28px,(1104px - 100vw)/2) !important; right: -30px !important; }
             [dir="rtl"] .hero-fade-h { background: linear-gradient(270deg,#FAF6EF 0%,rgba(250,246,239,.85) 22%,rgba(250,246,239,0) 62%) !important; }
+            /* Directional icons that must point the other way in RTL. */
+            [dir="rtl"] .flip-rtl { display: inline-block; transform: scaleX(-1); }
+            /* Hero sparkles: physical spots mirrored. */
+            .sparkle-1 { top: 6px; left: 2%; }
+            .sparkle-2 { bottom: 120px; left: 6%; }
+            .sparkle-3 { bottom: 56px; right: 8%; }
+            [dir="rtl"] .sparkle-1 { left: auto; right: 2%; }
+            [dir="rtl"] .sparkle-2 { left: auto; right: 6%; }
+            [dir="rtl"] .sparkle-3 { right: auto; left: 8%; }
             [dir="rtl"] .how-arrow { right: auto !important; left: -26px; transform: scaleX(-1); }
             [dir="rtl"] .cta-side-l { left: auto !important; right: 0 !important; }
             [dir="rtl"] .cta-side-r { right: auto !important; left: 0 !important; }
@@ -106,7 +115,7 @@ provenance.
                         </a>
                         <a class="inline-flex items-center justify-center gap-[10px] rounded-[999px] font-bold text-[15.5px] tracking-[.005em] no-underline border border-transparent cursor-pointer transition duration-[.16s] [transition-timing-function:ease] active:translate-y-[1px] focus-visible:outline-[2.5px] focus-visible:outline-orange focus-visible:outline-offset-[3px] focus-visible:rounded-[4px] py-[14px] px-7 bg-white text-ink border-[#E8DFD2] shadow-[0_6px_16px_-10px_rgba(38,33,27,.25)] hover:border-orange hover:text-orange-deep max-[480px]:py-3 max-[480px]:px-4 max-[480px]:text-[14px] max-[480px]:whitespace-nowrap max-[359px]:text-[13px] max-[359px]:px-3" href="#how">
                             <span class="w-[26px] h-[26px] rounded-[99px] bg-orange-soft inline-flex items-center justify-center text-orange-deep shrink-0 max-[480px]:w-[22px] max-[480px]:h-[22px]" aria-hidden="true">
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg>
+                                <svg class="flip-rtl" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg>
                             </span>
                             {{ __('site.hero_watch_demo') }}
                         </a>
@@ -119,9 +128,9 @@ provenance.
                         <div class="hero-fade-h absolute inset-0 bg-[linear-gradient(90deg,#FAF6EF_0%,rgba(250,246,239,.85)_22%,rgba(250,246,239,0)_62%)]" aria-hidden="true"></div>
                         <div class="absolute inset-0 bg-[linear-gradient(0deg,#FAF6EF_0%,rgba(250,246,239,.6)_18%,rgba(250,246,239,0)_46%)]" aria-hidden="true"></div>
                     </div>
-                    <svg class="absolute text-orange opacity-[.85]" style="top:6px; left:2%" width="30" height="30" viewBox="0 0 30 30" fill="currentColor" aria-hidden="true"><path d="M15 1c1.2 7.4 4.4 11 13 14-8.6 3-11.8 6.6-13 14-1.2-7.4-4.4-11-13-14C10.6 12 13.8 8.4 15 1Z"/></svg>
-                    <svg class="absolute text-orange opacity-[.85]" style="bottom:120px; left:6%; width:16px; height:16px" viewBox="0 0 30 30" fill="currentColor" aria-hidden="true"><path d="M15 1c1.2 7.4 4.4 11 13 14-8.6 3-11.8 6.6-13 14-1.2-7.4-4.4-11-13-14C10.6 12 13.8 8.4 15 1Z"/></svg>
-                    <svg class="absolute text-orange opacity-[.85]" style="bottom:56px; right:8%; width:20px; height:20px" viewBox="0 0 30 30" fill="currentColor" aria-hidden="true"><path d="M15 1c1.2 7.4 4.4 11 13 14-8.6 3-11.8 6.6-13 14-1.2-7.4-4.4-11-13-14C10.6 12 13.8 8.4 15 1Z"/></svg>
+                    <svg class="absolute text-orange opacity-[.85] sparkle-1" width="30" height="30" viewBox="0 0 30 30" fill="currentColor" aria-hidden="true"><path d="M15 1c1.2 7.4 4.4 11 13 14-8.6 3-11.8 6.6-13 14-1.2-7.4-4.4-11-13-14C10.6 12 13.8 8.4 15 1Z"/></svg>
+                    <svg class="absolute text-orange opacity-[.85] sparkle-2" width="16" height="16" viewBox="0 0 30 30" fill="currentColor" aria-hidden="true"><path d="M15 1c1.2 7.4 4.4 11 13 14-8.6 3-11.8 6.6-13 14-1.2-7.4-4.4-11-13-14C10.6 12 13.8 8.4 15 1Z"/></svg>
+                    <svg class="absolute text-orange opacity-[.85] sparkle-3" width="20" height="20" viewBox="0 0 30 30" fill="currentColor" aria-hidden="true"><path d="M15 1c1.2 7.4 4.4 11 13 14-8.6 3-11.8 6.6-13 14-1.2-7.4-4.4-11-13-14C10.6 12 13.8 8.4 15 1Z"/></svg>
 
                     <div class="absolute left-1/2 top-[44px] translate-x-[-54%] flex justify-center max-[940px]:top-[10px] max-[940px]:translate-x-[-50%] max-[420px]:w-full">
                         <div class="relative w-[400px] shrink-0 bg-[#101013] rounded-[54px] p-[10px] origin-top scale-[.8] shadow-[0_60px_120px_-38px_rgba(38,33,27,.5),inset_0_0_0_2px_#000] max-[420px]:scale-[.68]" role="img" aria-label="{{ __('site.hero_mock_label') }}">
@@ -324,7 +333,7 @@ provenance.
                     </div>
                     <a class="text-[14.5px] font-bold text-orange-deep no-underline whitespace-nowrap absolute end-0 top-[14px] hover:text-orange max-[640px]:static focus-visible:outline-[2.5px] focus-visible:outline-orange focus-visible:outline-offset-[3px] focus-visible:rounded-[4px]" href="{{ route('app.download') }}" title="{{ __('site.pop_view_all_title') }}">
                         {{ __('site.pop_view_all') }}
-                        <svg class="inline" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><path d="M4 12h15"/><path d="m13 6 6 6-6 6"/></svg>
+                        <svg class="inline flip-rtl" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><path d="M4 12h15"/><path d="m13 6 6 6-6 6"/></svg>
                     </a>
                 </div>
                 <div class="grid grid-cols-5 gap-[18px] max-[1080px]:grid-cols-3 max-[700px]:grid-cols-2">
