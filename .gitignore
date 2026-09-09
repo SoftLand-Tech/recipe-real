@@ -33,3 +33,11 @@ remtion-refrence.mp4
 
 # impeccable design-session artifacts (screenshots, comps)
 .impeccable/
+
+# agent/scratch dirs + video references (side work, never shipped)
+.claude/
+.codex/
+.video_agent/
+ad-builds/
+ad-preview/
+reference.mp4
