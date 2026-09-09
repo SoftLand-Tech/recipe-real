@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ app()->getLocale() }}" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -17,20 +17,24 @@
     $steps = $recipe->steps_count !== null ? (int) $recipe->steps_count : null;
 
     $shareUrl   = url('/r/' . $recipe->id);
-    $pageTitle  = $recipe->title ?? $recipe->title_ar ?? 'Recipe';
+    // Device language first: Arabic visitors see the Arabic title when it
+    // exists (and vice-versa); the other title still renders below.
+    $pageTitle  = app()->getLocale() === 'ar'
+        ? ($recipe->title_ar ?? $recipe->title ?? __('site.share_fallback_recipe'))
+        : ($recipe->title ?? $recipe->title_ar ?? __('site.share_fallback_recipe'));
     $image      = $recipe->image_url;
 
-    // og:description mirrors the badge + steps line, e.g.
+    // og:description mirrors the badge + steps line, localized, e.g.
     // "Recipe says 25 min · Really takes 40 min · 12 steps".
     $descParts = [];
     if ($claim !== null) {
-        $descParts[] = "Recipe says {$claim} min";
+        $descParts[] = __('site.share_says')." {$claim} ".__('site.share_min');
     }
     if ($reality !== null) {
-        $descParts[] = "Really takes {$reality} min";
+        $descParts[] = __('site.share_takes')." {$reality} ".__('site.share_min');
     }
     if ($steps !== null) {
-        $descParts[] = "{$steps} steps";
+        $descParts[] = "{$steps} ".($steps === 1 ? __('site.share_step') : __('site.share_steps'));
     }
     $description = implode(' · ', $descParts);
 @endphp
@@ -62,6 +66,11 @@
                 -webkit-font-smoothing: antialiased;
                 -moz-osx-font-smoothing: grayscale;
             }
+            [dir="rtl"] body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma,
+                    "Noto Sans Arabic", "Cairo", Roboto, Helvetica, Arial, sans-serif;
+                letter-spacing: 0;
+            }
             main {
                 max-width: 560px;
                 margin: 0 auto;
@@ -74,6 +83,7 @@
                 text-decoration: none;
                 color: #241D17;
             }
+            [dir="rtl"] .brand { letter-spacing: 0; }
             .brand span {
                 color: #BF5523;
             }
@@ -99,9 +109,8 @@
                 line-height: 1.2;
                 margin: 18px 0 0;
             }
-            .title-ar {
-                direction: rtl;
-                text-align: right;
+            [dir="rtl"] h1 { letter-spacing: 0; }
+            .title-alt {
                 color: #6E5F52;
                 font-size: 1.05rem;
                 font-weight: 600;
@@ -152,27 +161,30 @@
                 <img class="photo" src="{{ $image }}" alt="{{ $pageTitle }}" loading="lazy">
 @endif
                 <h1>{{ $pageTitle }}</h1>
-@if ($recipe->title_ar && $recipe->title_ar !== $recipe->title)
-                <p class="title-ar" lang="ar" dir="rtl">{{ $recipe->title_ar }}</p>
+@php
+    $altTitle = app()->getLocale() === 'ar' ? $recipe->title : $recipe->title_ar;
+@endphp
+@if ($altTitle && $altTitle !== $pageTitle)
+                <p class="title-alt" lang="{{ app()->getLocale() === 'ar' ? 'en' : 'ar' }}" dir="{{ app()->getLocale() === 'ar' ? 'ltr' : 'rtl' }}">{{ $altTitle }}</p>
 @endif
 
 @if ($claim !== null || $reality !== null)
                 <div class="times">
                     @if ($claim !== null)
-                        <div class="claim">Recipe says <strong>{{ $claim }} min</strong></div>
+                        <div class="claim">{{ __('site.share_says') }} <strong>{{ $claim }} {{ __('site.share_min') }}</strong></div>
                     @endif
                     @if ($reality !== null)
-                        <div class="really">Really takes <strong>{{ $reality }} min</strong></div>
+                        <div class="really">{{ __('site.share_takes') }} <strong>{{ $reality }} {{ __('site.share_min') }}</strong></div>
                     @endif
                 </div>
 @endif
 
 @if ($steps !== null)
-                <p class="meta">{{ $steps }} step{{ $steps === 1 ? '' : 's' }}</p>
+                <p class="meta">{{ $steps }} {{ $steps === 1 ? __('site.share_step') : __('site.share_steps') }}</p>
 @endif
             </article>
 
-            <footer>Cooked with <a href="/">RecipeReal</a></footer>
+            <footer>{{ __('site.share_cooked') }} <a href="/">RecipeReal</a></footer>
         </main>
     </body>
 </html>

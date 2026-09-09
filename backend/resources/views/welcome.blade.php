@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ app()->getLocale() }}" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
         <meta name="color-scheme" content="light">
-        <title>RecipeReal — Real Recipes. Real Results.</title>
-        <meta name="description" content="Accurate cooking-time estimates for every skill level, clock-checked across 20,089 halal-friendly recipes. Guided Cook Mode with step alarms, an offline library, and estimates that tune themselves to how you cook. Free Android app.">
+        <title>{{ __('site.meta_title') }}</title>
+        <meta name="description" content="{{ __('site.meta_desc') }}">
         <link rel="canonical" href="https://recipe-real.softland.tech/">
         <meta name="theme-color" content="#FAF6EF">
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">

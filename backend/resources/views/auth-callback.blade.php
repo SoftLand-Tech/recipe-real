@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ app()->getLocale() }}" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -21,7 +21,7 @@
 <body>
   <div class="card">
     <div class="dot"></div>
-    <p>Finishing sign-in&hellip;</p>
+    <p>{{ __('site.auth_signing_in') }}</p>
   </div>
   <script>
     // Forward the OAuth response to the app's deep link — with the FRAGMENT

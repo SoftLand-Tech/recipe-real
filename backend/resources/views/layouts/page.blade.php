@@ -1,11 +1,14 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ app()->getLocale() }}" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
         <meta name="color-scheme" content="light">
         <title>@yield('title', 'RecipeReal')</title>
-        <meta name="description" content="@yield('description', 'Accurate cooking-time estimates for every skill level. Halal-friendly, offline, honest times measured by real cooks. Free Android app.')">
+        <meta name="description" content="@yield('description', __('site.page_default_desc'))">
+        <link rel="alternate" hreflang="en" href="{{ request()->url().'?'.http_build_query(array_merge(request()->query(), ['lang' => 'en'])) }}">
+        <link rel="alternate" hreflang="ar" href="{{ request()->url().'?'.http_build_query(array_merge(request()->query(), ['lang' => 'ar'])) }}">
+        <link rel="alternate" hreflang="x-default" href="{{ request()->url() }}">
         <meta name="theme-color" content="#FAF6EF">
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
         <link rel="preload" href="/fonts/Fraunces-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -130,6 +133,25 @@
             .page td b { color: var(--ink); }
             .ar { direction: rtl; text-align: right; font-size: 15.5px; color: #4E463B; }
             .ar h2 { direction: rtl; }
+
+            /* ---- RTL: Arabic reads with system Arabic fonts, no latin
+               letter-spacing (it breaks Arabic joining), logical alignment. */
+            [dir="rtl"] body {
+                font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
+                    Tahoma, "Noto Sans Arabic", "Cairo", Roboto, sans-serif;
+                letter-spacing: 0;
+            }
+            [dir="rtl"] .page h1, [dir="rtl"] .page h2, [dir="rtl"] .brand b {
+                letter-spacing: 0;
+                font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
+                    Tahoma, "Noto Sans Arabic", "Cairo", sans-serif;
+            }
+            [dir="rtl"] .page blockquote {
+                border-inline-start: 3px solid var(--orange);
+                border-radius: 14px 0 0 14px;
+            }
+            [dir="rtl"] .page ul, [dir="rtl"] .page ol { padding-inline-start: 22px; }
+            [dir="rtl"] .foot-col h4 { letter-spacing: .02em; }
 
             /* forms */
             .field { margin: 0 0 16px; }

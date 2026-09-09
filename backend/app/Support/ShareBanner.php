@@ -45,7 +45,9 @@ class ShareBanner
     /**
      * Self-contained "Get the app" smart banner injected before </body>
      * OUTSIDE the cached page HTML (the cache stays visitor-neutral).
-     * Empty URL renders nothing.
+     * Empty URL renders nothing. Strings follow the request locale
+     * (SetLocale runs before the route) with logical properties so the
+     * banner flips automatically in RTL.
      */
     public static function bannerHtml(?string $storeUrl): string
     {
@@ -53,20 +55,27 @@ class ShareBanner
             return '';
         }
 
-        return str_replace('__STORE_URL__', $storeUrl, <<<'HTML'
+        $tag = __('site.banner_tag');
+        $go = __('site.banner_go');
+
+        return str_replace(
+            ['__STORE_URL__', '__BANNER_TAG__', '__BANNER_GO__'],
+            [$storeUrl, e($tag), e($go)],
+            <<<'HTML'
         <style>
             #rr-store-banner{position:fixed;bottom:0;left:0;right:0;z-index:50;display:flex;
                 align-items:center;gap:12px;padding:12px 16px;background:#241D17;color:#FBF8F3;
-                font-family:-apple-system,system-ui,sans-serif;text-decoration:none;
+                font-family:-apple-system,system-ui,"Segoe UI",Tahoma,"Noto Sans Arabic",sans-serif;text-decoration:none;
                 box-shadow:0 -4px 16px rgba(0,0,0,.18)}
             #rr-store-banner strong{font-size:14px}#rr-store-banner span{font-size:12px;opacity:.75}
             #rr-store-banner .rr-go{margin-inline-start:auto;background:#E86A33;color:#fff;
                 border-radius:999px;padding:8px 16px;font-size:13px;font-weight:700;white-space:nowrap}
         </style>
         <a id="rr-store-banner" href="__STORE_URL__" rel="noopener">
-            <div><strong>RecipeReal</strong><br><span>Get the app — honest cook times, offline library</span></div>
-            <span class="rr-go">Install</span>
+            <div><strong>RecipeReal</strong><br><span>__BANNER_TAG__</span></div>
+            <span class="rr-go">__BANNER_GO__</span>
         </a>
-        HTML);
+        HTML
+        );
     }
 }

@@ -1,94 +1,91 @@
 @extends('layouts.page')
 
-@section('title', 'Simple pricing — RecipeReal')
-@section('description', 'RecipeReal is free to use with a monthly recipe allowance. Premium is US $5.99/month or $49.99/year for unlimited cooking and pace calibration — checkout is rolling out now.')
+@section('title', __('site.pricing_title'))
+@section('description', __('site.pricing_desc'))
 
 @section('content')
 <div class="page">
-    <h1>Simple <span class="o">pricing</span></h1>
+    <h1>{{ __('site.pricing_h1_a') }} <span class="o">{{ __('site.pricing_h1_b') }}</span></h1>
     <div class="rule" aria-hidden="true"></div>
     <p class="lede">
-        One free tier that is genuinely useful, and one optional
-        subscription. No ads, no tiers in between, nothing sneaky.
+        {{ __('site.pricing_lede') }}
     </p>
 
     <div class="grid g2">
         <div class="card">
-            <h2>Free</h2>
-            <p><strong>$0</strong>, forever. The honest core of the app.</p>
+            <h2>{{ __('site.pricing_free_t') }}</h2>
+            <p><strong>$0</strong>{{ __('site.pricing_free_suffix') }}</p>
             <ul>
-                <li>Browse the full halal library — about 20,089 recipes</li>
-                <li>Guided Cook Mode with the step stopwatch</li>
-                <li>A monthly recipe allowance</li>
-                <li>Offline library on your phone</li>
+                <li>{{ __('site.pricing_free1') }}</li>
+                <li>{{ __('site.pricing_free2') }}</li>
+                <li>{{ __('site.pricing_free3') }}</li>
+                <li>{{ __('site.pricing_free4') }}</li>
             </ul>
         </div>
         <div class="card">
-            <h2>Premium</h2>
-            <p><strong>US $5.99/month</strong> or <strong>$49.99/year</strong></p>
-            <p><span class="pill">Rolling out now</span></p>
+            <h2>{{ __('site.pricing_premium_t') }}</h2>
+            <p><strong>{{ __('site.pricing_premium_price') }}</strong> {{ __('site.pricing_premium_or') }} <strong>{{ __('site.pricing_premium_year') }}</strong></p>
+            <p><span class="pill">{{ __('site.pricing_rolling') }}</span></p>
             <ul>
-                <li>Unlimited cooking — no monthly allowance</li>
-                <li>Pace calibration tuned to how you cook</li>
-                <li>Supports a small, independent project</li>
+                <li>{{ __('site.pricing_prem1') }}</li>
+                <li>{{ __('site.pricing_prem2') }}</li>
+                <li>{{ __('site.pricing_prem3') }}</li>
             </ul>
         </div>
     </div>
 
-    <h2>Side by side</h2>
+    <h2>{{ __('site.pricing_side_t') }}</h2>
     <table>
         <thead>
             <tr>
-                <th scope="col">What you get</th>
-                <th scope="col">Free</th>
-                <th scope="col">Premium</th>
+                <th scope="col">{{ __('site.pricing_col_what') }}</th>
+                <th scope="col">{{ __('site.pricing_col_free') }}</th>
+                <th scope="col">{{ __('site.pricing_col_prem') }}</th>
             </tr>
         </thead>
         <tbody>
             <tr>
-                <td>Full halal library</td>
-                <td><b>Yes</b></td>
-                <td><b>Yes</b></td>
+                <td>{{ __('site.pricing_row_library') }}</td>
+                <td><b>{{ __('site.pricing_yes') }}</b></td>
+                <td><b>{{ __('site.pricing_yes') }}</b></td>
             </tr>
             <tr>
-                <td>Guided Cook Mode</td>
-                <td><b>Yes</b></td>
-                <td><b>Yes</b></td>
+                <td>{{ __('site.pricing_row_cook') }}</td>
+                <td><b>{{ __('site.pricing_yes') }}</b></td>
+                <td><b>{{ __('site.pricing_yes') }}</b></td>
             </tr>
             <tr>
-                <td>Recipes per month</td>
-                <td>Monthly allowance</td>
-                <td><b>Unlimited</b></td>
+                <td>{{ __('site.pricing_row_permonth') }}</td>
+                <td>{{ __('site.pricing_allowance') }}</td>
+                <td><b>{{ __('site.pricing_unlimited') }}</b></td>
             </tr>
             <tr>
-                <td>Offline use</td>
-                <td><b>Yes</b></td>
-                <td><b>Yes</b></td>
+                <td>{{ __('site.pricing_row_offline') }}</td>
+                <td><b>{{ __('site.pricing_yes') }}</b></td>
+                <td><b>{{ __('site.pricing_yes') }}</b></td>
             </tr>
             <tr>
-                <td>Pace calibration</td>
+                <td>{{ __('site.pricing_row_pace') }}</td>
                 <td>—</td>
-                <td><b>Yes</b></td>
+                <td><b>{{ __('site.pricing_yes') }}</b></td>
             </tr>
         </tbody>
     </table>
 
-    <h2>The honest details</h2>
+    <h2>{{ __('site.pricing_details_t') }}</h2>
     <ul>
-        <li><strong>Prices are in US dollars.</strong> $5.99 per month or $49.99 per year, wherever you live.</li>
-        <li><strong>Cancel anytime</strong> — once checkout is live in your build, you can cancel from inside the app and keep access until the end of your period.</li>
-        <li><strong>Premium lives inside the app.</strong> Nothing is bought on this website — you will never enter card details here.</li>
-        <li><strong>Checkout is rolling out now.</strong> It is not yet live in every build; if you do not see it yet, it is coming.</li>
+        <li><strong>{{ __('site.pricing_d1_b') }}</strong> {{ __('site.pricing_d1') }}</li>
+        <li><strong>{{ __('site.pricing_d2_b') }}</strong> {{ __('site.pricing_d2') }}</li>
+        <li><strong>{{ __('site.pricing_d3_b') }}</strong> {{ __('site.pricing_d3') }}</li>
+        <li><strong>{{ __('site.pricing_d4_b') }}</strong> {{ __('site.pricing_d4') }}</li>
     </ul>
 
-    <h2>Get the app</h2>
+    <h2>{{ __('site.pricing_get_t') }}</h2>
     <p>
-        Everything above — free and Premium alike — starts with installing
-        RecipeReal on your Android phone (7.0 and up). It is a direct
-        download, not a store listing.
+        {{ __('site.pricing_get_d') }}
     </p>
     <p>
-        <a class="btn btn-accent" href="{{ route('app.download') }}">Get the app</a>
+        <a class="btn btn-accent" href="{{ route('app.download') }}">{{ __('site.pricing_get_btn') }}</a>
     </p>
 </div>
 @endsection

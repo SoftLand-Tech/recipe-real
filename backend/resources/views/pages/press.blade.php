@@ -1,123 +1,98 @@
 @extends('layouts.page')
 
-@section('title', 'Press Kit — RecipeReal')
-@section('description', 'Press kit for RecipeReal: short and long boilerplate, a fact sheet, and brand assets for the halal-only Android recipe app with honest cook times.')
+@section('title', __('site.press_title'))
+@section('description', __('site.press_desc'))
 
 @section('content')
 <div class="page">
-    <h1>Press Kit</h1>
+    <h1>{{ __('site.press_h1') }}</h1>
     <div class="rule" aria-hidden="true"></div>
     <p class="lede">
-        Everything you need to write about RecipeReal: what it is, the facts
-        as they stand today, and where to find the art. For anything else,
-        write to us through the contact page.
+        {{ __('site.press_lede') }}
     </p>
 
-    <h2>About RecipeReal</h2>
+    <h2>{{ __('site.press_about_t') }}</h2>
 
     <div class="card">
-        <h3>Short version</h3>
+        <h3>{{ __('site.press_short_t') }}</h3>
         <p>
-            RecipeReal is a halal-only, bilingual (English/Arabic) Android
-            recipe app built around honest cook times. Its guided Cook Mode
-            times real cooks step by step, shows the claimed time next to
-            what the recipe really takes, and calibrates every estimate to
-            each cook's pace. The library holds around 20,089 recipes,
-            downloads to the phone for offline use, and is free to start.
+            {{ __('site.press_short_d') }}
         </p>
     </div>
 
     <div class="card">
-        <h3>Long version</h3>
+        <h3>{{ __('site.press_long_t') }}</h3>
         <p>
-            Recipes habitually claim times that sound better than reality,
-            and home cooks pay for it in lost evenings. RecipeReal treats
-            time as data. In Cook Mode — a full-screen, step-by-step guide
-            with a stopwatch, step alarms, and pause/resume — the app
-            measures what real cooks actually spend on a recipe, shows the
-            claim next to the measured reality, and calibrates every estimate
-            to the individual cook's pace.
+            {{ __('site.press_long_p1') }}
         </p>
         <p>
-            The product is halal-first: every recipe is screened against
-            explicit pork and alcohol rules before it reaches the app. The
-            library — around 20,089 recipes and 137,644 steps — speaks
-            English and Arabic with full right-to-left support, and downloads
-            to the phone so cooking works with no signal. A community of
-            cooks shares what they tried, and their measurements keep
-            sharpening the estimates for everyone.
+            {{ __('site.press_long_p2') }}
         </p>
         <p>
-            RecipeReal is built and run by a one-person team. It offers a
-            free tier, with Premium at US $5.99/month or $49.99/year rolling
-            out. The app runs on Android 7.0 and up and is distributed as a
-            direct APK download — it is not on Google Play or the App Store.
+            {{ __('site.press_long_p3') }}
         </p>
     </div>
 
-    <h2>Fact sheet</h2>
+    <h2>{{ __('site.press_facts_t') }}</h2>
     <table>
         <tr>
-            <th>Product</th>
-            <td>RecipeReal — a halal-only Android recipe app with honest, measured cook times</td>
+            <th>{{ __('site.press_f_product') }}</th>
+            <td>{{ __('site.press_f_product_v') }}</td>
         </tr>
         <tr>
-            <th>Library</th>
-            <td>~20,089 recipes, 137,644 steps</td>
+            <th>{{ __('site.press_f_library') }}</th>
+            <td>{{ __('site.press_f_library_v') }}</td>
         </tr>
         <tr>
-            <th>Cook times</th>
-            <td>Measured in guided Cook Mode; claim shown next to "Really takes"; calibrated to each cook's pace</td>
+            <th>{{ __('site.press_f_times') }}</th>
+            <td>{{ __('site.press_f_times_v') }}</td>
         </tr>
         <tr>
-            <th>Halal screening</th>
-            <td>Every recipe screened against explicit pork and alcohol rules before it reaches the app</td>
+            <th>{{ __('site.press_f_halal') }}</th>
+            <td>{{ __('site.press_f_halal_v') }}</td>
         </tr>
         <tr>
-            <th>Languages</th>
-            <td>English and Arabic, with right-to-left (RTL) support</td>
+            <th>{{ __('site.press_f_lang') }}</th>
+            <td>{{ __('site.press_f_lang_v') }}</td>
         </tr>
         <tr>
-            <th>Offline</th>
-            <td>The library downloads to the phone; cooking works with no signal</td>
+            <th>{{ __('site.press_f_offline') }}</th>
+            <td>{{ __('site.press_f_offline_v') }}</td>
         </tr>
         <tr>
-            <th>Community</th>
-            <td>Cooks share what they tried; their measurements sharpen the estimates</td>
+            <th>{{ __('site.press_f_community') }}</th>
+            <td>{{ __('site.press_f_community_v') }}</td>
         </tr>
         <tr>
-            <th>Pricing</th>
-            <td>Free tier; Premium US $5.99/month or $49.99/year (rolling out)</td>
+            <th>{{ __('site.press_f_pricing') }}</th>
+            <td>{{ __('site.press_f_pricing_v') }}</td>
         </tr>
         <tr>
-            <th>Platform</th>
-            <td>Android 7.0 and up</td>
+            <th>{{ __('site.press_f_platform') }}</th>
+            <td>{{ __('site.press_f_platform_v') }}</td>
         </tr>
         <tr>
-            <th>Distribution</th>
-            <td>Direct APK download — not on Google Play or the App Store</td>
+            <th>{{ __('site.press_f_dist') }}</th>
+            <td>{{ __('site.press_f_dist_v') }}</td>
         </tr>
         <tr>
-            <th>Team</th>
-            <td>One person</td>
+            <th>{{ __('site.press_f_team') }}</th>
+            <td>{{ __('site.press_f_team_v') }}</td>
         </tr>
     </table>
 
-    <h2>Brand and art assets</h2>
+    <h2>{{ __('site.press_assets_t') }}</h2>
     <p>
-        The RecipeReal app icon and logo are available as a single asset:
+        {{ __('site.press_assets_a') }}
         <a href="https://recipe-real.softland.tech/img/recipereallogo.webp">recipe-real.softland.tech/img/recipereallogo.webp</a>.
-        Please use it as provided — no recoloring, stretching, or added
-        effects.
+        {{ __('site.press_assets_b') }}
     </p>
 
-    <h2>Press inquiries</h2>
+    <h2>{{ __('site.press_inq_t') }}</h2>
     <p>
-        We do not have a separate press address — everything comes through
-        the <a href="{{ route('pages.contact') }}">contact page</a>. Tell us
-        what you are working on and your deadline, and we will get back to
-        you. Product updates and notes from the build are posted on the
-        <a href="{{ route('pages.blog') }}">blog</a>.
+        {{ __('site.press_inq_a') }}
+        <a href="{{ route('pages.contact') }}">{{ __('site.press_inq_link') }}</a>. {{ __('site.press_inq_b') }}
+        <a href="{{ route('pages.blog') }}">{{ __('site.press_inq_blog') }}</a>.
     </p>
 </div>
 @endsection

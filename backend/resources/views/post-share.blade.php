@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ app()->getLocale() }}" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,7 +8,7 @@
     $author = trim((string) ($post->user->display_name ?? $post->user->name ?? ''));
     $avatar = $post->user->avatar_url;
 
-    $ogTitle = ($author !== '' ? $author . ' ' : '') . 'shared a post on RecipeReal';
+    $ogTitle = ($author !== '' ? $author . ' ' : '') . __('site.share_shared_post');
 
     // Effective image list (images JSON column, else legacy image_url),
     // capped at 4 for the page.
@@ -36,6 +36,12 @@
 
     // og:description: first 120 chars of the body.
     $description = \Illuminate\Support\Str::limit(trim((string) $post->body), 120);
+
+    $recipeTitle = $recipe
+        ? (app()->getLocale() === 'ar'
+            ? ($recipe->title_ar ?? $recipe->title ?? __('site.share_fallback_recipe'))
+            : ($recipe->title ?? $recipe->title_ar ?? __('site.share_fallback_recipe')))
+        : null;
 @endphp
         <title>{{ $ogTitle }}</title>
         <meta name="description" content="{{ $description }}">
@@ -65,6 +71,11 @@
                 -webkit-font-smoothing: antialiased;
                 -moz-osx-font-smoothing: grayscale;
             }
+            [dir="rtl"] body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma,
+                    "Noto Sans Arabic", "Cairo", Roboto, Helvetica, Arial, sans-serif;
+                letter-spacing: 0;
+            }
             main {
                 max-width: 560px;
                 margin: 0 auto;
@@ -77,6 +88,7 @@
                 text-decoration: none;
                 color: #241D17;
             }
+            [dir="rtl"] .brand { letter-spacing: 0; }
             .brand span {
                 color: #BF5523;
             }
@@ -106,6 +118,7 @@
                 letter-spacing: -0.02em;
                 line-height: 1.3;
             }
+            [dir="rtl"] .author .name { letter-spacing: 0; }
             .body {
                 margin: 16px 0 0;
                 white-space: pre-wrap;
@@ -217,13 +230,13 @@
                     <img src="{{ $recipe->image_url }}" alt="" loading="lazy">
 @endif
                     <span class="main">
-                        <span class="title">{{ $recipe->title ?? $recipe->title_ar ?? 'Recipe' }}</span>
+                        <span class="title">{{ $recipeTitle }}</span>
                         <span class="times">
 @if ($claim !== null)
-                            <span class="claim">Recipe says {{ $claim }} min</span>
+                            <span class="claim">{{ __('site.share_says') }} {{ $claim }} {{ __('site.share_min') }}</span>
 @endif
 @if ($reality !== null)
-                            <span class="really">Really takes {{ $reality }} min</span>
+                            <span class="really">{{ __('site.share_takes') }} {{ $reality }} {{ __('site.share_min') }}</span>
 @endif
                         </span>
                     </span>
@@ -231,7 +244,7 @@
 @endif
             </article>
 
-            <footer>Cooked with <a href="/">RecipeReal</a></footer>
+            <footer>{{ __('site.share_cooked') }} <a href="/">RecipeReal</a></footer>
         </main>
     </body>
 </html>

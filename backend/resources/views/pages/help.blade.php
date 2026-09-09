@@ -1,7 +1,7 @@
 @extends('layouts.page')
 
-@section('title', 'Help Center — RecipeReal')
-@section('description', 'Answers to common questions about RecipeReal: honest cook times, halal screening, offline use, account deletion, premium pricing, and installing the Android app.')
+@section('title', __('site.help_title'))
+@section('description', __('site.help_desc'))
 
 @section('jsonld')
 <script type="application/ld+json">
@@ -11,66 +11,66 @@
     "mainEntity": [
         {
             "@@type": "Question",
-            "name": "What is RecipeReal?",
+            "name": {{ json_encode(__('site.help_q1'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }},
             "acceptedAnswer": {
                 "@@type": "Answer",
-                "text": "RecipeReal is a halal-only recipe app for Android with about 20,089 recipes in English and Arabic. Every recipe is screened against explicit pork and alcohol rules, the library downloads to your phone so it works offline, and a guided Cook Mode times every step so you know what a recipe really takes."
+                "text": {{ json_encode(__('site.help_a1'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}
             }
         },
         {
             "@@type": "Question",
-            "name": "The recipe says 25 minutes — why does RecipeReal show longer?",
+            "name": {{ json_encode(__('site.help_q2'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }},
             "acceptedAnswer": {
                 "@@type": "Answer",
-                "text": "Recipes habitually claim short times. RecipeReal measures what real cooks actually spend with a stopwatch in guided Cook Mode, then shows the recipe's claim next to the measured reality — we call it \"Really takes\". When the two differ, the measured one is the honest one."
+                "text": {{ json_encode(__('site.help_a2'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}
             }
         },
         {
             "@@type": "Question",
-            "name": "What does \"calibrated to your pace\" mean?",
+            "name": {{ json_encode(__('site.help_q3'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }},
             "acceptedAnswer": {
                 "@@type": "Answer",
-                "text": "Everyone cooks at a different speed. Each time you cook with the stopwatch, RecipeReal learns your pace and adjusts its time estimates for you, so the times get closer to your kitchen, not an average one."
+                "text": {{ json_encode(__('site.help_a3'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}
             }
         },
         {
             "@@type": "Question",
-            "name": "How do you decide what counts as halal?",
+            "name": {{ json_encode(__('site.help_q4'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }},
             "acceptedAnswer": {
                 "@@type": "Answer",
-                "text": "The whole library is screened against explicit pork and alcohol rules — product-wide, not recipe by recipe. We screen carefully, but when in doubt, always verify ingredients and brands yourself."
+                "text": {{ json_encode(__('site.help_a4'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}
             }
         },
         {
             "@@type": "Question",
-            "name": "Does RecipeReal work without internet?",
+            "name": {{ json_encode(__('site.help_q5'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }},
             "acceptedAnswer": {
                 "@@type": "Answer",
-                "text": "Yes. The library downloads to your phone, so browsing and cooking work with no signal — useful in a kitchen with bad reception, while travelling, or when saving data."
+                "text": {{ json_encode(__('site.help_a5'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}
             }
         },
         {
             "@@type": "Question",
-            "name": "How do I delete my account and my data?",
+            "name": {{ json_encode(__('site.help_q6'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }},
             "acceptedAnswer": {
                 "@@type": "Answer",
-                "text": "Open Settings in the app and use the Danger zone. Deleting your account removes your data: your profile, posts, likes, comments, notes, and cook history."
+                "text": {{ json_encode(__('site.help_a6'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}
             }
         },
         {
             "@@type": "Question",
-            "name": "What does Premium cost?",
+            "name": {{ json_encode(__('site.help_q7'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }},
             "acceptedAnswer": {
                 "@@type": "Answer",
-                "text": "RecipeReal is free to use with a monthly recipe allowance. Premium is US $5.99 per month or $49.99 per year and adds unlimited cooking and pace calibration — it also supports the project. Checkout is rolling out now and is not yet live in every build, and nothing is purchased on this website."
+                "text": {{ json_encode(__('site.help_a7'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}
             }
         },
         {
             "@@type": "Question",
-            "name": "How do I install RecipeReal on my Android phone?",
+            "name": {{ json_encode(__('site.help_q8'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }},
             "acceptedAnswer": {
                 "@@type": "Answer",
-                "text": "RecipeReal is installed as a direct download (Android 7.0 and up) — it is not on Google Play or the App Store. Tap the download link, and when Android asks, allow \"install unknown apps\" for the app you downloaded with (usually your browser), then open the file and install."
+                "text": {{ json_encode(__('site.help_a8'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}
             }
         }
     ]
@@ -80,85 +80,59 @@
 
 @section('content')
 <div class="page">
-    <h1>Help <span class="o">Center</span></h1>
+    <h1>{{ __('site.help_h1_a') }} <span class="o">{{ __('site.help_h1_b') }}</span></h1>
     <div class="rule" aria-hidden="true"></div>
     <p class="lede">
-        Short answers to the questions we hear most. If yours is not here,
-        the contact link at the bottom reaches us directly.
+        {{ __('site.help_lede') }}
     </p>
 
-    <h3>What is RecipeReal?</h3>
+    <h3>{{ __('site.help_q1') }}</h3>
     <p>
-        RecipeReal is a halal-only recipe app for Android with about 20,089
-        recipes in English and Arabic. Every recipe is screened against
-        explicit pork and alcohol rules, the library downloads to your phone
-        so it works offline, and a guided Cook Mode times every step so you
-        know what a recipe <em>really</em> takes.
+        {{ __('site.help_a1') }}
     </p>
 
-    <h3>The recipe says 25 minutes — why does RecipeReal show longer?</h3>
+    <h3>{{ __('site.help_q2') }}</h3>
     <p>
-        Because recipes habitually claim short times. In guided Cook Mode,
-        RecipeReal runs a stopwatch on every step and measures what real
-        cooks actually spend, then shows the recipe's claim next to the
-        measured reality — we call it <strong>"Really takes"</strong>. When
-        the two differ, the measured one is the honest one.
+        {{ __('site.help_a2_a') }} <strong>{{ __('site.help_really') }}</strong>{{ __('site.help_a2_b') }}
     </p>
 
-    <h3>What does "calibrated to your pace" mean?</h3>
+    <h3>{{ __('site.help_q3') }}</h3>
     <p>
-        Everyone cooks at a different speed. Each time you cook with the
-        stopwatch, RecipeReal learns your pace and adjusts its estimates for
-        you — so the times get closer to <em>your</em> kitchen, not an
-        average one.
+        {{ __('site.help_a3') }}
     </p>
 
-    <h3>How do you decide what counts as halal?</h3>
+    <h3>{{ __('site.help_q4') }}</h3>
     <p>
-        The whole library is screened against explicit pork and alcohol
-        rules — product-wide, not recipe by recipe. We screen carefully, but
-        when in doubt, always verify ingredients and brands yourself.
+        {{ __('site.help_a4') }}
     </p>
 
-    <h3>Does RecipeReal work without internet?</h3>
+    <h3>{{ __('site.help_q5') }}</h3>
     <p>
-        Yes. The library downloads to your phone, so browsing and cooking
-        work with no signal — useful in a kitchen with bad reception, while
-        travelling, or when you are saving data.
+        {{ __('site.help_a5') }}
     </p>
 
-    <h3>How do I delete my account and my data?</h3>
+    <h3>{{ __('site.help_q6') }}</h3>
     <p>
-        Open <strong>Settings</strong> in the app and use the
-        <strong>Danger zone</strong>. Deleting your account removes your
-        data: your profile, posts, likes, comments, notes, and cook history.
+        {{ __('site.help_a6_a') }} <strong>{{ __('site.help_settings') }}</strong> {{ __('site.help_a6_b') }}
+        <strong>{{ __('site.help_danger') }}</strong>{{ __('site.help_a6_c') }}
     </p>
 
-    <h3>What does Premium cost?</h3>
+    <h3>{{ __('site.help_q7') }}</h3>
     <p>
-        RecipeReal is free to use with a monthly recipe allowance. Premium is
-        US $5.99/month or $49.99/year and adds unlimited cooking and pace
-        calibration — it also supports the project. Checkout is rolling out
-        now and is not yet live in every build, and nothing is purchased on
-        this website.
+        {{ __('site.help_a7') }}
     </p>
 
-    <h3>How do I install RecipeReal on my Android phone?</h3>
+    <h3>{{ __('site.help_q8') }}</h3>
     <p>
-        RecipeReal is installed as a direct download (Android 7.0 and up) —
-        it is not on Google Play or the App Store. Get it on the
-        <a href="{{ route('app.download') }}">download page</a>, and when
-        Android asks, allow <strong>"install unknown apps"</strong> for the
-        app you downloaded with (usually your browser), then open the file
-        and install.
+        {{ __('site.help_a8_a') }}
+        <a href="{{ route('app.download') }}">{{ __('site.help_download_page') }}</a>{{ __('site.help_a8_b') }}
+        <strong>{{ __('site.help_install_unknown') }}</strong>
+        {{ __('site.help_a8_c') }}
     </p>
 
-    <h2>Still stuck?</h2>
+    <h2>{{ __('site.help_stuck_t') }}</h2>
     <p>
-        Ask us directly on the <a href="{{ route('pages.contact') }}">contact
-        page</a> — messages land with the team and we read every one. Halal
-        concerns about a specific recipe are especially welcome; tell us the
-        recipe name and we will look at it at the library level.
+        {{ __('site.help_stuck_a') }} <a href="{{ route('pages.contact') }}">{{ __('site.help_stuck_link') }}</a> — {{ __('site.help_stuck_b') }}
     </p>
 </div>
 @endsection

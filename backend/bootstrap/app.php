@@ -18,6 +18,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'not_banned' => \App\Http\Middleware\EnsureNotBanned::class,
         ]);
+        // Public-web locale negotiation (landing + content + share pages):
+        // explicit ?lang= → saved choice → device Accept-Language. The
+        // middleware itself pins /admin/* back to English.
+        $middleware->web(append: [
+            \App\Http\Middleware\SetLocale::class,
+        ]);
         // Admin-panel (web) guests are sent to the panel login; API guests
         // get null (no redirect target) so the render handler below can
         // answer with JSON 401 instead of "Route [login] not defined."

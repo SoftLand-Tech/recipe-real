@@ -1,10 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ app()->getLocale() }}" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Privacy Policy — RecipeReal</title>
-        <meta name="description" content="RecipeReal privacy policy: what we collect, what we never do, and how to delete everything.">
+        <title>{{ __('site.privacy_title') }}</title>
+        <meta name="description" content="{{ __('site.privacy_desc') }}">
+        <link rel="alternate" hreflang="en" href="{{ request()->url().'?'.http_build_query(array_merge(request()->query(), ['lang' => 'en'])) }}">
+        <link rel="alternate" hreflang="ar" href="{{ request()->url().'?'.http_build_query(array_merge(request()->query(), ['lang' => 'ar'])) }}">
+        <link rel="alternate" hreflang="x-default" href="{{ request()->url() }}">
         <style>
             /* Scoped, self-contained page — system font, no external deps. */
             * {
@@ -21,6 +24,11 @@
                 -webkit-font-smoothing: antialiased;
                 -moz-osx-font-smoothing: grayscale;
             }
+            [dir="rtl"] body, [dir="rtl"] h1, [dir="rtl"] h2 {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma,
+                    "Noto Sans Arabic", "Cairo", Roboto, Helvetica, Arial, sans-serif;
+                letter-spacing: 0 !important;
+            }
             main {
                 max-width: 720px;
                 margin: 0 auto;
@@ -33,6 +41,7 @@
                 text-decoration: none;
                 color: #241D17;
             }
+            [dir="rtl"] .brand { letter-spacing: 0; }
             .brand span {
                 color: #BF5523;
             }
@@ -69,7 +78,7 @@
             }
             ul {
                 margin: 10px 0;
-                padding-left: 22px;
+                padding-inline-start: 22px;
             }
             li {
                 margin: 6px 0;
@@ -102,15 +111,12 @@
             .ar h2 {
                 letter-spacing: 0;
             }
-            .ar ul {
-                padding-left: 0;
-                padding-right: 22px;
-            }
             .divider {
                 border: 0;
                 border-top: 1px solid #EAE1D4;
                 margin: 52px 0 0;
             }
+            .lang-row { display: flex; justify-content: flex-end; margin-top: 18px; }
             footer {
                 color: #6E5F52;
                 font-size: 0.88rem;
@@ -121,66 +127,56 @@
     <body>
         <main>
             <a class="brand" href="/">Recipe<span>Real</span></a>
+            <div class="lang-row">@include('partials.lang-switcher')</div>
 
-            <h1>Privacy Policy</h1>
-            <p class="updated">Last updated: 17 August 2026 · App: RecipeReal</p>
+            <h1>{{ __('site.privacy_h1') }}</h1>
+            <p class="updated">{{ __('site.privacy_updated') }}</p>
 
             <p class="lede">
-                RecipeReal is a cook-time app. This page explains, in plain language, exactly what
-                data the app handles — and what it never will. The short version: we collect the
-                minimum needed to give you honest cook-time estimates, and you can delete all of it
-                yourself at any time.
+                {{ __('site.privacy_lede') }}
             </p>
 
-            <h2>What we collect</h2>
+            <h2>{{ __('site.privacy_collect_t') }}</h2>
             <ul>
-                <li><strong>Google account basics</strong> — when you sign in with Google: your name,
-                    email address, and Google account id. Nothing else from your Google account.</li>
-                <li><strong>Your cook contributions</strong> — the real times you submit for a recipe
-                    (total, hands-on and cleanup breakdowns) and the number of plates you cooked.
-                    These feed community averages so estimates get better for everyone.</li>
-                <li><strong>Anonymous usage events</strong> — which screens are viewed and which
-                    features are used, so we know what to improve. No recipe content, no notes,
-                    no personal content of any kind.</li>
-                <li><strong>Favorites and notes never leave your device</strong> — they are stored
-                locally on your phone and are never uploaded to our servers.</li>
+                <li><strong>{{ __('site.privacy_collect1_b') }}</strong> {{ __('site.privacy_collect1') }}</li>
+                <li><strong>{{ __('site.privacy_collect2_b') }}</strong> {{ __('site.privacy_collect2') }}</li>
+                <li><strong>{{ __('site.privacy_collect3_b') }}</strong> {{ __('site.privacy_collect3') }}</li>
+                <li><strong>{{ __('site.privacy_collect4_b') }}</strong> {{ __('site.privacy_collect4') }}</li>
             </ul>
 
-            <h2>What we <span class="accent">never</span> do</h2>
+            <h2>{{ __('site.privacy_never_t_a') }} <span class="accent">{{ __('site.privacy_never_t_b') }}</span> {{ __('site.privacy_never_t_c') }}</h2>
             <ul class="never">
-                <li>No ads.</li>
-                <li>No third-party tracking SDKs.</li>
-                <li>No selling of data — to anyone, ever.</li>
-                <li>No sharing with third parties (and no payment processor is currently active).</li>
+                <li>{{ __('site.privacy_never1') }}</li>
+                <li>{{ __('site.privacy_never2') }}</li>
+                <li>{{ __('site.privacy_never3') }}</li>
+                <li>{{ __('site.privacy_never4') }}</li>
             </ul>
 
-            <h2>How long we keep data</h2>
+            <h2>{{ __('site.privacy_keep_t') }}</h2>
             <ul>
-                <li><strong>Account data</strong> — kept until you delete it.</li>
-                <li><strong>Analytics events</strong> — automatically pruned after 90 days.</li>
+                <li><strong>{{ __('site.privacy_keep1_b') }}</strong> {{ __('site.privacy_keep1') }}</li>
+                <li><strong>{{ __('site.privacy_keep2_b') }}</strong> {{ __('site.privacy_keep2') }}</li>
             </ul>
 
-            <h2>Your rights &amp; deleting your account</h2>
+            <h2>{{ __('site.privacy_rights_t') }}</h2>
             <p>
-                You can delete your account and its data at any time, yourself, in the app:
+                {{ __('site.privacy_rights_p1') }}
             </p>
             <div class="card">
-                <strong>Settings → Delete account</strong> — deletion is immediate and permanent.
-                Your account, sign-in, tokens and cook contributions are removed right away.
-                Only fully anonymous usage counters (no longer linked to you in any way) may
-                remain until they are pruned.
+                <strong>{{ __('site.privacy_rights_card_b') }}</strong> {{ __('site.privacy_rights_card_rest') }}
             </div>
             <p>
-                You can also request deletion, or ask any question about your data, by contacting us at
+                {{ __('site.privacy_rights_p2_a') }}
                 <a href="mailto:mamounprogrammer@gmail.com">mamounprogrammer@gmail.com</a>.
             </p>
 
+            @if (app()->getLocale() === 'en')
             <hr class="divider">
 
             <section class="ar" lang="ar" dir="rtl">
-                <h2>سياسة الخصوصية <span class="accent">(باختصار)</span></h2>
+                <h2>{{ __('site.privacy_ar_short_t') }}</h2>
                 <p>
-                    آخر تحديث: 17 أغسطس 2026 · التطبيق: RecipeReal
+                    {{ __('site.privacy_ar_updated') }}
                 </p>
 
                 <h2>ما نجمعه</h2>
@@ -216,6 +212,7 @@
                     <a href="mailto:mamounprogrammer@gmail.com">mamounprogrammer@gmail.com</a>
                 </p>
             </section>
+            @endif
 
             <footer>© RecipeReal</footer>
         </main>

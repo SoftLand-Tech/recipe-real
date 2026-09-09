@@ -90,7 +90,7 @@ Route::get('/', function () {
     // prod never sees the fallback.
     $popular = Cache::remember('landing:popular', now()->addMinutes(15), function () {
         return Recipe::query()
-            ->select('id', 'title', 'image_url', 'publisher_time_minutes', 'reality_minutes', 'aggregated_rating')
+            ->select('id', 'title', 'title_ar', 'image_url', 'publisher_time_minutes', 'reality_minutes', 'aggregated_rating')
             ->whereNotNull('image_url')
             ->where('image_url', '!=', '')
             ->where('publisher_time_minutes', '>', 0)
@@ -103,6 +103,7 @@ Route::get('/', function () {
             ->map(fn ($r) => [
                 'id' => $r->id,
                 'title' => $r->title,
+                'title_ar' => $r->title_ar,
                 'img' => $r->image_url,
                 'minutes' => (int) $r->publisher_time_minutes,
                 'really' => $r->reality_minutes !== null ? (int) $r->reality_minutes : null,
@@ -186,7 +187,7 @@ Route::get('/r/{recipe}', function (Recipe $recipe, Request $request) {
         '</body>',
         \App\Support\ShareBanner::bannerHtml($storeBanner).'</body>',
         Cache::remember(
-            "recipe:share:{$recipe->id}",
+            "recipe:share:{$recipe->id}:".app()->getLocale(),
             now()->addMinutes(5),
             fn () => view('recipe-share', ['recipe' => $recipe])->render(),
         ),
@@ -213,7 +214,7 @@ Route::get('/p/{post}', function (Post $post, Request $request) {
         '</body>',
         \App\Support\ShareBanner::bannerHtml($storeBanner).'</body>',
         Cache::remember(
-            "post:share:{$post->id}",
+            "post:share:{$post->id}:".app()->getLocale(),
             now()->addMinutes(5),
             fn () => view('post-share', ['post' => $post])->render(),
         ),
