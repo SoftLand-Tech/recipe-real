@@ -1,5 +1,6 @@
 <x-filament-panels::page>
     <div class="fi-section">
+        <div class="fi-section-content">
         <form wire:submit="publish" class="fi-form grid gap-6">
             {{ $this->form }}
 
@@ -10,6 +11,7 @@
                 </button>
             </div>
         </form>
+        </div>
     </div>
 
     <x-filament::section>
@@ -20,49 +22,50 @@
             GET /download always serves the NEWEST row. Deleting a row removes its file too.
         </x-slot:description>
 
-        <div class="fi-ta-ctn rounded-xl border overflow-hidden">
-            <table class="w-full text-sm">
-                <thead class="bg-gray-50 dark:bg-gray-900/50 text-left">
+        <div class="overflow-hidden">
+            <table class="rr-release-table">
+                <thead>
                     <tr>
-                        <th class="px-4 py-3 font-semibold">Version</th>
-                        <th class="px-4 py-3 font-semibold">Size</th>
-                        <th class="px-4 py-3 font-semibold">SHA-256</th>
-                        <th class="px-4 py-3 font-semibold">Uploaded</th>
-                        <th class="px-4 py-3 font-semibold text-right">Actions</th>
+                        <th>Version</th>
+                        <th>Size</th>
+                        <th>SHA-256</th>
+                        <th>Uploaded</th>
+                        <th style="text-align: right;">Actions</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y">
+                <tbody>
                     @forelse ($releases as $release)
                         <tr>
-                            <td class="px-4 py-3">
-                                <span class="font-semibold">v{{ $release->version }}</span>
+                            <td>
+                                <span style="font-weight: 800; color: var(--rr-ink);">v{{ $release->version }}</span>
                                 @if ($latest !== null && $release->id === $latest->id)
-                                    <span class="ml-2 inline-flex items-center rounded-full bg-success-100 px-2 py-0.5 text-xs font-semibold text-success-700">LIVE — /download</span>
+                                    <span class="rr-live-pill">LIVE — /download</span>
                                 @endif
                                 @if ($release->notes)
-                                    <div class="text-xs text-gray-500 mt-0.5">{{ $release->notes }}</div>
+                                    <div style="font-size: 12.5px; color: var(--rr-muted); margin-top: 4px;">{{ $release->notes }}</div>
                                 @endif
                             </td>
-                            <td class="px-4 py-3 whitespace-nowrap">{{ $release->humanSize() }}</td>
-                            <td class="px-4 py-3 font-mono text-xs" title="{{ $release->sha256 }}">
+                            <td style="white-space: nowrap; font-variant-numeric: tabular-nums;">{{ $release->humanSize() }}</td>
+                            <td class="rr-sha" title="{{ $release->sha256 }}">
                                 {{ str($release->sha256)->limit(16, '…') }}
                             </td>
-                            <td class="px-4 py-3 whitespace-nowrap">{{ $release->created_at->diffForHumans() }}</td>
-                            <td class="px-4 py-3 text-right whitespace-nowrap">
+                            <td style="white-space: nowrap;">{{ $release->created_at->diffForHumans() }}</td>
+                            <td style="text-align: right; white-space: nowrap;">
                                 <a href="{{ $release->downloadUrl() }}"
                                    class="fi-btn fi-btn-size-md fi-btn-color-gray fi-button"
                                    target="_blank" rel="noopener">Download</a>
                                 <button type="button"
                                         wire:click="deleteRelease({{ $release->id }})"
                                         wire:confirm="Delete release v{{ $release->version }}? /download will fall back to the next-newest row."
-                                        class="fi-btn fi-btn-size-md fi-btn-color-danger fi-button fi-btn-outline ml-2">
+                                        class="fi-btn fi-btn-size-md fi-btn-color-gray fi-button ml-2"
+                                        style="color: var(--rr-danger); border-color: #e8c4bd;">
                                     Delete
                                 </button>
                             </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="5" class="px-4 py-8 text-center text-gray-500">
+                            <td colspan="5" style="padding: 32px 16px; text-align: center; color: var(--rr-muted);">
                                 No releases yet — upload the first APK above.
                             </td>
                         </tr>

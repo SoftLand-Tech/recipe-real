@@ -1,0 +1,890 @@
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+@source '../../../../app/Filament/**/*';
+@source '../../../../resources/views/filament/**/*';
+@source '../../../../resources/views/admin-*.blade.php';
+
+/*
+  THESIS: The admin is the kitchen pass, not a SaaS dashboard. It refuses Filament's gray-plus-amber generic.
+  OWN-WORLD: Warm cream table #FAF6EF, white 18px plates with #EFE5D6 hairlines and whispered ink shadows, terracotta #E86A33 action only, teal #287C78 time-only, ink #26211B, DM Sans UI with Fraunces brand voice only, tabular numerals, 999px pills. After dark the same kitchen runs on lamplight (#14100B table, #1F1811 plates, lifted accents).
+  STORY: The solo owner sees the honesty gap, moderates tries, edits 20k recipes, and ships the APK in seconds.
+  FIRST VIEWPORT: Cream table, white pass rail left with brand ticket, white topbar, dashboard greeting plus stat tickets plus charts in white plates, terracotta pill primary.
+  FORM: Restaurant pass fused with the warm kitchen table, candidate 4/7, seed e3b22644.
+  FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+*/
+
+@theme {
+    --font-sans: 'DM Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-serif: 'Fraunces', Georgia, 'Times New Roman', serif;
+    --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+:root {
+    --rr-cream: #faf6ef;
+    --rr-cream-deep: #f5eee2;
+    --rr-white: #ffffff;
+    --rr-ink: #26211b;
+    --rr-muted: #6e6558;
+    --rr-faint: #776c5d;
+    --rr-terra: #e86a33;
+    --rr-ember: #bf5523;
+    --rr-ember-deep: #9a441c;
+    --rr-ember-bright: #ce5710;
+    --rr-apricot: #fdebdd;
+    --rr-apricot-border: #f3d3b8;
+    --rr-teal: #287c78;
+    --rr-hair: #efe5d6;
+    --rr-hair-strong: #e8dfd2;
+    --rr-success: #3d8b5a;
+    --rr-danger: #b23a2e;
+    --rr-body: #3d362d;
+    --rr-hover: #fdfaf5;
+    --rr-sunken: #fffdf9;
+    --rr-topbar: rgba(255, 255, 255, 0.92);
+    --rr-thumb: #d9cfc0;
+    --rr-shadow-card: 0 12px 28px -22px rgba(38, 33, 27, 0.4);
+    --rr-shadow-card-hover: 0 22px 40px -24px rgba(38, 33, 27, 0.5);
+    --rr-shadow-btn: 0 10px 22px -10px rgba(232, 106, 51, 0.55);
+}
+
+/* Lamplight: the same kitchen after dark. Every surface above reads this
+   block through var(), so light and dark stay one world, not two themes. */
+:root.dark {
+    color-scheme: dark;
+    --rr-cream: #14100b;
+    --rr-cream-deep: #1c1610;
+    --rr-white: #1f1811;
+    --rr-ink: #f3ebdc;
+    --rr-muted: #b3a894;
+    --rr-faint: #9a8f7d;
+    --rr-terra: #f07f45;
+    --rr-ember: #bf5523;
+    --rr-ember-deep: #f49a63;
+    --rr-ember-bright: #f0864a;
+    --rr-apricot: rgba(232, 106, 51, 0.16);
+    --rr-apricot-border: rgba(232, 106, 51, 0.4);
+    --rr-teal: #4fb3ad;
+    --rr-hair: #3a3128;
+    --rr-hair-strong: #4d4436;
+    --rr-success: #6fbf8d;
+    --rr-danger: #e07a6a;
+    --rr-body: #d9cfbd;
+    --rr-hover: rgba(255, 244, 230, 0.05);
+    --rr-sunken: #191410;
+    --rr-topbar: rgba(31, 24, 17, 0.88);
+    --rr-thumb: #4d4436;
+    --rr-shadow-card: 0 12px 28px -22px rgba(0, 0, 0, 0.65);
+    --rr-shadow-card-hover: 0 22px 40px -24px rgba(0, 0, 0, 0.7);
+    --rr-shadow-btn: 0 10px 22px -10px rgba(232, 106, 51, 0.4);
+}
+
+/* ---------- Base table ---------- */
+
+html.fi {
+    background: var(--rr-cream);
+}
+
+.fi-body {
+    background: var(--rr-cream) !important;
+    color: var(--rr-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+    background: var(--rr-terra);
+    color: #fff;
+}
+
+.fi-body :is(input, textarea, select) {
+    caret-color: var(--rr-terra);
+}
+
+.fi-body :focus-visible {
+    outline: 2.5px solid var(--rr-terra);
+    outline-offset: 2px;
+    border-radius: 6px;
+}
+
+/* Text inputs carry their own focus treatment (border + glow), so they
+   opt out of the global outline — otherwise focus draws two rings. */
+.fi-body :is(input, textarea, select):focus-visible {
+    outline: none;
+}
+
+/* Thin warm scrollbars */
+.fi-body ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+.fi-body ::-webkit-scrollbar-thumb {
+    background: var(--rr-thumb);
+    border-radius: 999px;
+    border: 2px solid var(--rr-cream);
+}
+.fi-body ::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* ---------- Sidebar: the white pass rail ---------- */
+
+.fi-sidebar {
+    background: var(--rr-white) !important;
+    border-right: 1px solid var(--rr-hair);
+}
+
+.fi-sidebar-header {
+    height: 68px !important;
+    padding-inline: 18px !important;
+    border-bottom: 1px solid var(--rr-hair);
+    background: var(--rr-white) !important;
+}
+
+.rr-brand {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    text-decoration: none;
+    min-width: 0;
+}
+.rr-brand-logo {
+    width: 42px;
+    height: 41px;
+    border-radius: 12px;
+    flex: none;
+    object-fit: cover;
+    border: 1px solid var(--rr-hair);
+    background: #14100b;
+}
+.rr-brand-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+    min-width: 0;
+}
+.rr-brand-name {
+    font-family: var(--font-sans);
+    font-weight: 800;
+    font-size: 17px;
+    letter-spacing: -0.01em;
+    color: var(--rr-ink);
+    white-space: nowrap;
+}
+.rr-brand-name em {
+    font-style: normal;
+    color: var(--rr-terra);
+}
+.rr-brand-sub {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--rr-faint);
+}
+
+.fi-sidebar-nav {
+    padding: 20px 14px 24px !important;
+    gap: 22px !important;
+    background: var(--rr-white);
+}
+
+.fi-sidebar-nav-groups {
+    gap: 20px !important;
+}
+
+.fi-sidebar-group-label {
+    font-size: 11px !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+    color: var(--rr-faint) !important;
+    padding-inline: 10px !important;
+    margin-bottom: 2px;
+}
+
+.fi-sidebar-group-items {
+    gap: 2px !important;
+}
+
+.fi-sidebar-item-btn {
+    border-radius: 12px !important;
+    padding: 9px 12px !important;
+    border: 1px solid transparent;
+    position: relative;
+}
+
+.fi-sidebar-item-btn > .fi-icon {
+    width: 19px;
+    height: 19px;
+    color: var(--rr-muted) !important;
+}
+
+.fi-sidebar-item-label {
+    font-size: 13.8px !important;
+    font-weight: 600 !important;
+    color: var(--rr-body) !important;
+}
+
+.fi-sidebar-item.fi-sidebar-item-has-url > .fi-sidebar-item-btn:hover {
+    background: var(--rr-hover) !important;
+    border-color: var(--rr-hair);
+}
+.fi-sidebar-item.fi-sidebar-item-has-url > .fi-sidebar-item-btn:hover > .fi-icon,
+.fi-sidebar-item.fi-sidebar-item-has-url > .fi-sidebar-item-btn:hover > .fi-sidebar-item-label {
+    color: var(--rr-ink) !important;
+}
+
+.fi-sidebar-item.fi-active > .fi-sidebar-item-btn {
+    background: var(--rr-apricot) !important;
+    border-color: var(--rr-apricot-border);
+    box-shadow: none !important;
+}
+.fi-sidebar-item.fi-active > .fi-sidebar-item-btn::before {
+    content: '';
+    position: absolute;
+    left: -14px;
+    top: 9px;
+    bottom: 9px;
+    width: 3px;
+    border-radius: 999px;
+    background: var(--rr-terra);
+}
+.fi-sidebar-item.fi-active > .fi-sidebar-item-btn > .fi-icon,
+.fi-sidebar-item.fi-active > .fi-sidebar-item-btn > .fi-sidebar-item-label {
+    color: var(--rr-ember-deep) !important;
+}
+.fi-sidebar-item.fi-active > .fi-sidebar-item-btn > .fi-sidebar-item-label {
+    font-weight: 800 !important;
+}
+
+.fi-sidebar-footer {
+    border-top: 1px solid var(--rr-hair);
+    padding-top: 14px !important;
+    margin-inline: 14px !important;
+}
+
+/* ---------- Topbar ---------- */
+
+.fi-topbar {
+    background: var(--rr-topbar) !important;
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--rr-hair);
+    box-shadow: none !important;
+    min-height: 64px !important;
+    padding-inline: 20px !important;
+}
+.fi-body-has-topbar .fi-sidebar {
+    top: 64px !important;
+    height: calc(100dvh - 64px) !important;
+}
+
+.fi-breadcrumbs {
+    font-size: 13px;
+}
+.fi-breadcrumbs a {
+    color: var(--rr-muted);
+    text-decoration: none;
+}
+.fi-breadcrumbs a:hover {
+    color: var(--rr-ember-deep);
+}
+
+/* Global search: the wrapper is the pill, the input inside stays bare.
+   (Styling the inner input's border doubles Filament's own ring.) */
+.fi-global-search .fi-input-wrp {
+    border-radius: 999px !important;
+    border: 1px solid var(--rr-hair-strong);
+    background: var(--rr-sunken) !important;
+    box-shadow: none !important;
+    min-width: 220px;
+    transition:
+        border-color 0.16s ease,
+        box-shadow 0.16s ease !important;
+}
+.fi-global-search .fi-input-wrp:focus-within {
+    border-color: var(--rr-terra) !important;
+    box-shadow: 0 0 0 3px rgba(232, 106, 51, 0.18) !important;
+}
+.fi-global-search .fi-input-wrp .fi-input {
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    font-size: 13.5px;
+}
+
+/* Quick pass tickets: the jobs that used to mean leaving the panel. */
+.rr-top-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.rr-top-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: var(--rr-white);
+    border: 1px solid var(--rr-hair-strong);
+    color: var(--rr-body);
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    white-space: nowrap;
+    transition:
+        border-color 0.16s ease,
+        color 0.16s ease,
+        transform 0.12s ease;
+}
+.rr-top-action:hover {
+    border-color: var(--rr-terra);
+    color: var(--rr-ember-deep);
+}
+.rr-top-action:active {
+    transform: translateY(1px);
+}
+.rr-top-action svg {
+    width: 16px;
+    height: 16px;
+    color: var(--rr-muted);
+    flex: none;
+}
+.rr-top-action:hover svg {
+    color: var(--rr-ember-deep);
+}
+@media (max-width: 1150px) {
+    .rr-top-action span {
+        display: none;
+    }
+    .rr-top-action {
+        padding: 8px 10px;
+    }
+}
+@media (max-width: 860px) {
+    .rr-top-actions {
+        display: none;
+    }
+}
+
+/* User menu trigger as a warm coin */
+.fi-topbar .fi-user-menu-trigger,
+.fi-sidebar .fi-user-menu-trigger {
+    border-radius: 999px !important;
+    border: 1px solid var(--rr-hair);
+    background: var(--rr-white);
+    padding: 5px 10px 5px 5px !important;
+}
+.fi-topbar .fi-user-menu-trigger:hover {
+    border-color: var(--rr-terra);
+}
+
+/* ---------- Main canvas ---------- */
+
+.fi-main-ctn {
+    background: var(--rr-cream);
+}
+
+.fi-main {
+    max-width: 1280px !important;
+    padding: 28px 28px 64px !important;
+}
+
+/* Page header: no kicker, heading carries weight */
+.fi-header-heading {
+    font-family: var(--font-sans) !important;
+    font-size: 24px !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.015em !important;
+    color: var(--rr-ink) !important;
+}
+.fi-header-subheading {
+    color: var(--rr-muted) !important;
+    font-size: 14px !important;
+    margin-top: 4px !important;
+}
+.fi-page-header-main-ctn {
+    margin-bottom: 20px !important;
+}
+
+/* ---------- Plates: sections, widgets, tables ---------- */
+
+.fi-section,
+.fi-widget,
+.fi-ta-ctn,
+.fi-fo-tabs,
+.fi-in-panel {
+    background: var(--rr-white);
+    border: 1px solid var(--rr-hair) !important;
+    border-radius: 18px !important;
+    box-shadow: var(--rr-shadow-card) !important;
+}
+
+/* Filament sections internally use ring/shadow utilities; flatten to our plate */
+.fi-section .fi-section-header,
+.fi-widget .fi-section-header {
+    border-bottom: 1px solid var(--rr-hair);
+    padding: 16px 20px !important;
+}
+.fi-section .fi-section-content,
+.fi-widget .fi-section-content {
+    padding: 20px !important;
+}
+
+/* Stats: the pass tickets */
+.fi-stats-overview-widget .fi-section,
+.fi-wi-stats-overview .fi-section {
+    padding: 0 !important;
+}
+.fi-stats-overview-stat {
+    padding: 18px 20px !important;
+    border-left: 1px solid var(--rr-hair);
+    gap: 8px !important;
+}
+.fi-stats-overview-stat:first-child {
+    border-left: 0;
+}
+.fi-stats-overview-stat-label {
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--rr-muted) !important;
+}
+.fi-stats-overview-stat-value {
+    font-size: 28px !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.02em !important;
+    color: var(--rr-ink) !important;
+    font-variant-numeric: tabular-nums;
+}
+.fi-stats-overview-stat-description {
+    font-size: 12.5px !important;
+    color: var(--rr-muted) !important;
+}
+.fi-stats-overview-stat-icon-ctn {
+    background: var(--rr-apricot) !important;
+    border: 1px solid var(--rr-apricot-border);
+    border-radius: 14px !important;
+}
+.fi-stats-overview-stat-icon-ctn .fi-icon {
+    color: var(--rr-ember-deep) !important;
+}
+
+/* Charts */
+.fi-widget-chart {
+    overflow: hidden;
+}
+.fi-widget-chart .fi-section-header-heading {
+    font-size: 15px !important;
+    font-weight: 800 !important;
+    color: var(--rr-ink) !important;
+}
+
+/* ---------- Tables: the ledger ---------- */
+
+.fi-ta-header-ctn {
+    border-bottom: 1px solid var(--rr-hair);
+    background: var(--rr-white);
+    border-radius: 18px 18px 0 0 !important;
+    padding: 14px 18px !important;
+}
+
+.fi-ta-table thead th {
+    background: transparent !important;
+    font-size: 11px !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.08em !important;
+    text-transform: uppercase !important;
+    color: var(--rr-faint) !important;
+    border-bottom: 1px solid var(--rr-hair) !important;
+    padding-block: 12px !important;
+    white-space: nowrap;
+}
+
+.fi-ta-table tbody tr {
+    border-bottom: 1px solid var(--rr-hair);
+    transition: background 0.15s ease;
+}
+.fi-ta-table tbody tr:last-child {
+    border-bottom: 0;
+}
+.fi-ta-table tbody tr:hover {
+    background: var(--rr-hover) !important;
+}
+
+.fi-ta-text-item-label,
+.fi-ta-cell .fi-text {
+    font-variant-numeric: tabular-nums;
+}
+
+.fi-ta-cell {
+    font-size: 13.8px;
+    color: var(--rr-body);
+}
+
+.fi-ta-search-field input {
+    border-radius: 999px !important;
+}
+
+/* Pagination */
+.fi-pagination {
+    padding: 14px 18px !important;
+    border-top: 1px solid var(--rr-hair);
+}
+
+/* Badges: pass tickets, never squares */
+.fi-badge {
+    border-radius: 999px !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    padding: 3px 11px !important;
+    border: 1px solid transparent;
+}
+
+/* Count badges float on the button's corner: no box of their own, so no
+   gray rounded-md container peeks out from behind the pill. */
+.fi-btn .fi-btn-badge-ctn,
+.fi-icon-btn .fi-icon-btn-badge-ctn {
+    background: transparent !important;
+    border-radius: 999px !important;
+    box-shadow: none !important;
+}
+
+/* Table toolbar icon buttons (filters, columns): ghost coins that read
+   next to the search pill, in both modes. */
+.fi-ta-header-toolbar .fi-icon-btn {
+    background: var(--rr-white);
+    border: 1px solid var(--rr-hair-strong);
+}
+.fi-ta-header-toolbar .fi-icon-btn:hover {
+    border-color: var(--rr-terra);
+}
+.fi-ta-header-toolbar .fi-icon-btn:hover .fi-icon {
+    color: var(--rr-ember-deep);
+}
+
+/* ---------- Buttons: every clickable thing is a pill ---------- */
+
+.fi-btn {
+    border-radius: 999px !important;
+    font-weight: 700 !important;
+    font-size: 13.8px !important;
+    padding: 10px 20px !important;
+    transition:
+        background 0.16s ease,
+        transform 0.12s ease,
+        box-shadow 0.16s ease,
+        border-color 0.16s ease !important;
+}
+.fi-btn:active {
+    transform: translateY(1px);
+}
+
+.fi-btn-color-primary {
+    background: var(--rr-ember) !important;
+    color: #fff !important;
+    border: 1px solid transparent !important;
+    box-shadow: var(--rr-shadow-btn) !important;
+}
+.fi-btn-color-primary:hover {
+    background: var(--rr-ember-deep) !important;
+}
+
+.fi-btn-color-gray {
+    background: var(--rr-white) !important;
+    color: var(--rr-ink) !important;
+    border: 1px solid var(--rr-hair-strong) !important;
+    box-shadow: 0 6px 16px -10px rgba(38, 33, 27, 0.25) !important;
+}
+.fi-btn-color-gray:hover {
+    border-color: var(--rr-terra) !important;
+    color: var(--rr-ember-deep) !important;
+}
+
+/* Icon buttons */
+.fi-icon-btn {
+    border-radius: 999px !important;
+    border: 1px solid transparent;
+}
+.fi-icon-btn:hover {
+    background: var(--rr-hover) !important;
+    border-color: var(--rr-hair);
+}
+.fi-icon-btn .fi-icon {
+    color: var(--rr-muted);
+}
+
+/* ---------- Forms ---------- */
+
+.fi-input,
+.fi-select-input,
+.fi-textarea,
+.fi-fo-field-wrp input:not([type='checkbox']):not([type='radio']),
+.fi-fo-field-wrp textarea,
+.fi-fo-field-wrp select {
+    border-radius: 12px !important;
+    border-color: var(--rr-hair-strong) !important;
+    background: var(--rr-white) !important;
+    font-size: 14px !important;
+}
+.fi-input:focus,
+.fi-fo-field-wrp input:focus,
+.fi-fo-field-wrp textarea:focus,
+.fi-fo-field-wrp select:focus {
+    border-color: var(--rr-terra) !important;
+    box-shadow: 0 0 0 3px rgba(232, 106, 51, 0.18) !important;
+}
+
+/* Inside a wrapper, the wrapper owns focus: its ring is the single
+   treatment, so the input itself stays quiet (table search included). */
+.fi-input-wrp .fi-input:focus {
+    box-shadow: none !important;
+}
+
+.fi-fo-field-wrp-label span {
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    color: var(--rr-ink) !important;
+}
+.fi-fo-field-wrp-helper-text {
+    color: var(--rr-muted) !important;
+    font-size: 12.5px !important;
+}
+
+.fi-fieldset {
+    border: 1px solid var(--rr-hair) !important;
+    border-radius: 16px !important;
+    background: var(--rr-sunken) !important;
+}
+.fi-fieldset-legend {
+    font-weight: 800 !important;
+    color: var(--rr-ink) !important;
+    padding-inline: 10px !important;
+}
+
+/* Tabs */
+.fi-tabs {
+    border-bottom: 1px solid var(--rr-hair);
+}
+.fi-tab-btn.fi-active {
+    color: var(--rr-ember-deep) !important;
+}
+.fi-tab-btn.fi-active::after {
+    background: var(--rr-terra) !important;
+    border-radius: 999px;
+    height: 3px !important;
+}
+
+/* Toggles, checkboxes, radios */
+.fi-toggle.fi-active {
+    background: var(--rr-terra) !important;
+}
+input[type='checkbox']:checked,
+input[type='radio']:checked {
+    background: var(--rr-terra) !important;
+    border-color: var(--rr-terra) !important;
+}
+
+/* ---------- Infolists ---------- */
+
+.fi-in-text-item-label {
+    font-size: 11.5px !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--rr-faint) !important;
+}
+.fi-in-text-item-state {
+    color: var(--rr-ink) !important;
+    font-size: 14px !important;
+}
+
+/* ---------- Modals, dropdowns, notifications ---------- */
+
+.fi-modal-window {
+    border-radius: 20px !important;
+    border: 1px solid var(--rr-hair) !important;
+    box-shadow: 0 34px 70px -28px rgba(38, 33, 27, 0.45) !important;
+}
+.fi-dropdown-panel {
+    border-radius: 16px !important;
+    border: 1px solid var(--rr-hair) !important;
+    box-shadow: 0 22px 40px -24px rgba(38, 33, 27, 0.5) !important;
+}
+.fi-notification {
+    border-radius: 16px !important;
+    border: 1px solid var(--rr-hair) !important;
+}
+
+/* Lamplight depth: ink shadows become true-black weight after dark. */
+:root.dark .fi-modal-window {
+    box-shadow: 0 34px 70px -28px rgba(0, 0, 0, 0.7) !important;
+}
+:root.dark .fi-dropdown-panel {
+    box-shadow: 0 22px 40px -24px rgba(0, 0, 0, 0.7) !important;
+}
+:root.dark .fi-simple-main {
+    box-shadow: 0 18px 40px -30px rgba(0, 0, 0, 0.7) !important;
+}
+:root.dark .fi-simple-layout {
+    background:
+        radial-gradient(900px 480px at 15% 10%, rgba(232, 106, 51, 0.16), transparent 60%),
+        radial-gradient(760px 420px at 90% 90%, rgba(79, 179, 173, 0.12), transparent 60%),
+        var(--rr-cream) !important;
+}
+
+/* ---------- Auth: the welcome ticket ---------- */
+
+.fi-simple-layout {
+    background:
+        radial-gradient(900px 480px at 15% 10%, rgba(232, 106, 51, 0.1), transparent 60%),
+        radial-gradient(760px 420px at 90% 90%, rgba(40, 124, 120, 0.08), transparent 60%),
+        var(--rr-cream) !important;
+}
+.fi-simple-main-ctn {
+    background: transparent !important;
+}
+.fi-simple-main {
+    background: var(--rr-white);
+    border: 1px solid var(--rr-hair);
+    border-radius: 20px !important;
+    box-shadow: 0 18px 40px -30px rgba(38, 33, 27, 0.45) !important;
+    padding: 32px 30px !important;
+}
+.fi-simple-header-heading {
+    font-family: var(--font-serif) !important;
+    font-weight: 640 !important;
+    letter-spacing: -0.01em !important;
+    color: var(--rr-ink) !important;
+}
+.fi-simple-header-subheading {
+    color: var(--rr-muted) !important;
+}
+
+.rr-auth-brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 18px;
+    text-decoration: none;
+}
+.rr-auth-note {
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--rr-muted);
+    margin-top: 16px;
+}
+
+.rr-google-btn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 18px !important;
+    border-radius: 999px !important;
+    background: var(--rr-white) !important;
+    border: 1px solid var(--rr-hair-strong) !important;
+    color: var(--rr-ink) !important;
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    text-decoration: none !important;
+    box-shadow: 0 6px 16px -10px rgba(38, 33, 27, 0.25);
+}
+.rr-google-btn:hover {
+    border-color: var(--rr-terra) !important;
+    color: var(--rr-ember-deep) !important;
+}
+
+/* ---------- App releases ledger (custom page) ---------- */
+
+.rr-release-table {
+    width: 100%;
+    font-size: 14px;
+    border-collapse: collapse;
+}
+.rr-release-table thead th {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--rr-faint);
+    text-align: left;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--rr-hair);
+    background: transparent;
+    white-space: nowrap;
+}
+.rr-release-table tbody td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--rr-hair);
+    vertical-align: top;
+}
+.rr-release-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+.rr-release-table tbody tr:hover td {
+    background: var(--rr-hover);
+}
+.rr-live-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    background: #e6f2ec;
+    border: 1px solid #bfe0cd;
+    color: #2c6e49;
+    font-size: 11.5px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    padding: 3px 10px;
+    margin-left: 8px;
+    white-space: nowrap;
+}
+.rr-sha {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--rr-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Teal is time: measured reality only ---------- */
+
+.rr-time,
+.fi-ta-cell .rr-time {
+    color: var(--rr-teal) !important;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+}
+
+/* Numbers everywhere tabular */
+.fi-ta-cell,
+.fi-stats-overview-stat-value,
+.fi-pagination {
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Responsive: structural, not fluid type ---------- */
+
+@media (max-width: 860px) {
+    .fi-main {
+        padding: 18px 16px 48px !important;
+    }
+    .fi-sidebar-nav {
+        padding: 16px 12px 20px !important;
+    }
+    .fi-stats-overview-stat {
+        border-left: 0 !important;
+        border-top: 1px solid var(--rr-hair);
+    }
+    .fi-stats-overview-stat:first-child {
+        border-top: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fi-body * {
+        transition: none !important;
+        animation: none !important;
+    }
+}

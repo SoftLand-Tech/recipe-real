@@ -15,9 +15,11 @@ use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Pages\Dashboard;
+use Filament\Navigation\NavigationGroup;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
+use Filament\Support\Enums\Width;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -33,7 +35,15 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path('admin')
+            ->viteTheme('resources/css/filament/admin/theme.css')
             ->brandName('RecipeReal Admin')
+            ->brandLogo(fn () => view('filament.admin.brand'))
+            ->favicon('/favicon.ico')
+            ->font('DM Sans')
+            ->serifFont('Fraunces')
+            ->sidebarCollapsibleOnDesktop()
+            ->sidebarWidth('17rem')
+            ->maxContentWidth(Width::Full)
             ->login()
             // "Continue with Google" under the login form (allowlisted
             // emails only; see AdminGoogleController + routes/web.php).
@@ -41,8 +51,17 @@ class AdminPanelProvider extends PanelProvider
                 'panels::auth.login.form.after',
                 fn () => view('admin-google-button'),
             )
+            ->renderHook(
+                'panels::global-search.after',
+                fn () => view('filament.admin.topbar-actions'),
+            )
             ->colors([
-                'primary' => Color::Amber,
+                'primary' => Color::hex('#E86A33'),
+                'gray' => Color::Stone,
+                'success' => Color::hex('#3D8B5A'),
+                'info' => Color::hex('#287C78'),
+                'warning' => Color::hex('#C47A15'),
+                'danger' => Color::hex('#B23A2E'),
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
@@ -61,10 +80,14 @@ class AdminPanelProvider extends PanelProvider
                 TopAnalyticsEventsWidget::class,
             ])
             ->navigationGroups([
-                'Content',
-                'Community',
-                'Activity',
-                'People',
+                NavigationGroup::make('Content')
+                    ->icon('heroicon-o-book-open'),
+                NavigationGroup::make('Community')
+                    ->icon('heroicon-o-newspaper'),
+                NavigationGroup::make('Activity')
+                    ->icon('heroicon-o-chart-bar'),
+                NavigationGroup::make('People')
+                    ->icon('heroicon-o-identification'),
             ])
             ->middleware([
                 EncryptCookies::class,

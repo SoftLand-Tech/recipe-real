@@ -1,12 +1,8 @@
 {{-- "Continue with Google" under the Filament login form. Only worth
      rendering when the client id exists (otherwise the button 503s). --}}
 @if(config('services.google.client_id'))
-    <div style="margin-top: 1rem; text-align: center;">
-        <a href="{{ url('/admin/auth/google') }}"
-           style="display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
-                  width: 100%; padding: .625rem 1rem; border: 1px solid #dadce0; border-radius: .5rem;
-                  background: #fff; color: #3c4043; font-size: .875rem; font-weight: 500;
-                  text-decoration: none; font-family: -apple-system, system-ui, sans-serif;">
+    <div style="margin-top: 1rem;">
+        <a href="{{ url('/admin/auth/google') }}" class="rr-google-btn">
             <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
               <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
               <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
@@ -16,7 +12,7 @@
             Continue with Google
         </a>
         @if(session('status') === 'admin-google-rejected')
-            <p style="margin-top: .75rem; font-size: .8125rem; color: #b23a2e;">
+            <p style="margin-top: .75rem; font-size: .8125rem; color: var(--rr-danger, #b23a2e); text-align: center;">
                 This Google account is not allowed into the admin panel.
             </p>
         @endif
