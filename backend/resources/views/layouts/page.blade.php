@@ -90,23 +90,23 @@
                 .nav-links a:not(.btn), .nav .btn-accent { white-space: nowrap; }
                 .nav .btn-accent { padding: 10px 17px; font-size: 13.5px; }
             }
-            @media (max-width: 860px) { .nav-links a:not(.btn) { display: none; } }
+            @media (max-width: 860px) { .nav-links > a:not(.btn) { display: none; } }
 
-            /* Small screens: brand + CTA pill + (collapsed) language toggle
-               must share one 60px bar without overflowing. */
+            /* Small screens: the full-size brand + CTA pill + collapsed
+               language toggle share one 60px bar without overflowing. */
             @media (max-width: 560px) {
-                .wrap { padding: 0 16px; }
-                .nav-inner { gap: 10px; height: 60px; }
+                .wrap { padding: 0 12px; }
+                .nav-inner { gap: 8px; height: 60px; }
                 .brand { white-space: nowrap; }
-                .brand-mark { width: 28px; height: 28px; }
-                .brand b { font-size: 19px; }
-                .nav-links { gap: 10px; }
-                .nav .btn-accent { padding: 9px 14px; font-size: 13px; white-space: nowrap; }
+                .nav-links { gap: 8px; }
+                .nav .btn-accent { padding: 8px 12px; font-size: 12.5px; white-space: nowrap; }
             }
             @media (max-width: 380px) {
-                .brand-mark { width: 24px; height: 24px; }
-                .brand b { font-size: 17px; }
-                .nav .btn-accent { padding: 8px 12px; font-size: 12px; }
+                .wrap { padding: 0 8px; }
+                .nav-inner, .nav-links { gap: 6px; }
+                .brand-mark { width: 30px; height: 30px; }
+                .brand b { font-size: 20px; }
+                .nav .btn-accent { padding: 7px 10px; font-size: 11.5px; }
             }
 
             /* page body */

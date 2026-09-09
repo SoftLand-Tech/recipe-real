@@ -22,8 +22,8 @@
     /* Small screens: collapse to a single toggle (the *other* language)
        so the brand + CTA + switcher fit on one line. */
     @media (max-width: 560px) {
-        .lang-switch { gap: 0; font-size: 12px; }
-        .lang-switch a { padding: 6px 9px; }
+        .lang-switch { gap: 0; font-size: 11.5px; }
+        .lang-switch a { padding: 5px 8px; }
         .lang-switch a[aria-current="true"], .lang-switch > span { display: none; }
     }
 </style>
