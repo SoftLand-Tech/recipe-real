@@ -2,12 +2,12 @@
 
 namespace App\Filament\Resources;
 
-use BackedEnum;
-use UnitEnum;
-
 use App\Filament\Resources\ContactMessageResource\Pages;
 use App\Models\ContactMessage;
+use BackedEnum;
+use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
+use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
@@ -15,18 +15,18 @@ use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
-use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use UnitEnum;
 
 class ContactMessageResource extends Resource
 {
     protected static ?string $model = ContactMessage::class;
 
-    protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedInbox;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedInbox;
 
-    protected static string | UnitEnum | null $navigationGroup = 'Activity';
+    protected static string|UnitEnum|null $navigationGroup = 'Activity';
 
     protected static bool $globallySearchable = false;
 
@@ -95,6 +95,11 @@ class ContactMessageResource extends Resource
             ->recordActions([
                 ViewAction::make(),
                 DeleteAction::make(),
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                ]),
             ]);
     }
 

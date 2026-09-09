@@ -2,11 +2,11 @@
 
 namespace App\Filament\Resources;
 
-use BackedEnum;
-use UnitEnum;
-
 use App\Filament\Resources\ProfileResource\Pages;
 use App\Models\Profile;
+use BackedEnum;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\TextInput;
@@ -17,14 +17,15 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use UnitEnum;
 
 class ProfileResource extends Resource
 {
     protected static ?string $model = Profile::class;
 
-    protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedIdentification;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedIdentification;
 
-    protected static string | UnitEnum | null $navigationGroup = 'People';
+    protected static string|UnitEnum|null $navigationGroup = 'People';
 
     public static function getModelLabel(): string
     {
@@ -92,6 +93,11 @@ class ProfileResource extends Resource
             ->recordActions([
                 ViewAction::make(),
                 EditAction::make(),
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                ]),
             ]);
     }
 

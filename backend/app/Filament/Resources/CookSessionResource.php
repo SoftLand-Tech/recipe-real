@@ -2,11 +2,11 @@
 
 namespace App\Filament\Resources;
 
-use BackedEnum;
-use UnitEnum;
-
 use App\Filament\Resources\CookSessionResource\Pages;
 use App\Models\CookSession;
+use BackedEnum;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
@@ -22,14 +22,15 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use UnitEnum;
 
 class CookSessionResource extends Resource
 {
     protected static ?string $model = CookSession::class;
 
-    protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedClock;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedClock;
 
-    protected static string | UnitEnum | null $navigationGroup = 'Activity';
+    protected static string|UnitEnum|null $navigationGroup = 'Activity';
 
     protected static ?string $recordTitleAttribute = 'id';
 
@@ -169,6 +170,11 @@ class CookSessionResource extends Resource
             ->recordActions([
                 ViewAction::make(),
                 EditAction::make(),
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                ]),
             ]);
     }
 

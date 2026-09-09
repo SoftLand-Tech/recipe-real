@@ -2,8 +2,9 @@
 
 namespace App\Filament\Resources\PostResource\RelationManagers;
 
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
 use Filament\Resources\RelationManagers\RelationManager;
-use Filament\Schemas\Schema;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -35,6 +36,11 @@ class LikesRelationManager extends RelationManager
                     ->searchable(),
                 TextColumn::make('user.email')
                     ->label('Email'),
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                ]),
             ]);
     }
 }

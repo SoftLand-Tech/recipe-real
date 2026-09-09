@@ -2,11 +2,11 @@
 
 namespace App\Filament\Resources;
 
-use BackedEnum;
-use UnitEnum;
-
 use App\Filament\Resources\PaceCalibrationResource\Pages;
 use App\Models\PaceCalibration;
+use BackedEnum;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
@@ -17,14 +17,15 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use UnitEnum;
 
 class PaceCalibrationResource extends Resource
 {
     protected static ?string $model = PaceCalibration::class;
 
-    protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedChartBar;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedChartBar;
 
-    protected static string | UnitEnum | null $navigationGroup = 'Activity';
+    protected static string|UnitEnum|null $navigationGroup = 'Activity';
 
     public static function getModelLabel(): string
     {
@@ -108,6 +109,11 @@ class PaceCalibrationResource extends Resource
             ->defaultSort('updated_at', 'desc')
             ->recordActions([
                 ViewAction::make(),
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                ]),
             ]);
     }
 

@@ -2,11 +2,11 @@
 
 namespace App\Filament\Resources;
 
-use BackedEnum;
-use UnitEnum;
-
 use App\Filament\Resources\AnalyticsEventResource\Pages;
 use App\Models\AnalyticsEvent;
+use BackedEnum;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Infolists\Components\TextEntry;
@@ -20,14 +20,15 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use UnitEnum;
 
 class AnalyticsEventResource extends Resource
 {
     protected static ?string $model = AnalyticsEvent::class;
 
-    protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedChartBar;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedChartBar;
 
-    protected static string | UnitEnum | null $navigationGroup = 'Activity';
+    protected static string|UnitEnum|null $navigationGroup = 'Activity';
 
     protected static bool $globallySearchable = false;
 
@@ -122,6 +123,11 @@ class AnalyticsEventResource extends Resource
             ->defaultPaginationPageOption(25)
             ->recordActions([
                 ViewAction::make(),
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                ]),
             ]);
     }
 

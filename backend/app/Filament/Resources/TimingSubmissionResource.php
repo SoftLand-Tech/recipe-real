@@ -2,11 +2,11 @@
 
 namespace App\Filament\Resources;
 
-use BackedEnum;
-use UnitEnum;
-
 use App\Filament\Resources\TimingSubmissionResource\Pages;
 use App\Models\TimingSubmission;
+use BackedEnum;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Infolists\Components\TextEntry;
@@ -19,14 +19,15 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use UnitEnum;
 
 class TimingSubmissionResource extends Resource
 {
     protected static ?string $model = TimingSubmission::class;
 
-    protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedClock;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedClock;
 
-    protected static string | UnitEnum | null $navigationGroup = 'Activity';
+    protected static string|UnitEnum|null $navigationGroup = 'Activity';
 
     public static function getModelLabel(): string
     {
@@ -117,6 +118,11 @@ class TimingSubmissionResource extends Resource
             ->defaultSort('id', 'desc')
             ->recordActions([
                 ViewAction::make(),
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                ]),
             ]);
     }
 

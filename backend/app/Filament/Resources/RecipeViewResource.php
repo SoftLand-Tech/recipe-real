@@ -2,11 +2,11 @@
 
 namespace App\Filament\Resources;
 
-use BackedEnum;
-use UnitEnum;
-
 use App\Filament\Resources\RecipeViewResource\Pages;
 use App\Models\RecipeView;
+use BackedEnum;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
@@ -19,14 +19,15 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use UnitEnum;
 
 class RecipeViewResource extends Resource
 {
     protected static ?string $model = RecipeView::class;
 
-    protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedViewfinderCircle;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedViewfinderCircle;
 
-    protected static string | UnitEnum | null $navigationGroup = 'Activity';
+    protected static string|UnitEnum|null $navigationGroup = 'Activity';
 
     public static function getModelLabel(): string
     {
@@ -98,6 +99,11 @@ class RecipeViewResource extends Resource
             ->defaultSort('id', 'desc')
             ->recordActions([
                 ViewAction::make(),
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                ]),
             ]);
     }
 

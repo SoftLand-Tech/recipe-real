@@ -5,7 +5,9 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\UserBlockResource\Pages;
 use App\Models\UserBlock;
 use BackedEnum;
+use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
+use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
@@ -96,6 +98,11 @@ class UserBlockResource extends Resource
                     ->modalHeading('Remove this block?')
                     ->modalDescription('The blocker will see the blocked user\'s content again.')
                     ->successNotificationTitle('Block removed'),
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                ]),
             ]);
     }
 

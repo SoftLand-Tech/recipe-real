@@ -2,15 +2,15 @@
 
 namespace App\Filament\Resources;
 
-use BackedEnum;
-use UnitEnum;
-
 use App\Filament\Resources\PostCommentResource\Pages;
 use App\Filament\Resources\PostCommentResource\RelationManagers\ReportsRelationManager;
 use App\Models\PostComment;
 use App\Services\ModerationService;
+use BackedEnum;
 use Filament\Actions\Action;
+use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
+use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Textarea;
@@ -22,14 +22,15 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
+use UnitEnum;
 
 class PostCommentResource extends Resource
 {
     protected static ?string $model = PostComment::class;
 
-    protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedChatBubbleLeftRight;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedChatBubbleLeftRight;
 
-    protected static string | UnitEnum | null $navigationGroup = 'Community';
+    protected static string|UnitEnum|null $navigationGroup = 'Community';
 
     protected static ?int $navigationSort = 2;
 
@@ -143,6 +144,11 @@ class PostCommentResource extends Resource
                     })
                     ->successNotificationTitle('Comment removed, author notified'),
                 DeleteAction::make(),
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                ]),
             ]);
     }
 

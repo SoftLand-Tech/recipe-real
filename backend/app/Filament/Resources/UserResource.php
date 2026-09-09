@@ -2,14 +2,14 @@
 
 namespace App\Filament\Resources;
 
-use BackedEnum;
-use UnitEnum;
-
 use App\Filament\Resources\UserResource\Pages;
 use App\Models\User;
 use App\Services\ModerationService;
+use BackedEnum;
 use Filament\Actions\Action;
+use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
+use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Textarea;
@@ -23,14 +23,15 @@ use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use UnitEnum;
 
 class UserResource extends Resource
 {
     protected static ?string $model = User::class;
 
-    protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedUsers;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedUsers;
 
-    protected static string | UnitEnum | null $navigationGroup = 'People';
+    protected static string|UnitEnum|null $navigationGroup = 'People';
 
     protected static ?string $recordTitleAttribute = 'name';
 
@@ -167,6 +168,11 @@ class UserResource extends Resource
                     })
                     ->successNotificationTitle('Suspension lifted'),
                 DeleteAction::make(),
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                ]),
             ]);
     }
 

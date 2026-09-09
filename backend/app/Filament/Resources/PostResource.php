@@ -2,20 +2,20 @@
 
 namespace App\Filament\Resources;
 
-use BackedEnum;
-use UnitEnum;
-
 use App\Filament\Resources\PostResource\Pages;
 use App\Filament\Resources\PostResource\RelationManagers\CommentsRelationManager;
 use App\Filament\Resources\PostResource\RelationManagers\LikesRelationManager;
 use App\Filament\Resources\PostResource\RelationManagers\ReportsRelationManager;
 use App\Models\Post;
 use App\Services\ModerationService;
+use BackedEnum;
 use Filament\Actions\Action;
+use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
+use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\ViewAction;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Grid;
@@ -25,14 +25,15 @@ use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
+use UnitEnum;
 
 class PostResource extends Resource
 {
     protected static ?string $model = Post::class;
 
-    protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedNewspaper;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedNewspaper;
 
-    protected static string | UnitEnum | null $navigationGroup = 'Community';
+    protected static string|UnitEnum|null $navigationGroup = 'Community';
 
     protected static ?int $navigationSort = 1;
 
@@ -157,6 +158,11 @@ class PostResource extends Resource
                     })
                     ->successNotificationTitle('Post removed, author notified'),
                 DeleteAction::make(),
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                ]),
             ]);
     }
 
