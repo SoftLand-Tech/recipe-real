@@ -13,6 +13,13 @@ export interface ButtonProps {
   onPress?: () => void;
   disabled?: boolean;
   loading?: boolean;
+  /**
+   * Optional label shown NEXT TO the spinner while `loading`. Without it the
+   * loading state is spinner-only (existing behavior). Callers use it when
+   * the operation can run long (e.g. publishing a post) and the label is the
+   * "this is working" signal.
+   */
+  loadingLabel?: string;
   fullWidth?: boolean;
   /**
    * Leading glyph BY NAME — the Button renders it tinted to the variant's
@@ -71,6 +78,7 @@ export function Button({
   onPress,
   disabled = false,
   loading = false,
+  loadingLabel,
   fullWidth = false,
   icon,
   iconSize,
@@ -120,6 +128,10 @@ export function Button({
           fontWeight: "600",
           textAlign: "center",
         },
+        // Gap between the loading spinner and its optional label.
+        loadingLabel: {
+          marginStart: Space.sm,
+        },
         labelMd: { fontSize: Type.body.fontSize },
         labelLg: { fontSize: Type.title.fontSize },
         // Breathing room between the glyph and the label.
@@ -150,17 +162,34 @@ export function Button({
           : null,
         large ? styles.sizeLg : styles.sizeMd,
         fullWidth ? styles.fullWidth : null,
-        disabled ? styles.disabled : null,
-        pressed && !disabled ? [styles.pressed, { backgroundColor: tone.pressedBg }] : null,
+        // Muted while working as well as when disabled: the operation is
+        // not re-triggerable, so it should read that way.
+        disabled || loading ? styles.disabled : null,
+        pressed && !disabled && !loading ? [styles.pressed, { backgroundColor: tone.pressedBg }] : null,
         style,
       ]}
     >
       {loading ? (
-        <ActivityIndicator
-          // Literal white on the accent background (see variantContent).
-          color={variant === "primary" ? "#FFFFFF" : colors.accent}
-          size="small"
-        />
+        <>
+          <ActivityIndicator
+            // Literal white on the accent background (see variantContent).
+            color={variant === "primary" ? "#FFFFFF" : colors.accent}
+            size="small"
+          />
+          {loadingLabel != null ? (
+            <Text
+              style={[
+                styles.label,
+                { color: tone.fg },
+                large ? styles.labelLg : styles.labelMd,
+                styles.loadingLabel,
+              ]}
+              numberOfLines={1}
+            >
+              {loadingLabel}
+            </Text>
+          ) : null}
+        </>
       ) : (
         <>
           {leftIcon ? <View style={styles.iconGap}>{leftIcon}</View> : null}

@@ -32,6 +32,7 @@ import {
 } from "@/api/client";
 import { track } from "@/analytics";
 import type { Post, Recipe } from "@/types";
+import { markPostCreated } from "@/utils/postCreated";
 import { useLang, useT } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 import {
@@ -199,6 +200,13 @@ export default function PostComposerScreen() {
   }, [body, selectedRecipe]);
 
   const [posting, setPosting] = useState(false);
+  // Set on a successful create: permanently disarms the unsaved-changes
+  // guard (see usePreventRemove below) and keeps the Post button muted until
+  // the screen pops.
+  const [posted, setPosted] = useState(false);
+  // Synchronous submit lock: `posting` only flips on the next render, so a
+  // fast double-tap could otherwise fire two creates.
+  const submitLockRef = useRef(false);
   const [uploadCaption, setUploadCaption] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [halalTerms, setHalalTerms] = useState<string[] | null>(null);
@@ -293,11 +301,13 @@ export default function PostComposerScreen() {
       setError(t("community.errBodyLong"));
       return;
     }
-    if (posting) return;
+    if (submitLockRef.current || posting) return;
+    submitLockRef.current = true;
     setPosting(true);
     setError(null);
     setHalalTerms(null);
     setUploadCaption(null);
+    let succeeded = false;
     try {
       const uploadedUrls: string[] = [];
       if (pickedUris.length > 0) {
@@ -321,7 +331,10 @@ export default function PostComposerScreen() {
           }
         }
       }
-      setUploadCaption(null);
+      // Publish phase: keep a visible status line (spinner + text) until the
+      // request resolves — on a slow connection the button spinner alone was
+      // easy to miss.
+      setUploadCaption(t("community.publishingPost"));
 
       const created: Post = await createPost({
         body: text,
@@ -333,6 +346,27 @@ export default function PostComposerScreen() {
         image_count: uploadedUrls.length,
         has_recipe: selectedRecipe != null,
       });
+      succeeded = true;
+
+      // Success, BEFORE navigating:
+      // - `posted` + an emptied form keep the unsaved-changes guard disarmed.
+      //   expo-router only QUEUES router.back()/replace(); the queue drains in
+      //   a passive effect after the next render. The old `finally` ran
+      //   setPosting(false) right after the enqueue, so the guard re-armed
+      //   (`dirty && !posting`) before the queued pop ran — the pop was
+      //   intercepted and the discard dialog appeared after a successful
+      //   post. `posted` is the durable disarm.
+      // - `posting` stays true so the Post button remains muted until the
+      //   screen is actually gone.
+      // - The created post is handed to the community feed so it paints the
+      //   row immediately (it already exists server-side) and keeps it
+      //   pinned across the first refresh, past the feed's ranking/cache.
+      setPosted(true);
+      setBody("");
+      setPickedUris([]);
+      setSelectedRecipe(null);
+      setUploadCaption(null);
+      markPostCreated(created);
       // Success: the persisted draft is stale — drop it so the next compose
       // starts clean.
       AsyncStorage.removeItem(POST_COMPOSER_DRAFT_KEY).catch(() => {});
@@ -361,8 +395,14 @@ export default function PostComposerScreen() {
         setError(t("community.postFailed"));
       }
     } finally {
-      setPosting(false);
-      setUploadCaption(null);
+      // Failure: unlock so the user can retry (the draft is intact).
+      // Success: stay locked and muted — the screen is popping, and any
+      // further press would create a duplicate.
+      if (!succeeded) {
+        submitLockRef.current = false;
+        setPosting(false);
+        setUploadCaption(null);
+      }
     }
   }, [body, posting, pickedUris, selectedRecipe, t]);
 
@@ -396,6 +436,9 @@ export default function PostComposerScreen() {
           backgroundColor: colors.surfaceSoft,
           alignItems: "center",
           justifyContent: "center",
+        },
+        closeDisabled: {
+          opacity: 0.5,
         },
         scroll: {
           flex: 1,
@@ -470,6 +513,11 @@ export default function PostComposerScreen() {
           flexDirection: "row",
           gap: Space.sm,
         },
+        uploadStatus: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+        },
         uploadCaption: {
           ...Type.bodySm,
           color: colors.inkSecondary,
@@ -491,9 +539,22 @@ export default function PostComposerScreen() {
   // blocked removal shows NO dialog and every exit from the composer (✕, the
   // post-success navigation) is silently swallowed. The draft is already
   // persisted to AsyncStorage on every change, so nothing is lost.
+  // `posted` keeps the guard disarmed for the post-success pop regardless of
+  // when expo-router's queued navigation actually dispatches.
+  //
+  // While a publish is in flight the guard is also armed, but silently: the
+  // post is already being created, so letting a back gesture leave would
+  // still create it — the user would think they cancelled while the post
+  // shows up later. Requests are bounded by the API's 15s timeout, and the
+  // composer shows a spinner + "Posting…" for the whole wait.
+  const publishing = posting && !posted;
+  const guardActive =
+    Platform.OS !== "web" &&
+    (publishing || (dirty && !posting && !posted));
   usePreventRemove(
-    Platform.OS !== "web" && dirty && !posting,
+    guardActive,
     ({ data }) => {
+    if (publishing) return; // Silent: wait out the in-flight request.
     Alert.alert(
       t("composer.discardTitle"),
       t("composer.discardPostMessage"),
@@ -551,9 +612,10 @@ export default function PostComposerScreen() {
         <Text style={styles.headerTitle}>{t("community.composeTitle")}</Text>
         <IconPressable
           onPress={() => router.back()}
+          disabled={posting && !posted}
           accessibilityLabel={t("common.cancel")}
           hitSlop={Space.xs}
-          style={styles.closeBtn}
+          style={[styles.closeBtn, posting && !posted ? styles.closeDisabled : null]}
         >
           <Ionicons name="close" size={20} color={colors.inkSecondary} />
         </IconPressable>
@@ -606,9 +668,13 @@ export default function PostComposerScreen() {
               ) : null}
             </View>
 
-            {/* Upload progress caption */}
+            {/* Upload / publish progress: spinner + status text, visible for
+                the whole (possibly long) operation. */}
             {uploadCaption != null ? (
-              <Text style={styles.uploadCaption}>{uploadCaption}</Text>
+              <View style={styles.uploadStatus}>
+                <ActivityIndicator size="small" color={colors.accent} />
+                <Text style={styles.uploadCaption}>{uploadCaption}</Text>
+              </View>
             ) : null}
 
             {/* Recipe attach */}
@@ -700,13 +766,14 @@ export default function PostComposerScreen() {
                 title={t("common.cancel")}
                 variant="ghost"
                 onPress={() => router.back()}
-                disabled={posting}
+                disabled={posting && !posted}
               />
               <Button
-                title={posting ? t("community.posting") : t("community.postAction")}
+                title={t("community.postAction")}
                 variant="primary"
                 loading={posting}
-                disabled={posting || body.trim().length === 0}
+                loadingLabel={t("community.posting")}
+                disabled={posting || posted || body.trim().length === 0}
                 onPress={() => void submit()}
               />
             </View>

@@ -35,6 +35,7 @@ import {
   unfollowUser,
 } from "@/api/client";
 import { shareLink } from "@/utils/share";
+import { consumePostCreated } from "@/utils/postCreated";
 import { setPostPreview } from "@/utils/postPreview";
 import { track } from "@/analytics";
 import { WEB_BASE_URL } from "@/config";
@@ -891,6 +892,19 @@ export default function CommunityScreen() {
   const [refreshing, setRefreshing] = useState(false);
   // Header-bell badge: unread likes/comments on the user's own posts.
   const [unreadCount, setUnreadCount] = useState(0);
+  // Transient post-compose notice above the feed: "loading" while the
+  // forced page-1 refresh is in flight (a slow network stays visible),
+  // "done" once it lands, then auto-dismissed.
+  const [postedNotice, setPostedNotice] = useState<
+    "idle" | "loading" | "done"
+  >("idle");
+
+  // Auto-dismiss the posted confirmation once the refreshed feed has landed.
+  useEffect(() => {
+    if (postedNotice !== "done") return;
+    const timer = setTimeout(() => setPostedNotice("idle"), 3200);
+    return () => clearTimeout(timer);
+  }, [postedNotice]);
 
   // Mirror of `posts` readable inside async closures without re-creating them.
   const postsRef = useRef<Post[]>([]);
@@ -1056,7 +1070,38 @@ export default function CommunityScreen() {
       // enough and the refetch is skipped (the profile + notifications
       // refreshes above still run on every focus). Pull-to-refresh and sort
       // switches bypass the throttle by design.
-      if (Date.now() - lastFeedRefreshAt >= FEED_REFETCH_THROTTLE_MS) {
+      //
+      // Returning from a successful compose: paint the created post at the
+      // top IMMEDIATELY — it was persisted before the redirect, so there is
+      // nothing to wait for — then let the background page-1 refresh
+      // reconcile the rest of the feed. The row stays pinned across that
+      // first refresh: ranked page 1 (suggested/trending) does not guarantee
+      // a brand-new, zero-engagement post a slot. (The backend also forgets
+      // the author's cached page-1 feed on create, so a deploy makes the
+      // refresh include it anyway.)
+      const justPosted = consumePostCreated();
+      if (justPosted) {
+        const withPost = [
+          justPosted,
+          ...postsRef.current.filter((p) => p.id !== justPosted.id),
+        ];
+        // Update the mirror ref BEFORE fetchPage: it stays silent while the
+        // feed is non-empty, so a stale empty ref would flash the skeleton
+        // over the post we just painted.
+        postsRef.current = withPost;
+        setPosts(withPost);
+        setState("ready");
+        setPostedNotice("loading");
+        void fetchPage(1).finally(() => {
+          if (cancelled) return;
+          setPosts((prev) =>
+            prev.some((p) => p.id === justPosted.id)
+              ? prev
+              : [justPosted, ...prev],
+          );
+          setPostedNotice("done");
+        });
+      } else if (Date.now() - lastFeedRefreshAt >= FEED_REFETCH_THROTTLE_MS) {
         void fetchPage(1);
       }
       return () => {
@@ -1177,6 +1222,23 @@ export default function CommunityScreen() {
           paddingHorizontal: Space.lg,
           paddingTop: Space.xs,
           paddingBottom: Space.sm,
+        },
+        postedBanner: {
+          flexDirection: "row",
+          alignItems: "center",
+          alignSelf: "center",
+          gap: Space.xs,
+          marginTop: Space.sm,
+          marginHorizontal: Space.lg,
+          paddingVertical: Space.sm - 2,
+          paddingHorizontal: Space.md,
+          borderRadius: Radius.pill,
+          backgroundColor: colors.successSoft,
+        },
+        postedBannerText: {
+          ...Type.bodySm,
+          color: colors.success,
+          fontWeight: "600",
         },
         filterScroll: {
           gap: Space.sm,
@@ -1459,6 +1521,29 @@ export default function CommunityScreen() {
         onEndReachedThreshold={0.5}
         ListHeaderComponent={
           <>
+            {postedNotice !== "idle" ? (
+              <View
+                style={styles.postedBanner}
+                accessibilityLiveRegion="polite"
+              >
+                {postedNotice === "loading" ? (
+                  <ActivityIndicator size="small" color={colors.success} />
+                ) : (
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={16}
+                    color={colors.success}
+                  />
+                )}
+                <Text style={styles.postedBannerText}>
+                  {t(
+                    postedNotice === "loading"
+                      ? "community.postedLoading"
+                      : "community.postedBanner",
+                  )}
+                </Text>
+              </View>
+            ) : null}
             {filterChips}
             {composerCard}
           </>

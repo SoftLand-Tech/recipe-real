@@ -216,6 +216,14 @@ class PostController extends Controller
             // Eloquent's 'array' cast handles json_encode automatically.
             'images'    => count($images) > 0 ? $images : null,
         ]);
+
+        // The author is about to be redirected to the feed: never let their
+        // own 60s-cached page-1 payload hide the post they just created.
+        $this->forgetFeedCache(
+            $request->user()->id,
+            $post->recipe_id !== null ? (int) $post->recipe_id : null,
+        );
+
         $post->load([
             'user:id,display_name,name,avatar_url',
             'recipe:id,title,title_ar,image_url',
@@ -251,6 +259,12 @@ class PostController extends Controller
         $post->body = $body;
         $post->save();
 
+        // An edited body must not sit behind the author's cached page-1 feed.
+        $this->forgetFeedCache(
+            $request->user()->id,
+            $post->recipe_id !== null ? (int) $post->recipe_id : null,
+        );
+
         // Same shape as show(): relations, counts and liked_by_me.
         $post->load([
             'user:id,display_name,name,avatar_url',
@@ -274,6 +288,12 @@ class PostController extends Controller
         $this->assertAuthor($request, $post);
 
         $post->delete();
+
+        // A deleted row must not linger in the author's cached page-1 feed.
+        $this->forgetFeedCache(
+            $request->user()->id,
+            $post->recipe_id !== null ? (int) $post->recipe_id : null,
+        );
 
         return response()->json(null, 204);
     }
@@ -471,6 +491,23 @@ class PostController extends Controller
         }
 
         return (clone $base)->orderByRaw("{$scoreExpr} DESC, posts.id DESC")->paginate(20);
+    }
+
+    /**
+     * Drop the cached page-1 feed payloads for one author after they write a
+     * post (create/edit/delete). The 60s feed cache (see index()) is a
+     * pull-to-refresh tolerance for OTHER readers — the author must see their
+     * own write immediately after the client redirects them to the feed.
+     * Suggested + trending are the only cached sorts; page 1 only.
+     */
+    private function forgetFeedCache(int $userId, ?int $recipeId = null): void
+    {
+        foreach (['suggested', 'trending'] as $sort) {
+            Cache::forget("posts.feed.{$sort}.r0.u{$userId}");
+            if ($recipeId !== null) {
+                Cache::forget("posts.feed.{$sort}.r{$recipeId}.u{$userId}");
+            }
+        }
     }
 
     /**

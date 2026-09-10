@@ -5,6 +5,7 @@ import { Platform } from "react-native";
 import { AUTH_TOKEN_KEY } from "@/config";
 import { enqueuePendingCookSession } from "@/db/database";
 import { clearPostPreview } from "@/utils/postPreview";
+import { clearPostCreated } from "@/utils/postCreated";
 import { secureStore } from "@/utils/secureStore";
 import {
   http,
@@ -98,11 +99,13 @@ export async function loginWithGoogle(
 /**
  * Drop the account-scoped local leftovers after the token is cleared (the
  * same hygiene clearPaceCache() applies at the sign-out call sites): the
- * community feed mirror and the post-detail preview pass-through. Best-effort
- * — a storage failure must never turn a successful sign-out into an error.
+ * community feed mirror and the post-detail preview / just-created post
+ * pass-throughs. Best-effort — a storage failure must never turn a
+ * successful sign-out into an error.
  */
 function clearAccountScopedCaches(): void {
   clearPostPreview();
+  clearPostCreated();
   AsyncStorage.removeItem(COMMUNITY_FEED_CACHE_KEY).catch(() => {
     // Best-effort: the mirror rewrites on the next feed fetch.
   });
