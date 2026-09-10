@@ -4,6 +4,8 @@ import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fetchPublicProfile, followUser, hasToken, unfollowUser } from "@/api/client";
+import { markFeedMutation } from "@/utils/feedMutation";
+import { patchMirroredFollow } from "@/utils/communityMirror";
 import type { MyProfile } from "@/types";
 import { useT, useLang } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
@@ -69,6 +71,15 @@ export default function PublicProfileScreen() {
       else await unfollowUser(profile.user.id);
       const p = await fetchPublicProfile(profile.user.id);
       setProfile(p);
+      // The community feed's Follow pills for this author would otherwise
+      // stay stale behind the 60s focus throttle on return.
+      const reconciled = p.is_following ?? nextFollowing;
+      markFeedMutation({
+        type: "follow",
+        userId: profile.user.id,
+        following: reconciled,
+      });
+      void patchMirroredFollow(profile.user.id, reconciled);
     } catch {
       setProfile(prev);
     }

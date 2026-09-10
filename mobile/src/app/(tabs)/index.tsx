@@ -204,11 +204,12 @@ export default function HomeScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Server-driven rails (GET /api/home, 5-min server cache). The LAST
-  // successful payload is also mirrored to AsyncStorage, so the instant
-  // first paint shows the SAME rails the server will refresh — the old
-  // flow painted client-computed rails from the recipe cache first, then
-  // swapped to different server rails when loaded ("recipes changed!").
+  // Server-driven rails (GET /api/home, 30-min versioned server cache —
+  // any timing write bumps the version, so reads after a cook are fresh).
+  // The LAST successful payload is also mirrored to AsyncStorage, so the
+  // instant first paint shows the SAME rails the server will refresh — the
+  // old flow painted client-computed rails from the recipe cache first,
+  // then swapped to different server rails when loaded ("recipes changed!").
   const [serverRails, setServerRails] = useState<HomeRails | null>(null);
 
   // Tracks whether the initial server rails fetch has settled (loaded, failed, or timed out).
@@ -260,11 +261,27 @@ export default function HomeScreen() {
     }
   }, []);
 
+  // "Recently cooked" data (cheap 10-row page). Extracted so both the
+  // deferred mount load below and the focus effect share it.
+  const reloadRecentSessions = useCallback(() => {
+    getCookSessions({ maxPages: 1, perPage: 10 })
+      .then((page) => {
+        setRecentSessions(page.data);
+      })
+      .catch(() => {
+        setRecentSessions(null);
+      });
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       reloadNoteIds();
       reloadFavoriteIds();
-    }, [reloadNoteIds, reloadFavoriteIds]),
+      // Reload on every focus so a cook finished (or an offline queue
+      // flushed) while Home was in the background appears in the rail on
+      // return — mount-only left it invisible until a restart.
+      void reloadRecentSessions();
+    }, [reloadNoteIds, reloadFavoriteIds, reloadRecentSessions]),
   );
 
   const styles = useMemo(
@@ -528,6 +545,25 @@ export default function HomeScreen() {
     track("home_rails_loaded", { source: "cache" });
   }, []);
 
+  // A quick-time submit on the recipe screen flags fresh averages; Home
+  // loads its rails mount-only, so revalidate them on return when the flag
+  // is present (consume-once — cleared whether or not the reload runs).
+  useFocusEffect(
+    useCallback(() => {
+      AsyncStorage.getItem("recipereal.quickTimeStale")
+        .then((raw) => {
+          if (raw == null) return;
+          AsyncStorage.removeItem("recipereal.quickTimeStale").catch(() => {});
+          void loadRails().catch(() => {
+            // Best-effort background work.
+          });
+        })
+        .catch(() => {
+          // Best-effort: a failed read just skips the re-sync.
+        });
+    }, [loadRails]),
+  );
+
   const loadFromCache = useCallback(async (): Promise<boolean> => {
     // Stale-while-revalidate: keep the current rails on screen during a
     // reload; skeletons are only for a true cold start (nothing to show).
@@ -638,6 +674,11 @@ export default function HomeScreen() {
   // mount burst. The cook-session call is capped to a single 10-row page:
   // it only feeds the 6-item "Recently cooked" rail (Pace's own full-history
   // sweep lives in pace.tsx and is untouched).
+  //
+  // The sessions reload ALSO runs on every focus (see above): a cook
+  // finished (or an offline queue flushed) while Home was in the background
+  // must appear in the rail on return — mount-only left it invisible until
+  // a restart.
   useEffect(() => {
     let cancelled = false;
     let delayTimer: ReturnType<typeof setTimeout> | null = null;
@@ -651,13 +692,7 @@ export default function HomeScreen() {
           .catch(() => {
             if (!cancelled) setHasPace(false);
           });
-        getCookSessions({ maxPages: 1, perPage: 10 })
-          .then((page) => {
-            if (!cancelled) setRecentSessions(page.data);
-          })
-          .catch(() => {
-            if (!cancelled) setRecentSessions(null);
-          });
+        void reloadRecentSessions();
       }, DEFERRED_AUTH_DATA_DELAY_MS);
     });
     return () => {
@@ -665,6 +700,7 @@ export default function HomeScreen() {
       task.cancel();
       if (delayTimer) clearTimeout(delayTimer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // "Recently cooked": the first sessions as light pseudo-recipes plus a
@@ -696,8 +732,9 @@ export default function HomeScreen() {
     // Global safety: the spinner never outlives ~10s.
     const guard = setTimeout(() => setRefreshing(false), REFRESH_SPINNER_MAX_MS);
     try {
-      // FAST primary work: the rails endpoint is 5-min cached server-side, so
-      // this lands quickly — the spinner clears the moment it does.
+      // FAST primary work: the rails endpoint is server-cached (timing
+      // writes bust it), so this lands quickly — the spinner clears the
+      // moment it does.
       await loadRails();
     } finally {
       clearTimeout(guard);

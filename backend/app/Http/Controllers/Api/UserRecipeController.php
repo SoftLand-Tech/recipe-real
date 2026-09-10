@@ -7,9 +7,12 @@ use App\Http\Requests\StoreUserRecipeRequest;
 use App\Http\Requests\UpdateUserRecipeRequest;
 use App\Http\Resources\RecipeResource;
 use App\Jobs\RebuildSearchIndex as RebuildSearchIndexJob;
+use App\Models\Post;
 use App\Models\Recipe;
 use App\Models\RecipeStep;
+use App\Support\CommunityFeedCache;
 use App\Support\HalalGate;
+use App\Support\ShareCache;
 use App\Support\TypesenseSearch;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
@@ -94,6 +97,11 @@ class UserRecipeController extends Controller
         // nightly recipereal:reindex-typesense heals any drift anyway.
         $this->syncSearch($recipe, 'upsert');
 
+        // A new rowid can enter rails/leaderboards only via rating backfills
+        // (user rows start unrated), but its share page may already be
+        // primed by an early share — forget it.
+        ShareCache::forgetRecipe($recipe->id);
+
         return (new RecipeResource($recipe->load('recipeSteps')))
             ->response()
             ->setStatusCode(201);
@@ -167,6 +175,12 @@ class UserRecipeController extends Controller
 
         $this->syncSearch($recipe->fresh(), 'upsert');
 
+        // Title/photo/times render on /r/{id} and on every attached post's
+        // card — forget both surfaces (per locale). Timing edits also move
+        // the shared timing caches (rails/leaderboard carry these fields).
+        ShareCache::forgetRecipe($recipe->id);
+        CommunityFeedCache::bumpTiming();
+
         return new RecipeResource($recipe->fresh(['recipeSteps']));
     }
 
@@ -178,6 +192,14 @@ class UserRecipeController extends Controller
     {
         $this->assertOwner($request, $recipe);
 
+        $recipeId = $recipe->id;
+        // Capture BEFORE delete: the FK nulls posts.recipe_id on delete,
+        // after which the attached posts can no longer be found this way.
+        $attachedPostIds = Post::query()
+            ->where('recipe_id', $recipeId)
+            ->pluck('id')
+            ->all();
+
         DB::transaction(function () use ($recipe): void {
             $recipe->delete(); // recipe_steps cascade via FK
         });
@@ -185,6 +207,12 @@ class UserRecipeController extends Controller
         RebuildSearchIndexJob::dispatch();
 
         $this->syncSearch($recipe, 'delete');
+
+        // Surviving attached posts must drop the dead recipe card from
+        // their /p pages; the deleted /r page 404s via route binding.
+        ShareCache::forgetRecipe($recipeId);
+        ShareCache::forgetPosts($attachedPostIds);
+        CommunityFeedCache::bumpTiming();
 
         return response()->json(null, 204);
     }

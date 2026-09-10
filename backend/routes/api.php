@@ -66,7 +66,7 @@ Route::middleware('throttle:240,1')->group(function (): void {
     Route::get('/home', HomeController::class);
 
     // Reality Index leaderboard: most under/over-estimated recipes
-    // (cached 5 min, light RecipeResource rows).
+    // (cached 15 min, light RecipeResource rows).
     Route::get('/reality', RealityController::class);
 
     // Self-hosted product analytics: auth-optional (anonymous app_open events

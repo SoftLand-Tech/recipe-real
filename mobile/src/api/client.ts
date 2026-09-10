@@ -3,9 +3,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 
 import { AUTH_TOKEN_KEY } from "@/config";
-import { enqueuePendingCookSession } from "@/db/database";
+import { clearAccountData, enqueuePendingCookSession } from "@/db/database";
 import { clearPostPreview } from "@/utils/postPreview";
 import { clearPostCreated } from "@/utils/postCreated";
+import { clearFeedMutations } from "@/utils/feedMutation";
+import { COMMUNITY_FEED_KEY } from "@/utils/communityMirror";
 import { secureStore } from "@/utils/secureStore";
 import {
   http,
@@ -63,15 +65,6 @@ import type {
 
 // `toNum` and `normalizeRecipe` are imported from `@/api/http` (see above).
 
-// ---- Auth ------------------------------------------------------------------
-
-/**
- * AsyncStorage mirror of the Community tab's feed page-1 (see community.tsx).
- * Account-scoped: removed on logout / account deletion so the next signed-in
- * user never paints the previous one's feed.
- */
-const COMMUNITY_FEED_CACHE_KEY = "recipereal.communityFeed";
-
 /**
  * Sign in (or register) with a Google ID token: POST /api/auth/google with
  * `{ id_token, nonce }`. The nonce is the single-use value embedded in the
@@ -98,17 +91,37 @@ export async function loginWithGoogle(
 
 /**
  * Drop the account-scoped local leftovers after the token is cleared (the
- * same hygiene clearPaceCache() applies at the sign-out call sites): the
- * community feed mirror and the post-detail preview / just-created post
- * pass-throughs. Best-effort — a storage failure must never turn a
- * successful sign-out into an error.
+ * same hygiene clearPaceCache() applies at the sign-out call sites).
+ * Without this, the next account on a shared device would see the previous
+ * one's composer draft text, feed/home mirrors, in-progress stopwatch
+ * snapshots, queued cook sessions, favorites, notes and pace rows.
+ * Best-effort — a storage failure must never turn a successful sign-out
+ * into an error. Device-scoped prefs (sort/tab/theme/lang/nudge, sweep
+ * stamp, public categories) are deliberately kept.
  */
-function clearAccountScopedCaches(): void {
+async function clearAccountScopedCaches(): Promise<void> {
   clearPostPreview();
   clearPostCreated();
-  AsyncStorage.removeItem(COMMUNITY_FEED_CACHE_KEY).catch(() => {
-    // Best-effort: the mirror rewrites on the next feed fetch.
-  });
+  clearFeedMutations();
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const doomed = keys.filter(
+      (k) =>
+        k === COMMUNITY_FEED_KEY ||
+        k === "recipereal.homeRails" ||
+        k === "recipereal.postComposerDraft" ||
+        k === "recipereal.quickTimeStale" ||
+        k.startsWith("cook-session:"),
+    );
+    if (doomed.length > 0) await AsyncStorage.multiRemove(doomed);
+  } catch {
+    // Best-effort: mirrors rewrite on the next fetch.
+  }
+  try {
+    await clearAccountData();
+  } catch {
+    // Best-effort: SQLite stays, next sync overwrites.
+  }
 }
 
 export async function logout(): Promise<void> {
@@ -117,7 +130,7 @@ export async function logout(): Promise<void> {
   } finally {
     await secureStore.deleteItemAsync(AUTH_TOKEN_KEY);
     setAuthTokenCache(null);
-    clearAccountScopedCaches();
+    await clearAccountScopedCaches();
   }
 }
 
@@ -135,7 +148,7 @@ export async function deleteAccount(): Promise<void> {
   } finally {
     await secureStore.deleteItemAsync(AUTH_TOKEN_KEY);
     setAuthTokenCache(null);
-    clearAccountScopedCaches();
+    await clearAccountScopedCaches();
   }
 }
 
@@ -265,7 +278,8 @@ export async function fetchCategories(): Promise<CategoryCount[]> {
 }
 
 /**
- * The curated Home rails (GET /api/home, 5-min server cache). Rows are
+ * The curated Home rails (GET /api/home, 30-min versioned server cache —
+ * timing writes bust it). Rows are
  * light and some rails may legitimately be empty until server data lands —
  * callers decide whether to fall back to their local cache rails. A network
  * failure rethrows so the caller can degrade.

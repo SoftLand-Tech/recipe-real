@@ -59,4 +59,40 @@ final class CommunityFeedCache
         $key = self::versionKey($userId);
         Cache::put($key, self::version($userId) + 1, now()->addDays(30));
     }
+
+    /**
+     * Global timing-data version, bumped by any write that moves recipe
+     * timing aggregates (cook sessions, quick-time logs, reality backfills).
+     * The shared timing caches (home rails, reality leaderboard) carry this
+     * version in their keys — one bump invalidates all of their
+     * parameterizations at once (rails are a single key; reality keys are
+     * take-parameterized 1..50 and cannot be enumerated for forgetting).
+     * Superseded payloads expire naturally within their TTLs.
+     */
+    public static function timingVersionKey(): string
+    {
+        return 'timing.version';
+    }
+
+    public static function timingVersion(): int
+    {
+        return (int) Cache::get(self::timingVersionKey(), 0);
+    }
+
+    /** Append the timing version to a shared timing-cache base key. */
+    public static function timingCacheKey(string $base): string
+    {
+        return "{$base}:t".self::timingVersion();
+    }
+
+    /**
+     * Invalidate all shared timing caches after a timing write. The fixed
+     * `landing:popular` key (rating/image/time card fields) is forgotten
+     * directly; the versioned home/reality keys are covered by the bump.
+     */
+    public static function bumpTiming(): void
+    {
+        Cache::put(self::timingVersionKey(), self::timingVersion() + 1, now()->addDays(30));
+        Cache::forget('landing:popular');
+    }
 }

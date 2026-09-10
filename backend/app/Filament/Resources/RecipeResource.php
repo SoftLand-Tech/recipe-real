@@ -10,6 +10,9 @@ use App\Filament\Resources\RecipeResource\RelationManagers\NotesRelationManager;
 use App\Filament\Resources\RecipeResource\RelationManagers\StepsRelationManager;
 use App\Jobs\RebuildSearchIndex;
 use App\Models\Recipe;
+use App\Support\CommunityFeedCache;
+use App\Support\ShareCache;
+use App\Support\TypesenseSearch;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -31,6 +34,9 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class RecipeResource extends Resource
 {
@@ -273,14 +279,58 @@ class RecipeResource extends Resource
                 EditAction::make(),
                 ViewAction::make(),
                 DeleteAction::make()
-                    ->after(fn () => RebuildSearchIndex::dispatch()),
+                    // Forget BEFORE delete: the FK nulls posts.recipe_id on
+                    // delete, after which attached posts can't be found for
+                    // their /p card forget (see the API destroy path).
+                    ->before(fn (Recipe $record) => ShareCache::forgetRecipe($record->id))
+                    ->after(fn (Recipe $record) => static::afterAdminDelete([$record])),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
                     DeleteBulkAction::make()
-                        ->after(fn () => RebuildSearchIndex::dispatch()),
+                        ->before(fn (EloquentCollection $records) => $records->each(
+                            fn (Recipe $record) => ShareCache::forgetRecipe($record->id)
+                        ))
+                        ->after(fn (EloquentCollection $records) => static::afterAdminDelete($records)),
                 ]),
             ]);
+    }
+
+    /**
+     * Freshness tail for admin recipe deletes (single + bulk): the FTS
+     * rebuild the delete always needed, plus the timing-cache bump, the
+     * recipe/attached-post share forgets, and a best-effort Typesense doc
+     * delete (the API destroy path does all four; the table actions must
+     * not ghost rows in any of them).
+     *
+     * @param  iterable<Recipe>  $records
+     */
+    public static function afterAdminDelete(iterable $records): void
+    {
+        RebuildSearchIndex::dispatch();
+        CommunityFeedCache::bumpTiming();
+
+        $ids = [];
+        foreach ($records as $record) {
+            $ids[] = $record->id;
+            ShareCache::forgetRecipe($record->id);
+        }
+
+        try {
+            $typesense = app(TypesenseSearch::class);
+
+            if ($typesense->enabled()) {
+                foreach ($ids as $id) {
+                    $typesense->deleteDoc((string) $id);
+                }
+            }
+        } catch (Throwable $e) {
+            Log::warning('typesense.sync.failed', [
+                'op' => 'admin-delete',
+                'recipe_ids' => $ids,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     public static function getRelations(): array

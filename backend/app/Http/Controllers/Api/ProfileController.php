@@ -9,6 +9,7 @@ use App\Models\Post;
 use App\Models\Recipe;
 use App\Models\RecipeNote;
 use App\Models\User;
+use App\Support\ShareCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -62,6 +63,12 @@ class ProfileController extends Controller
             $user->gender = $gender === 'male' || $gender === 'female' ? $gender : null;
         }
         $user->save();
+
+        // display_name/avatar_url render on every /p/{id} the user authored
+        // (card + og:title) — forget those share pages when either moved.
+        if ($user->wasChanged(['display_name', 'avatar_url', 'name'])) {
+            ShareCache::forgetPostsByUser($user->id);
+        }
 
         return response()->json($this->payload($user->refresh()));
     }

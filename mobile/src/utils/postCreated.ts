@@ -29,6 +29,16 @@ export function consumePostCreated(): Post | null {
   return value;
 }
 
+/**
+ * Non-destructive read for screens that want to react to the just-created
+ * post WITHOUT stealing it from the feed (e.g. the recipe screen prepending
+ * it to its tries list — the community tab still needs to consume it for
+ * its pin + confirmation banner).
+ */
+export function peekPostCreated(): Post | null {
+  return pending;
+}
+
 /** Sign-out hygiene (account-scoped data). */
 export function clearPostCreated(): void {
   pending = null;

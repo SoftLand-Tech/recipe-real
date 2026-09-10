@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\RecipeCardResource;
 use App\Models\Recipe;
+use App\Support\CommunityFeedCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -23,7 +24,9 @@ use Illuminate\Support\Facades\DB;
  * publisher claim to divide by, and quality-tier-eligible presentation
  * (>= 2 steps + an image). Cached 15 minutes: the gap-pct ordering scans
  * the matched rows, rows carry a stable id tiebreaker, and 15 minutes of
- * staleness is fine for a leaderboard (deploy-time cache:clear busts).
+ * staleness is the tolerance for OTHER readers — any timing write bumps the
+ * timing version in the key (see CommunityFeedCache), so a just-logged cook
+ * is never hidden behind the leaderboard cache.
  */
 class RealityController extends Controller
 {
@@ -46,7 +49,7 @@ class RealityController extends Controller
         // rows are hydrated back into models before resource conversion —
         // same pattern as the home rails.
         $rows = Cache::remember(
-            "reality:{$mode}:{$take}",
+            CommunityFeedCache::timingCacheKey("reality:{$mode}:{$take}"),
             now()->addMinutes(15),
             fn () => $this->buildRows($mode, $take)
         );

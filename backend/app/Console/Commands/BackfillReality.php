@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\CommunityFeedCache;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -148,6 +149,14 @@ class BackfillReality extends Command
             number_format($estimate),
             number_format($null),
         ));
+
+        // reality_* moved table-wide: bust the shared timing caches
+        // (home rails, reality leaderboard, landing popular) so the new
+        // figures show immediately. Typesense `minutes` still heals on the
+        // nightly reindex (see ReindexTypesense).
+        if ($written > 0) {
+            CommunityFeedCache::bumpTiming();
+        }
 
         return self::SUCCESS;
     }

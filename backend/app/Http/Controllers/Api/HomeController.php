@@ -7,6 +7,7 @@ use App\Http\Resources\RecipeCardResource;
 use App\Models\Recipe;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Support\CommunityFeedCache;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -25,7 +26,14 @@ class HomeController extends Controller
         // The cache holds plain attribute arrays (this app's cache forbids
         // unserializing classes — cache.serializable_classes = false), so
         // rails are hydrated back into models before resource conversion.
-        $rails = Cache::remember('home:rails', now()->addMinutes(30), fn () => $this->buildRails());
+        // The key carries the global timing version: any timing write
+        // (cook sessions, quick-time logs, backfills) bumps it, so rails
+        // never replay pre-write averages/rankings.
+        $rails = Cache::remember(
+            CommunityFeedCache::timingCacheKey('home:rails'),
+            now()->addMinutes(30),
+            fn () => $this->buildRails()
+        );
 
         return response()->json([
             'data' => [

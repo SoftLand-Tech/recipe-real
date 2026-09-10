@@ -600,6 +600,23 @@ export async function clearRecipeCache(): Promise<void> {
 }
 
 /**
+ * Wipe the account-scoped SQLite rows on sign-out (logout / account
+ * deletion): queued cook sessions, pace calibrations, favorites and notes
+ * all belong to the signed-out account and must never surface under the
+ * next one on a shared device. The offline recipe library (recipes +
+ * recipe_steps) is device-scoped public content and is kept.
+ */
+export async function clearAccountData(): Promise<void> {
+  const db = await getDb();
+  await runSerialized(async () => {
+    await db.execAsync("DELETE FROM pending_cook_sessions;");
+    await db.execAsync("DELETE FROM pace_calibrations;");
+    await db.execAsync("DELETE FROM favorites;");
+    await db.execAsync("DELETE FROM notes;");
+  });
+}
+
+/**
  * Light background refresh: fetch all recipe pages WITHOUT steps (small
  * payloads) and upsert them, leaving the cached step library untouched.
  */

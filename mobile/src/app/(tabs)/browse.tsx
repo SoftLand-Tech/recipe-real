@@ -127,8 +127,6 @@ const SEARCH_DEBOUNCE_MS = 350;
  * community averages instead of pinning the pre-submit values.
  */
 const QUICK_TIME_STALE_KEY = "recipereal.quickTimeStale";
-/** How long a quick-time stale flag stays actionable, in ms. */
-const QUICK_TIME_STALE_TTL_MS = 60_000;
 
 /**
  * Safety cap for the pull-to-refresh spinner: it must never outlive ~10s
@@ -1407,21 +1405,19 @@ export default function BrowseScreen() {
 
   // Quick-time staleness: the detail screen flags a fresh submit; on the next
   // focus, re-run the server search once (silently) so the grid reflects the
-  // recomputed community averages. The flag is cleared regardless of age.
+  // recomputed community averages. The flag is consume-once (no TTL — a
+  // submit 10 minutes ago is still newer than the grid painted before it)
+  // and cleared regardless.
   useFocusEffect(
     useCallback(() => {
       AsyncStorage.getItem(QUICK_TIME_STALE_KEY)
         .then((raw) => {
           if (raw == null) return;
-          const flaggedAt = Number(raw);
           AsyncStorage.removeItem(QUICK_TIME_STALE_KEY).catch(() => {});
-          if (!offline && Number.isFinite(flaggedAt)) {
-            const fresh = Date.now() - flaggedAt < QUICK_TIME_STALE_TTL_MS;
-            if (fresh) {
-              runSearch().catch(() => {
-                // Best-effort background work.
-              });
-            }
+          if (!offline) {
+            runSearch().catch(() => {
+              // Best-effort background work.
+            });
           }
         })
         .catch(() => {

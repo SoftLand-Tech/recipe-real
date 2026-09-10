@@ -101,6 +101,82 @@ class Recipe extends Model
     }
 
     /**
+     * Recompute this recipe's community timing aggregates from its cook
+     * sessions + timing submissions, then follow the Reality Index via
+     * recalculateReality(). Shared by full Cook Mode sessions (which carry
+     * per-step timings) and one-tap quick-time logs (totals only).
+     *
+     * - community_avg_minutes: plain average of total_actual_minutes over
+     *   the last 100 sessions (null-safe: untouched when there are none).
+     * - cleanup_avg_minutes: same over non-null cleanup_minutes.
+     * - recipe_steps.community_avg_minutes: all-time average of
+     *   timing_submissions per step, for the given step ids (constrained to
+     *   this recipe's steps). An empty list heals steps that already have
+     *   submissions (e.g. sessions logged before step aggregates existed).
+     *
+     * Saves the model when anything changed (recalculateReality persists
+     * when the reality columns moved; the averages are saved explicitly).
+     */
+    public function refreshCommunityTiming(array $stepIds = []): void
+    {
+        $avg = CookSession::query()
+            ->where('recipe_id', $this->id)
+            ->whereNotNull('total_actual_minutes')
+            ->latest('id')
+            ->limit(100)
+            ->avg('total_actual_minutes');
+
+        if ($avg !== null) {
+            $this->community_avg_minutes = round((float) $avg, 2);
+        }
+
+        $cleanupAvg = CookSession::query()
+            ->where('recipe_id', $this->id)
+            ->whereNotNull('cleanup_minutes')
+            ->latest('id')
+            ->limit(100)
+            ->avg('cleanup_minutes');
+
+        if ($cleanupAvg !== null) {
+            $this->cleanup_avg_minutes = round((float) $cleanupAvg, 2);
+        }
+
+        if ($stepIds === []) {
+            $stepIds = TimingSubmission::query()
+                ->join('recipe_steps', 'recipe_steps.id', '=', 'timing_submissions.recipe_step_id')
+                ->where('recipe_steps.recipe_id', $this->id)
+                ->distinct()
+                ->pluck('timing_submissions.recipe_step_id')
+                ->all();
+        }
+
+        if ($stepIds !== []) {
+            $ownedStepIds = RecipeStep::query()
+                ->where('recipe_id', $this->id)
+                ->whereIn('id', $stepIds)
+                ->pluck('id');
+
+            foreach ($ownedStepIds as $stepId) {
+                $stepAvg = TimingSubmission::query()
+                    ->where('recipe_step_id', $stepId)
+                    ->avg('actual_minutes');
+
+                if ($stepAvg !== null) {
+                    RecipeStep::query()
+                        ->where('id', $stepId)
+                        ->update(['community_avg_minutes' => round((float) $stepAvg, 2)]);
+                }
+            }
+        }
+
+        if ($this->isDirty()) {
+            $this->save();
+        }
+
+        $this->recalculateReality();
+    }
+
+    /**
      * Recompute the Reality Index columns (reality_minutes /
      * reality_source / reality_samples) and save when anything changed.
      *

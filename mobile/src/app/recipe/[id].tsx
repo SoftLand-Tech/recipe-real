@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useLocalSearchParams, router } from "expo-router";
+import { useLocalSearchParams, router, useFocusEffect } from "expo-router";
 import {
   Fragment,
   useCallback,
@@ -92,6 +92,7 @@ import {
   scheduleAtNotification,
 } from "@/utils/notifications";
 import { shareLink } from "@/utils/share";
+import { peekPostCreated } from "@/utils/postCreated";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -1755,6 +1756,33 @@ export default function RecipeDetailScreen() {
       cancelled = true;
     };
   }, [ready, id]);
+
+  /**
+   * A just-published try for THIS recipe ("Share your try" → composer →
+   * back): prepend it without waiting for a remount. Peek, don't consume —
+   * the community tab still needs the marker for its pin + banner. Guarded
+   * per post id so repeated focuses don't double-prepend.
+   */
+  const appliedTryRef = useRef<number | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      const created = peekPostCreated();
+      const rid = Number(id);
+      if (
+        created == null ||
+        !Number.isFinite(rid) ||
+        created.recipe?.id !== rid ||
+        appliedTryRef.current === created.id
+      ) {
+        return;
+      }
+      appliedTryRef.current = created.id;
+      setTries((prev) =>
+        prev ? [created, ...prev.filter((p) => p.id !== created.id)] : prev,
+      );
+      setTriesTotal((n) => n + 1);
+    }, [id]),
+  );
 
   /**
    * "Share your try" ghost button of the empty community-tries state —

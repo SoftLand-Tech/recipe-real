@@ -36,6 +36,18 @@ import {
 } from "@/api/client";
 import { shareLink } from "@/utils/share";
 import { consumePostCreated } from "@/utils/postCreated";
+import {
+  consumeFeedMutations,
+  type FeedMutation,
+} from "@/utils/feedMutation";
+import {
+  COMMUNITY_FEED_KEY,
+  incrementMirroredCommentCount,
+  patchMirroredFollow,
+  patchMirroredPost,
+  removeMirroredPost,
+  writeMirroredFeed,
+} from "@/utils/communityMirror";
 import { setPostPreview } from "@/utils/postPreview";
 import { track } from "@/analytics";
 import { WEB_BASE_URL } from "@/config";
@@ -66,15 +78,13 @@ type FeedSort = PostSort;
 const SORT_PREF_KEY = "recipereal.communitySort";
 
 /**
- * AsyncStorage mirror of the last successful feed page-1 (Home's
- * `recipereal.homeRails` pattern): painted instantly on a cold mount while
- * the normal network refresh revalidates behind it. The `sort` field keeps
- * one ordering's rows from ever painting under another chip. Cleared on
- * sign-out (account-scoped) by the api client.
+ * Envelope stored under COMMUNITY_FEED_KEY (see @/utils/communityMirror):
+ * the last successful feed page-1 (Home's `recipereal.homeRails` pattern),
+ * painted instantly on a cold mount while the normal network refresh
+ * revalidates behind it. The `sort` field keeps one ordering's rows from
+ * ever painting under another chip. Cleared on sign-out (account-scoped)
+ * by the api client.
  */
-const COMMUNITY_FEED_KEY = "recipereal.communityFeed";
-
-/** Envelope stored under COMMUNITY_FEED_KEY. */
 interface CachedCommunityFeed {
   sort: FeedSort;
   posts: Post[];
@@ -182,6 +192,14 @@ interface PostCardProps {
    * resets on remount/recycling.
    */
   onFollowed: (userId: number, following: boolean) => void;
+  /**
+   * In-flight optimistic like registry (owned by the feed screen): while a
+   * like request is pending for this post, prop syncs and background
+   * refreshes must not overwrite the optimistic heart.
+   */
+  isLikePending: (postId: number) => boolean;
+  markLikePending: (postId: number, liked: boolean, likesCount: number) => void;
+  clearLikePending: (postId: number) => void;
 }
 
 /**
@@ -207,6 +225,9 @@ const PostCard = memo(function PostCard({
   myUserId,
   onRemove,
   onFollowed,
+  isLikePending,
+  markLikePending,
+  clearLikePending,
 }: PostCardProps) {
   const colors = useThemeColors();
   const t = useT();
@@ -220,9 +241,12 @@ const PostCard = memo(function PostCard({
   const [needsAuth, setNeedsAuth] = useState(false);
 
   useEffect(() => {
+    // While this card's like request is in flight, the optimistic heart
+    // wins over prop syncs (background refreshes rebase around it too).
+    if (isLikePending(post.id)) return;
     setLiked(post.liked_by_me);
     setLikesCount(post.likes_count);
-  }, [post.liked_by_me, post.likes_count]);
+  }, [post.id, post.liked_by_me, post.likes_count, isLikePending]);
 
   const handleLike = useCallback(async () => {
     if (likeBusy) return;
@@ -233,10 +257,16 @@ const PostCard = memo(function PostCard({
     setLikeBusy(true);
     // Optimistic toggle; the server's answer is authoritative. Both are
     // mirrored into the FEED state so a remount can never lose the like.
+    // The pre-toggle values are captured for rollback — the render-closure
+    // props may have moved on by failure time (background refresh), and
+    // rolling back to those would wipe newer server state.
+    const prevLiked = liked;
+    const prevCount = likesCount;
     const nextLiked = !liked;
     const nextCount = likesCount + (liked ? -1 : 1);
     setLiked(nextLiked);
     setLikesCount(nextCount);
+    markLikePending(post.id, nextLiked, nextCount);
     onLiked(post.id, nextLiked, nextCount);
     try {
       const result = await togglePostLike(post.id);
@@ -244,14 +274,15 @@ const PostCard = memo(function PostCard({
       setLikesCount(result.likes_count);
       onLiked(post.id, result.liked, result.likes_count);
     } catch (error) {
-      setLiked(post.liked_by_me);
-      setLikesCount(post.likes_count);
-      onLiked(post.id, post.liked_by_me, post.likes_count);
+      setLiked(prevLiked);
+      setLikesCount(prevCount);
+      onLiked(post.id, prevLiked, prevCount);
       if (error instanceof PostUnauthorizedError) setNeedsAuth(true);
     } finally {
+      clearLikePending(post.id);
       setLikeBusy(false);
     }
-  }, [likeBusy, signedIn, liked, likesCount, post.id, post.liked_by_me, post.likes_count, onLiked]);
+  }, [likeBusy, signedIn, liked, likesCount, post.id, onLiked, markLikePending, clearLikePending]);
 
   // ---- Follow (Facebook-style pill on the author row) ------------------------
   const [following, setFollowing] = useState(Boolean(post.user.followed_by_me));
@@ -921,6 +952,47 @@ export default function CommunityScreen() {
   const feedKeyRef = useRef("suggested");
 
   /**
+   * In-flight optimistic like toggles: post id → the toggled-to state.
+   * A background page-1 refresh landing mid-request must not clobber the
+   * optimistic heart (it would flip back despite the server counting the
+   * like), and the card's prop-sync effect must not fight the toggle.
+   */
+  const pendingLikesRef = useRef(new Map<number, { liked: boolean; count: number }>());
+
+  /** Re-apply in-flight optimistic likes over freshly fetched rows. */
+  const rebasePendingLikes = useCallback((rows: Post[]): Post[] => {
+    const pending = pendingLikesRef.current;
+    if (pending.size === 0) return rows;
+    return rows.map((p) => {
+      const optimistic = pending.get(p.id);
+      return optimistic
+        ? { ...p, liked_by_me: optimistic.liked, likes_count: optimistic.count }
+        : p;
+    });
+  }, []);
+
+  /**
+   * Apply one feed-mutation marker to a row list (shared by the in-memory
+   * feed and the AsyncStorage mirror patch below).
+   */
+  const applyMutation = useCallback((rows: Post[], m: FeedMutation): Post[] => {
+    switch (m.type) {
+      case "patch-post":
+        return rows.map((p) =>
+          p.id === m.postId ? { ...p, ...m.patch } : p,
+        );
+      case "remove-post":
+        return rows.filter((p) => p.id !== m.postId);
+      case "follow":
+        return rows.map((p) =>
+          p.user.id === m.userId
+            ? { ...p, user: { ...p.user, followed_by_me: m.following } }
+            : p,
+        );
+    }
+  }, []);
+
+  /**
    * Fetch one feed page for the current sort. Page 1 replaces the list;
    * later pages append deduped by id.
    */
@@ -938,14 +1010,19 @@ export default function CommunityScreen() {
         const result = await fetchPosts(targetPage, activeSort);
         // Stale combo: the user moved on to another filter/sort — drop it.
         if (feedKeyRef.current !== feedKey) return;
+        // A refresh landing mid-like must not clobber the optimistic heart.
+        const rows = rebasePendingLikes(result.posts);
         setPosts((prev) =>
           targetPage === 1
-            ? result.posts
+            ? rows
             : [
                 ...prev,
-                ...result.posts.filter((p) => !prev.some((q) => q.id === p.id)),
+                ...rows.filter((p) => !prev.some((q) => q.id === p.id)),
               ],
         );
+        if (targetPage === 1) {
+          postsRef.current = rows;
+        }
         setPage(targetPage);
         setHasMore(result.hasMore);
         setState("ready");
@@ -954,15 +1031,7 @@ export default function CommunityScreen() {
           // the AsyncStorage mirror so the next cold mount paints instantly
           // (homeRails pattern). Best-effort on the write.
           lastFeedRefreshAt = Date.now();
-          AsyncStorage.setItem(
-            COMMUNITY_FEED_KEY,
-            JSON.stringify({
-              sort: activeSort,
-              posts: result.posts,
-            } satisfies CachedCommunityFeed),
-          ).catch(() => {
-            // Mirror is best-effort.
-          });
+          void writeMirroredFeed(activeSort, rows);
         }
       } catch (error) {
         if (feedKeyRef.current !== feedKey) return;
@@ -972,7 +1041,7 @@ export default function CommunityScreen() {
         setLoadingMore(false);
       }
     },
-    [],
+    [rebasePendingLikes],
   );
 
   // Restore the persisted sort preference, then load page 1 with it
@@ -1071,37 +1140,67 @@ export default function CommunityScreen() {
       // refreshes above still run on every focus). Pull-to-refresh and sort
       // switches bypass the throttle by design.
       //
-      // Returning from a successful compose: paint the created post at the
-      // top IMMEDIATELY — it was persisted before the redirect, so there is
-      // nothing to wait for — then let the background page-1 refresh
-      // reconcile the rest of the feed. The row stays pinned across that
-      // first refresh: ranked page 1 (suggested/trending) does not guarantee
-      // a brand-new, zero-engagement post a slot. (The backend also forgets
-      // the author's cached page-1 feed on create, so a deploy makes the
-      // refresh include it anyway.)
+      // Returning from a successful compose: on the `latest` sort the created
+      // post is painted at the top IMMEDIATELY — it was persisted before the
+      // redirect, so there is nothing to wait for. On ranked sorts
+      // (suggested/trending) it is NOT pinned — a zero-engagement post has
+      // no earned rank there, and pinning would misrank the feed; the
+      // confirmation banner + forced refresh are the acknowledgment. The
+      // background page-1 refresh reconciles the rest of the feed either
+      // way. (The backend forgets the author's cached page-1 feed on
+      // create, so the refresh includes the write.)
+      //
+      // Writes made on OTHER screens (post-detail likes/comments/edits/
+      // deletes, profile follows) arrive as feed-mutation markers: they are
+      // applied to the rows immediately for the same reason — the focus
+      // refresh below is throttled, and without the instant paint the write
+      // would look undone for up to 60s.
+      const mutations = consumeFeedMutations();
+      if (mutations.length > 0) {
+        let rows = postsRef.current;
+        for (const m of mutations) rows = applyMutation(rows, m);
+        postsRef.current = rows;
+        setPosts(rows);
+        if (rows.length > 0) setState("ready");
+        // Mirror the applied mutations so a restart paints them too.
+        void writeMirroredFeed(sortRef.current, rows);
+      }
       const justPosted = consumePostCreated();
       if (justPosted) {
-        const withPost = [
-          justPosted,
-          ...postsRef.current.filter((p) => p.id !== justPosted.id),
-        ];
-        // Update the mirror ref BEFORE fetchPage: it stays silent while the
-        // feed is non-empty, so a stale empty ref would flash the skeleton
-        // over the post we just painted.
-        postsRef.current = withPost;
-        setPosts(withPost);
-        setState("ready");
+        if (sortRef.current === "latest") {
+          const withPost = [
+            justPosted,
+            ...postsRef.current.filter((p) => p.id !== justPosted.id),
+          ];
+          postsRef.current = withPost;
+          setPosts(withPost);
+          setState("ready");
+          void writeMirroredFeed(sortRef.current, withPost);
+        }
         setPostedNotice("loading");
         void fetchPage(1).finally(() => {
           if (cancelled) return;
-          setPosts((prev) =>
-            prev.some((p) => p.id === justPosted.id)
-              ? prev
-              : [justPosted, ...prev],
-          );
+          // Re-pin only on latest (see above); the ref/mirror sync is
+          // deferred out of the updater (StrictMode-safe).
+          if (sortRef.current === "latest") {
+            setPosts((prev) => {
+              const next =
+                prev.some((p) => p.id === justPosted.id)
+                  ? prev
+                  : [justPosted, ...prev];
+              queueMicrotask(() => {
+                postsRef.current = next;
+                void writeMirroredFeed(sortRef.current, next);
+              });
+              return next;
+            });
+          }
           setPostedNotice("done");
         });
-      } else if (Date.now() - lastFeedRefreshAt >= FEED_REFETCH_THROTTLE_MS) {
+      } else if (
+        mutations.length > 0 ||
+        Date.now() - lastFeedRefreshAt >= FEED_REFETCH_THROTTLE_MS
+      ) {
         void fetchPage(1);
       }
       return () => {
@@ -1152,6 +1251,23 @@ export default function CommunityScreen() {
         p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p,
       ),
     );
+    // Mirror the count so a restart paints it (see communityMirror).
+    void incrementMirroredCommentCount(postId);
+  }, []);
+
+  /** In-flight optimistic like registry passed down to the cards (see ref). */
+  const isLikePending = useCallback(
+    (postId: number) => pendingLikesRef.current.has(postId),
+    [],
+  );
+  const markLikePending = useCallback(
+    (postId: number, liked: boolean, likesCount: number) => {
+      pendingLikesRef.current.set(postId, { liked, count: likesCount });
+    },
+    [],
+  );
+  const clearLikePending = useCallback((postId: number) => {
+    pendingLikesRef.current.delete(postId);
   }, []);
 
   /**
@@ -1165,6 +1281,11 @@ export default function CommunityScreen() {
           p.id === postId ? { ...p, liked_by_me: liked, likes_count: likesCount } : p,
         ),
       );
+      // Mirror the authoritative state so a restart paints it.
+      void patchMirroredPost(postId, {
+        liked_by_me: liked,
+        likes_count: likesCount,
+      });
     },
     [],
   );
@@ -1183,6 +1304,8 @@ export default function CommunityScreen() {
             : p,
         ),
       );
+      // Mirror every affected row so a restart paints the pill correctly.
+      void patchMirroredFollow(userId, following);
     },
     [],
   );
@@ -1190,6 +1313,7 @@ export default function CommunityScreen() {
   /** Drops a post from the feed after its own deletion or an author block. */
   const removePost = useCallback((postId: number) => {
     setPosts((prev) => prev.filter((p) => p.id !== postId));
+    void removeMirroredPost(postId);
   }, []);
 
   const startCompose = useCallback(() => {
@@ -1494,6 +1618,9 @@ export default function CommunityScreen() {
             onFollowed={applyFollowState}
             myUserId={myUserId}
             onRemove={removePost}
+            isLikePending={isLikePending}
+            markLikePending={markLikePending}
+            clearLikePending={clearLikePending}
           />
         )}
         style={{ flex: 1 }}

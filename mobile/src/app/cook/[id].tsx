@@ -1548,6 +1548,14 @@ export default function CookModeScreen() {
                   {submitMsg}
                 </Text>
               ) : null}
+              {/* Pace calibrations recompute in a background job (and after
+                  an offline flush), so they can lag the save by seconds to
+                  minutes — say so, or the Pace tab looks broken. */}
+              {!submitFailed && submitMsg ? (
+                <Text style={[styles.savedMsg, { color: colors.inkSecondary }]}>
+                  {t("cook.pacePending")}
+                </Text>
+              ) : null}
               <Button
                 title={t("cook.done")}
                 onPress={finish}

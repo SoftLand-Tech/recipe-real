@@ -35,6 +35,11 @@ import {
 import { track } from "@/analytics";
 import { WEB_BASE_URL } from "@/config";
 import { shareLink } from "@/utils/share";
+import { markFeedMutation } from "@/utils/feedMutation";
+import {
+  patchMirroredPost,
+  removeMirroredPost,
+} from "@/utils/communityMirror";
 import { takePostPreview } from "@/utils/postPreview";
 import type { Post, PostComment, PostRecipe } from "@/types";
 import { useLang, useT, type Lang, type TranslateFn } from "@/i18n";
@@ -468,6 +473,9 @@ export default function PostDetailScreen() {
       setNeedsAuth(true);
       return;
     }
+    // Captured for rollback — the `post` prop may move on by failure time.
+    const prevLiked = liked;
+    const prevCount = likesCount;
     setLikeBusy(true);
     setLiked((v) => !v);
     setLikesCount((c) => c + (liked ? -1 : 1));
@@ -475,15 +483,26 @@ export default function PostDetailScreen() {
       const result = await togglePostLike(post.id);
       setLiked(result.liked);
       setLikesCount(result.likes_count);
+      // The feed row for this post would otherwise stay stale behind the
+      // 60s focus throttle when navigating back.
+      markFeedMutation({
+        type: "patch-post",
+        postId: post.id,
+        patch: { liked_by_me: result.liked, likes_count: result.likes_count },
+      });
+      void patchMirroredPost(post.id, {
+        liked_by_me: result.liked,
+        likes_count: result.likes_count,
+      });
     } catch (error) {
       // Roll back optimistic update.
-      setLiked(post.liked_by_me);
-      setLikesCount(post.likes_count);
+      setLiked(prevLiked);
+      setLikesCount(prevCount);
       if (error instanceof PostUnauthorizedError) setNeedsAuth(true);
     } finally {
       setLikeBusy(false);
     }
-  }, [post, likeBusy, signedIn, liked]);
+  }, [post, likeBusy, signedIn, liked, likesCount]);
 
   const sendComment = useCallback(async () => {
     const body = draft.trim();
@@ -500,9 +519,21 @@ export default function PostDetailScreen() {
       setComments((prev) => [...prev, created]);
       setDraft("");
       // Bump local counter on the post.
+      const nextCount = post.comments_count + 1;
       setPost((p) =>
-        p ? { ...p, comments_count: p.comments_count + 1 } : p,
+        p ? { ...p, comments_count: nextCount, latest_comment: created } : p,
       );
+      // The feed row's count + preview would otherwise stay stale behind
+      // the 60s focus throttle when navigating back.
+      markFeedMutation({
+        type: "patch-post",
+        postId: post.id,
+        patch: { comments_count: nextCount, latest_comment: created },
+      });
+      void patchMirroredPost(post.id, {
+        comments_count: nextCount,
+        latest_comment: created,
+      });
     } catch (error) {
       if (error instanceof PostUnauthorizedError) {
         setNeedsAuth(true);
@@ -546,6 +577,17 @@ export default function PostDetailScreen() {
         p ? { ...p, body: updated.body, edited: updated.edited } : p,
       );
       setEditingPost(false);
+      // The feed row's body would otherwise stay stale behind the 60s
+      // focus throttle when navigating back.
+      markFeedMutation({
+        type: "patch-post",
+        postId: post.id,
+        patch: { body: updated.body, edited: updated.edited },
+      });
+      void patchMirroredPost(post.id, {
+        body: updated.body,
+        edited: updated.edited,
+      });
     } catch (error) {
       if (error instanceof PostUnauthorizedError) {
         setNeedsAuth(true);
@@ -567,8 +609,13 @@ export default function PostDetailScreen() {
     setDeletingPost(true);
     try {
       await deletePost(post.id);
-      // Back to the feed — its focus effect silently reloads page 1, so the
-      // deleted post is gone by the time the list is visible again.
+      // The feed's focus refresh is throttled (60s) and would NOT drop the
+      // deleted row in time — remove it via marker so it is gone on return.
+      markFeedMutation({ type: "remove-post", postId: post.id });
+      void removeMirroredPost(post.id);
+      // Back to the feed — its focus effect applies the marker (and forces
+      // a refresh past the throttle), so the deleted post is gone by the
+      // time the list is visible again.
       router.back();
     } catch (error) {
       setDeletingPost(false);

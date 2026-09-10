@@ -3,7 +3,9 @@
 namespace App\Console\Commands;
 
 use App\Models\Recipe;
+use App\Support\CommunityFeedCache;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use stdClass;
 
@@ -141,6 +143,14 @@ class AiApply extends Command
         }
         if ($dryRun) {
             $this->info('Dry run: nothing was written.');
+        } elseif ($this->applied > 0 || $this->stepsUpdated > 0) {
+            // Titles/categories/times moved table-wide: bust the shared
+            // timing caches + the categories cache (ai-apply sets category)
+            // so the new content shows immediately. Per-id share pages heal
+            // via their 5-min TTL; Typesense `minutes` heals on the nightly
+            // reindex (run recipereal:reindex-typesense after large applies).
+            CommunityFeedCache::bumpTiming();
+            Cache::forget('recipes:categories');
         }
 
         return self::SUCCESS;

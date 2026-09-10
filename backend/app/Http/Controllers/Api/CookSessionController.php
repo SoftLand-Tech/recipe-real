@@ -10,11 +10,16 @@ use App\Jobs\RecalculatePaceCalibration;
 use App\Models\CookSession;
 use App\Models\Recipe;
 use App\Models\TimingSubmission;
+use App\Support\CommunityFeedCache;
+use App\Support\ShareCache;
+use App\Support\TypesenseSearch;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Throwable;
 
 class CookSessionController extends Controller
 {
@@ -81,6 +86,21 @@ class CookSessionController extends Controller
 
         RecalculatePaceCalibration::dispatch($request->user()->id);
 
+        // A full Cook Mode session is the strongest timing signal there is:
+        // fold its total + per-step timings into the recipe's community
+        // aggregates (averages, Reality Index, per-step times) so "Really
+        // takes" moves on the very next read, then bust the timing caches
+        // and reindex the recipe's searchable minutes. The idempotent-retry
+        // path above returns early and never reaches here (no double-count).
+        $this->absorbTimingWrite(
+            $data['recipe_id'],
+            collect($data['timing_submissions'])
+                ->pluck('recipe_step_id')
+                ->unique()
+                ->map(fn ($id) => (int) $id)
+                ->all(),
+        );
+
         return (new CookSessionResource($session))->response()->setStatusCode(201);
     }
 
@@ -93,12 +113,10 @@ class CookSessionController extends Controller
      * submissions — the schema tolerates that (timing_submissions.session_id
      * is a client uuid with no FK to cook_sessions), and the pace
      * calibration job reads only timing submissions, so it is unaffected
-     * and not re-dispatched. The recipe's community_avg_minutes is
-     * recomputed inline (plain average of the last 100 sessions), the same
-     * aggregate full cook sessions feed; cleanup_avg_minutes is recomputed
-     * the same way, but only when this submission included cleanup_minutes.
-     * The recipe's Reality Index columns follow via
-     * Recipe::recalculateReality() — 'community' source, live.
+     * and not re-dispatched. The recipe's community aggregates follow via
+     * the same absorbTimingWrite() full cook sessions feed (averages over
+     * the last 100 sessions, Reality Index flipped to 'community', timing
+     * caches busted, searchable minutes reindexed).
      */
     public function quickTime(StoreQuickTimeRequest $request, Recipe $recipe): JsonResponse
     {
@@ -115,38 +133,9 @@ class CookSessionController extends Controller
             'source' => 'quick',
         ]);
 
-        // Cheap recompute: count+avg over this recipe's sessions only.
-        $avg = CookSession::query()
-            ->where('recipe_id', $recipe->id)
-            ->whereNotNull('total_actual_minutes')
-            ->latest('id')
-            ->limit(100)
-            ->avg('total_actual_minutes');
+        $this->absorbTimingWrite($recipe->id);
 
-        if ($avg !== null) {
-            $recipe->community_avg_minutes = round((float) $avg, 2);
-        }
-
-        // Same inline recompute for the cleanup average — only when this
-        // submission actually contributed a cleanup figure.
-        if (($data['cleanup_minutes'] ?? null) !== null) {
-            $cleanupAvg = CookSession::query()
-                ->where('recipe_id', $recipe->id)
-                ->whereNotNull('cleanup_minutes')
-                ->latest('id')
-                ->limit(100)
-                ->avg('cleanup_minutes');
-
-            if ($cleanupAvg !== null) {
-                $recipe->cleanup_avg_minutes = round((float) $cleanupAvg, 2);
-            }
-        }
-
-        // A cook submission is the strongest timing signal there is: flip
-        // the Reality Index to 'community' (reality_minutes mirrors the
-        // average above, samples = session count). recalculateReality()
-        // saves the model when anything is dirty.
-        $recipe->recalculateReality();
+        $recipe->refresh();
 
         return response()->json([
             'ok' => true,
@@ -173,5 +162,64 @@ class CookSessionController extends Controller
             ->paginate(15);
 
         return CookSessionResource::collection($sessions);
+    }
+
+    /**
+     * Shared tail for every timing write (full Cook Mode sessions and
+     * one-tap quick-time logs): fold the new data into the recipe's
+     * community aggregates, bust the shared timing caches (home rails,
+     * reality leaderboard, landing popular), refresh the recipe's cached
+     * share pages, and reindex its searchable minutes. All best-effort past
+     * the aggregate recompute — a cache/search failure must never fail a
+     * cook submission.
+     *
+     * @param  list<int>  $stepIds  submitted step ids (totals-only writes
+     *                              pass [] and heal steps that already have
+     *                              submissions)
+     */
+    private function absorbTimingWrite(int $recipeId, array $stepIds = []): void
+    {
+        $recipe = Recipe::find($recipeId);
+        if ($recipe === null) {
+            return;
+        }
+
+        $recipe->refreshCommunityTiming($stepIds);
+
+        CommunityFeedCache::bumpTiming();
+        ShareCache::forgetRecipe($recipe->id);
+        $this->syncSearch($recipe->fresh(), 'upsert');
+    }
+
+    /**
+     * Best-effort Typesense write-through for timing writes (same pattern as
+     * UserRecipeController::syncSearch): the indexed `minutes` doc must
+     * follow community_avg/reality the moment they move. Disabled daemon =
+     * no-op; failure logs and never fails the request (nightly reindex
+     * heals drift).
+     */
+    private function syncSearch(?Recipe $recipe, string $op): void
+    {
+        try {
+            $typesense = app(TypesenseSearch::class);
+
+            if (! $typesense->enabled() || $recipe === null) {
+                return;
+            }
+
+            if ($op === 'delete') {
+                $typesense->deleteDoc((string) $recipe->id);
+
+                return;
+            }
+
+            $typesense->upsertDocs([$typesense->documentFor($recipe)]);
+        } catch (Throwable $e) {
+            Log::warning('typesense.sync.failed', [
+                'op' => $op,
+                'recipe_id' => $recipe?->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

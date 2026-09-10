@@ -11,6 +11,7 @@ use App\Models\PostReport;
 use App\Models\UserBlock;
 use App\Support\CommunityFeedCache;
 use App\Support\HalalGate;
+use App\Support\ShareCache;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -263,8 +264,10 @@ class PostController extends Controller
         $post->body = $body;
         $post->save();
 
-        // An edited body must not sit behind the author's cached page-1 feed.
+        // An edited body must not sit behind the author's cached page-1 feed
+        // or the post's cached public share page (/p/{id} + OG tags).
         CommunityFeedCache::bump($request->user()->id);
+        ShareCache::forgetPost($post->id);
 
         // Same shape as show(): relations, counts and liked_by_me.
         $post->load([

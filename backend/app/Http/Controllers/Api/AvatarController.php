@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreUploadRequest;
+use App\Support\ShareCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -30,6 +31,9 @@ class AvatarController extends Controller
         $user = $request->user();
         $user->avatar_url = $url;
         $user->save();
+
+        // The avatar renders on every /p/{id} the user authored.
+        ShareCache::forgetPostsByUser($user->id);
 
         return response()->json(['avatar_url' => $url, 'url' => $url], 201);
     }
