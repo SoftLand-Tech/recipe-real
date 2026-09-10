@@ -6,6 +6,7 @@ import {
   BackHandler,
   StyleSheet,
   Text,
+  TextInput,
   type TextStyle,
   View,
   type ViewStyle,
@@ -19,10 +20,10 @@ import {
   alarmAvailable,
   cancelStepAlarm,
   formatCookElapsed,
-  initCookEventHandlers,
   openAlarmPermissionSettings,
   requestAlarmPermission,
   scheduleStepAlarm,
+  setLiveCookHandlers,
   startCookNotification,
   stopCookNotification,
 } from "@/utils/cookAlarms";
@@ -91,8 +92,10 @@ function round2(v: number): number {
 
 /** AsyncStorage shape for a cook session that must survive an OS kill. */
 interface PersistedCookSession {
-  v: 1;
+  v: 1 | 2;
   recipeId: number;
+  /** v2: recipe title for the app-wide banner (v1 falls back to lookup). */
+  title?: string;
   cookStartAt: number;
   pausedAt: number | null;
   pausedMsTotal: number;
@@ -540,6 +543,64 @@ export default function CookModeScreen() {
           ...Type.h3,
           fontWeight: "700",
         },
+        // Manual time adjustment (feedback phase).
+        adjustWrap: {
+          width: "100%",
+          alignItems: "center",
+          gap: Space.xs,
+          marginTop: Space.sm,
+        },
+        adjustCard: {
+          width: "100%",
+          gap: Space.md,
+          borderWidth: 1,
+          borderColor: colors.accentSoft,
+        },
+        adjustHint: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+          textAlign: "center",
+        },
+        adjustRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: Space.sm,
+        },
+        stepperBtn: {
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          backgroundColor: colors.surfaceSoft,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        adjustInput: {
+          ...Type.h2,
+          fontWeight: "800",
+          color: colors.ink,
+          backgroundColor: colors.surfaceSoft,
+          borderRadius: Radius.md,
+          paddingHorizontal: Space.md,
+          paddingVertical: Space.sm,
+          minWidth: 96,
+          textAlign: "center",
+          fontVariant: ["tabular-nums"],
+        },
+        adjustUnit: {
+          ...Type.body,
+          color: colors.inkSecondary,
+          fontWeight: "600",
+        },
+        adjustActions: {
+          flexDirection: "row",
+          gap: Space.sm,
+        },
+        adjustedNote: {
+          ...Type.caption,
+          color: colors.inkSecondary,
+          textAlign: "center",
+        },
         submittingRow: {
           flexDirection: "row",
           alignItems: "center",
@@ -652,6 +713,13 @@ export default function CookModeScreen() {
   // Whether submitMsg is an ERROR message (drives the done-screen color; the
   // old `startsWith("Could not")` check doesn't survive translation).
   const [submitFailed, setSubmitFailed] = useState(false);
+  // Manual time adjustment (feedback phase): null = the stopwatch stands.
+  // When set, the submit scales every per-step timing proportionally so the
+  // adjusted total stays consistent with the pace data (e.g. an unpaused
+  // phone call inflates ALL steps, not just the total).
+  const [adjustedTotal, setAdjustedTotal] = useState<number | null>(null);
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  const [adjustDraft, setAdjustDraft] = useState("");
 
   const steps: RecipeStep[] = useMemo(
     () => recipe?.recipe_steps ?? [],
@@ -689,7 +757,7 @@ export default function CookModeScreen() {
           const saved = JSON.parse(raw) as PersistedCookSession;
           const fresh =
             saved != null &&
-            saved.v === 1 &&
+            (saved.v === 1 || saved.v === 2) &&
             saved.recipeId === recipe.id &&
             typeof saved.cookStartAt === "number" &&
             Date.now() - saved.cookStartAt < MAX_RESTORE_AGE_MS;
@@ -775,8 +843,9 @@ export default function CookModeScreen() {
       return;
     }
     const payload: PersistedCookSession = {
-      v: 1,
+      v: 2,
       recipeId: recipe?.id ?? Number(id),
+      title: recipe ? lr.title(recipe) : undefined,
       cookStartAt,
       pausedAt,
       pausedMsTotal,
@@ -803,6 +872,7 @@ export default function CookModeScreen() {
     recipe,
     id,
     sessionKey,
+    lr,
   ]);
 
   // ---- Load recipe ---------------------------------------------------------
@@ -917,6 +987,7 @@ export default function CookModeScreen() {
       if (gen !== armGenRef.current) return false;
       const { id, exactAlarmDenied } = await scheduleStepAlarm({
         recipeTitle: lr.title(recipe),
+        recipeId: recipe.id,
         stepNumber: step.step_number,
         minutes,
         t,
@@ -1137,6 +1208,9 @@ export default function CookModeScreen() {
     }
     setStatus("finished");
     setSummary(built);
+    setAdjustedTotal(null);
+    setAdjustOpen(false);
+    setAdjustDraft("");
     setPhase("feedback");
     track("cook_finished", {
       recipe_id: recipe.id,
@@ -1157,18 +1231,22 @@ export default function CookModeScreen() {
   ]);
 
   // ---- Notification quick actions -> same handlers as the buttons ----------
-  // Latest-handler refs: the wiring effect runs once, the callbacks change.
+  // The screen registers its LIVE handlers into the global notifee wiring
+  // (mounted once in _layout): foreground quick-action taps call these
+  // directly, so Pause/Resume/Finish from the shade run the exact same code
+  // as the on-screen buttons. Unregistered on unmount, with the same
+  // leave-screen cleanup as before (drop notification + armed alarm).
   const togglePauseRef = useRef(togglePauseResume);
   const finishRef = useRef(finishCooking);
   togglePauseRef.current = togglePauseResume;
   finishRef.current = finishCooking;
   useEffect(() => {
-    const unsubscribe = initCookEventHandlers({
+    setLiveCookHandlers({
       onPauseToggle: () => togglePauseRef.current(),
       onFinish: () => finishRef.current(),
     });
     return () => {
-      unsubscribe();
+      setLiveCookHandlers(null);
       // Leaving Cook Mode entirely: drop the notification + armed alarm.
       void stopCookNotification();
       const alarmId = armedAlarmIdRef.current;
@@ -1228,25 +1306,50 @@ export default function CookModeScreen() {
   const handleSubmit = useCallback(
     async (feedback: Feedback | null) => {
       if (!recipe || !summary) return;
+      // Manual adjustment: scale every per-step timing by
+      // adjusted/measured so the submitted total and the pace data stay
+      // consistent (cleanup re-derives from the scaled cleanup steps).
+      const measuredTotal = summary.total_actual_minutes;
+      let effTotal = measuredTotal;
+      let effPerStep = summary.perStep;
+      let effCleanup = summary.cleanup_minutes;
+      if (
+        adjustedTotal != null &&
+        measuredTotal > 0 &&
+        adjustedTotal !== measuredTotal
+      ) {
+        const factor = adjustedTotal / measuredTotal;
+        effPerStep = summary.perStep.map((p) => ({
+          ...p,
+          actual_minutes: round2(Math.max(0, p.actual_minutes * factor)),
+        }));
+        effCleanup =
+          effPerStep
+            .filter((p) => p.step.step_type === "cleanup")
+            .reduce((sum, p) => sum + p.actual_minutes, 0) || null;
+        effTotal = adjustedTotal;
+      }
       // Fire-and-forget analytics when a feedback button is chosen or skipped.
       track("cook_completed", {
         recipe_id: recipe.id,
-        total_actual_minutes: summary.total_actual_minutes,
+        total_actual_minutes: effTotal,
         feedback,
+        time_adjusted: adjustedTotal != null,
       });
       setPhase("submitting");
       setSubmitMsg(null);
       setSubmitFailed(false);
+      setAdjustOpen(false);
       // Lazily mint one idempotency key per cook session; it is stable across
       // retries (offline queue stores the whole payload as JSON, key included).
       if (!idempotencyKey.current) idempotencyKey.current = makeId();
       const payload: CookSessionPayload = {
         recipe_id: recipe.id,
-        total_actual_minutes: summary.total_actual_minutes,
-        cleanup_minutes: summary.cleanup_minutes,
+        total_actual_minutes: effTotal,
+        cleanup_minutes: effCleanup,
         feedback,
         idempotency_key: idempotencyKey.current,
-        timing_submissions: summary.perStep.map((p) => ({
+        timing_submissions: effPerStep.map((p) => ({
           recipe_step_id: p.step.id,
           actual_minutes: p.actual_minutes,
         })),
@@ -1286,7 +1389,7 @@ export default function CookModeScreen() {
       setSubmitFailed(outcome === "error");
       setPhase("done");
     },
-    [recipe, summary, t],
+    [recipe, summary, adjustedTotal, t],
   );
 
   /**
@@ -1417,7 +1520,10 @@ export default function CookModeScreen() {
   // ---- Feedback / submitting / done phases ----
   if (phase === "feedback" || phase === "submitting" || phase === "done") {
     const submitting = phase === "submitting";
-    const totalCooked = summary?.total_actual_minutes ?? 0;
+    const measuredTotal = summary?.total_actual_minutes ?? 0;
+    // The displayed total follows a manual adjustment (the pill, the
+    // claim-vs-reality line and the submit all read this one value).
+    const totalCooked = adjustedTotal ?? measuredTotal;
     const cleanupMinutes = summary?.cleanup_minutes ?? null;
     return (
       <View
@@ -1480,6 +1586,110 @@ export default function CookModeScreen() {
             <Text style={styles.cleanupEstimate}>
               {t("cook.cleanupEstimate", { n: Math.round(cleanupEstimate) })}
             </Text>
+          ) : null}
+
+          {/* Manual time adjustment: the stopwatch stands unless the cook
+              corrects it (forgotten pause, interruption). The adjusted total
+              scales every per-step timing proportionally at submit. */}
+          {phase === "feedback" && totalCooked > 0 ? (
+            <View style={styles.adjustWrap}>
+              {!adjustOpen ? (
+                <>
+                  <Button
+                    title={t("cook.adjustTime")}
+                    variant="ghost"
+                    icon="time-outline"
+                    onPress={() => {
+                      setAdjustDraft(
+                        String(
+                          Math.round(adjustedTotal ?? totalCooked),
+                        ),
+                      );
+                      setAdjustOpen(true);
+                    }}
+                  />
+                  {adjustedTotal != null ? (
+                    <Text style={styles.adjustedNote}>
+                      {t("cook.adjustedNote", {
+                        measured: fmtMin(measuredTotal),
+                        adjusted: fmtMin(adjustedTotal),
+                      })}
+                    </Text>
+                  ) : null}
+                </>
+              ) : (
+                <Card style={styles.adjustCard}>
+                  <Text style={styles.adjustHint}>
+                    {t("cook.adjustHint")}
+                  </Text>
+                  <View style={styles.adjustRow}>
+                    <IconPressable
+                      onPress={() =>
+                        setAdjustDraft((d) =>
+                          String(Math.max(0, (parseInt(d, 10) || 0) - 1)),
+                        )
+                      }
+                      accessibilityLabel={t("cook.adjustMinus")}
+                      hitSlop={Space.xs}
+                      style={styles.stepperBtn}
+                    >
+                      <Ionicons
+                        name="remove"
+                        size={20}
+                        color={colors.accent}
+                      />
+                    </IconPressable>
+                    <TextInput
+                      style={styles.adjustInput}
+                      value={adjustDraft}
+                      onChangeText={(v) =>
+                        setAdjustDraft(v.replace(/[^0-9]/g, "").slice(0, 4))
+                      }
+                      placeholder={String(Math.round(totalCooked))}
+                      placeholderTextColor={colors.inkFaint}
+                      keyboardType="number-pad"
+                      returnKeyType="done"
+                      maxLength={4}
+                      accessibilityLabel={t("cook.adjustTime")}
+                    />
+                    <Text style={styles.adjustUnit}>{t("common.min")}</Text>
+                    <IconPressable
+                      onPress={() =>
+                        setAdjustDraft((d) =>
+                          String(
+                            Math.min(1440, (parseInt(d, 10) || 0) + 1),
+                          ),
+                        )
+                      }
+                      accessibilityLabel={t("cook.adjustPlus")}
+                      hitSlop={Space.xs}
+                      style={styles.stepperBtn}
+                    >
+                      <Ionicons name="add" size={20} color={colors.accent} />
+                    </IconPressable>
+                  </View>
+                  <View style={styles.adjustActions}>
+                    <Button
+                      title={t("common.cancel")}
+                      variant="ghost"
+                      onPress={() => setAdjustOpen(false)}
+                    />
+                    <Button
+                      title={t("cook.adjustUse")}
+                      onPress={() => {
+                        const parsed = parseInt(adjustDraft, 10);
+                        setAdjustedTotal(
+                          Number.isFinite(parsed)
+                            ? Math.min(1440, Math.max(0, parsed))
+                            : null,
+                        );
+                        setAdjustOpen(false);
+                      }}
+                    />
+                  </View>
+                </Card>
+              )}
+            </View>
           ) : null}
 
           {phase !== "done" ? (

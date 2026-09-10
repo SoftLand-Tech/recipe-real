@@ -22,7 +22,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import "@/global.css";
 import { track } from "@/analytics";
+import { ActiveCookBanner } from "@/components/ActiveCookBanner";
 import { AnimatedSplash } from "@/components/AnimatedSplash";
+import { NotificationSetup } from "@/components/NotificationSetup";
 import { Button } from "@/components/ui";
 import { initDatabase } from "@/db/database";
 import { useLang, useT } from "@/i18n";
@@ -179,6 +181,13 @@ function NavigationFrame() {
     <ThemeProvider value={navigationTheme}>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
         <StatusBar style={scheme === "dark" ? "light" : "dark"} />
+        {/*
+          Headless notification plumbing (tap-to-open, sticky cook re-post)
+          + the app-wide active-cook banner. Both render nothing when idle;
+          the banner pins above every screen while a cook session is live.
+        */}
+        <NotificationSetup />
+        <ActiveCookBanner />
         <Stack screenOptions={{ headerShown: true }}>
           {/*
             The (tabs) group provides bottom-tab navigation for the five

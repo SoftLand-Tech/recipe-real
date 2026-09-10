@@ -7,10 +7,20 @@
  * resolves to null and every export here degrades to a silent no-op —
  * the in-app stopwatch keeps working, alarms/persistent notifications
  * just skip. Dev-client and store builds get the real behavior.
+ *
+ * System notifications CANNOT be tested in Expo Go at all (expo-notifications
+ * is likewise unavailable there) — tap-to-open, the sticky session
+ * notification and step alarms all need a dev build or APK.
  */
 import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { translate, type TranslateFn } from "@/i18n";
+import {
+  navigateNotificationTarget,
+  notificationDataToHref,
+  type NotificationHref,
+} from "@/utils/deepLink";
 
 type NotifeeModule = typeof import("@notifee/react-native");
 type NotifeeApi = NotifeeModule["default"];
@@ -138,20 +148,85 @@ export interface StartCookNotificationOpts {
 }
 
 /**
- * Module mirror of the last posted cook notification. Background quick
- * actions (headless JS, no React state) re-post from this snapshot.
- *
- * OS-kill note: this mirror is in-memory, so a headless action after a kill
- * starts with it empty. The cook session itself, however, is persisted by
- * the Cook Mode screen (AsyncStorage: cookStartAt / pauses / visit log),
- * so relaunching the app restores the elapsed stopwatch and the user can
- * resume or submit from the restored screen — the killed-background action
- * path stays cancel-only (finish still cancels the notification), but the
- * session is no longer lost with it.
+ * Module mirror of the last posted cook notification (recipe + title), so
+ * background/headless quick actions can re-post it after an OS kill wiped
+ * the in-memory state. Written on every post, cleared with the
+ * notification. The full session truth (pauses, visits, status) lives in
+ * the cook screen's `cook-session:{id}` snapshot — this is only the display
+ * row the notification needs.
  */
-let cookNotifState: StartCookNotificationOpts | null = null;
-/** When the notification was last flipped paused<->running (wall ms). */
-let cookNotifToggledAt = 0;
+const COOK_NOTIF_META_KEY = "recipereal.cookNotifMeta";
+
+interface CookNotifMeta {
+  recipeId: number;
+  title: string;
+}
+
+async function writeCookNotifMeta(meta: CookNotifMeta): Promise<void> {
+  try {
+    await AsyncStorage.setItem(COOK_NOTIF_META_KEY, JSON.stringify(meta));
+  } catch {
+    // Best-effort.
+  }
+}
+
+async function readCookNotifMeta(): Promise<CookNotifMeta | null> {
+  try {
+    const raw = await AsyncStorage.getItem(COOK_NOTIF_META_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CookNotifMeta>;
+    if (
+      typeof parsed.recipeId !== "number" ||
+      !Number.isFinite(parsed.recipeId) ||
+      typeof parsed.title !== "string"
+    ) {
+      return null;
+    }
+    return { recipeId: parsed.recipeId, title: parsed.title };
+  } catch {
+    return null;
+  }
+}
+
+/** Stashed deep-link for a notification body tap handled while headless. */
+const PENDING_NOTIF_NAV_KEY = "recipereal.pendingNotifNav";
+
+/**
+ * Stash a notification-tap destination for the app layer: a headless
+ * (background/killed) tap cannot navigate, but the tap opens the app, and
+ * _layout consumes this on foreground to complete the navigation.
+ */
+export async function stashPendingNotifNav(href: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(
+      PENDING_NOTIF_NAV_KEY,
+      JSON.stringify({ href, at: Date.now() }),
+    );
+  } catch {
+    // Best-effort.
+  }
+}
+
+/** Single-shot consume of the stashed tap destination (null when none). */
+export async function consumePendingNotifNav(): Promise<string | null> {
+  try {
+    const raw = await AsyncStorage.getItem(PENDING_NOTIF_NAV_KEY);
+    await AsyncStorage.removeItem(PENDING_NOTIF_NAV_KEY).catch(() => {});
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { href?: unknown; at?: unknown };
+    // Stale taps (older than a day, e.g. never consumed) are dropped.
+    if (
+      typeof parsed.href !== "string" ||
+      typeof parsed.at !== "number" ||
+      Date.now() - parsed.at > 24 * 60 * 60 * 1000
+    ) {
+      return null;
+    }
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Post/refresh the Android ongoing "cooking session" notification with a
@@ -159,12 +234,25 @@ let cookNotifToggledAt = 0;
  * pause-adjusted elapsed. Re-posting on pause/resume swaps the action title
  * (Pause <-> Resume) and the base.
  *
+ * Stickiness: `ongoing` keeps the row non-dismissible and `asForegroundService`
+ * elevates it to a foreground-service notification, so swiping the app out
+ * of recents (or the OS reclaiming the process) does NOT take it down — it
+ * stands until the cook finishes, is discarded, or the session is stopped.
+ * (Requires the FOREGROUND_SERVICE manifest permission + the registered
+ * foreground-service task; both wired at app start. Aggressive OEM
+ * force-stops can still clear it — the in-app session banner then remains
+ * the source of truth, and the notification is re-posted on next launch.)
+ *
  * Paused state does NOT show a ticking chronometer: Android notification
  * chronometers cannot freeze, and leaving one running while paused would
  * display ever-growing time that isn't real cooking time. Instead the
  * paused post hides the chronometer and bakes the frozen pause-adjusted
  * elapsed into the body text, so the notification shows the truth and
  * snaps back to the live ticker on resume.
+ *
+ * Tapping the notification BODY opens the cook screen: an explicit
+ * `pressAction: { id: "default" }` plus a `data` payload route through the
+ * global tap handler (see initGlobalCookEvents).
  *
  * iOS: silently skipped (returns false). Ongoing notifications with
  * chronometers + quick actions are an Android-only construct here; on iOS
@@ -180,8 +268,7 @@ export async function startCookNotification(
   const t = opts.t ?? tEn;
   try {
     await ensureChannels(mod);
-    cookNotifState = opts;
-    cookNotifToggledAt = Date.now();
+    await writeCookNotifMeta({ recipeId: opts.recipeId, title: opts.recipeTitle });
     // Frozen elapsed baked into the paused body (computed at post time —
     // static text can't drift, which is exactly what "paused" means).
     const pausedBody = opts.paused
@@ -191,9 +278,13 @@ export async function startCookNotification(
       id: COOK_NOTIFICATION_ID,
       title: t("cook.cookNotifTitle", { title: opts.recipeTitle }),
       body: pausedBody,
+      data: { kind: "cook", recipeId: String(opts.recipeId) },
       android: {
         channelId: COOK_CHANNEL_ID,
         ongoing: true,
+        asForegroundService: true,
+        // Body tap → global handler opens the cook screen.
+        pressAction: { id: "default" },
         showTimestamp: false,
         // Live ticker while running; hidden while paused (see above).
         showChronometer: !opts.paused,
@@ -229,7 +320,9 @@ export async function startCookNotification(
 
 /** Cancel the persistent cook notification; never throws. */
 export async function stopCookNotification(): Promise<void> {
-  cookNotifState = null;
+  await AsyncStorage.removeItem(COOK_NOTIF_META_KEY).catch(() => {
+    // Best-effort.
+  });
   const api = await notifeeApi();
   if (!api) return;
   try {
@@ -243,6 +336,7 @@ export async function stopCookNotification(): Promise<void> {
 
 export interface StepAlarmOpts {
   recipeTitle: string;
+  recipeId: number;
   stepNumber: number;
   minutes: number;
   /** Absolute fire time; defaults to now + minutes. */
@@ -283,9 +377,16 @@ export async function scheduleStepAlarm(
           n: opts.stepNumber,
           minutes: opts.minutes,
         }),
+        // Body tap opens the cook screen (global tap handler routes it).
+        data: {
+          kind: "alarm",
+          recipeId: String(opts.recipeId),
+          stepNumber: String(opts.stepNumber),
+        },
         android: {
           channelId: ALARM_CHANNEL_ID,
           smallIcon: "ic_launcher",
+          pressAction: { id: "default" },
         },
       },
       {
@@ -374,7 +475,7 @@ export async function cancelStepAlarm(id: string | null): Promise<void> {
   }
 }
 
-// ---- Quick-action event wiring ------------------------------------------------
+// ---- Global event wiring (app start, NOT cook-screen mount) -------------------
 
 export interface CookEventHandlers {
   /** Pause/resume toggle pressed (foreground quick action). */
@@ -384,78 +485,293 @@ export interface CookEventHandlers {
 }
 
 /**
- * Wire the notification quick actions to the given handlers:
- * - Foreground (app visible): notifee.onForegroundEvent -> the SAME pause/
- *   resume/finish handlers the on-screen buttons use.
- * - Background (app backgrounded or killed): notifee.onBackgroundEvent —
- *   best-effort v1. When the app is merely backgrounded the module mirror
- *   of the notification is still alive, so pause/resume re-posts the
- *   notification with the flipped action + refreshed chronometer base;
- *   finish cancels it. When the OS KILLED the app that mirror is gone (the
- *   headless JS starts fresh), so pause/resume can only no-op and finish
- *   still cancels the notification — but the cook session itself is NOT
- *   lost: it is persisted (AsyncStorage) on every change, so the next
- *   launch restores the elapsed stopwatch and the user can resume or
- *   submit from the restored Cook Mode screen instead of only cancelling.
- *
- * Returns an unsubscribe function for the foreground listener.
+ * Live in-app handlers, registered by the Cook Mode screen while mounted.
+ * The global listeners below prefer them (same handlers as the on-screen
+ * buttons); when the screen isn't mounted — backgrounded, or killed and
+ * revived headless — the snapshot-backed fallback applies the toggle to the
+ * persisted session instead, so Pause/Resume keep working from the shade.
  */
-export function initCookEventHandlers(handlers: CookEventHandlers): () => void {
-  let unsubscribe: (() => void) | null = null;
-  let disposed = false;
+let liveHandlers: CookEventHandlers | null = null;
 
+export function setLiveCookHandlers(handlers: CookEventHandlers | null): void {
+  liveHandlers = handlers;
+}
+
+/** Minimal structural read of the cook screen's persisted snapshot. */
+interface SnapshotPause {
+  from: number;
+  to: number | null;
+}
+
+interface CookSnapshot {
+  recipeId: number;
+  title?: string;
+  cookStartAt: number;
+  pausedAt: number | null;
+  pausedMsTotal: number;
+  pauses: SnapshotPause[];
+  status: string;
+}
+
+const COOK_SNAPSHOT_PREFIX = "cook-session:";
+const MAX_SNAPSHOT_AGE_MS = 24 * 60 * 60 * 1000;
+
+function isFreshSnapshot(value: unknown): value is CookSnapshot {
+  if (value == null || typeof value !== "object") return false;
+  const s = value as Record<string, unknown>;
+  return (
+    (s.v === 1 || s.v === 2) &&
+    typeof s.recipeId === "number" &&
+    Number.isFinite(s.recipeId) &&
+    typeof s.cookStartAt === "number" &&
+    Date.now() - s.cookStartAt < MAX_SNAPSHOT_AGE_MS &&
+    (s.status === "running" || s.status === "paused")
+  );
+}
+
+/** Read one persisted session (exact recipe when known, else most recent). */
+async function readCookSnapshot(recipeId?: number): Promise<CookSnapshot | null> {
+  try {
+    if (recipeId != null && Number.isFinite(recipeId)) {
+      const raw = await AsyncStorage.getItem(`${COOK_SNAPSHOT_PREFIX}${recipeId}`);
+      if (raw != null) {
+        const parsed: unknown = JSON.parse(raw);
+        if (isFreshSnapshot(parsed)) return parsed;
+      }
+      return null;
+    }
+    const keys = await AsyncStorage.getAllKeys();
+    let best: CookSnapshot | null = null;
+    for (const key of keys) {
+      if (!key.startsWith(COOK_SNAPSHOT_PREFIX)) continue;
+      try {
+        const raw = await AsyncStorage.getItem(key);
+        if (raw == null) continue;
+        const parsed: unknown = JSON.parse(raw);
+        if (
+          isFreshSnapshot(parsed) &&
+          (best == null || parsed.cookStartAt > best.cookStartAt)
+        ) {
+          best = parsed;
+        }
+      } catch {
+        // Corrupt snapshot — skipped (the cook screen drops it on mount).
+      }
+    }
+    return best;
+  } catch {
+    return null;
+  }
+}
+
+async function writeCookSnapshot(snap: CookSnapshot, extra: Record<string, unknown>): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(
+      `${COOK_SNAPSHOT_PREFIX}${snap.recipeId}`,
+    );
+    if (raw == null) return;
+    const current: unknown = JSON.parse(raw);
+    if (current == null || typeof current !== "object") return;
+    await AsyncStorage.setItem(
+      `${COOK_SNAPSHOT_PREFIX}${snap.recipeId}`,
+      JSON.stringify({ ...(current as Record<string, unknown>), ...extra }),
+    );
+  } catch {
+    // Best-effort.
+  }
+}
+
+/** Re-post the ongoing notification from a snapshot (needs a title). */
+async function repostFromSnapshot(
+  mod: NotifeeModule,
+  snap: CookSnapshot,
+  t: TranslateFn,
+): Promise<void> {
+  let title = typeof snap.title === "string" && snap.title !== "" ? snap.title : null;
+  if (!title) {
+    title = (await readCookNotifMeta())?.title ?? null;
+  }
+  if (!title) return;
+  await startCookNotification({
+    recipeTitle: title,
+    recipeId: snap.recipeId,
+    startedAt: snap.cookStartAt,
+    pausedMs:
+      snap.status === "paused" && snap.pausedAt != null
+        ? snap.pausedMsTotal + Math.max(0, Date.now() - snap.pausedAt)
+        : snap.pausedMsTotal,
+    paused: snap.status === "paused",
+    t,
+  });
+}
+
+/**
+ * Snapshot-backed pause/resume for when the cook screen isn't mounted
+ * (backgrounded app, or headless after a kill). Mirrors the screen's toggle
+ * math: pausing stamps pausedAt; resuming closes the pause interval and
+ * grows pausedMsTotal. The open visit segment keeps accruing wall time —
+ * exactly what the screen's own restore does.
+ */
+async function snapshotTogglePause(recipeId?: number): Promise<void> {
+  const mod = await notifeeModule();
+  if (!mod) return;
+  const snap = await readCookSnapshot(recipeId);
+  if (!snap) return;
+  const now = Date.now();
+  try {
+    if (snap.status === "running") {
+      await writeCookSnapshot(snap, { status: "paused", pausedAt: now });
+      await repostFromSnapshot(mod, { ...snap, status: "paused", pausedAt: now }, tEn);
+    } else {
+      const from = snap.pausedAt ?? now;
+      const pauses = [...snap.pauses, { from, to: now }];
+      const pausedMsTotal = snap.pausedMsTotal + Math.max(0, now - from);
+      await writeCookSnapshot(snap, {
+        status: "running",
+        pausedAt: null,
+        pausedMsTotal,
+        pauses,
+      });
+      await repostFromSnapshot(
+        mod,
+        { ...snap, status: "running", pausedAt: null, pausedMsTotal, pauses },
+        tEn,
+      );
+    }
+  } catch {
+    // Best-effort.
+  }
+}
+
+type NotifeeEvent = Parameters<
+  Parameters<NotifeeModule["default"]["onForegroundEvent"]>[0]
+>[0];
+
+/** Route a notification-tap payload (body PRESS) to its screen. */
+function handleNotifTap(data: unknown): void {
+  const href = notificationDataToHref(data);
+  if (href) navigateNotificationTarget(href, "notifee-tap");
+}
+
+/**
+ * Shared PRESS handler for foreground + background delivery. Quick actions
+ * prefer the live cook-screen handlers; the snapshot fallback covers every
+ * other state (including headless-after-kill, where the old in-memory
+ * mirror used to be empty and Pause/Resume silently no-op'd). Finish with
+ * no live screen just cancels the notification — the persisted session
+ * stays intact, and the in-app banner guides the user back to finish it
+ * properly. Body taps ('default') navigate to the cook screen when the UI
+ * is up, or stash the destination for _layout when headless.
+ */
+async function handleCookPressEvent(
+  mod: NotifeeModule,
+  event: NotifeeEvent,
+  headless: boolean,
+): Promise<void> {
+  try {
+    if (event.type !== mod.EventType.ACTION_PRESS) return;
+    const detail = event.detail as
+      | { pressAction?: { id?: unknown }; notification?: { data?: unknown } }
+      | undefined;
+    const actionId = detail?.pressAction?.id;
+    const data = detail?.notification?.data;
+    if (actionId === COOK_ACTION_PAUSE || actionId === COOK_ACTION_RESUME) {
+      if (liveHandlers) liveHandlers.onPauseToggle();
+      else await snapshotTogglePause(numericGuard(data));
+      return;
+    }
+    if (actionId === COOK_ACTION_FINISH) {
+      if (liveHandlers) liveHandlers.onFinish();
+      else await stopCookNotification();
+      return;
+    }
+    if (actionId === "default") {
+      if (headless) {
+        const href = notificationDataToHref(data);
+        if (href) await stashPendingNotifNav(href);
+      } else {
+        handleNotifTap(data);
+      }
+    }
+  } catch {
+    // Best-effort: notification taps must never crash.
+  }
+}
+
+/** Numeric recipeId out of a tap payload (NaN-safe → undefined). */
+function numericGuard(data: unknown): number | undefined {
+  if (data == null || typeof data !== "object") return undefined;
+  const id = Number((data as Record<string, unknown>).recipeId);
+  return Number.isFinite(id) ? id : undefined;
+}
+
+let globalEventsInit = false;
+
+/**
+ * Register the global notifee listeners ONCE at app start (see _layout):
+ * - Foreground PRESS: quick actions → live cook-screen handlers when the
+ *   screen is mounted, snapshot fallback otherwise; body taps navigate.
+ * - Background PRESS (headless): snapshot-backed pause/resume/finish, and
+ *   body taps stash their destination for _layout to consume on foreground.
+ * - Foreground-service task registration (required for asForegroundService
+ *   posts; the task itself resolves immediately — the ongoing notification
+ *   is the persistent surface, not the task).
+ *
+ * This REPLACES the old per-screen initCookEventHandlers (removed): a
+ * screen-mounted listener unsubscribed on unmount AND double-fired while
+ * mounted, and its in-memory mirror died with the process.
+ */
+export function initGlobalCookEvents(): void {
+  if (globalEventsInit) return;
+  globalEventsInit = true;
   notifeeModule()
     .then((mod) => {
-      if (!mod || disposed) return;
-      unsubscribe = mod.default.onForegroundEvent(({ type, detail }) => {
-        if (type !== mod.EventType.ACTION_PRESS) return;
-        const id = detail.pressAction?.id;
-        if (id === COOK_ACTION_PAUSE || id === COOK_ACTION_RESUME) {
-          handlers.onPauseToggle();
-        } else if (id === COOK_ACTION_FINISH) {
-          handlers.onFinish();
-        }
-      });
-
-      mod.default.onBackgroundEvent(async ({ type, detail }) => {
-        if (type !== mod.EventType.ACTION_PRESS) return;
-        const id = detail.pressAction?.id;
-        try {
-          if (id === COOK_ACTION_FINISH) {
-            await stopCookNotification();
-          } else if (
-            (id === COOK_ACTION_PAUSE || id === COOK_ACTION_RESUME) &&
-            cookNotifState != null
-          ) {
-            // Flip the module mirror and re-post so the notification at
-            // least shows the right action + chronometer base.
-            const paused = id === COOK_ACTION_PAUSE;
-            const now = Date.now();
-            const prev = cookNotifState;
-            const next: StartCookNotificationOpts = {
-              ...prev,
-              paused,
-              pausedMs: paused
-                ? prev.pausedMs
-                : prev.pausedMs + Math.max(0, now - cookNotifToggledAt),
-            };
-            await startCookNotification(next);
-          }
-        } catch {
-          // Best-effort: background quick actions must never crash.
-        }
-      });
+      if (!mod) return;
+      try {
+        mod.default.registerForegroundService(() => Promise.resolve());
+      } catch {
+        // Registration is best-effort; posts still attempt FGS.
+      }
+      try {
+        mod.default.onForegroundEvent((event) => {
+          void handleCookPressEvent(mod, event, false);
+        });
+      } catch {
+        // Listener registration failed — taps degrade to no-ops.
+      }
+      try {
+        mod.default.onBackgroundEvent((event) =>
+          handleCookPressEvent(mod, event, true),
+        );
+      } catch {
+        // Headless actions unavailable — taps degrade to no-ops.
+      }
     })
     .catch(() => {
       // Expo Go — no quick actions exist to wire.
     });
+}
 
-  return () => {
-    disposed = true;
-    try {
-      unsubscribe?.();
-    } catch {
-      // Listener already gone.
-    }
-  };
+/**
+ * The notification that opened a killed app (cold-start tap), if it was one
+ * of ours: returns its id + deep link, else null. Called once from _layout.
+ * The id lets the caller skip taps it already consumed (a consumed tap must
+ * not re-navigate on every later launch).
+ */
+export async function getColdStartCookTarget(): Promise<{
+  id: string;
+  href: NotificationHref;
+} | null> {
+  const mod = await notifeeModule();
+  if (!mod) return null;
+  try {
+    const initial = await mod.default.getInitialNotification();
+    const data = initial?.notification?.data;
+    const href = notificationDataToHref(data);
+    const id = initial?.notification?.id;
+    if (!href || typeof id !== "string") return null;
+    return { id, href };
+  } catch {
+    return null;
+  }
 }

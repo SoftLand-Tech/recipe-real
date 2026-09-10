@@ -307,6 +307,18 @@ export const en: Record<string, string> = {
   "cook.savedQueued": "Saved — will sync when online.",
   "cook.pacePending": "Your pace calibration updates in the background — pull to refresh Pace.",
   "cook.saveFailed": "Could not save. Please try again later.",
+  "cook.adjustTime": "Adjust time",
+  "cook.adjustHint": "Forgot to pause? Set the time it really took.",
+  "cook.adjustUse": "Use this time",
+  "cook.adjustMinus": "One minute less",
+  "cook.adjustPlus": "One minute more",
+  "cook.adjustedNote": "Measured {measured} · adjusted to {adjusted}",
+  "cook.bannerCooking": "Cooking now",
+  "cook.bannerPaused": "Paused",
+  "cook.bannerFallback": "Cooking session",
+  "cook.bannerOpen": "Open",
+  "cook.bannerEnd": "End session",
+  "cook.endingSession": "Ending…",
 
   // ---- Pace ---------------------------------------------------------------
   "pace.trackTitle": "Track your pace",

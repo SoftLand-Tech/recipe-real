@@ -306,6 +306,18 @@ export const ar: Record<string, string> = {
   "cook.savedQueued": "تم الحفظ — ستتم المزامنة عند الاتصال.",
   "cook.pacePending": "يتم تحديث معايرة سرعتك في الخلفية — اسحب للتحديث في صفحة السرعة.",
   "cook.saveFailed": "تعذّر الحفظ. حاول مجددًا لاحقًا.",
+  "cook.adjustTime": "ضبط الوقت",
+  "cook.adjustHint": "نسيت الإيقاف المؤقت؟ حدّد الوقت الذي استغرقته فعلًا.",
+  "cook.adjustUse": "اعتماد هذا الوقت",
+  "cook.adjustMinus": "دقيقة أقل",
+  "cook.adjustPlus": "دقيقة أكثر",
+  "cook.adjustedNote": "المقاس {measured} · المعدّل {adjusted}",
+  "cook.bannerCooking": "جارٍ الطهي الآن",
+  "cook.bannerPaused": "متوقف مؤقتًا",
+  "cook.bannerFallback": "جلسة طهي",
+  "cook.bannerOpen": "فتح",
+  "cook.bannerEnd": "إنهاء الجلسة",
+  "cook.endingSession": "جارٍ الإنهاء…",
 
   // ---- الوتيرة ---------------------------------------------------------------
   "pace.trackTitle": "تتبّع وتيرتك",

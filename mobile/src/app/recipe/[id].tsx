@@ -1586,6 +1586,7 @@ export default function RecipeDetailScreen() {
           title,
           snippet ? `${base} — ${snippet}` : base,
           row.at,
+          { kind: "plan", recipeId: String(recipe.id) },
         );
         if (id) ids.push(id);
       }
