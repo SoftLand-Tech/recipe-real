@@ -9,6 +9,7 @@ use App\Models\Notification;
 use App\Models\Post;
 use App\Models\PostReport;
 use App\Models\UserBlock;
+use App\Support\CommunityFeedCache;
 use App\Support\HalalGate;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -67,15 +68,21 @@ class PostController extends Controller
 
         // Feed cache gate: page 1 of the expensive sorts only. Keyed per
         // user AND per recipe_id filter so a filtered feed never leaks
-        // into the unfiltered one's bucket.
+        // into the unfiltered one's bucket. The key carries the user's feed
+        // version (see CommunityFeedCache): any of their own writes bumps
+        // it, so the author's own write is never hidden behind a stale
+        // payload while other readers keep the 60s tolerance.
         $cacheKey = null;
         if (
-            in_array($sort, ['suggested', 'trending'], true)
+            in_array($sort, CommunityFeedCache::SORTS, true)
             && (int) $request->query('page', 1) <= 1
         ) {
-            $cacheKey = 'posts.feed.'.$sort
-                .'.r'.($request->filled('recipe_id') ? $request->integer('recipe_id') : 0)
-                .'.u'.($user?->id ?? 'guest');
+            $recipeId = $request->filled('recipe_id') ? $request->integer('recipe_id') : 0;
+            $cacheKey = CommunityFeedCache::cacheKey(
+                $sort,
+                $recipeId,
+                $user?->id ?? 'guest',
+            );
 
             $cached = Cache::get($cacheKey);
             if (is_array($cached)) {
@@ -135,7 +142,7 @@ class PostController extends Controller
             // Store ONLY the fully user-resolved payload (resource resolved
             // to its final JSON shape here) — never a pre-user stage.
             $payload = $collection->toResponse($request)->getData(true);
-            Cache::put($cacheKey, $payload, 60);
+            Cache::put($cacheKey, $payload, CommunityFeedCache::PAYLOAD_TTL_SECONDS);
 
             return response()->json($payload);
         }
@@ -219,10 +226,7 @@ class PostController extends Controller
 
         // The author is about to be redirected to the feed: never let their
         // own 60s-cached page-1 payload hide the post they just created.
-        $this->forgetFeedCache(
-            $request->user()->id,
-            $post->recipe_id !== null ? (int) $post->recipe_id : null,
-        );
+        CommunityFeedCache::bump($request->user()->id);
 
         $post->load([
             'user:id,display_name,name,avatar_url',
@@ -260,10 +264,7 @@ class PostController extends Controller
         $post->save();
 
         // An edited body must not sit behind the author's cached page-1 feed.
-        $this->forgetFeedCache(
-            $request->user()->id,
-            $post->recipe_id !== null ? (int) $post->recipe_id : null,
-        );
+        CommunityFeedCache::bump($request->user()->id);
 
         // Same shape as show(): relations, counts and liked_by_me.
         $post->load([
@@ -290,10 +291,7 @@ class PostController extends Controller
         $post->delete();
 
         // A deleted row must not linger in the author's cached page-1 feed.
-        $this->forgetFeedCache(
-            $request->user()->id,
-            $post->recipe_id !== null ? (int) $post->recipe_id : null,
-        );
+        CommunityFeedCache::bump($request->user()->id);
 
         return response()->json(null, 204);
     }
@@ -319,6 +317,11 @@ class PostController extends Controller
 
     /**
      * Toggle the authed user's like on a post → {liked, likes_count}.
+     *
+     * The liker's own cached page-1 feed holds liked_by_me + likes_count, so
+     * it is bumped: otherwise liking then refreshing replays the stale
+     * payload and the like looks undone. Other readers keep the 60s
+     * tolerance on the count/ranking.
      */
     public function like(Request $request, Post $post): JsonResponse
     {
@@ -346,6 +349,8 @@ class PostController extends Controller
         $likesCount = (int) DB::table('post_likes')
             ->where('post_id', $post->id)
             ->count();
+
+        CommunityFeedCache::bump($request->user()->id);
 
         // Inline notification event: a fresh LIKE by someone other than the
         // author notifies the author. Un-liking creates nothing and leaves
@@ -491,23 +496,6 @@ class PostController extends Controller
         }
 
         return (clone $base)->orderByRaw("{$scoreExpr} DESC, posts.id DESC")->paginate(20);
-    }
-
-    /**
-     * Drop the cached page-1 feed payloads for one author after they write a
-     * post (create/edit/delete). The 60s feed cache (see index()) is a
-     * pull-to-refresh tolerance for OTHER readers — the author must see their
-     * own write immediately after the client redirects them to the feed.
-     * Suggested + trending are the only cached sorts; page 1 only.
-     */
-    private function forgetFeedCache(int $userId, ?int $recipeId = null): void
-    {
-        foreach (['suggested', 'trending'] as $sort) {
-            Cache::forget("posts.feed.{$sort}.r0.u{$userId}");
-            if ($recipeId !== null) {
-                Cache::forget("posts.feed.{$sort}.r{$recipeId}.u{$userId}");
-            }
-        }
     }
 
     /**

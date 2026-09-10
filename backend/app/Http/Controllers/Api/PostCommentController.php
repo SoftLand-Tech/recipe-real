@@ -10,6 +10,7 @@ use App\Models\Notification;
 use App\Models\Post;
 use App\Models\PostComment;
 use App\Models\UserBlock;
+use App\Support\CommunityFeedCache;
 use App\Support\HalalGate;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
@@ -73,6 +74,11 @@ class PostCommentController extends Controller
         ]);
         $comment->load('user:id,display_name,name,avatar_url');
 
+        // The commenter's cached page-1 feed embeds comments_count +
+        // latest_comment per row — bump it so their own comment is visible
+        // on the next refresh instead of after the 60s cache expiry.
+        CommunityFeedCache::bump($request->user()->id);
+
         // Inline notification event: someone else's comment notifies the post
         // author (self-comments never notify).
         if ($post->user_id !== $request->user()->id) {
@@ -119,6 +125,9 @@ class PostCommentController extends Controller
         $comment->save();
         $comment->load('user:id,display_name,name,avatar_url');
 
+        // Edited text can surface via the feed's latest_comment embed.
+        CommunityFeedCache::bump($request->user()->id);
+
         return new PostCommentResource($comment);
     }
 
@@ -131,6 +140,9 @@ class PostCommentController extends Controller
         $this->assertAuthor($request, $comment);
 
         $comment->delete();
+
+        // The deleted comment may be the row's latest_comment embed.
+        CommunityFeedCache::bump($request->user()->id);
 
         return response()->json(null, 204);
     }

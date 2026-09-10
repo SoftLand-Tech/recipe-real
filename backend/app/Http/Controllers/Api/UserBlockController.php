@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\UserBlock;
+use App\Support\CommunityFeedCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -32,6 +33,10 @@ class UserBlockController extends Controller
             'blocked_id' => $user->id,
         ]);
 
+        // The blocker's cached feed may still list the blocked author's
+        // posts — they must vanish on the next refresh.
+        CommunityFeedCache::bump($request->user()->id);
+
         return response()->json(['ok' => true], 201);
     }
 
@@ -44,6 +49,9 @@ class UserBlockController extends Controller
             ->where('blocker_id', $request->user()->id)
             ->where('blocked_id', $user->id)
             ->delete();
+
+        // Unblocked author's posts become visible again on next refresh.
+        CommunityFeedCache::bump($request->user()->id);
 
         return response()->json(null, 204);
     }

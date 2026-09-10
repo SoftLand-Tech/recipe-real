@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\UserPublicResource;
 use App\Models\Follow;
 use App\Models\User;
+use App\Support\CommunityFeedCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -23,6 +24,10 @@ class FollowController extends Controller
             'followed_id' => $user->id,
         ]);
 
+        // Feed rows carry user.followed_by_me and the suggested ranking
+        // scores follows — the follower must see the new state on refresh.
+        CommunityFeedCache::bump($me->id);
+
         return response()->json(['following' => true, 'followers_count' => $this->followersCount($user->id)], 201);
     }
 
@@ -32,6 +37,8 @@ class FollowController extends Controller
             ->where('follower_id', $request->user()->id)
             ->where('followed_id', $user->id)
             ->delete();
+
+        CommunityFeedCache::bump($request->user()->id);
 
         return response()->json(['following' => false, 'followers_count' => $this->followersCount($user->id)]);
     }

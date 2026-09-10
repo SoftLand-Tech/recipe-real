@@ -11,12 +11,17 @@ use Tests\TestCase;
 /**
  * Page 1 of sort=suggested and sort=trending is cached for 60 seconds PER
  * USER (see PostController::index) — a tolerated staleness for other readers,
- * but never acceptable for the author's own write: after the mobile client
+ * but never acceptable for the reader's own writes: after the mobile client
  * posts, it redirects straight to the feed, and a cached payload without the
  * new post made it look like posting failed (users waited ~60s / kept
- * refreshing). store/update/destroy forget the author's page-1 buckets (both
- * the unfiltered and the attached-recipe filter) so the redirect shows the
- * write immediately.
+ * refreshing). The same staleness hid likes (liked_by_me flipped back to
+ * false on refresh), comments (old counts/previews) and follows/blocks.
+ *
+ * Every community write bumps the actor's feed version
+ * (CommunityFeedCache::bump), which is part of the cache key — so one bump
+ * invalidates all of their buckets at once (both sorts, every recipe_id
+ * filter). Covered here: post store/update/destroy, like/unlike, comment
+ * store, follow/unfollow, block/unblock.
  */
 class PostFeedCacheTest extends TestCase
 {
@@ -125,5 +130,157 @@ class PostFeedCacheTest extends TestCase
             ->getJson('/api/posts?sort=suggested')
             ->assertOk()
             ->assertJsonPath('data.0.body', 'Edited body.');
+    }
+
+    /** Liking shows liked_by_me + the new count on the liker's next refresh. */
+    public function test_liking_a_post_invalidates_the_likers_cached_feed(): void
+    {
+        $author = User::factory()->create();
+        $liker  = User::factory()->create();
+        $post   = Post::create([
+            'user_id' => $author->id,
+            'body'    => 'Like this post.',
+        ]);
+
+        // Prime the liker's cache: not liked yet.
+        $this->actingAs($liker, 'sanctum')
+            ->getJson('/api/posts?sort=suggested')
+            ->assertOk()
+            ->assertJsonPath('data.0.liked_by_me', false)
+            ->assertJsonPath('data.0.likes_count', 0);
+
+        $this->actingAs($liker, 'sanctum')
+            ->postJson("/api/posts/{$post->id}/like")
+            ->assertOk()
+            ->assertJsonPath('liked', true);
+
+        // Without the bump this replays the primed payload (liked_by_me
+        // false) — the "my like disappeared on refresh" bug.
+        $this->actingAs($liker, 'sanctum')
+            ->getJson('/api/posts?sort=suggested')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $post->id)
+            ->assertJsonPath('data.0.liked_by_me', true)
+            ->assertJsonPath('data.0.likes_count', 1);
+    }
+
+    /** Unliking clears liked_by_me on the liker's next refresh. */
+    public function test_unliking_a_post_invalidates_the_likers_cached_feed(): void
+    {
+        $author = User::factory()->create();
+        $liker  = User::factory()->create();
+        $post   = Post::create([
+            'user_id' => $author->id,
+            'body'    => 'Unlike this post.',
+        ]);
+
+        $this->actingAs($liker, 'sanctum')
+            ->postJson("/api/posts/{$post->id}/like")
+            ->assertOk();
+
+        // Prime the cache while liked.
+        $this->actingAs($liker, 'sanctum')
+            ->getJson('/api/posts?sort=suggested')
+            ->assertOk()
+            ->assertJsonPath('data.0.liked_by_me', true);
+
+        $this->actingAs($liker, 'sanctum')
+            ->postJson("/api/posts/{$post->id}/like")
+            ->assertOk()
+            ->assertJsonPath('liked', false);
+
+        $this->actingAs($liker, 'sanctum')
+            ->getJson('/api/posts?sort=suggested')
+            ->assertOk()
+            ->assertJsonPath('data.0.liked_by_me', false)
+            ->assertJsonPath('data.0.likes_count', 0);
+    }
+
+    /** Commenting refreshes the commenter's count + latest-comment preview. */
+    public function test_commenting_invalidates_the_commenters_cached_feed(): void
+    {
+        $author    = User::factory()->create();
+        $commenter = User::factory()->create();
+        $post      = Post::create([
+            'user_id' => $author->id,
+            'body'    => 'Comment on this post.',
+        ]);
+
+        // Prime the commenter's cache: no comments yet.
+        $this->actingAs($commenter, 'sanctum')
+            ->getJson('/api/posts?sort=suggested')
+            ->assertOk()
+            ->assertJsonPath('data.0.comments_count', 0);
+
+        $this->actingAs($commenter, 'sanctum')
+            ->postJson("/api/posts/{$post->id}/comments", ['body' => 'Tried it, loved it.'])
+            ->assertStatus(201);
+
+        $this->actingAs($commenter, 'sanctum')
+            ->getJson('/api/posts?sort=suggested')
+            ->assertOk()
+            ->assertJsonPath('data.0.comments_count', 1)
+            ->assertJsonPath('data.0.latest_comment.body', 'Tried it, loved it.');
+    }
+
+    /** Following flips followed_by_me on the follower's next refresh. */
+    public function test_following_invalidates_the_followers_cached_feed(): void
+    {
+        $author   = User::factory()->create();
+        $follower = User::factory()->create();
+        Post::create([
+            'user_id' => $author->id,
+            'body'    => 'Follow this author.',
+        ]);
+
+        // Prime the follower's cache: not following yet.
+        $this->actingAs($follower, 'sanctum')
+            ->getJson('/api/posts?sort=suggested')
+            ->assertOk()
+            ->assertJsonPath('data.0.user.followed_by_me', false);
+
+        $this->actingAs($follower, 'sanctum')
+            ->postJson("/api/users/{$author->id}/follow")
+            ->assertStatus(201);
+
+        $this->actingAs($follower, 'sanctum')
+            ->getJson('/api/posts?sort=suggested')
+            ->assertOk()
+            ->assertJsonPath('data.0.user.followed_by_me', true);
+    }
+
+    /** Blocking hides (and unblocking restores) the author on next refresh. */
+    public function test_blocking_invalidates_the_blockers_cached_feed(): void
+    {
+        $author  = User::factory()->create();
+        $blocker = User::factory()->create();
+        Post::create([
+            'user_id' => $author->id,
+            'body'    => 'Block this author.',
+        ]);
+
+        // Prime the blocker's cache while the post is visible.
+        $this->actingAs($blocker, 'sanctum')
+            ->getJson('/api/posts?sort=suggested')
+            ->assertOk()
+            ->assertJsonCount(1, 'data');
+
+        $this->actingAs($blocker, 'sanctum')
+            ->postJson("/api/users/{$author->id}/block")
+            ->assertStatus(201);
+
+        $this->actingAs($blocker, 'sanctum')
+            ->getJson('/api/posts?sort=suggested')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        $this->actingAs($blocker, 'sanctum')
+            ->deleteJson("/api/users/{$author->id}/block")
+            ->assertStatus(204);
+
+        $this->actingAs($blocker, 'sanctum')
+            ->getJson('/api/posts?sort=suggested')
+            ->assertOk()
+            ->assertJsonCount(1, 'data');
     }
 }
