@@ -93,7 +93,11 @@ provenance.
                     <a href="#how" class="no-underline text-[14.5px] font-semibold text-muted py-[6px] px-[2px] relative hover:text-ink max-[860px]:hidden max-[1180px]:whitespace-nowrap focus-visible:outline-[2.5px] focus-visible:outline-orange focus-visible:outline-offset-[3px] focus-visible:rounded-[4px]">{{ __('site.nav_how') }}</a>
                     <a href="#recipes" class="no-underline text-[14.5px] font-semibold text-muted py-[6px] px-[2px] relative hover:text-ink max-[860px]:hidden max-[1180px]:whitespace-nowrap focus-visible:outline-[2.5px] focus-visible:outline-orange focus-visible:outline-offset-[3px] focus-visible:rounded-[4px]">{{ __('site.nav_recipes') }}</a>
                     <a href="{{ route('pages.pricing') }}" class="no-underline text-[14.5px] font-semibold text-muted py-[6px] px-[2px] relative hover:text-ink max-[860px]:hidden max-[1180px]:whitespace-nowrap focus-visible:outline-[2.5px] focus-visible:outline-orange focus-visible:outline-offset-[3px] focus-visible:rounded-[4px]">{{ __('site.nav_pricing') }}</a>
+                    @isset($latestRelease)
+                    <a href="{{ route('app.download') }}" download data-dl-confirm data-dl-version="{{ $latestRelease->version }}" data-dl-size="{{ $latestRelease->humanSize() }}" class="inline-flex items-center justify-center gap-[10px] rounded-[999px] font-bold tracking-[.005em] no-underline whitespace-nowrap border border-transparent cursor-pointer transition duration-[.16s] [transition-timing-function:ease] active:translate-y-[1px] focus-visible:outline-[2.5px] focus-visible:outline-orange focus-visible:outline-offset-[3px] focus-visible:rounded-[4px] bg-orange text-white shadow-[0_8px_18px_-10px_rgba(242,107,29,.5)] hover:bg-orange-deep py-[11px] px-[22px] text-[14px] max-[1180px]:py-[10px] max-[1180px]:px-[17px] max-[1180px]:text-[13.5px] max-[1180px]:whitespace-nowrap max-[560px]:py-2 max-[560px]:px-3 max-[560px]:text-[12px] max-[380px]:py-[7px] max-[380px]:px-[10px] max-[380px]:text-[11.5px]">{{ __('site.nav_get_app') }}</a>
+                    @else
                     <a href="#download" class="inline-flex items-center justify-center gap-[10px] rounded-[999px] font-bold tracking-[.005em] no-underline whitespace-nowrap border border-transparent cursor-pointer transition duration-[.16s] [transition-timing-function:ease] active:translate-y-[1px] focus-visible:outline-[2.5px] focus-visible:outline-orange focus-visible:outline-offset-[3px] focus-visible:rounded-[4px] bg-orange text-white shadow-[0_8px_18px_-10px_rgba(242,107,29,.5)] hover:bg-orange-deep py-[11px] px-[22px] text-[14px] max-[1180px]:py-[10px] max-[1180px]:px-[17px] max-[1180px]:text-[13.5px] max-[1180px]:whitespace-nowrap max-[560px]:py-2 max-[560px]:px-3 max-[560px]:text-[12px] max-[380px]:py-[7px] max-[380px]:px-[10px] max-[380px]:text-[11.5px]">{{ __('site.nav_get_app') }}</a>
+                    @endisset
                     @include('partials.lang-switcher')
                 </nav>
             </div>
@@ -537,6 +541,8 @@ provenance.
                 </div>
             </div>
         </footer>
+
+        @include('partials.download-confirm')
 
         <script type="application/ld+json">
         {

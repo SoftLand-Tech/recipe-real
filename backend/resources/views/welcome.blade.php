@@ -977,6 +977,8 @@ provenance.
 
         @include('partials.site-footer')
 
+        @include('partials.download-confirm')
+
         <script type="application/ld+json">
         {
           "@@context": "https://schema.org",

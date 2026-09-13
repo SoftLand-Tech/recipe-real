@@ -5,6 +5,7 @@
     $anchor = function (string $id) use ($home) {
         return $home ? '#'.$id : url('/').'#'.$id;
     };
+    $navRelease = ($latestRelease ?? null) ?? \App\Models\AppRelease::latest();
 @endphp
 <div class="nav">
     <div class="wrap nav-inner">
@@ -19,7 +20,11 @@
             <a href="{{ $anchor('recipes') }}">{{ __('site.nav_recipes') }}</a>
             <a href="{{ $anchor('community') }}">{{ __('site.nav_community') }}</a>
             <a href="{{ route('pages.pricing') }}">{{ __('site.nav_pricing') }}</a>
+            @if ($navRelease)
+            <a href="{{ route('app.download') }}" download data-dl-confirm data-dl-version="{{ $navRelease->version }}" data-dl-size="{{ $navRelease->humanSize() }}" class="btn btn-accent">{{ __('site.nav_get_app') }}</a>
+            @else
             <a href="{{ $anchor('download') }}" class="btn btn-accent">{{ __('site.nav_get_app') }}</a>
+            @endif
             @include('partials.lang-switcher')
         </nav>
     </div>

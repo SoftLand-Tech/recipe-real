@@ -95,6 +95,11 @@ return [
     'dl_version' => 'Version',
     'dl_meta' => 'Android 7.0+ · Free',
     'dl_first' => 'First public build landing shortly · Android 7.0+ · Free',
+    'dl_confirm_title' => 'Download RecipeReal?',
+    'dl_confirm_text' => 'Free Android app · direct APK download (not from Google Play).',
+    'dl_confirm_download' => 'Download',
+    'dl_confirm_cancel' => 'Not now',
+    'dl_confirm_note' => 'After downloading, allow "install unknown apps" for your browser, then open the file to install.',
 
     // ---- Download phones ----
     'pm_cook' => 'Cook Mode',

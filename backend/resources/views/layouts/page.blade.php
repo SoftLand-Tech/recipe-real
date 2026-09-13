@@ -202,6 +202,7 @@
             @yield('content')
         </main>
         @include('partials.site-footer')
+        @include('partials.download-confirm')
         @yield('jsonld')
     </body>
 </html>
