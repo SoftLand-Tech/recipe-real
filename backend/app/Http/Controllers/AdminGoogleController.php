@@ -38,9 +38,14 @@ class AdminGoogleController extends Controller
         $request->session()->put('admin_google_state', $state);
         $request->session()->put('admin_google_nonce', $nonce);
 
+        $redirectUri = (string) config('services.google.admin_redirect_uri');
+        if ($redirectUri === '') {
+            $redirectUri = rtrim((string) config('app.url'), '/').'/admin/auth/google/callback';
+        }
+
         $params = http_build_query([
             'client_id' => $clientId,
-            'redirect_uri' => rtrim((string) config('app.url'), '/').'/admin/auth/google/callback',
+            'redirect_uri' => $redirectUri,
             'response_type' => 'id_token',
             'scope' => 'openid email profile',
             'state' => $state,

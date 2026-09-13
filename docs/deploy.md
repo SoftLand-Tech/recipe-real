@@ -35,8 +35,9 @@ From your local machine:
 ssh root@qufran.com 'cd /var/www/recipe-real && ./deploy.sh'
 ```
 `deploy.sh` (in the repo root) does: `git pull` → `composer install --no-dev -o`
-→ `migrate --force` → re-cache config/routes/views/events → fix perms → restart
-the supervisor queue worker → health-check.
+→ publish Filament panel assets → `migrate --force` → build Vite assets →
+re-cache config/routes/views/events → fix perms → restart the supervisor queue
+worker → health-check.
 
 ## Verify
 ```bash

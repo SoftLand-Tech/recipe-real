@@ -73,4 +73,62 @@ return [
         'connect_timeout_ms' => (int) env('TYPESENSE_CONNECT_TIMEOUT_MS', 700),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | AI recipe imports
+    |--------------------------------------------------------------------------
+    |
+    | The application owns the import lifecycle and draft schema. Media
+    | resolution and AI extraction are adapters so a provider can be changed
+    | without changing the mobile/admin clients.
+    |
+    */
+
+    'imports' => [
+        'enabled' => (bool) env('RECIPE_IMPORTS_ENABLED', true),
+        'disk' => env('RECIPE_IMPORT_DISK', 'local'),
+        'max_video_mb' => (int) env('RECIPE_IMPORT_MAX_VIDEO_MB', 100),
+        'max_image_mb' => (int) env('RECIPE_IMPORT_MAX_IMAGE_MB', 8),
+        'max_images' => (int) env('RECIPE_IMPORT_MAX_IMAGES', 6),
+        'expires_hours' => (int) env('RECIPE_IMPORT_EXPIRES_HOURS', 24),
+    ],
+
+    'media_resolver' => [
+        // Optional resolver service. It may use public Telegram bots or any
+        // other permitted provider without putting those credentials in the
+        // RecipeReal app or mobile binary.
+        'url' => env('RECIPE_MEDIA_RESOLVER_URL', ''),
+        'token' => env('RECIPE_MEDIA_RESOLVER_TOKEN', ''),
+        'timeout' => (int) env('RECIPE_MEDIA_RESOLVER_TIMEOUT', 45),
+    ],
+
+    'ai' => [
+        'default' => env('RECIPE_AI_PROVIDER', 'custom'),
+        'inline_max_bytes' => (int) env('RECIPE_AI_INLINE_MAX_BYTES', 20 * 1024 * 1024),
+        'providers' => [
+            // protocol can be generic, openai_compatible, anthropic, or
+            // gemini. Additional named providers can be added in config and
+            // selected by RECIPE_AI_PROVIDER without app changes.
+            'custom' => [
+                'driver' => 'http',
+                'protocol' => env('RECIPE_AI_PROTOCOL', 'generic'),
+                'endpoint' => env('RECIPE_AI_ENDPOINT', ''),
+                'api_key' => env('RECIPE_AI_API_KEY', ''),
+                'model' => env('RECIPE_AI_MODEL', ''),
+                'timeout' => (int) env('RECIPE_AI_TIMEOUT', 180),
+            ],
+            'agy' => [
+                'driver' => 'agy',
+                'binary' => env('RECIPE_AI_CLI_BINARY', 'agy'),
+                'model' => env('RECIPE_AI_CLI_MODEL', 'gemini-3.8-flash-high'),
+                'effort' => env('RECIPE_AI_CLI_EFFORT', 'high'),
+                'timeout' => (int) env('RECIPE_AI_CLI_TIMEOUT', 600),
+                'print_timeout' => env('RECIPE_AI_CLI_PRINT_TIMEOUT', '10m'),
+                'dangerously_skip_permissions' => (bool) env('RECIPE_AI_CLI_DANGEROUSLY_SKIP_PERMISSIONS', true),
+                'workspace_root' => env('RECIPE_AI_CLI_WORKSPACE', ''),
+                'max_output_bytes' => (int) env('RECIPE_AI_CLI_MAX_OUTPUT_BYTES', 2 * 1024 * 1024),
+            ],
+        ],
+    ],
+
 ];

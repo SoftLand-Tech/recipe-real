@@ -130,7 +130,7 @@ return [
 
     'temporary_file_upload' => [
         'disk' => env('LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK'), // Example: 'local', 's3'             | Default: 'default'
-        'rules' => ['file', 'max:65536'],                     // 64MB — signed APK uploads (admin App releases)
+        'rules' => ['file', 'max:'.((int) env('RECIPE_IMPORT_MAX_VIDEO_MB', 100) * 1024)],
         'directory' => null,                                  // Example: 'tmp'                     | Default: 'livewire-tmp'
         'middleware' => null,                                 // Example: 'throttle:5,1'            | Default: 'throttle:60,1'
         'preview_mimes' => [                                  // Supported file types for temporary pre-signed file URLs...

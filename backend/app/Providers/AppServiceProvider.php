@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -22,6 +23,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Startup guard for recipe-import uploads: the admin advertises
+        // 100 MB videos, so warn early when php.ini would make Livewire
+        // fail with "data.primary_file.* failed to upload".
+        foreach (\App\Support\UploadLimits::issues() as $issue) {
+            Log::warning('upload_limits.too_low', ['issue' => $issue]);
+        }
+
         // Dedicated limiter for the credential-taking auth endpoint: 5 attempts
         // per minute. The endpoint accepts an id_token (never an email), so
         // key on a hash of the token payload — per-credential throttling —

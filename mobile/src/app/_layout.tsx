@@ -248,6 +248,10 @@ function NavigationFrame() {
             options={{ title: t("stack.newRecipe"), headerShown: false }}
           />
           <Stack.Screen
+            name="recipe-import"
+            options={{ title: t("stack.aiImport"), headerShown: false }}
+          />
+          <Stack.Screen
             name="cook/[id]"
             options={{ title: t("stack.cookMode"), headerShown: false }}
           />

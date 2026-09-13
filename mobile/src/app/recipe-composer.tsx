@@ -25,10 +25,12 @@ import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
 import {
   createUserRecipe,
   deleteUserRecipe,
+  getRecipeImport,
   getRecipe,
   hasToken,
   HalalRejectionError,
   updateUserRecipe,
+  publishRecipeImport,
   uploadImage,
 } from "@/api/client";
 import { track } from "@/analytics";
@@ -58,6 +60,7 @@ interface StepDraft {
   description: string;
   description_ar: string;
   minutes: string;
+  literal_minutes: string;
   step_type: (typeof STEP_TYPES)[number];
 }
 
@@ -73,8 +76,11 @@ interface FormShape {
   title: string;
   titleAr: string;
   description: string;
+  sourceUrl: string;
   servings: string;
   minutes: string;
+  prepMinutes: string;
+  cookMinutes: string;
   ingredients: string[];
   steps: StepDraft[];
   pickedUri: string | null;
@@ -90,20 +96,37 @@ const EMPTY_FORM: FormShape = {
   title: "",
   titleAr: "",
   description: "",
+  sourceUrl: "",
   servings: "",
   minutes: "",
+  prepMinutes: "",
+  cookMinutes: "",
   ingredients: [""],
   steps: [
-    { description: "", description_ar: "", minutes: "", step_type: "active" },
+    {
+      description: "",
+      description_ar: "",
+      minutes: "",
+      literal_minutes: "",
+      step_type: "active",
+    },
   ],
   pickedUri: null,
   imageRemoved: false,
 };
 
 export default function RecipeComposerScreen() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id, importId: importIdParam } = useLocalSearchParams<{
+    id?: string;
+    importId?: string;
+  }>();
   const editId = id != null && /^\d+$/.test(id) ? Number(id) : null;
+  const importId =
+    importIdParam != null && /^\d+$/.test(importIdParam)
+      ? Number(importIdParam)
+      : null;
   const editMode = editId != null;
+  const importMode = !editMode && importId != null;
 
   const colors = useThemeColors();
   const t = useT();
@@ -112,11 +135,22 @@ export default function RecipeComposerScreen() {
   const [title, setTitle] = useState("");
   const [titleAr, setTitleAr] = useState("");
   const [description, setDescription] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
   const [servings, setServings] = useState("");
   const [minutes, setMinutes] = useState("");
+  const [prepMinutes, setPrepMinutes] = useState("");
+  const [cookMinutes, setCookMinutes] = useState("");
   const [ingredients, setIngredients] = useState<string[]>([""]);
+  const [structuredIngredients, setStructuredIngredients] =
+    useState<UserRecipeInput["ingredients_structured"]>();
   const [steps, setSteps] = useState<StepDraft[]>([
-    { description: "", description_ar: "", minutes: "", step_type: "active" },
+    {
+      description: "",
+      description_ar: "",
+      minutes: "",
+      literal_minutes: "",
+      step_type: "active",
+    },
   ]);
 
   // Image: the previously uploaded URL (edit mode) vs. a freshly picked local
@@ -126,7 +160,7 @@ export default function RecipeComposerScreen() {
   const [imageRemoved, setImageRemoved] = useState(false);
 
   // ---- Load state (edit-mode prefill) / submission state ------------------------
-  const [loading, setLoading] = useState(editMode);
+  const [loading, setLoading] = useState(editMode || importMode);
   // Baseline snapshot of the pristine form (create mode: empty; edit mode:
   // set by prefill once loaded). State — not a ref — so the dirty check in
   // render never reads a ref.
@@ -141,6 +175,7 @@ export default function RecipeComposerScreen() {
   /** Terms from a HalalRejectionError — rendered as a prominent danger card. */
   const [halalTerms, setHalalTerms] = useState<string[] | null>(null);
   const [needsAuth, setNeedsAuth] = useState(false);
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
 
   // ---- Auth gate -----------------------------------------------------------------
   // Checked on every focus: a signed-out visitor sees a sign-in prompt
@@ -315,6 +350,23 @@ export default function RecipeComposerScreen() {
           color: colors.danger,
           fontWeight: "700",
         },
+        importCard: {
+          backgroundColor: colors.amberSoft,
+          borderRadius: Radius.md,
+          padding: Space.md,
+          gap: Space.xs,
+          borderLeftWidth: 4,
+          borderLeftColor: colors.amber,
+        },
+        importTitle: {
+          ...Type.bodySm,
+          color: colors.ink,
+          fontWeight: "700",
+        },
+        importWarning: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+        },
         footer: {
           gap: Space.sm,
         },
@@ -339,22 +391,130 @@ export default function RecipeComposerScreen() {
   // mount effect). The retry handler owns the loading/error resets.
 
   const prefill = useCallback(async () => {
-    if (editId == null) return;
+    if (editId == null && importId == null) {
+      setLoading(false);
+      return;
+    }
+
     try {
-      const recipe = await getRecipe(editId);
+      if (importId != null) {
+        const imported = await getRecipeImport(importId);
+        if (imported.status !== "ready" || !imported.draft) {
+          throw new Error("The recipe import is not ready.");
+        }
+
+        const draft = imported.draft;
+        const draftIngredients = Array.isArray(draft.ingredients)
+          ? draft.ingredients
+          : [];
+        const ingRows = draftIngredients
+          .map((ingredient) => ingredient?.raw?.trim())
+          .filter((row): row is string => Boolean(row));
+        const safeIngredients = ingRows.length > 0 ? ingRows : [""];
+        const draftSteps = Array.isArray(draft.steps) ? draft.steps : [];
+        const stepRows: StepDraft[] =
+          draftSteps.length > 0
+            ? draftSteps.map((step) => ({
+                description: step.description ?? "",
+                description_ar: step.description_ar ?? "",
+                minutes:
+                  step.minutes_estimated != null
+                    ? String(Math.round(step.minutes_estimated))
+                    : "",
+                literal_minutes:
+                  step.literal_minutes != null
+                    ? String(Math.round(step.literal_minutes))
+                    : "",
+                step_type:
+                  step.step_type === "passive" || step.step_type === "cleanup"
+                    ? step.step_type
+                    : "active",
+              }))
+            : [
+                {
+                  description: "",
+                  description_ar: "",
+                  minutes: "",
+                  literal_minutes: "",
+                  step_type: "active",
+                },
+              ];
+        const safeSourceUrl =
+          imported.source_url ?? draft.attribution?.source_url ?? "";
+        const servingsStr =
+          draft.servings != null ? String(Math.round(draft.servings)) : "";
+        const minutesStr =
+          draft.total_time_minutes != null
+            ? String(Math.round(draft.total_time_minutes))
+            : "";
+        const prepStr =
+          draft.prep_time_minutes != null
+            ? String(Math.round(draft.prep_time_minutes))
+            : "";
+        const cookStr =
+          draft.cook_time_minutes != null
+            ? String(Math.round(draft.cook_time_minutes))
+            : "";
+
+        setTitle(draft.title ?? "");
+        setTitleAr(draft.title_ar ?? "");
+        setDescription(draft.description ?? "");
+        setSourceUrl(safeSourceUrl);
+        setServings(servingsStr);
+        setMinutes(minutesStr);
+        setPrepMinutes(prepStr);
+        setCookMinutes(cookStr);
+        setIngredients(safeIngredients);
+        setStructuredIngredients({
+          v: 1,
+          items: draftIngredients.map((ingredient) => ({ ...ingredient })),
+        });
+        setSteps(stepRows);
+        setExistingImage(draft.cover_image_url ?? null);
+        setImportWarnings(imported.warnings);
+        setBaselineSnapshot(
+          serializeForm({
+            title: draft.title ?? "",
+            titleAr: draft.title_ar ?? "",
+            description: draft.description ?? "",
+            sourceUrl: safeSourceUrl,
+            servings: servingsStr,
+            minutes: minutesStr,
+            prepMinutes: prepStr,
+            cookMinutes: cookStr,
+            ingredients: safeIngredients,
+            steps: stepRows,
+            pickedUri: null,
+            imageRemoved: false,
+          }),
+        );
+        return;
+      }
+
+      const recipe = await getRecipe(editId as number);
       setTitle(recipe.title ?? "");
       setTitleAr(recipe.title_ar ?? "");
       setDescription(recipe.description ?? "");
+      setSourceUrl(recipe.source_url ?? "");
       setExistingImage(recipe.image_url ?? null);
-      // Total minutes: the dedicated field when the server sends it, else the
-      // publisher claim, else the community consensus.
-      const dedicated = (
-        recipe as { estimated_minutes?: unknown }
-      ).estimated_minutes;
+      setServings(recipe.servings != null ? String(recipe.servings) : "");
+      setPrepMinutes(
+        recipe.prep_time_minutes != null ? String(recipe.prep_time_minutes) : "",
+      );
+      setCookMinutes(
+        recipe.cook_time_minutes != null ? String(recipe.cook_time_minutes) : "",
+      );
+      setImportWarnings([]);
+      if (recipe.ingredients_structured?.items) {
+        setStructuredIngredients({
+          v: 1,
+          items: recipe.ingredients_structured.items,
+        });
+      } else {
+        setStructuredIngredients(undefined);
+      }
       const mins =
-        parseIntOrNull(String(dedicated ?? "")) ??
-        recipe.publisher_time_minutes ??
-        recipe.community_avg_minutes;
+        recipe.publisher_time_minutes ?? recipe.community_avg_minutes;
       const minutesStr = mins != null ? String(Math.round(mins)) : "";
       setMinutes(minutesStr);
       const ing = (recipe.ingredients ?? []).filter(
@@ -362,8 +522,6 @@ export default function RecipeComposerScreen() {
       );
       const ingRows = ing.length > 0 ? ing : [""];
       setIngredients(ingRows);
-      // Prefill from structured recipe_steps when present, else the plain
-      // text steps.
       const structured = recipe.recipe_steps ?? [];
       let stepRows: StepDraft[];
       if (structured.length > 0) {
@@ -371,8 +529,12 @@ export default function RecipeComposerScreen() {
           description: s.description ?? "",
           description_ar: s.description_ar ?? "",
           minutes:
-            s.publisher_minutes != null
-              ? String(Math.round(s.publisher_minutes))
+            s.publisher_minutes != null || s.ai_minutes != null
+              ? String(Math.round(s.publisher_minutes ?? s.ai_minutes ?? 0))
+              : "",
+          literal_minutes:
+            s.literal_minutes != null
+              ? String(Math.round(s.literal_minutes))
               : "",
           step_type:
             s.step_type === "passive" || s.step_type === "cleanup"
@@ -389,6 +551,7 @@ export default function RecipeComposerScreen() {
                 description,
                 description_ar: "",
                 minutes: "",
+                literal_minutes: "",
                 step_type: "active" as const,
               }))
             : [
@@ -396,19 +559,28 @@ export default function RecipeComposerScreen() {
                   description: "",
                   description_ar: "",
                   minutes: "",
+                  literal_minutes: "",
                   step_type: "active" as const,
                 },
               ];
       }
       setSteps(stepRows);
-      // Baseline for the unsaved-changes guard: the pristine prefilled form.
       setBaselineSnapshot(
         serializeForm({
           title: recipe.title ?? "",
           titleAr: recipe.title_ar ?? "",
           description: recipe.description ?? "",
-          servings: "",
+          sourceUrl: recipe.source_url ?? "",
+          servings: recipe.servings != null ? String(recipe.servings) : "",
           minutes: minutesStr,
+          prepMinutes:
+            recipe.prep_time_minutes != null
+              ? String(recipe.prep_time_minutes)
+              : "",
+          cookMinutes:
+            recipe.cook_time_minutes != null
+              ? String(recipe.cook_time_minutes)
+              : "",
           ingredients: ingRows,
           steps: stepRows,
           pickedUri: null,
@@ -421,7 +593,7 @@ export default function RecipeComposerScreen() {
     } finally {
       setLoading(false);
     }
-  }, [editId]);
+  }, [editId, importId]);
 
   /** Retry entry point: own the spinner/error reset, then re-fetch. */
   const retryPrefill = useCallback(() => {
@@ -444,12 +616,25 @@ export default function RecipeComposerScreen() {
     setIngredients((rows) =>
       rows.map((row, i) => (i === index ? text : row)),
     );
+    setStructuredIngredients((current) => {
+      if (!current) return current;
+      const items = [...current.items];
+      items[index] = { ...(items[index] ?? {}), raw: text };
+      return { ...current, items };
+    });
   }, []);
 
   const removeIngredientAt = useCallback((index: number) => {
     setIngredients((rows) => {
       const next = rows.filter((_, i) => i !== index);
       return next.length > 0 ? next : [""];
+    });
+    setStructuredIngredients((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        items: current.items.filter((_, itemIndex) => itemIndex !== index),
+      };
     });
   }, []);
 
@@ -467,7 +652,15 @@ export default function RecipeComposerScreen() {
       const next = rows.filter((_, i) => i !== index);
       return next.length > 0
         ? next
-        : [{ description: "", description_ar: "", minutes: "", step_type: "active" }];
+        : [
+            {
+              description: "",
+              description_ar: "",
+              minutes: "",
+              literal_minutes: "",
+              step_type: "active",
+            },
+          ];
     });
   }, []);
 
@@ -504,6 +697,12 @@ export default function RecipeComposerScreen() {
     if (plates != null && (plates < 1 || plates > 50)) {
       return t("composer.errServings");
     }
+    for (const timing of [prepMinutes, cookMinutes]) {
+      const parsed = parseIntOrNull(timing);
+      if (parsed != null && (parsed < 0 || parsed > MINUTES_MAX)) {
+        return t("composer.errMinutesRange");
+      }
+    }
     if (description.length > DESCRIPTION_MAX) {
       return t("composer.errDescriptionLong");
     }
@@ -528,13 +727,27 @@ export default function RecipeComposerScreen() {
     if (
       kept.some((row) => {
         const m = parseIntOrNull(row.minutes);
-        return m != null && (m < 0 || m > MINUTES_MAX);
+        const literal = parseIntOrNull(row.literal_minutes);
+        return (
+          (m != null && (m < 0 || m > MINUTES_MAX)) ||
+          (literal != null && (literal < 0 || literal > MINUTES_MAX))
+        );
       })
     ) {
       return t("composer.errStepMinutes");
     }
     return null;
-  }, [title, minutes, servings, description, ingredients, steps, t]);
+  }, [
+    title,
+    minutes,
+    servings,
+    prepMinutes,
+    cookMinutes,
+    description,
+    ingredients,
+    steps,
+    t,
+  ]);
 
   // ---- Save ------------------------------------------------------------------------
 
@@ -568,26 +781,81 @@ export default function RecipeComposerScreen() {
           ...(parseIntOrNull(row.minutes) != null
             ? { minutes_estimated: parseIntOrNull(row.minutes) ?? undefined }
             : {}),
+          ...(parseIntOrNull(row.literal_minutes) != null
+            ? { literal_minutes: parseIntOrNull(row.literal_minutes) ?? undefined }
+            : {}),
           step_type: row.step_type,
         }));
       const input: UserRecipeInput = {
         title: title.trim(),
         ...(titleAr.trim() !== "" ? { title_ar: titleAr.trim() } : {}),
         ...(description.trim() !== "" ? { description: description.trim() } : {}),
+        ...(sourceUrl.trim() !== "" ? { source_url: sourceUrl.trim() } : {}),
         ...(imageUrl !== undefined ? { image_url: imageUrl } : {}),
         ...(parseIntOrNull(servings) != null
           ? { servings: parseIntOrNull(servings) ?? undefined }
           : {}),
+        ...(parseIntOrNull(prepMinutes) != null
+          ? { prep_time_minutes: parseIntOrNull(prepMinutes) ?? undefined }
+          : {}),
+        ...(parseIntOrNull(cookMinutes) != null
+          ? { cook_time_minutes: parseIntOrNull(cookMinutes) ?? undefined }
+          : {}),
         estimated_minutes: parseIntOrNull(minutes) ?? MINUTES_MIN,
         ingredients: ingredients.map((row) => row.trim()).filter((row) => row !== ""),
+        // AI imports carry per-item Arabic (raw_ar/item_ar) inside the
+        // structured payload: forward it as ingredients_ar when every line
+        // has one so Arabic UI shows real translations, not fallbacks.
+        ...(structuredIngredients && importMode
+          ? (() => {
+              const rows = ingredients
+                .map((row, index) => {
+                  const item = (structuredIngredients.items[index] ?? {}) as Record<string, unknown>;
+                  const ar =
+                    typeof item.raw_ar === "string" && item.raw_ar.trim() !== ""
+                      ? item.raw_ar.trim()
+                      : typeof item.item_ar === "string" && item.item_ar.trim() !== ""
+                        ? item.item_ar.trim()
+                        : "";
+                  return { en: row.trim(), ar };
+                })
+                .filter((row) => row.en !== "");
+              return rows.length > 0 && rows.every((row) => row.ar !== "")
+                ? { ingredients_ar: rows.map((row) => row.ar) }
+                : {};
+            })()
+          : {}),
+        ...(structuredIngredients && importMode
+          ? {
+              ingredients_structured: {
+                v: 1,
+                items: ingredients
+                  .map((row, index) => ({
+                    ...(structuredIngredients.items[index] ?? {}),
+                    raw: row.trim(),
+                  }))
+                  .filter((item) => item.raw !== ""),
+              },
+            }
+          : {}),
         steps: stepRows,
       };
-      const saved = editMode && editId != null
-        ? await updateUserRecipe(editId, input)
-        : await createUserRecipe(input);
-      track(editMode ? "user_recipe_updated" : "user_recipe_created", {
+      const saved =
+        importMode && importId != null
+          ? await publishRecipeImport(importId, input)
+          : editMode && editId != null
+            ? await updateUserRecipe(editId, input)
+            : await createUserRecipe(input);
+      track(
+        editMode
+          ? "user_recipe_updated"
+          : importMode
+            ? "ai_recipe_import_published"
+            : "user_recipe_created",
+        {
         recipe_id: saved.id,
-      });
+        },
+      );
       router.push(`/recipe/${saved.id}`);
     } catch (error) {
       console.warn("[RecipeReal] composer save failed:", error);
@@ -622,9 +890,15 @@ export default function RecipeComposerScreen() {
     title,
     titleAr,
     description,
+    sourceUrl,
     servings,
     minutes,
+    prepMinutes,
+    cookMinutes,
     ingredients,
+    structuredIngredients,
+    importMode,
+    importId,
     editMode,
     editId,
     t,
@@ -698,14 +972,30 @@ export default function RecipeComposerScreen() {
         title,
         titleAr,
         description,
+        sourceUrl,
         servings,
         minutes,
+        prepMinutes,
+        cookMinutes,
         ingredients,
         steps,
         pickedUri,
         imageRemoved,
       }),
-    [title, titleAr, description, servings, minutes, ingredients, steps, pickedUri, imageRemoved],
+    [
+      title,
+      titleAr,
+      description,
+      sourceUrl,
+      servings,
+      minutes,
+      prepMinutes,
+      cookMinutes,
+      ingredients,
+      steps,
+      pickedUri,
+      imageRemoved,
+    ],
   );
   const dirty = formSnapshot !== baselineSnapshot;
 
@@ -797,7 +1087,11 @@ export default function RecipeComposerScreen() {
       {/* Own pinned header — the title depends on the mode. BackChevron
           routes through usePreventRemove's discard-confirm below. */}
       <PinnedHeaderBar
-        title={editMode ? t("stack.editRecipe") : t("stack.newRecipe")}
+        title={
+          editMode || importMode
+            ? t("stack.editRecipe")
+            : t("stack.newRecipe")
+        }
         leading={<BackChevron />}
       />
       <ScrollView
@@ -805,6 +1099,16 @@ export default function RecipeComposerScreen() {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
+        {importMode && importWarnings.length > 0 ? (
+          <View style={styles.importCard}>
+            <Text style={styles.importTitle}>{t("import.reviewWarnings")}</Text>
+            {importWarnings.map((warning) => (
+              <Text key={warning} style={styles.importWarning}>
+                {warning}
+              </Text>
+            ))}
+          </View>
+        ) : null}
         {/* 1. Basics: titles + description */}
         <Card style={styles.section}>
           <SectionHeader
@@ -847,6 +1151,22 @@ export default function RecipeComposerScreen() {
             />,
             { optional: true },
           )}
+          {importMode || sourceUrl ? (
+            field(
+              t("composer.sourceUrl"),
+              <TextInput
+                style={styles.input}
+                value={sourceUrl}
+                onChangeText={setSourceUrl}
+                placeholder={t("composer.sourceUrlPlaceholder")}
+                placeholderTextColor={colors.inkFaint}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+              />,
+              { optional: true },
+            )
+          ) : null}
         </Card>
 
         {/* 2. Photo picker */}
@@ -915,6 +1235,44 @@ export default function RecipeComposerScreen() {
                 style={styles.input}
                 value={minutes}
                 onChangeText={(text) => setMinutes(text.replace(/[^0-9]/g, ""))}
+                placeholderTextColor={colors.inkFaint}
+                keyboardType="number-pad"
+                maxLength={4}
+              />
+            </View>
+          </View>
+          <View style={styles.twoCol}>
+            <View style={styles.twoColCell}>
+              <Text style={styles.fieldLabel}>
+                {t("composer.prepMinutes")}
+                <Text style={styles.fieldOptional}>
+                  {" · "}{t("quick.optional")}
+                </Text>
+              </Text>
+              <TextInput
+                style={styles.input}
+                value={prepMinutes}
+                onChangeText={(text) =>
+                  setPrepMinutes(text.replace(/[^0-9]/g, ""))
+                }
+                placeholderTextColor={colors.inkFaint}
+                keyboardType="number-pad"
+                maxLength={4}
+              />
+            </View>
+            <View style={styles.twoColCell}>
+              <Text style={styles.fieldLabel}>
+                {t("composer.cookMinutes")}
+                <Text style={styles.fieldOptional}>
+                  {" · "}{t("quick.optional")}
+                </Text>
+              </Text>
+              <TextInput
+                style={styles.input}
+                value={cookMinutes}
+                onChangeText={(text) =>
+                  setCookMinutes(text.replace(/[^0-9]/g, ""))
+                }
                 placeholderTextColor={colors.inkFaint}
                 keyboardType="number-pad"
                 maxLength={4}
@@ -1024,6 +1382,19 @@ export default function RecipeComposerScreen() {
                     keyboardType="number-pad"
                     maxLength={4}
                   />
+                  <TextInput
+                    style={[styles.input, styles.minutesInput]}
+                    value={row.literal_minutes}
+                    onChangeText={(text) =>
+                      updateStepAt(index, {
+                        literal_minutes: text.replace(/[^0-9]/g, ""),
+                      })
+                    }
+                    placeholder={t("composer.literalMinutes")}
+                    placeholderTextColor={colors.inkFaint}
+                    keyboardType="number-pad"
+                    maxLength={4}
+                  />
                 </View>
                 {stepTypeChips(row, index)}
               </Card>
@@ -1040,7 +1411,13 @@ export default function RecipeComposerScreen() {
               onPress={() =>
                 setSteps((rows) => [
                   ...rows,
-                  { description: "", description_ar: "", minutes: "", step_type: "active" },
+                  {
+                    description: "",
+                    description_ar: "",
+                    minutes: "",
+                    literal_minutes: "",
+                    step_type: "active",
+                  },
                 ])
               }
             />

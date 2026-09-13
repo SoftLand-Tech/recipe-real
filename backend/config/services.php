@@ -37,6 +37,7 @@ return [
 
     'google' => [
         'client_id' => env('GOOGLE_CLIENT_ID'),
+        'admin_redirect_uri' => env('GOOGLE_ADMIN_REDIRECT_URI'),
     ],
 
 ];
