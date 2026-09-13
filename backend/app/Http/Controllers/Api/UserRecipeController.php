@@ -52,12 +52,16 @@ class UserRecipeController extends Controller
                 'owner_id' => $request->user()->id,
                 'source_type' => 'user',
                 'title' => $data['title'],
+                'source_url' => $data['source_url'] ?? null,
                 'title_ar' => $data['title_ar'] ?? null,
                 'description' => $data['description'] ?? null,
                 'image_url' => $data['image_url'] ?? null,
                 // The user's own claim drives the publisher estimate; the
                 // per-step minutes land on recipe_steps.ai_minutes.
                 'publisher_time_minutes' => $data['estimated_minutes'],
+                'servings' => $data['servings'] ?? null,
+                'prep_time_minutes' => $data['prep_time_minutes'] ?? null,
+                'cook_time_minutes' => $data['cook_time_minutes'] ?? null,
                 'ingredients' => $data['ingredients'],
                 'steps' => array_column($steps, 'description'),
                 // Raw JSON strings, matching how the translate pipeline
@@ -68,6 +72,11 @@ class UserRecipeController extends Controller
                 'steps_ar' => $this->stepsArJson($steps),
                 'steps_count' => count($steps),
             ]);
+
+            if (array_key_exists('ingredients_structured', $data)) {
+                $recipe->ingredients_structured = $data['ingredients_structured'];
+                $recipe->save();
+            }
 
             $this->replaceSteps($recipe, $steps);
 
@@ -127,7 +136,8 @@ class UserRecipeController extends Controller
 
         DB::transaction(function () use ($request, $data, $recipe): void {
             $recipe->fill(collect($data)->only([
-                'title', 'title_ar', 'description', 'image_url',
+                'title', 'title_ar', 'description', 'image_url', 'source_url',
+                'servings', 'prep_time_minutes', 'cook_time_minutes',
             ])->all());
 
             if (array_key_exists('estimated_minutes', $data)) {
@@ -142,6 +152,10 @@ class UserRecipeController extends Controller
                 $recipe->ingredients_ar = isset($data['ingredients_ar'])
                     ? json_encode($data['ingredients_ar'])
                     : null;
+            }
+
+            if (array_key_exists('ingredients_structured', $data)) {
+                $recipe->ingredients_structured = $data['ingredients_structured'];
             }
 
             if (isset($data['steps'])) {
@@ -306,6 +320,7 @@ class UserRecipeController extends Controller
                 'description_ar' => $step['description_ar'] ?? null,
                 'step_type' => $step['step_type'] ?? 'active',
                 'ai_minutes' => $step['minutes_estimated'] ?? null,
+                'literal_minutes' => $step['literal_minutes'] ?? null,
             ]);
         }
     }

@@ -18,6 +18,9 @@ git pull --ff-only origin main
 echo "==> composer install (prod)"
 ( cd backend && composer install --no-dev --optimize-autoloader --no-interaction )
 
+echo "==> publish Filament panel assets"
+( cd backend && php artisan filament:assets )
+
 echo "==> migrate --force"
 ( cd backend && php artisan migrate --force )
 

@@ -622,6 +622,13 @@ export default function SettingsScreen() {
             />
             <View style={styles.divider} />
             <SettingsRow
+              icon="sparkles-outline"
+              label={t("import.start")}
+              chevron
+              onPress={() => router.push("/recipe-import")}
+            />
+            <View style={styles.divider} />
+            <SettingsRow
               icon="stopwatch-outline"
               label={t("tabs.pace")}
               chevron

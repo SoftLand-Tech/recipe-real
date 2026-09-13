@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\AvatarController;
 use App\Http\Controllers\Api\FollowController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RecipeController;
+use App\Http\Controllers\Api\RecipeImportController;
 use App\Http\Controllers\Api\RecipeNoteController;
 use App\Http\Controllers\Api\RealityController;
 use App\Http\Controllers\Api\UploadController;
@@ -100,6 +101,20 @@ Route::middleware(['throttle:60,1', 'auth:sanctum', 'not_banned'])->group(functi
     Route::patch('/recipes/{recipe}', [UserRecipeController::class, 'update']);
     Route::delete('/recipes/{recipe}', [UserRecipeController::class, 'destroy']);
     Route::get('/users/me/recipes', [UserRecipeController::class, 'mine']);
+
+    // AI-assisted recipe imports: the queued extraction stays private until
+    // the owner reviews and publishes the draft.
+    Route::post('/recipe-imports', [RecipeImportController::class, 'store'])
+        ->middleware('throttle:10,1');
+    Route::get('/recipe-imports', [RecipeImportController::class, 'index']);
+    Route::get('/recipe-imports/{recipeImport}', [RecipeImportController::class, 'show'])
+        ->whereNumber('recipeImport');
+    Route::post('/recipe-imports/{recipeImport}/retry', [RecipeImportController::class, 'retry'])
+        ->whereNumber('recipeImport');
+    Route::post('/recipe-imports/{recipeImport}/publish', [RecipeImportController::class, 'publish'])
+        ->whereNumber('recipeImport');
+    Route::delete('/recipe-imports/{recipeImport}', [RecipeImportController::class, 'destroy'])
+        ->whereNumber('recipeImport');
 
     // Own profile: public identity + contribution counts.
     Route::get('/users/me/profile', [ProfileController::class, 'show']);

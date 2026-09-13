@@ -15,13 +15,16 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, useFocusEffect } from "expo-router";
 
 import {
+  deleteRecipeImport,
   fetchMyProfileFull,
   fetchMyRecipes,
   hasToken,
+  listMyRecipeImports,
+  retryRecipeImport,
   updateProfile,
   uploadAvatar,
 } from "@/api/client";
-import type { MyProfile, Recipe } from "@/types";
+import type { MyProfile, Recipe, RecipeImportRecord } from "@/types";
 import { useLang, useLocalizedRecipe, useT } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 import { bestMinutes } from "@/utils/recipeTime";
@@ -57,6 +60,8 @@ export default function ProfileScreen() {
   const [recipesHasMore, setRecipesHasMore] = useState(false);
   const [recipesPage, setRecipesPage] = useState(1);
   const [loadingRecipes, setLoadingRecipes] = useState(false);
+  const [imports, setImports] = useState<RecipeImportRecord[]>([]);
+  const [importActionId, setImportActionId] = useState<number | null>(null);
   const [state, setState] = useState<LoadState>("loading");
 
   const [isEditing, setIsEditing] = useState(false);
@@ -117,6 +122,51 @@ export default function ProfileScreen() {
   }, [isEditing]);
 
   useFocusEffect(useCallback(() => { void loadAll(false); }, [loadAll]));
+
+  const loadImports = useCallback(async () => {
+    try {
+      const rows = await listMyRecipeImports();
+      setImports(rows.filter((row) => row.status !== "published"));
+    } catch (err) {
+      console.warn("[RecipeReal] imports load failed:", err);
+    }
+  }, []);
+
+  useFocusEffect(useCallback(() => { void loadImports(); }, [loadImports]));
+
+  const hasActiveImport = imports.some(
+    (row) => row.status === "queued" || row.status === "processing",
+  );
+
+  useEffect(() => {
+    if (!hasActiveImport || signedIn !== true) return;
+    const timer = setInterval(() => { void loadImports(); }, 8000);
+    return () => clearInterval(timer);
+  }, [hasActiveImport, signedIn, loadImports]);
+
+  const retryImport = useCallback(async (id: number) => {
+    setImportActionId(id);
+    try {
+      await retryRecipeImport(id);
+      await loadImports();
+    } catch (err) {
+      console.warn("[RecipeReal] import retry failed:", err);
+    } finally {
+      setImportActionId(null);
+    }
+  }, [loadImports]);
+
+  const dismissImport = useCallback(async (id: number) => {
+    setImportActionId(id);
+    try {
+      await deleteRecipeImport(id);
+      setImports((prev) => prev.filter((row) => row.id !== id));
+    } catch (err) {
+      console.warn("[RecipeReal] import dismiss failed:", err);
+    } finally {
+      setImportActionId(null);
+    }
+  }, []);
 
   useEffect(() => {
     if (!saved) return;
@@ -502,15 +552,96 @@ export default function ProfileScreen() {
               </Card>
             </View>
 
+            {signedIn === true && imports.length > 0 ? (
+            <View style={styles.section}>
+              <SectionHeader title={t("import.trackTitle")} subtitle={t("import.trackSubtitle")} />
+              <View style={styles.section}>
+                {imports.map((row) => {
+                  const label =
+                    row.draft?.title?.trim() ||
+                    row.source_url ||
+                    t(row.source_kind === "video" ? "import.video" : "import.image");
+                  const statusText =
+                    row.status === "ready"
+                      ? t("import.ready")
+                      : row.status === "failed"
+                        ? (row.error?.message || t("import.importFailed"))
+                        : row.status === "processing"
+                          ? t("import.extracting", { n: row.progress })
+                          : t("import.queued");
+                  const busy = importActionId === row.id;
+                  return (
+                    <Card key={`import-${row.id}`} padding={Space.md}>
+                      <View style={styles.recipeRow}>
+                        <View style={styles.recipeThumb}>
+                          <Ionicons
+                            name={
+                              row.status === "ready"
+                                ? "checkmark-circle-outline"
+                                : row.status === "failed"
+                                  ? "alert-circle-outline"
+                                  : "sync-outline"
+                            }
+                            size={20}
+                            color={row.status === "failed" ? colors.danger : colors.accent}
+                          />
+                        </View>
+                        <View style={styles.recipeMain}>
+                          <Text style={styles.recipeTitle} numberOfLines={2}>{label}</Text>
+                          <Text style={styles.muted} numberOfLines={2}>{statusText}</Text>
+                        </View>
+                      </View>
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: Space.sm, marginTop: Space.sm }}>
+                        {row.status === "ready" ? (
+                          <Button
+                            title={t("import.resume")}
+                            variant="secondary"
+                            icon="arrow-forward-outline"
+                            onPress={() => router.push(`/recipe-composer?importId=${row.id}`)}
+                          />
+                        ) : null}
+                        {row.status === "failed" ? (
+                          <Button
+                            title={t("import.retry")}
+                            variant="secondary"
+                            icon="refresh-outline"
+                            loading={busy}
+                            disabled={busy}
+                            onPress={() => void retryImport(row.id)}
+                          />
+                        ) : null}
+                        {row.status === "failed" || row.status === "ready" ? (
+                          <Button
+                            title={t("import.dismiss")}
+                            variant="ghost"
+                            loading={busy}
+                            disabled={busy}
+                            onPress={() => void dismissImport(row.id)}
+                          />
+                        ) : null}
+                      </View>
+                    </Card>
+                  );
+                })}
+              </View>
+            </View>
+            ) : null}
+
             <View style={styles.section}>
               <SectionHeader title={recipes.length > 0 ? t("profile.myRecipesCount", { n: recipes.length }) : t("profile.myRecipes")} />
               {recipes.length === 0 ? (
                 <Card style={styles.section}>
                   <Text style={styles.muted}>{t("profile.noRecipes")}</Text>
                   <Button title={t("settings.newRecipe")} variant="ghost" onPress={() => router.push("/recipe-composer")} />
+                  <Button title={t("import.start")} variant="secondary" icon="sparkles-outline" onPress={() => router.push("/recipe-import")} />
                 </Card>
               ) : (
-                <View style={styles.recipesList}>
+                <View style={styles.section}>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: Space.sm }}>
+                    <Button title={t("settings.newRecipe")} variant="ghost" onPress={() => router.push("/recipe-composer")} />
+                    <Button title={t("import.start")} variant="secondary" icon="sparkles-outline" onPress={() => router.push("/recipe-import")} />
+                  </View>
+                  <View style={styles.recipesList}>
                   {recipes.map((recipe) => (
                     <Card key={`mine-${recipe.id}`} padding={Space.md} onPress={() => router.push(`/recipe/${recipe.id}`)}>
                       <View style={styles.recipeRow}>
@@ -534,6 +665,7 @@ export default function ProfileScreen() {
                   {recipesHasMore ? (
                     <Button title={t("detail.loadMoreNotes")} variant="ghost" loading={loadingRecipes} disabled={loadingRecipes} onPress={() => void loadMoreRecipes()} style={styles.loadMore} />
                   ) : null}
+                  </View>
                 </View>
               )}
             </View>

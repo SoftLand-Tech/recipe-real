@@ -10,6 +10,7 @@ import { secureStore } from "@/utils/secureStore";
 import {
   http,
   isOfflineError,
+  isRateLimitedError,
   OfflineError,
   postCookSessionRaw,
   seedRecipes,
@@ -26,7 +27,7 @@ import {
 // existing `import { ... } from "@/api/client"` calls keep working. The
 // implementations live in `@/api/http` to avoid a circular import between the
 // client and `@/db/database`.
-export { http, postCookSessionRaw, seedRecipes, getPaceCalibrations, OfflineError };
+export { http, postCookSessionRaw, seedRecipes, getPaceCalibrations, OfflineError, isRateLimitedError };
 export type { RecipePage } from "@/api/http";
 
 // Use the shared instance for all calls below.
@@ -54,6 +55,7 @@ import type {
   PostsPage,
   PublicProfile,
   Recipe,
+  RecipeImportRecord,
   RecipeNote,
   RecipeNotesPage,
   SearchParams,
@@ -620,7 +622,9 @@ function extractHalalTerms(error: unknown): string[] | null {
   const body = error.response.data as
     | { errors?: Record<string, unknown> }
     | undefined;
-  const halal = body?.errors?.halal;
+  const halal =
+    body?.errors?.halal ??
+    (error.response.data as { terms?: unknown } | undefined)?.terms;
   if (!Array.isArray(halal)) return null;
   const terms = halal.filter(
     (term): term is string => typeof term === "string" && term.length > 0,
@@ -683,6 +687,156 @@ export async function fetchMyRecipes(
     ...data,
     data: Array.isArray(data?.data) ? data.data.map(normalizeRecipe) : [],
   };
+}
+
+export interface RecipeImportMediaInput {
+  uri: string;
+  mimeType?: string | null;
+  fileName?: string | null;
+}
+
+function importFileMeta(input: RecipeImportMediaInput): {
+  name: string;
+  type: string;
+} {
+  const uri = input.uri.split("?")[0];
+  const ext = uri.split(".").pop()?.toLowerCase() ?? "jpg";
+  const video = ["mp4", "mov", "m4v", "webm"].includes(ext);
+  const type =
+    input.mimeType ||
+    (video
+      ? ext === "webm"
+        ? "video/webm"
+        : ext === "mov"
+          ? "video/quicktime"
+          : "video/mp4"
+      : ext === "png"
+        ? "image/png"
+        : ext === "webp"
+          ? "image/webp"
+          : "image/jpeg");
+  return {
+    name:
+      input.fileName ||
+      "recipe-source." +
+        (video ? ext : ext === "png" || ext === "webp" ? ext : "jpg"),
+    type,
+  };
+}
+
+async function appendImportFile(
+  form: FormData,
+  field: string,
+  input: RecipeImportMediaInput,
+): Promise<void> {
+  const meta = importFileMeta(input);
+  if (Platform.OS === "web") {
+    const blob = await (await fetch(input.uri)).blob();
+    form.append(field, blob, meta.name);
+  } else {
+    form.append(
+      field,
+      { uri: input.uri, name: meta.name, type: meta.type } as unknown as Blob,
+    );
+  }
+}
+
+function normalizeRecipeImport(payload: unknown): RecipeImportRecord {
+  const body = (payload as { data?: unknown } | undefined)?.data ?? payload;
+  const row = (body ?? {}) as Record<string, unknown>;
+  return {
+    id: Number(row.id),
+    status:
+      typeof row.status === "string"
+        ? (row.status as RecipeImportRecord["status"])
+        : "failed",
+    source_kind: typeof row.source_kind === "string" ? row.source_kind : "url",
+    source_platform:
+      typeof row.source_platform === "string" ? row.source_platform : null,
+    source_url: typeof row.source_url === "string" ? row.source_url : null,
+    provider: typeof row.provider === "string" ? row.provider : null,
+    provider_model:
+      typeof row.provider_model === "string" ? row.provider_model : null,
+    stage: typeof row.stage === "string" ? row.stage : null,
+    progress: Number(row.progress) || 0,
+    draft:
+      row.draft && typeof row.draft === "object"
+        ? (row.draft as RecipeImportRecord["draft"])
+        : null,
+    warnings: Array.isArray(row.warnings)
+      ? row.warnings.filter((item): item is string => typeof item === "string")
+      : [],
+    confidence:
+      row.confidence && typeof row.confidence === "object"
+        ? (row.confidence as Record<string, unknown>)
+        : null,
+    error:
+      row.error && typeof row.error === "object"
+        ? (row.error as RecipeImportRecord["error"])
+        : null,
+    recipe_id: row.recipe_id == null ? null : Number(row.recipe_id),
+    created_at: typeof row.created_at === "string" ? row.created_at : undefined,
+    processed_at:
+      typeof row.processed_at === "string" ? row.processed_at : null,
+    expires_at: typeof row.expires_at === "string" ? row.expires_at : null,
+  };
+}
+
+export async function createRecipeImport(input: {
+  sourceUrl?: string;
+  primary?: RecipeImportMediaInput;
+  extraImages?: RecipeImportMediaInput[];
+  provider?: string;
+}): Promise<RecipeImportRecord> {
+  const form = new FormData();
+  if (input.sourceUrl?.trim()) form.append("source_url", input.sourceUrl.trim());
+  if (input.provider) form.append("provider", input.provider);
+  if (input.primary) await appendImportFile(form, "primary_file", input.primary);
+  for (const image of input.extraImages ?? []) {
+    await appendImportFile(form, "extra_images[]", image);
+  }
+
+  const { data } = await api.post("/api/recipe-imports", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 120_000,
+  });
+  return normalizeRecipeImport(data);
+}
+
+export async function getRecipeImport(id: number): Promise<RecipeImportRecord> {
+  const { data } = await api.get("/api/recipe-imports/" + id);
+  return normalizeRecipeImport(data);
+}
+
+/**
+ * The signed-in user's imports, newest first (GET /api/recipe-imports).
+ * Lets the app re-surface in-flight, ready, and failed imports after the
+ * inline poll is gone (timeout, navigation, or app restart).
+ */
+export async function listMyRecipeImports(): Promise<RecipeImportRecord[]> {
+  const { data } = await api.get("/api/recipe-imports");
+  const rows = (data as { data?: unknown } | undefined)?.data ?? data;
+  return Array.isArray(rows) ? rows.map(normalizeRecipeImport) : [];
+}
+
+export async function retryRecipeImport(id: number): Promise<RecipeImportRecord> {
+  const { data } = await api.post("/api/recipe-imports/" + id + "/retry");
+  return normalizeRecipeImport(data);
+}
+
+/** Delete an un-published import (DELETE /api/recipe-imports/{id}) → 204. */
+export async function deleteRecipeImport(id: number): Promise<void> {
+  await api.delete("/api/recipe-imports/" + id);
+}
+
+export async function publishRecipeImport(
+  id: number,
+  input: UserRecipeInput,
+): Promise<Recipe> {
+  return rethrowHalal(async () => {
+    const { data } = await api.post("/api/recipe-imports/" + id + "/publish", input);
+    return unwrapRecipeResource(data);
+  });
 }
 
 /**

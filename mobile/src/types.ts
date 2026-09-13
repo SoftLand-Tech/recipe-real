@@ -22,6 +22,7 @@ export interface RecipeStep {
   step_type: StepType;
   publisher_minutes: number | null;
   community_minutes: number | null;
+  ai_minutes?: number | null;
   /**
    * Minutes literally stated in the step text ("simmer for 8 minutes");
    * null when the text states no time. Drives the Cook Mode step alarm.
@@ -37,6 +38,8 @@ export interface UserRecipeStepInput {
   description_ar?: string;
   /** Estimated minutes for this step (0..1440, optional). */
   minutes_estimated?: number;
+  /** Minutes literally stated by the source, used for cooking-mode alarms. */
+  literal_minutes?: number;
   /** active | passive | cleanup (defaults server-side to active). */
   step_type?: "active" | "passive" | "cleanup";
 }
@@ -51,14 +54,96 @@ export interface UserRecipeInput {
   description?: string;
   /** Uploaded image URL (POST /api/uploads) — optional; null clears it. */
   image_url?: string | null;
-  /** Servings hint — validated but not stored by the server. */
+  /** Original source URL, retained for attribution. */
+  source_url?: string | null;
+  /** Servings hint. */
   servings?: number;
+  prep_time_minutes?: number;
+  cook_time_minutes?: number;
   /** Total estimated minutes — required, 1..1440. */
   estimated_minutes: number;
   /** Ingredient strings — 1..60 entries, ≤300 chars each. */
   ingredients: string[];
+  ingredients_ar?: string[];
+  ingredients_structured?: {
+    v: 1;
+    items: Array<Record<string, unknown>>;
+  };
   /** Step rows — 1..40 entries. */
   steps: UserRecipeStepInput[];
+}
+
+export interface RecipeImportIngredient {
+  raw: string;
+  raw_ar?: string | null;
+  quantity?: number | null;
+  quantity_display?: string | null;
+  unit?: string | null;
+  item?: string | null;
+  item_ar?: string | null;
+  prep?: string | null;
+  optional?: boolean;
+  group?: string | null;
+  confidence?: number | null;
+}
+
+export interface RecipeImportStep {
+  description: string;
+  description_ar?: string | null;
+  minutes_estimated?: number | null;
+  literal_minutes?: number | null;
+  step_type?: "active" | "passive" | "cleanup";
+  confidence?: number | null;
+}
+
+export interface RecipeImportDraft {
+  schema_version?: number;
+  title?: string | null;
+  title_ar?: string | null;
+  description?: string | null;
+  language?: string | null;
+  servings?: number | null;
+  prep_time_minutes?: number | null;
+  cook_time_minutes?: number | null;
+  total_time_minutes?: number | null;
+  ingredients?: RecipeImportIngredient[];
+  steps?: RecipeImportStep[];
+  category?: string | null;
+  keywords?: string[];
+  nutrition?: {
+    calories?: number | null;
+    protein_g?: number | null;
+    fat_g?: number | null;
+  };
+  cover_image_url?: string | null;
+  attribution?: {
+    source_url?: string | null;
+    platform?: string | null;
+    author_name?: string | null;
+    author_url?: string | null;
+  };
+  confidence?: Record<string, unknown>;
+  warnings?: string[];
+}
+
+export interface RecipeImportRecord {
+  id: number;
+  status: "queued" | "processing" | "ready" | "failed" | "published" | string;
+  source_kind: string;
+  source_platform?: string | null;
+  source_url?: string | null;
+  provider?: string | null;
+  provider_model?: string | null;
+  stage?: string | null;
+  progress: number;
+  draft?: RecipeImportDraft | null;
+  warnings: string[];
+  confidence?: Record<string, unknown> | null;
+  error?: { code: string; message: string } | null;
+  recipe_id?: number | null;
+  created_at?: string;
+  processed_at?: string | null;
+  expires_at?: string | null;
 }
 
 export interface CleanupFactors {
@@ -94,6 +179,13 @@ export interface Recipe {
   ingredients_ar?: string[] | null;
   steps_ar?: string[] | null;
   publisher_time_minutes: number | null;
+  servings?: number | null;
+  prep_time_minutes?: number | null;
+  cook_time_minutes?: number | null;
+  ingredients_structured?: {
+    v?: number;
+    items?: Array<Record<string, unknown>>;
+  } | null;
   community_avg_minutes: number | null;
   cleanup_avg_minutes: number | null;
   /** Model-based cleanup estimate (Week 4). */

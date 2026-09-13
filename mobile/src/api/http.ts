@@ -132,6 +132,15 @@ http.interceptors.response.use(
 );
 
 /**
+ * Whether an error is a server rate-limit (HTTP 429): the user is trying
+ * too fast (e.g. repeated import starts, polling bursts). Callers show a
+ * "wait a minute" message instead of a generic failure.
+ */
+export function isRateLimitedError(error: unknown): boolean {
+  return axios.isAxiosError(error) && error.response?.status === 429;
+}
+
+/**
  * Whether an error is a GENUINE network-level failure (offline, timeout,
  * DNS): an axios error with NO response attached, meaning the server never
  * replied. Anything else — a server 4xx/5xx answer (has `.response`) or a

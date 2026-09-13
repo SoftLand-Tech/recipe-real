@@ -84,7 +84,7 @@
       "reactCompiler": true
     },
     "extra": {
-      "reciperealApiBaseUrl": "https://recipe-real.softland.tech",
+      "reciperealApiBaseUrl": "http://192.168.100.57:8000",
       "googleWebClientId": "412318680966-oo5cbharsvo1jo4fvi6824taqq6n6du5.apps.googleusercontent.com",
       "router": {},
       "eas": {

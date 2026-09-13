@@ -19,6 +19,69 @@ Laravel is a web application framework with expressive, elegant syntax. We belie
 - [Robust background job processing](https://laravel.com/docs/queues).
 - [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
 
+## AI recipe imports
+
+The app now supports private, queued recipe extraction from a public URL or an
+uploaded image/video. Imports are stored as short-lived review drafts and do
+not become public recipes until the owner or an admin edits and publishes the
+draft.
+
+### Deployment checklist
+
+1. Run the migrations with `php artisan migrate`.
+2. Configure either the HTTP provider (`RECIPE_AI_ENDPOINT`,
+   `RECIPE_AI_API_KEY`, `RECIPE_AI_MODEL`, and `RECIPE_AI_PROTOCOL`) or the
+   local `agy` provider described below. HTTP protocols are `generic`,
+   `openai_compatible`, `anthropic`, and `gemini`.
+3. Run a queue worker. Extraction is performed by `ProcessRecipeImport`; the
+   mobile client polls `/api/recipe-imports/{id}` until the draft is ready.
+4. Configure `RECIPE_MEDIA_RESOLVER_URL` when social URLs need a downloader or
+   frame/audio resolver. The adapter receives `{url, platform}` and may return
+   `media`, `media_url`, `media_urls`, `thumbnail_url`, and `metadata`.
+
+For the `generic` AI protocol, the endpoint receives the original URL, resolver
+media, optional transcript, and uploaded assets (small assets include
+`data_base64`; larger assets remain private metadata). This is the recommended
+integration point for video-capable or self-hosted vision/audio models.
+
+The AI adapter is expected to return JSON containing `title`, `ingredients`,
+`steps`, and `total_time_minutes`; optional timing, Arabic, nutrition,
+confidence, cover, and attribution fields are normalized before review. The
+prompt explicitly handles both speech transcription and no-voice visual
+inspection. Private uploads are deleted after successful extraction; failed
+imports are removed by the hourly `recipereal:prune-recipe-imports` schedule.
+
+### Local agy worker
+
+For local testing without an AI API key, set `RECIPE_AI_PROVIDER=agy`. The
+provider runs the locally authenticated `agy` CLI from the queue worker and
+pins `gemini-3.8-flash-high` by default:
+
+```env
+RECIPE_AI_PROVIDER=agy
+RECIPE_AI_CLI_BINARY=/home/mamoun/.local/bin/agy
+RECIPE_AI_CLI_MODEL=gemini-3.8-flash-high
+RECIPE_AI_CLI_EFFORT=high
+RECIPE_AI_CLI_TIMEOUT=600
+RECIPE_AI_CLI_PRINT_TIMEOUT=10m
+RECIPE_AI_CLI_DANGEROUSLY_SKIP_PERMISSIONS=true
+RECIPE_AI_CLI_WORKSPACE=/tmp/recipereal-ai-imports
+DB_QUEUE_RETRY_AFTER=720
+```
+
+Authenticate `agy` interactively once, then run Laravel's queue worker as the
+same operating-system user:
+
+```bash
+agy
+php artisan queue:work --tries=2 --timeout=660
+```
+
+Each job is staged in a disposable workspace outside the Laravel directory.
+The dangerous permission flag is intentionally opt-in through configuration;
+it grants the agent permission to run tools, so this local harness must not be
+used with a production application, production secrets, or untrusted uploads.
+
 Laravel is accessible, powerful, and provides tools required for large, robust applications.
 
 ## Learning Laravel
