@@ -12,9 +12,10 @@ via a local SQLite cache.
    npm install
    ```
 
-2. Point the app at the backend. The base URL defaults to
-   `http://192.168.100.57:8000` (LAN dev backend). To override it for local
-   dev, export the env var before starting Expo:
+2. Point the app at the backend. The base URL defaults to the production
+   server (`https://recipe-real.softland.tech`) everywhere — local dev,
+   EAS builds, and updates. To point local dev at a LAN backend instead,
+   export the env var before starting Expo:
 
    ```bash
    RECIPEREAL_API_BASE_URL=http://10.0.2.2:8000 npx expo start

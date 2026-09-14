@@ -3,7 +3,7 @@
  *
  * The backend base URL is environment-aware so one checkout serves both
  * flows without hand-editing config before every build:
- * - local dev (`npx expo start`): falls back to the LAN backend below.
+ * - local dev (`npx expo start`): same production URL (no LAN backend).
  * - EAS preview/production builds: eas.json profile `env` injects
  *   RECIPEREAL_API_BASE_URL=https://recipe-real.softland.tech.
  * - `eas update`: resolved from the shell env or the EAS "production"
@@ -11,7 +11,7 @@
  *   otherwise the update bundle bakes in the dev fallback.
  */
 const API_BASE_URL =
-  process.env.RECIPEREAL_API_BASE_URL || "http://192.168.100.57:8000";
+  process.env.RECIPEREAL_API_BASE_URL || "https://recipe-real.softland.tech";
 
 export default {
   name: "RecipeReal",
