@@ -10,14 +10,17 @@
     },
     "preview": {
       "distribution": "internal",
+      "channel": "preview",
       "releaseChannel": "preview"
     },
     "production": {
       "distribution": "store",
+      "channel": "production",
       "releaseChannel": "production"
     },
     "production-apk": {
       "distribution": "internal",
+      "channel": "production",
       "releaseChannel": "production",
       "android": {
         "buildType": "apk"

@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Constants from "expo-constants";
+import * as Updates from "expo-updates";
 import {
   PinnedHeaderBar,
   useChromeContentBottomPad,
@@ -26,6 +27,7 @@ import {
 } from "@/utils/notifications";
 
 import { deleteAccount, hasToken, logout } from "@/api/client";
+import { AI_IMPORT_ENABLED } from "@/config";
 import {
   clearRecipeCache,
   countCachedRecipes,
@@ -466,6 +468,54 @@ export default function SettingsScreen() {
 
   const version = Constants.expoConfig?.version ?? "1.0.0";
 
+  const [updateStatus, setUpdateStatus] = useState<
+    "idle" | "checking" | "upToDate" | "failed"
+  >("idle");
+
+  /** Manual OTA update check (EAS Update). An auto-check already runs on
+      launch; this row lets the user force one and restart into the fix. */
+  const handleCheckUpdates = useCallback(async () => {
+    if (updateStatus === "checking") return;
+    setUpdateStatus("checking");
+    try {
+      const check = await Updates.checkForUpdateAsync();
+      if (!check.isAvailable) {
+        setUpdateStatus("upToDate");
+        return;
+      }
+      await Updates.fetchUpdateAsync();
+      Alert.alert(
+        t("settings.updateReadyTitle"),
+        t("settings.updateReadyBody"),
+        [
+          {
+            text: t("settings.updateLater"),
+            style: "cancel",
+            onPress: () => setUpdateStatus("idle"),
+          },
+          {
+            text: t("settings.updateRestart"),
+            onPress: () => {
+              void Updates.reloadAsync();
+            },
+          },
+        ],
+      );
+    } catch (error) {
+      console.warn("[RecipeReal] update check failed:", error);
+      setUpdateStatus("failed");
+    }
+  }, [t, updateStatus]);
+
+  const updateCaption =
+    updateStatus === "checking"
+      ? t("settings.updateChecking")
+      : updateStatus === "upToDate"
+        ? t("settings.updateUpToDate")
+        : updateStatus === "failed"
+          ? t("settings.updateFailed")
+          : t("settings.updateAuto");
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -601,6 +651,22 @@ export default function SettingsScreen() {
         </Card>
       </View>
 
+      {/* App updates: auto-check runs on launch; manual check + restart here. */}
+      <View>
+        <Text style={styles.groupCaption}>{t("settings.appUpdates")}</Text>
+        <Card padding={0} style={styles.group}>
+          <SettingsRow
+            icon="download-outline"
+            label={t("settings.checkUpdates")}
+            caption={updateCaption}
+            chevron
+            busy={updateStatus === "checking"}
+            disabled={updateStatus === "checking"}
+            onPress={handleCheckUpdates}
+          />
+        </Card>
+      </View>
+
       {/* Account: sign-in card when signed out; grouped rows when in. */}
       <View>
         <Text style={styles.groupCaption}>{t("settings.account")}</Text>
@@ -621,13 +687,17 @@ export default function SettingsScreen() {
               onPress={() => router.push("/profile")}
             />
             <View style={styles.divider} />
-            <SettingsRow
-              icon="sparkles-outline"
-              label={t("import.start")}
-              chevron
-              onPress={() => router.push("/recipe-import")}
-            />
-            <View style={styles.divider} />
+            {AI_IMPORT_ENABLED ? (
+              <>
+                <SettingsRow
+                  icon="sparkles-outline"
+                  label={t("import.start")}
+                  chevron
+                  onPress={() => router.push("/recipe-import")}
+                />
+                <View style={styles.divider} />
+              </>
+            ) : null}
             <SettingsRow
               icon="stopwatch-outline"
               label={t("tabs.pace")}

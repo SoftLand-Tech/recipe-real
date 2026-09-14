@@ -25,6 +25,7 @@ import {
   uploadAvatar,
 } from "@/api/client";
 import type { MyProfile, Recipe, RecipeImportRecord } from "@/types";
+import { AI_IMPORT_ENABLED } from "@/config";
 import { useLang, useLocalizedRecipe, useT } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 import { bestMinutes } from "@/utils/recipeTime";
@@ -552,7 +553,7 @@ export default function ProfileScreen() {
               </Card>
             </View>
 
-            {signedIn === true && imports.length > 0 ? (
+            {signedIn === true && AI_IMPORT_ENABLED && imports.length > 0 ? (
             <View style={styles.section}>
               <SectionHeader title={t("import.trackTitle")} subtitle={t("import.trackSubtitle")} />
               <View style={styles.section}>
@@ -633,13 +634,17 @@ export default function ProfileScreen() {
                 <Card style={styles.section}>
                   <Text style={styles.muted}>{t("profile.noRecipes")}</Text>
                   <Button title={t("settings.newRecipe")} variant="ghost" onPress={() => router.push("/recipe-composer")} />
-                  <Button title={t("import.start")} variant="secondary" icon="sparkles-outline" onPress={() => router.push("/recipe-import")} />
+                  {AI_IMPORT_ENABLED ? (
+                    <Button title={t("import.start")} variant="secondary" icon="sparkles-outline" onPress={() => router.push("/recipe-import")} />
+                  ) : null}
                 </Card>
               ) : (
                 <View style={styles.section}>
                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: Space.sm }}>
                     <Button title={t("settings.newRecipe")} variant="ghost" onPress={() => router.push("/recipe-composer")} />
-                    <Button title={t("import.start")} variant="secondary" icon="sparkles-outline" onPress={() => router.push("/recipe-import")} />
+                    {AI_IMPORT_ENABLED ? (
+                      <Button title={t("import.start")} variant="secondary" icon="sparkles-outline" onPress={() => router.push("/recipe-import")} />
+                    ) : null}
                   </View>
                   <View style={styles.recipesList}>
                   {recipes.map((recipe) => (

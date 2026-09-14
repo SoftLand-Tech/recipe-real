@@ -39,6 +39,14 @@ export const WEB_BASE_URL = "https://recipe-real.softland.tech";
 export const AUTH_TOKEN_KEY = "recipereal.token";
 
 /**
+ * Kill-switch for the AI recipe-import flow (upload a video → AI extract).
+ * OFF while the first self-updating production APK ships: every entry
+ * point (settings row, profile buttons, AI-imports track, route screen)
+ * stays hidden. Flip back ON later via an EAS Update — pure JS, no new
+ * binary needed.
+ */
+export const AI_IMPORT_ENABLED = false;
+/**
  * SecureStore key for the single-use OAuth anti-injection material
  * ({ nonce, state }) generated per sign-in attempt. Persisted so a
  * cold-start deep-link completion (the OS killed the app behind Google's

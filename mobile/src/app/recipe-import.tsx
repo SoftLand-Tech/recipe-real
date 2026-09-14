@@ -20,6 +20,7 @@ import {
 } from "@/api/client";
 import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
 import { Button, Card, IconPressable, SectionHeader } from "@/components/ui";
+import { AI_IMPORT_ENABLED } from "@/config";
 import { useT } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 
@@ -38,6 +39,10 @@ export default function RecipeImportScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      // Hidden behind the AI_IMPORT_ENABLED kill-switch: bounce deep links
+      // back to profile. The screen file stays so an OTA update can
+      // restore the flow with no native changes.
+      if (!AI_IMPORT_ENABLED) router.replace("/profile");
       let cancelled = false;
       void hasToken().then((value) => {
         if (!cancelled) setAuthed(value);
@@ -178,6 +183,13 @@ export default function RecipeImportScreen() {
         <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
+  }
+
+  // Kill-switch guard: never render the flow while hidden (deep links land
+  // here even with the Stack.Screen unregistered — the redirect above
+  // bounces them out).
+  if (!AI_IMPORT_ENABLED) {
+    return <View style={styles.screen} />;
   }
 
   if (!authed) {

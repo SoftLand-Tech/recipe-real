@@ -8,7 +8,12 @@
     "scheme": "recipereal",
     "userInterfaceStyle": "automatic",
     "updates": {
-      "checkAutomatically": "WEEKLY"
+      "url": "https://u.expo.dev/5c0acc82-1f29-48b1-a1b4-64aeecb11836",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "fingerprint"
     },
     "ios": {
       "icon": "./assets/images/icon.png",

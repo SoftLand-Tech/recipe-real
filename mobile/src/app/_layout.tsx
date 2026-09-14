@@ -21,6 +21,7 @@ import * as SplashScreen from "expo-splash-screen";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import "@/global.css";
+import { AI_IMPORT_ENABLED } from "@/config";
 import { track } from "@/analytics";
 import { ActiveCookBanner } from "@/components/ActiveCookBanner";
 import { AnimatedSplash } from "@/components/AnimatedSplash";
@@ -247,10 +248,15 @@ function NavigationFrame() {
             name="recipe-composer"
             options={{ title: t("stack.newRecipe"), headerShown: false }}
           />
-          <Stack.Screen
-            name="recipe-import"
-            options={{ title: t("stack.aiImport"), headerShown: false }}
-          />
+          {/* AI recipe import — hidden behind AI_IMPORT_ENABLED while the
+              first self-updating build ships. The file stays so an OTA
+              update can restore the whole flow with no native changes. */}
+          {AI_IMPORT_ENABLED ? (
+            <Stack.Screen
+              name="recipe-import"
+              options={{ title: t("stack.aiImport"), headerShown: false }}
+            />
+          ) : null}
           <Stack.Screen
             name="cook/[id]"
             options={{ title: t("stack.cookMode"), headerShown: false }}
