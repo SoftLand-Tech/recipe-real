@@ -4,7 +4,8 @@ import Constants from "expo-constants";
  * Base URL of the RecipeReal backend (Laravel API).
  *
  * Priority:
- *   1. Expo extra `recipereal.apiBaseUrl` (app.json `expo.extra`)
+ *   1. Expo extra `recipereal.apiBaseUrl` (`app.config.js` `extra`,
+ *      env-aware: LAN fallback locally, production URL on EAS builds)
  *
  * FAILS CLOSED: with no configured base URL there is no safe default —
  * falling back to cleartext http://localhost:8000 would silently send
@@ -22,7 +23,7 @@ function resolveBaseUrl(): string {
   }
 
   throw new Error(
-    "reciperealApiBaseUrl is not configured in app.json expo.extra",
+    "reciperealApiBaseUrl is not configured in app.config.js expo.extra",
   );
 }
 

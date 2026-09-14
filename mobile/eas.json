@@ -11,17 +11,26 @@
     "preview": {
       "distribution": "internal",
       "channel": "preview",
-      "releaseChannel": "preview"
+      "releaseChannel": "preview",
+      "env": {
+        "RECIPEREAL_API_BASE_URL": "https://recipe-real.softland.tech"
+      }
     },
     "production": {
       "distribution": "store",
       "channel": "production",
-      "releaseChannel": "production"
+      "releaseChannel": "production",
+      "env": {
+        "RECIPEREAL_API_BASE_URL": "https://recipe-real.softland.tech"
+      }
     },
     "production-apk": {
       "distribution": "internal",
       "channel": "production",
       "releaseChannel": "production",
+      "env": {
+        "RECIPEREAL_API_BASE_URL": "https://recipe-real.softland.tech"
+      },
       "android": {
         "buildType": "apk"
       }

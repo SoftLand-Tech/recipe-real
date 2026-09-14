@@ -13,19 +13,18 @@ via a local SQLite cache.
    ```
 
 2. Point the app at the backend. The base URL defaults to
-   `http://localhost:8000`. To override it, set the Expo extra
-   `reciperealApiBaseUrl` in `app.json`:
+   `http://192.168.100.57:8000` (LAN dev backend). To override it for local
+   dev, export the env var before starting Expo:
 
-   ```jsonc
-   {
-     "expo": {
-       "extra": { "reciperealApiBaseUrl": "http://10.0.2.2:8000" }
-       // ^ on an Android emulator use 10.0.2.2 to reach the host's localhost
-     }
-   }
+   ```bash
+   RECIPEREAL_API_BASE_URL=http://10.0.2.2:8000 npx expo start
+   # ^ on an Android emulator use 10.0.2.2 to reach the host's localhost
    ```
 
-   The resolution lives in [`src/config.ts`](./src/config.ts) (`API_BASE_URL`).
+   EAS preview/production builds inject the production URL automatically
+   via the profile `env` in `eas.json` — never hand-edit config for a build.
+   The resolution lives in [`app.config.js`](./app.config.js) +
+   [`src/config.ts`](./src/config.ts) (`API_BASE_URL`).
 
 3. Start the app:
 
