@@ -12,6 +12,7 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\FontFamily;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
@@ -89,7 +90,7 @@ class AppInstallResource extends Resource
                 TextColumn::make('id')
                     ->sortable(),
                 TextColumn::make('install_id')
-                    ->monospace()
+                    ->fontFamily(FontFamily::Mono)
                     ->limit(8)
                     ->searchable(),
                 TextColumn::make('user.name')
