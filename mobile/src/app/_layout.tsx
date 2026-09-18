@@ -22,7 +22,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import "@/global.css";
 import { AI_IMPORT_ENABLED } from "@/config";
-import { track } from "@/analytics";
+import { reportAppLaunch } from "@/analytics";
 import { ActiveCookBanner } from "@/components/ActiveCookBanner";
 import { AnimatedSplash } from "@/components/AnimatedSplash";
 import { NotificationSetup } from "@/components/NotificationSetup";
@@ -105,8 +105,8 @@ export default function RootLayout() {
       // Cache failures are non-fatal: screens fall back to the network.
       console.warn("[RecipeReal] initDatabase failed:", error);
     });
-    // Fire-and-forget analytics. Runs once on app mount.
-    track("app_open");
+    // Fire-and-forget install heartbeat + analytics. Runs once on app mount.
+    reportAppLaunch();
   }, []);
 
   return (

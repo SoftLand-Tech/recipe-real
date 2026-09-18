@@ -1,0 +1,6 @@
+{
+  "component": "NavBar.tsx",
+  "link_component": "NavLink",
+  "styling": "tailwind",
+  "tokens": { "primary": "#0EA5E9" }
+}

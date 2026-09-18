@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "teamo": {
+      "command": "node",
+      "args": [
+        "/home/mamoun/.npm/_npx/c20e181677c5788a/node_modules/teamo-ai/dist/mcp.js"
+      ]
+    }
+  }
+}

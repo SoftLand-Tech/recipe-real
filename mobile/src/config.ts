@@ -39,6 +39,9 @@ export const WEB_BASE_URL = "https://recipe-real.softland.tech";
 /** SecureStore key for the persisted auth token. */
 export const AUTH_TOKEN_KEY = "recipereal.token";
 
+/** SecureStore key for the per-install anonymous ID (install counting). */
+export const INSTALL_ID_KEY = "recipereal.install_id";
+
 /**
  * Kill-switch for the AI recipe-import flow (upload a video → AI extract).
  * OFF while the first self-updating production APK ships: every entry

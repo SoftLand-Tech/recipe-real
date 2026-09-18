@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AnalyticsController;
+use App\Http\Controllers\Api\AppInstallController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BillingController;
 use App\Http\Controllers\Api\CookSessionController;
@@ -74,6 +75,12 @@ Route::middleware('throttle:240,1')->group(function (): void {
     // are allowed), with a tighter throttle to limit anonymous spam.
     Route::post('/events', [AnalyticsController::class, 'store'])
         ->middleware('throttle:120,1'); // analytics: app_open fires per dev-reload; 30/min tripped 429s
+
+    // Anonymous install heartbeat: one row per install_id, auth-optional
+    // (signed-in heartbeats link the install to the user). Same throttle
+    // shape as /events — fires once per cold start.
+    Route::post('/installs', [AppInstallController::class, 'store'])
+        ->middleware('throttle:120,1');
 });
 
 // Protected routes.

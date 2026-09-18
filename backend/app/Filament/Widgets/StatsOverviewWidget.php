@@ -4,6 +4,7 @@ namespace App\Filament\Widgets;
 
 use App\Models\CookSession;
 use App\Models\Post;
+use App\Models\AppInstall;
 use App\Models\PostComment;
 use App\Models\Recipe;
 use App\Models\RecipeNote;
@@ -47,8 +48,16 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
 
         [$honestyGap, $gapSamples] = $this->honestyGap();
         [$quickShare, $quickSessions, $sessionCount] = $this->quickTimeShare();
+        $installsTotal = AppInstall::count();
+        $installs7d = AppInstall::where('updated_at', '>=', now()->subDays(7))->count();
+        $installs30d = AppInstall::where('updated_at', '>=', now()->subDays(30))->count();
 
         return [
+            Stat::make('Installs', number_format($installsTotal))
+                ->icon(Heroicon::OutlinedDevicePhoneMobile)
+                ->description(number_format($installs7d).' active 7d · '.number_format($installs30d).' active 30d')
+                ->color(Color::Emerald)
+                ->chart($this->dailyCounts(AppInstall::query())),
             Stat::make('Users', number_format(User::count()))
                 ->icon(Heroicon::OutlinedUsers)
                 ->description($this->trendDescription('this week', $usersTrend).' · '.number_format(User::whereNotNull('google_sub')->count()).' on Google')
