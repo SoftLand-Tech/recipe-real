@@ -306,7 +306,10 @@ class TypesenseSearch
         $filters = [];
         $category = $this->sanitizedCategory($category);
         if ($category !== '') {
-            $filters[] = 'category:='.$category;
+            // Backtick-wrap the value: multi-word categories ("main dish")
+            // are only valid filter syntax when quoted, and the sanitizer
+            // has already stripped any backticks from the input.
+            $filters[] = 'category:=`'.$category.'`';
         }
         if ($timeMax !== null) {
             $filters[] = 'minutes:<='.$timeMax;

@@ -62,8 +62,15 @@ export default {
     },
     predictiveBackGestureEnabled: false,
     allowBackup: false,
-    permissions: ["FOREGROUND_SERVICE", "SCHEDULE_EXACT_ALARM"],
-    blockedPermissions: ["READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE"],
+    // FOREGROUND_SERVICE is deliberately NOT requested: no foreground
+    // service runs (Android 14 shortService cap made it useless), and
+    // blockedPermissions also strips the copy notifee merges from its AAR.
+    permissions: ["SCHEDULE_EXACT_ALARM"],
+    blockedPermissions: [
+      "READ_EXTERNAL_STORAGE",
+      "WRITE_EXTERNAL_STORAGE",
+      "FOREGROUND_SERVICE",
+    ],
   },
   web: {
     output: "static",

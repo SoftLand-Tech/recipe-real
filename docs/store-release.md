@@ -158,11 +158,11 @@ never deliver it).
    updates: {
      // ...existing url/checkAutomatically/fallbackToCacheTimeout stay...
      codeSigningCertificate: "./updates-codesign/certificates/certificate.pem",
-     codeSigningMetadata: { keyid: "main", alg: "burner" },
+     codeSigningMetadata: { keyid: "main", alg: "es256" },
    }
    ```
-   (`alg: "burner"` = ES256 with expiring certificates — the Expo default
-   for new key pairs.)
+   (`alg: "es256"` = ES256, the JWS algorithm Expo generates for new key
+   pairs.)
 3. **Store the private key in EAS secrets** — EAS Build and `eas update`
    read it from the build/publish environment, never from the repo:
    ```bash

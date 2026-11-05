@@ -102,6 +102,13 @@ return [
         'timeout' => (int) env('RECIPE_MEDIA_RESOLVER_TIMEOUT', 45),
     ],
 
+    'uploads' => [
+        // Extra hosts posts/avatars may point image URLs at (CSV env).
+        // app.url + AWS_URL hosts are always allowed at runtime; this only
+        // adds extras. Read via config() — env() is dead under config:cache.
+        'allowed_image_hosts' => array_filter(array_map('trim', explode(',', (string) env('UPLOAD_ALLOWED_IMAGE_HOSTS', '')))),
+    ],
+
     'ai' => [
         'default' => env('RECIPE_AI_PROVIDER', 'custom'),
 

@@ -145,6 +145,7 @@
                 <li><strong>{{ __('site.privacy_collect5_b') }}</strong> {{ __('site.privacy_collect5') }}</li>
                 <li><strong>{{ __('site.privacy_collect6_b') }}</strong> {{ __('site.privacy_collect6') }}</li>
                 <li><strong>{{ __('site.privacy_collect7_b') }}</strong> {{ __('site.privacy_collect7') }}</li>
+                <li><strong>{{ __('site.privacy_collect8_b') }}</strong> {{ __('site.privacy_collect8') }}</li>
             </ul>
 
             <h2>{{ __('site.privacy_never_t_a') }} <span class="accent">{{ __('site.privacy_never_t_b') }}</span> {{ __('site.privacy_never_t_c') }}</h2>
@@ -218,7 +219,7 @@
                     يمكنك حذف حسابك وجميع بياناتك في أي وقت من داخل التطبيق:
                     <strong>الإعدادات ← حذف الحساب</strong> — الحذف فوري ونهائي. تبقى عدّادات
                     الاستخدام المجهّلة، ووصفاتك العامة (تُحفظ دون اسمك)، والملفات المرفوعة
-                    (تُزال من التخزين النشط؛ وقد تحتفظ بها النسخ الاحتياطية مدة أطول).
+                    (قد تبقى في تخزيننا والنسخ الاحتياطية).
                 </p>
                 <p>
                     للتواصل أو لطلب الحذف أو لأي سؤال حول بياناتك:

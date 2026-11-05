@@ -106,10 +106,13 @@ class NotificationController extends Controller
             'read_at'    => $notification->read_at?->toIso8601String(),
             'created_at' => $notification->created_at?->toIso8601String(),
             'message'    => $notification->message,
+            // H4 parity: public surfaces carry display_name only (with the
+            // same neutral fallback as profiles) — never the account name.
             'actor'      => $actor !== null ? [
                 'id'           => $actor->id,
-                'display_name' => $actor->display_name ?? $actor->name,
-                'name'         => $actor->name,
+                'display_name' => trim((string) $actor->display_name) !== ''
+                    ? $actor->display_name
+                    : (app()->getLocale() === 'ar' ? 'طاهٍ' : 'A cook'),
                 'avatar_url'   => $actor->avatar_url,
             ] : null,
             'post'       => $notification->post !== null ? [

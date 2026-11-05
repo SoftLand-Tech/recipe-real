@@ -83,9 +83,9 @@ const NotificationRowView = memo(function NotificationRowView({
   const isLike = row.type === "like";
   const isModeration = row.type === "moderation";
   // Actor may be gone (deleted account) — fall back to a generic "Someone".
+  // Public payloads carry display_name only (never the account name).
   const name = row.actor != null
-    ? ((row.actor.display_name ?? row.actor.name ?? "").trim() ||
-        t("notif.someone"))
+    ? ((row.actor.display_name ?? "").trim() || t("notif.someone"))
     : t("notif.someone");
   const snippet = (row.post?.body ?? "").trim();
   // Moderation notices carry their own server-composed message and usually

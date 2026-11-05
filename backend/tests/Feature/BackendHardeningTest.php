@@ -243,7 +243,7 @@ class BackendHardeningTest extends TestCase
         $this->getJson('/api/recipes/search?q=soup&category=Main%20Dish')->assertOk();
         $query = [];
         parse_str(parse_url(Http::recorded()[0][0]->url(), PHP_URL_QUERY), $query);
-        $this->assertSame('category:=main dish', $query['filter_by']);
+        $this->assertSame('category:=`main dish`', $query['filter_by']);
 
         // 2. Injection attempt: backticks/colons stripped; the remainder is
         //    a harmless literal that can never match a stored facet.
@@ -251,7 +251,7 @@ class BackendHardeningTest extends TestCase
         $this->getJson('/api/recipes/search?q=soup&category='.urlencode($injected))->assertOk();
         $query = [];
         parse_str(parse_url(Http::recorded()[1][0]->url(), PHP_URL_QUERY), $query);
-        $this->assertSame('category:=maindishfilter', $query['filter_by']);
+        $this->assertSame('category:=`maindishfilter`', $query['filter_by']);
 
         // 3. Invalid category (non latin-letter facet shape) → the filter
         //    is dropped entirely instead of erroring the search.

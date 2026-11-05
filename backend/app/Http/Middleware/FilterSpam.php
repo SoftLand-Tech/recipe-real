@@ -35,7 +35,9 @@ class FilterSpam
     public function handle(Request $request, Closure $next): Response
     {
         $honeypotFilled = trim((string) $request->input('website', '')) !== '';
-        $loadedAt = (int) $request->input('form_loaded_at', 0);
+        $loadedAtRaw = $request->input('form_loaded_at');
+        // Strict scalar: an array input would (int)-cast to 1 and pass.
+        $loadedAt = is_numeric($loadedAtRaw) ? (int) $loadedAtRaw : -1;
         $age = $loadedAt > 0 ? time() - $loadedAt : -1;
 
         if ($honeypotFilled || $age < self::MIN_FORM_AGE_SECONDS) {

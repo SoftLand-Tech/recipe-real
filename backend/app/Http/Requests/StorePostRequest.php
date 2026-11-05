@@ -94,10 +94,8 @@ class StorePostRequest extends FormRequest
             }
         }
 
-        $configured = config('recipereal.uploads.allowed_image_hosts');
-        $extra = is_array($configured)
-            ? $configured
-            : array_filter(array_map('trim', explode(',', (string) env('UPLOAD_ALLOWED_IMAGE_HOSTS', ''))));
+        $extra = config('recipereal.uploads.allowed_image_hosts');
+        $extra = is_array($extra) ? $extra : [];
 
         foreach ($extra as $host) {
             $host = strtolower(trim((string) $host));

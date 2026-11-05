@@ -502,11 +502,11 @@ export interface MyProfile {
 /** Notification kinds: likes/comments on your posts, plus moderator notices. */
 export type NotificationType = "like" | "comment" | "moderation";
 
-/** Who triggered the notification; null once the actor deleted their account. */
+/** Who triggered the notification; null once the actor deleted their account.
+ *  Public payloads carry display_name only (never the account name). */
 export interface NotificationActor {
   id: number;
   display_name: string | null;
-  name: string | null;
   avatar_url: string | null;
 }
 

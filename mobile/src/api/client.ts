@@ -1604,7 +1604,6 @@ function normalizeNotification(n: any): NotificationRow {
         ? {
             id: Number(n.actor.id),
             display_name: n.actor.display_name ?? null,
-            name: n.actor.name ?? null,
             avatar_url: n.actor.avatar_url ?? null,
           }
         : null,

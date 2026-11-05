@@ -27,7 +27,7 @@ use App\Http\Controllers\Api\WebhookController;
 use Illuminate\Support\Facades\Route;
 
 // Public auth route: the credential-taking Google endpoint sits behind the
-// dedicated 'auth' limiter (5/min per email+IP, see AppServiceProvider::boot).
+// dedicated 'auth' limiter (5/min per request IP, see AppServiceProvider::boot).
 // Google is the only sign-in method; password auth no longer exists.
 Route::middleware('throttle:auth')->group(function (): void {
     Route::post('/auth/google', [AuthController::class, 'google']);

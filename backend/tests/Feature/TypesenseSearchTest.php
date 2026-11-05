@@ -227,7 +227,7 @@ class TypesenseSearchTest extends TestCase
         $this->assertSame('title,title_ar,ingredients,ingredients_ar,category', $query['query_by']);
         $this->assertSame('10,10,4,4,2', $query['query_by_weights']);
         $this->assertSame('has_image:desc,_text_match:desc,rating:desc', $query['sort_by']);
-        $this->assertSame('category:=main dish && minutes:<=30', $query['filter_by']);
+        $this->assertSame('category:=`main dish` && minutes:<=30', $query['filter_by']);
         $this->assertSame('2', $query['page']);
         $this->assertSame('5', $query['per_page']);
     }

@@ -174,6 +174,7 @@ class PublicUrlGuard
     /**
      * Explicit v4 deny-list (network/bits): 0.0.0.0/8, 10/8, 100.64/10,
      * 127/8, 169.254/16, 172.16/12, 192.0.0/24, 192.168/16, 198.18/15,
+     * 192.0.2/24, 198.51.100/24, 203.0.113/24 (documentation),
      * 224/4 (multicast) and 240/4 (reserved + broadcast).
      */
     private function v4IsPublic(string $ip): bool
@@ -188,8 +189,11 @@ class PublicUrlGuard
             [0xFFFF0000, 0xA9FE0000], // 169.254/16       link-local
             [0xFFF00000, 0xAC100000], // 172.16/12        private
             [0xFFFFFF00, 0xC0000000], // 192.0.0/24       IETF protocol
+            [0xFFFFFF00, 0xC0000200], // 192.0.2/24       documentation
             [0xFFFF0000, 0xC0A80000], // 192.168/16       private
+            [0xFFFFFF00, 0xC6336400], // 198.51.100/24    documentation
             [0xFFFE0000, 0xC6120000], // 198.18/15        benchmarking
+            [0xFFFFFF00, 0xCB007100], // 203.0.113/24     documentation
             [0xF0000000, 0xE0000000], // 224/4            multicast
             [0xF0000000, 0xF0000000], // 240/4            reserved
         ];
@@ -205,8 +209,9 @@ class PublicUrlGuard
 
     /**
      * Explicit v6 deny-list: :: (unspecified), ::1 (loopback), fc00::/7
-     * (unique local) and fe80::/10 (link local). IPv4-mapped forms were
-     * already unwrapped by ipIsPublic().
+     * (unique local), fe80::/10 (link local) and 2001:db8::/32
+     * (documentation). IPv4-mapped forms were already unwrapped by
+     * ipIsPublic().
      */
     private function v6IsPublic(string $ip): bool
     {
@@ -230,6 +235,11 @@ class PublicUrlGuard
 
         // fe80::/10 → first 10 bits are 1111111010.
         if ($b0 === 0xFE && ($b1 & 0xC0) === 0x80) {
+            return false;
+        }
+
+        // 2001:db8::/32 → documentation range.
+        if ($b0 === 0x20 && $b1 === 0x01 && ord($bytes[2]) === 0x0D && ord($bytes[3]) === 0xB8) {
             return false;
         }
 
