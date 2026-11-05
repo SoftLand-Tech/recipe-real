@@ -169,6 +169,10 @@
                 {{ __('site.privacy_rights_p2_a') }}
                 <a href="mailto:mamounprogrammer@gmail.com">mamounprogrammer@gmail.com</a>.
             </p>
+            <p>
+                {{ __('site.privacy_rights_web_a') }}
+                <a href="{{ route('pages.account-delete') }}">{{ __('site.privacy_rights_web_link') }}</a>{{ __('site.privacy_rights_web_b') }}
+            </p>
 
             @if (app()->getLocale() === 'en')
             <hr class="divider">

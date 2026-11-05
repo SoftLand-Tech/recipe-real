@@ -349,6 +349,9 @@ export const en: Record<string, string> = {
   "cook.savedQueued": "Saved — will sync when online.",
   "cook.pacePending": "Your pace calibration updates in the background — pull to refresh Pace.",
   "cook.saveFailed": "Could not save. Please try again later.",
+  "cook.savedSignedOut":
+    "Cook saved on this device. Sign in to sync it and calibrate your pace.",
+  "cook.signInToSave": "Sign in to save",
   "cook.adjustTime": "Adjust time",
   "cook.adjustHint": "Forgot to pause? Set the time it really took.",
   "cook.adjustUse": "Use this time",

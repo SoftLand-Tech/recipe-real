@@ -4,6 +4,7 @@ import * as SQLite from "expo-sqlite";
 import {
   fetchRecipePage,
   fetchSeedPage,
+  getAuthToken,
   getPaceCalibrations,
   http,
   isOfflineError,
@@ -973,6 +974,12 @@ export async function getPendingCookSessionCount(): Promise<number> {
  * `submitCookSession`, so a failure here doesn't re-enqueue and loop.
  */
 export async function flushPendingCookSessions(): Promise<number> {
+  // Never flush without an authenticated session: the 4xx branch below
+  // dead-letters 401 rows, which would silently delete a signed-out user's
+  // queued cooks. They stay until the next authenticated flush.
+  const token = await getAuthToken().catch(() => null);
+  if (!token) return 0;
+
   const db = await getDb();
   const rows = await db.getAllAsync<PendingCookSessionRow>(
     `SELECT * FROM pending_cook_sessions ORDER BY created_at ASC, id ASC;`,

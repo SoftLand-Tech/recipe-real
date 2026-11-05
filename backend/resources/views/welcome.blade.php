@@ -724,7 +724,7 @@ provenance.
                             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5C10.4 5 8.2 4.5 5.5 4.5c-.8 0-1.5.7-1.5 1.5v11c0 .8.7 1.5 1.5 1.5 2.7 0 4.9.5 6.5 2 1.6-1.5 3.8-2 6.5-2 .8 0 1.5-.7 1.5-1.5v-11c0-.8-.7-1.5-1.5-1.5-2.7 0-4.9.5-6.5 2Z"/><path d="M12 6.5v14"/></svg>
                         </span>
                         <h3><i>1.</i> Choose a Recipe</h3>
-                        <p>Pick from thousands of halal-friendly, tested recipes.</p>
+                        <p>Pick from thousands of tested recipes.</p>
                     </div>
                     <div class="step">
                         <span class="step-ico">
@@ -1002,7 +1002,7 @@ provenance.
               "applicationCategory": "FoodApplication",
               "operatingSystem": "Android 7.0+",
               "url": "https://recipe-real.softland.tech/",
-              "description": "Halal-first recipe app with accurate cooking-time estimates: claim vs reality on every recipe, guided Cook Mode with step alarms, an offline library, and estimates that calibrate to your pace.",
+              "description": "Recipe app with accurate cooking-time estimates: claim vs reality on every recipe, guided Cook Mode with step alarms, an offline library, and estimates that calibrate to your pace.",
               "softwareVersion": "{{ isset($latestRelease) ? $latestRelease->version : '1.0.0' }}",
               "offers": {
                 "@type": "Offer",

@@ -1,0 +1,149 @@
+# RecipeReal — third-party store release runbook
+
+RecipeReal is distributed as a sideloaded APK (no Google Play). Besides our
+own `GET /download` page, the app ships through third-party Android stores:
+**APKPure, Uptodown, Samsung Galaxy Store, Xiaomi GetApps, Huawei
+AppGallery, Amazon Appstore**. This runbook covers building, verifying,
+signing, publishing, and updating those binaries.
+
+Related: `docs/deploy.md` (backend), `docs/launch.md` (original EAS notes).
+
+## Two build profiles, one app
+
+| Profile | ABIs | Approx. size | Use for |
+|---|---|---|---|
+| `production-apk` | `arm64-v8a` only | ~30–35 MB | Our `GET /download` sideload flow — every real phone since ~2016 is arm64. |
+| `store-apk` | universal (`armeabi-v7a`, `arm64-v8a`, `x86`, `x86_64`) | much larger (~3× the native libs) | Store uploads: store review pipelines may run 32-bit or x86 images, and stores like Uptodown/GetApps also serve older `armeabi-v7a` devices. |
+
+```bash
+cd mobile
+eas build --profile production-apk --platform android   # arm64-v8a only, ~30–35 MB
+eas build --profile store-apk --platform android        # universal ABI, larger
+```
+
+> **Why `store-apk` is universal:** `mobile/plugins/arm64-only.js` strips
+> ABIs only when `EAS_BUILD_PROFILE` **starts with `production`**. The
+> profile name `store-apk` deliberately does not, so the plugin stays out
+> of the way. Do NOT rename this profile to anything starting with
+> `production` — store builds would silently shrink to arm64-only.
+
+## Verify the APK ABIs (always, before uploading)
+
+```bash
+unzip -l RecipeReal.apk | grep lib/
+```
+
+Expected output per profile:
+
+- `production-apk` → **only** `lib/arm64-v8a/` entries (one directory).
+- `store-apk` → all four: `lib/armeabi-v7a/`, `lib/arm64-v8a/`,
+  `lib/x86/`, `lib/x86_64/`.
+
+If a `store-apk` build shows a single `lib/arm64-v8a/`, the plugin scoping
+broke (profile renamed or plugin logic changed) — fix before uploading.
+
+## Versioning (`appVersionSource: "remote"`)
+
+`mobile/eas.json` sets `cli.appVersionSource: "remote"`, so **EAS owns
+`android.versionCode`**: every remote build auto-increments it, and we
+never write `android.versionCode` into `app.config.js`.
+
+- **Display version** (`version` in `mobile/app.config.js`) is bumped
+  manually once per store release — `1.0.0` → `1.1.0` for the first
+  store-prep release.
+- **`versionCode` only ever increases.** Never reuse or decrease it: a
+  repeated code makes an update on one channel silently fail to install
+  over another channel's build. Don't switch `appVersionSource` to local
+  or hand-pin codes to "reset" the counter.
+- Every `eas build` burns a new `versionCode` — avoid throwaway rebuilds.
+  Build **once per release per profile** and reuse that exact artifact
+  everywhere. A fixed build order per release (e.g. `store-apk` first,
+  then `production-apk`) keeps each channel's codes monotonically
+  increasing.
+- Record the build's `versionCode` (EAS build detail page or
+  `eas build:list`) with the release notes, and note which store got
+  which build.
+
+## Signing key custody
+
+- The Android keystore is **EAS-managed**. Inspect it with
+  `eas credentials -p android` — run this from the normal checkout; never
+  accept a prompt to *generate* a new keystore, that would orphan every
+  installed build.
+- **One signing key for every channel**: our `GET /download` APKs and all
+  six stores must be signed identically. Android only installs an update
+  when the package name (`com.recipereal.app`) **and** signing certificate
+  match; a different key forces users to uninstall first.
+- **Never lose the keystore.** Losing it permanently breaks in-place
+  updates for the installed base. Keep an offline backup (keystore file +
+  alias/passwords, e.g. password manager + cold storage) and test a
+  restore once.
+- **Some stores re-sign uploads** (Amazon Appstore historically does).
+  A re-signed build can only be updated by another build from that same
+  store, so moving a user between the store build and our sideload build
+  requires an uninstall/reinstall. OTA updates still work on re-signed
+  builds (expo-updates does not check the APK signature); the next
+  *binary* update on that channel must come from the same store.
+
+## Artifact checks & admin upload
+
+Run for every released APK, before it leaves the machine:
+
+```bash
+sha256sum RecipeReal.apk | tee RecipeReal-<version>.sha256   # archive next to the APK
+ls -lh RecipeReal.apk                                        # size sanity (see table above)
+curl -I https://recipe-real.softland.tech/download           # after upload: 200 + Content-Length
+```
+
+The binary intended for the sideload flow is uploaded on the admin
+panel's **App releases** page (Filament → App releases). It lands in the
+`app_releases` table; `GET /download` streams the newest release to the
+app and the landing-page badges, and each release's file is also served
+from `GET /admin/app-releases/{release}/download`.
+
+Keep the exact APK + its sha256 for **every** release — including store
+builds that never go through the admin panel. Stores occasionally ask
+"what exactly did you ship?" months later; the checksum is the proof.
+
+## OTA updates vs store binaries
+
+- `expo-updates` (`eas update`) ships **JS + assets only** — it can never
+  change native code, permissions, or the app icon. Both profiles publish
+  to the same `channel: "production"`, but OTA delivery is gated by the
+  **runtimeVersion fingerprint**, not the channel alone: verify that the
+  `production-apk` and `store-apk` builds report the same fingerprint
+  before assuming one update reaches both. If the ABI list is part of the
+  fingerprint and they differ, publish per runtime version (or use the same
+  ABI for both profiles).
+- `runtimeVersion.policy` is `"fingerprint"` in `app.config.js`: an OTA
+  bundle only downloads onto binaries whose native fingerprint matches.
+  **Any native change** (new native module, Expo SDK bump, permission,
+  native config) produces a new fingerprint — old binaries stop matching
+  and the change **requires a new APK** on every channel, stores included.
+  A re-signed store build still receives OTA updates: the fingerprint, not
+  the APK signature, decides compatibility.
+- Stores review the binary they were handed; OTA lets us hotfix JS without
+  re-uploading to six consoles. Still ship a store build for every
+  meaningful release so the listings stay current.
+
+## Pre-upload checklist
+
+- [ ] `python3 -m json.tool mobile/eas.json` passes (all profiles intact).
+- [ ] Display `version` in `mobile/app.config.js` bumped for this release.
+- [ ] Built from a clean `main` — no local experiments in the artifact.
+- [ ] `unzip -l RecipeReal.apk | grep lib/` shows the expected ABIs
+      (all four for `store-apk`, only arm64-v8a for `production-apk`).
+- [ ] `sha256sum` recorded; APK + checksum archived per release.
+- [ ] If it's the `/download` release: uploaded on admin **App releases**;
+      `curl -I https://recipe-real.softland.tech/download` shows it;
+      fresh-install and update-over-previous both tested on a real device.
+- [ ] After uploading: `cd backend && php artisan recipereal:store-check`
+      passes every required check (it also warns about the two things it
+      cannot verify: the Google OAuth consent-screen status and Android
+      Developer Verification).
+- [ ] The **same** APK file (one `versionCode`) uploaded to all stores;
+      versionCode + build URL noted per store.
+- [ ] Store listing ready: EN + AR title/description, screenshots,
+      privacy policy URL, package `com.recipereal.app`.
+- [ ] Post-publish smoke test: arm64 phone, and for `store-apk` also a
+      32-bit or x86 emulator.

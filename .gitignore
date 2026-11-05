@@ -41,3 +41,6 @@ remtion-refrence.mp4
 ad-builds/
 ad-preview/
 reference.mp4
+
+# store screenshot captures (local only; upload the PNGs, do not commit them)
+store/screenshots/captures/

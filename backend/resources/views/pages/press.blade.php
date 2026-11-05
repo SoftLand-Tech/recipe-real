@@ -48,10 +48,6 @@
             <td>{{ __('site.press_f_times_v') }}</td>
         </tr>
         <tr>
-            <th>{{ __('site.press_f_halal') }}</th>
-            <td>{{ __('site.press_f_halal_v') }}</td>
-        </tr>
-        <tr>
             <th>{{ __('site.press_f_lang') }}</th>
             <td>{{ __('site.press_f_lang_v') }}</td>
         </tr>

@@ -34,6 +34,17 @@
       "android": {
         "buildType": "apk"
       }
+    },
+    "store-apk": {
+      "distribution": "internal",
+      "channel": "production",
+      "releaseChannel": "production",
+      "env": {
+        "RECIPEREAL_API_BASE_URL": "https://recipe-real.softland.tech"
+      },
+      "android": {
+        "buildType": "apk"
+      }
     }
   },
   "submit": {

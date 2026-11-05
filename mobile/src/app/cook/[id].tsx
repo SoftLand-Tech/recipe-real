@@ -11,6 +11,7 @@ import {
   View,
   type ViewStyle,
 } from "react-native";
+import { isAxiosError } from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useKeepAwake } from "expo-keep-awake";
@@ -29,9 +30,10 @@ import {
 } from "@/utils/cookAlarms";
 import { stepMinutes } from "@/utils/recipeTime";
 
-import { getRecipe, submitCookSession } from "@/api/client";
+import { getRecipe, hasToken, submitCookSession } from "@/api/client";
 import { track } from "@/analytics";
 import {
+  enqueuePendingCookSession,
   flushPendingCookSessions,
   getCachedRecipe,
   getPendingCookSessionCount,
@@ -713,6 +715,10 @@ export default function CookModeScreen() {
   // Whether submitMsg is an ERROR message (drives the done-screen color; the
   // old `startsWith("Could not")` check doesn't survive translation).
   const [submitFailed, setSubmitFailed] = useState(false);
+  // Signed-out completion: the payload is queued locally and the done screen
+  // invites sign-in instead of reporting a save failure. Store reviewers can
+  // exercise the full Cook Mode loop without an account.
+  const [needsAuth, setNeedsAuth] = useState(false);
   // Manual time adjustment (feedback phase): null = the stopwatch stands.
   // When set, the submit scales every per-step timing proportionally so the
   // adjusted total stays consistent with the pace data (e.g. an unpaused
@@ -1339,6 +1345,7 @@ export default function CookModeScreen() {
       setPhase("submitting");
       setSubmitMsg(null);
       setSubmitFailed(false);
+      setNeedsAuth(false);
       setAdjustOpen(false);
       // Lazily mint one idempotency key per cook session; it is stable across
       // retries (offline queue stores the whole payload as JSON, key included).
@@ -1354,37 +1361,68 @@ export default function CookModeScreen() {
           actual_minutes: p.actual_minutes,
         })),
       };
-      let outcome: "saved" | "queued" | "error" = "saved";
-      try {
-        // Resolves on success OR when the payload was enqueued for offline
-        // sync. To distinguish, check the pending count after the call: if it
-        // grew, the payload was queued (offline path).
-        const beforeCount = await getPendingCookSessionCount().catch(
-          () => 0,
-        );
-        await submitCookSession(payload);
-        const afterCount = await getPendingCookSessionCount().catch(
-          () => beforeCount,
-        );
-        outcome = afterCount > beforeCount ? "queued" : "saved";
-      } catch (error) {
-        // Real server error — surface but still let the user finish.
-        console.warn("[RecipeReal] submitCookSession failed:", error);
-        outcome = "error";
+      let outcome: "saved" | "queued" | "needs_auth" | "error" = "saved";
+      // Signed-out cooks (including store reviewers) are fully usable: the
+      // payload is persisted to the same offline queue the network-failure
+      // path uses, and the done screen asks the cook to sign in to sync it.
+      // The queue is flushed once a token exists, so nothing is lost.
+      if (!(await hasToken())) {
+        try {
+          await enqueuePendingCookSession(payload);
+          outcome = "needs_auth";
+        } catch (error) {
+          console.warn("[RecipeReal] enqueue signed-out cook failed:", error);
+          outcome = "error";
+        }
+      } else {
+        try {
+          // Resolves on success OR when the payload was enqueued for offline
+          // sync. To distinguish, check the pending count after the call: if
+          // it grew, the payload was queued (offline path).
+          const beforeCount = await getPendingCookSessionCount().catch(
+            () => 0,
+          );
+          await submitCookSession(payload);
+          const afterCount = await getPendingCookSessionCount().catch(
+            () => beforeCount,
+          );
+          outcome = afterCount > beforeCount ? "queued" : "saved";
+        } catch (error) {
+          console.warn("[RecipeReal] submitCookSession failed:", error);
+          if (isAxiosError(error) && error.response?.status === 401) {
+            // The token expired mid-cook. Keep the payload locally and ask
+            // for sign-in rather than showing a generic save failure.
+            try {
+              await enqueuePendingCookSession(payload);
+              outcome = "needs_auth";
+            } catch (enqueueError) {
+              console.warn(
+                "[RecipeReal] enqueue after 401 failed:",
+                enqueueError,
+              );
+              outcome = "error";
+            }
+          } else {
+            outcome = "error";
+          }
+        }
+        // Best-effort background flush of any queued sessions (auth exists).
+        try {
+          await flushPendingCookSessions();
+        } catch (error) {
+          // Non-fatal.
+          console.warn("[RecipeReal] flushPendingCookSessions failed:", error);
+        }
       }
-      // Best-effort background flush of any queued sessions.
-      try {
-        await flushPendingCookSessions();
-      } catch (error) {
-        // Non-fatal.
-        console.warn("[RecipeReal] flushPendingCookSessions failed:", error);
-      }
+      setNeedsAuth(outcome === "needs_auth");
       setSubmitMsg(
         outcome === "error"
           ? t("cook.saveFailed")
-          : outcome === "queued"
-            ? t("cook.savedQueued")
-            : t("cook.saved"),
+          : outcome === "needs_auth"
+            ? t("cook.savedSignedOut")
+            : outcome === "queued"
+              ? t("cook.savedQueued")
+              : t("cook.saved"),
       );
       setSubmitFailed(outcome === "error");
       setPhase("done");
@@ -1752,7 +1790,9 @@ export default function CookModeScreen() {
                     styles.savedMsg,
                     submitFailed
                       ? { color: colors.danger }
-                      : { color: colors.success },
+                      : needsAuth
+                        ? { color: colors.inkSecondary }
+                        : { color: colors.success },
                   ]}
                 >
                   {submitMsg}
@@ -1761,17 +1801,34 @@ export default function CookModeScreen() {
               {/* Pace calibrations recompute in a background job (and after
                   an offline flush), so they can lag the save by seconds to
                   minutes — say so, or the Pace tab looks broken. */}
-              {!submitFailed && submitMsg ? (
+              {!submitFailed && !needsAuth && submitMsg ? (
                 <Text style={[styles.savedMsg, { color: colors.inkSecondary }]}>
                   {t("cook.pacePending")}
                 </Text>
               ) : null}
-              <Button
-                title={t("cook.done")}
-                onPress={finish}
-                fullWidth
-                size="lg"
-              />
+              {needsAuth ? (
+                <>
+                  <Button
+                    title={t("cook.signInToSave")}
+                    onPress={() => router.push("/login")}
+                    fullWidth
+                    size="lg"
+                  />
+                  <Button
+                    title={t("cook.done")}
+                    variant="ghost"
+                    onPress={finish}
+                    fullWidth
+                  />
+                </>
+              ) : (
+                <Button
+                  title={t("cook.done")}
+                  onPress={finish}
+                  fullWidth
+                  size="lg"
+                />
+              )}
             </View>
           )}
 

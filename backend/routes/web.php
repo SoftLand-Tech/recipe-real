@@ -163,8 +163,43 @@ Route::post('/contact', function (Request $request) {
 
     ContactMessage::create($data);
 
-    return redirect()->route('pages.contact', ['sent' => 1]).'#form';
+    return redirect()->to(route('pages.contact', ['sent' => 1]).'#form');
 })->middleware('throttle:6,1')->name('pages.contact.submit');
+
+/*
+ | ---- Account deletion page + request form (store compliance) --------------
+ | Third-party Android stores (APKPure, Uptodown, Samsung Galaxy Store,
+ | Xiaomi GetApps, Huawei AppGallery, Amazon Appstore) all require a public
+ | web URL where a user can request account deletion. The in-app path stays
+ | the fast one (Settings/Profile -> Delete account -> DELETE /api/account,
+ | immediate); this page serves users who cannot open the app. The form
+ | NEVER deletes anything — the web has no auth and no account access — it
+ | queues a ContactMessage prefixed with a clear marker so the operator can
+ | verify identity manually before deleting from the admin panel. Response
+ | target: within 30 days.
+ */
+Route::view('/account/delete', 'pages.account-delete')->name('pages.account-delete');
+
+Route::post('/account/delete-request', function (Request $request) {
+    $data = $request->validate([
+        'name' => ['nullable', 'string', 'max:100'],
+        'email' => ['required', 'email:rfc', 'max:200'],
+        'message' => ['nullable', 'string', 'max:2000'],
+    ]);
+
+    ContactMessage::create([
+        'name' => $data['name'] ?? null,
+        'email' => $data['email'],
+        // Marker prefix keeps deletion requests separable from ordinary
+        // contact mail in the admin (Filament) queue.
+        'message' => '[ACCOUNT DELETION REQUEST] '.($data['message'] ?? ''),
+    ]);
+
+    // A REAL 302 (withFragment keeps the #form anchor in the Location
+    // header). String-concatenating a RedirectResponse instead returns its
+    // serialized body as a 200 and loses the status/fragment.
+    return redirect()->route('pages.account-delete', ['sent' => 1])->withFragment('form');
+})->middleware('throttle:6,1')->name('pages.account-delete.submit');
 
 /*
  | Public web recipe page (GET /r/{recipe}): the share target behind the

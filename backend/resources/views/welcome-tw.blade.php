@@ -527,6 +527,7 @@ provenance.
                         <a class="block no-underline text-[14px] text-dark-muted py-[4.5px] px-0 hover:text-white focus-visible:outline-[2.5px] focus-visible:outline-orange focus-visible:outline-offset-[3px] focus-visible:rounded-[4px]" href="{{ route('pages.contact') }}">{{ __('site.foot_contact') }}</a>
                         <a class="block no-underline text-[14px] text-dark-muted py-[4.5px] px-0 hover:text-white focus-visible:outline-[2.5px] focus-visible:outline-orange focus-visible:outline-offset-[3px] focus-visible:rounded-[4px]" href="{{ url('/privacy') }}">{{ __('site.foot_privacy') }}</a>
                         <a class="block no-underline text-[14px] text-dark-muted py-[4.5px] px-0 hover:text-white focus-visible:outline-[2.5px] focus-visible:outline-orange focus-visible:outline-offset-[3px] focus-visible:rounded-[4px]" href="{{ route('pages.terms') }}">{{ __('site.foot_terms') }}</a>
+                        <a class="block no-underline text-[14px] text-dark-muted py-[4.5px] px-0 hover:text-white focus-visible:outline-[2.5px] focus-visible:outline-orange focus-visible:outline-offset-[3px] focus-visible:rounded-[4px]" href="{{ route('pages.account-delete') }}">{{ __('site.foot_delete_account') }}</a>
                     </nav>
                     <nav aria-label="{{ __('site.foot_company') }}">
                         <h4 class="mt-1 mr-0 mb-4 ml-0 text-[13px] font-extrabold tracking-[.1em] uppercase text-white">{{ __('site.foot_company') }}</h4>

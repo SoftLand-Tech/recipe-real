@@ -30,6 +30,7 @@
                 <a href="{{ route('pages.contact') }}">{{ __('site.foot_contact') }}</a>
                 <a href="{{ url('/privacy') }}">{{ __('site.foot_privacy') }}</a>
                 <a href="{{ route('pages.terms') }}">{{ __('site.foot_terms') }}</a>
+                <a href="{{ route('pages.account-delete') }}">{{ __('site.foot_delete_account') }}</a>
             </nav>
             <nav class="foot-col" aria-label="{{ __('site.foot_company') }}">
                 <h4>{{ __('site.foot_company') }}</h4>

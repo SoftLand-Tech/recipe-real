@@ -348,6 +348,9 @@ export const ar: Record<string, string> = {
   "cook.savedQueued": "تم الحفظ — ستتم المزامنة عند الاتصال.",
   "cook.pacePending": "يتم تحديث معايرة سرعتك في الخلفية — اسحب للتحديث في صفحة السرعة.",
   "cook.saveFailed": "تعذّر الحفظ. حاول مجددًا لاحقًا.",
+  "cook.savedSignedOut":
+    "تم حفظ الطهي على هذا الجهاز. سجّل الدخول لمزامنته ومعايرة وتيرتك.",
+  "cook.signInToSave": "سجّل الدخول للحفظ",
   "cook.adjustTime": "ضبط الوقت",
   "cook.adjustHint": "نسيت الإيقاف المؤقت؟ حدّد الوقت الذي استغرقته فعلًا.",
   "cook.adjustUse": "اعتماد هذا الوقت",
