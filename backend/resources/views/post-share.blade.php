@@ -4,8 +4,13 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
 @php
-    // PUBLIC data only — no auth, no counts, no comments.
-    $author = trim((string) ($post->user->display_name ?? $post->user->name ?? ''));
+    // PUBLIC data only — no auth, no counts, no comments. The author's
+    // internal account name (users.name) never renders here (privacy H4):
+    // display_name only, with a neutral bilingual fallback.
+    $author = trim((string) ($post->user->display_name ?? ''));
+    if ($author === '') {
+        $author = app()->getLocale() === 'ar' ? 'طاهٍ' : 'A cook';
+    }
     $avatar = $post->user->avatar_url;
 
     $ogTitle = ($author !== '' ? $author . ' ' : '') . __('site.share_shared_post');

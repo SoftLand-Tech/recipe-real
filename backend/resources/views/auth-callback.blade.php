@@ -40,7 +40,9 @@
       (window.location.search ? window.location.search.substring(1) : '') +
       (window.location.hash ? '&' + window.location.hash.substring(1) : '')
     );
-    var ALLOWED = ['state', 'id_token', 'error', 'error_description'];
+    // 'code' = authorization-code + PKCE flow (app 1.1.0+, arrives in the
+    // QUERY); the rest are the implicit id_token flow's params.
+    var ALLOWED = ['state', 'code', 'id_token', 'error', 'error_description'];
     var forwarded = new URLSearchParams();
     for (var i = 0; i < ALLOWED.length; i++) {
       var v = incoming.get(ALLOWED[i]);

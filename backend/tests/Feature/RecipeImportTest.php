@@ -20,6 +20,8 @@ class RecipeImportTest extends TestCase
     {
         Queue::fake();
         $user = User::factory()->create();
+        // Recipe imports are admin-gated (RecipeImportController::importerAllowed).
+        config(['admin.emails' => $user->email]);
 
         $response = $this->actingAs($user, 'sanctum')
             ->postJson('/api/recipe-imports', [
@@ -45,6 +47,8 @@ class RecipeImportTest extends TestCase
         Queue::fake();
         Storage::fake('local');
         $user = User::factory()->create();
+        // Recipe imports are admin-gated (RecipeImportController::importerAllowed).
+        config(['admin.emails' => $user->email]);
 
         $response = $this->actingAs($user, 'sanctum')
             ->post('/api/recipe-imports', [
@@ -226,6 +230,10 @@ class RecipeImportTest extends TestCase
 
     public function test_import_job_can_use_the_local_agy_worker_with_staged_assets(): void
     {
+        // Provider selection is server-side only now: the job ignores the
+        // import row's provider unless allow_client_provider is enabled, so
+        // the agy worker must be selected through the default config here.
+        config()->set('recipereal.ai.default', 'agy');
         config()->set('recipereal.ai.providers.agy', [
             'driver' => 'agy',
             'command' => [PHP_BINARY, base_path('tests/Fixtures/fake-agy.php')],
@@ -306,6 +314,8 @@ class RecipeImportTest extends TestCase
     {
         Queue::fake();
         $user = User::factory()->create();
+        // Publish is admin-gated (RecipeImportController::importerAllowed).
+        config(['admin.emails' => $user->email]);
         $import = RecipeImport::create([
             'requested_by' => $user->id,
             'status' => 'ready',

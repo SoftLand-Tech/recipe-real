@@ -17,12 +17,19 @@ return Application::configure(basePath: dirname(__DIR__))
         // alias is attached to the auth:sanctum groups in routes/api.php).
         $middleware->alias([
             'not_banned' => \App\Http\Middleware\EnsureNotBanned::class,
+            // Honeypot spam filter for the public web forms. Attached to
+            // the /contact + /account/delete-request POST routes with:
+            //   ->middleware('spam')
+            'spam' => \App\Http\Middleware\FilterSpam::class,
         ]);
         // Public-web locale negotiation (landing + content + share pages):
         // explicit ?lang= → saved choice → device Accept-Language. The
         // middleware itself pins /admin/* back to English.
+        // SecurityHeaders (M16): nosniff / referrer / frame / HSTS + CSP
+        // on non-admin HTML GETs.
         $middleware->web(append: [
             \App\Http\Middleware\SetLocale::class,
+            \App\Http\Middleware\SecurityHeaders::class,
         ]);
         // Admin-panel (web) guests are sent to the panel login; API guests
         // get null (no redirect target) so the render handler below can

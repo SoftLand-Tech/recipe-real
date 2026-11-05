@@ -25,6 +25,10 @@ import { AI_IMPORT_ENABLED } from "@/config";
 import { reportAppLaunch } from "@/analytics";
 import { ActiveCookBanner } from "@/components/ActiveCookBanner";
 import { AnimatedSplash } from "@/components/AnimatedSplash";
+import {
+  FirstRunConsent,
+  hasAnalyticsConsent,
+} from "@/components/FirstRunConsent";
 import { NotificationSetup } from "@/components/NotificationSetup";
 import { Button } from "@/components/ui";
 import { initDatabase } from "@/db/database";
@@ -44,6 +48,23 @@ import {
 void SplashScreen.preventAutoHideAsync().catch(() => {
   // Already prevented or unavailable (dev web) — fine.
 });
+
+// Release-only global error breadcrumb: keep a line in the device log for
+// every fatal crash so it is at least diagnosable from logcat. Skipped in
+// dev — the redbox already surfaces everything, and replacing the default
+// handler would hide it. __DEV__ / ErrorUtils are untyped RN globals on
+// globalThis, hence the narrow casts.
+if (!(globalThis as { __DEV__?: boolean }).__DEV__) {
+  (globalThis as {
+    ErrorUtils?: {
+      setGlobalHandler?: (
+        handler: (error: unknown, isFatal: boolean) => void,
+      ) => void;
+    };
+  }).ErrorUtils?.setGlobalHandler?.((_error, isFatal) => {
+    console.warn("[RecipeReal] global error, fatal:", isFatal);
+  });
+}
 
 /**
  * ROOT ERROR BOUNDARY (expo-router convention): without this, an uncaught
@@ -105,8 +126,13 @@ export default function RootLayout() {
       // Cache failures are non-fatal: screens fall back to the network.
       console.warn("[RecipeReal] initDatabase failed:", error);
     });
-    // Fire-and-forget install heartbeat + analytics. Runs once on app mount.
-    reportAppLaunch();
+    // Fire-and-forget install heartbeat + analytics — but ONLY when the user
+    // opted in on first run. FirstRunConsent (mounted below) calls back into
+    // reportAppLaunch() right after Accept, so the very first session is
+    // still counted.
+    void hasAnalyticsConsent().then((accepted) => {
+      if (accepted) reportAppLaunch();
+    });
   }, []);
 
   return (
@@ -119,6 +145,11 @@ export default function RootLayout() {
         unmounts itself once per cold start.
       */}
       <AnimatedSplash />
+      {/*
+        First-run analytics consent (AsyncStorage 'consent.v1'). Renders
+        nothing once an answer is stored; Accept re-runs the launch report.
+      */}
+      <FirstRunConsent onAccepted={() => void reportAppLaunch()} />
     </ThemePrefProvider>
   );
 }

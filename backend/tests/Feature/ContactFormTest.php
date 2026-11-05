@@ -17,10 +17,14 @@ class ContactFormTest extends TestCase
 
     public function test_contact_form_stores_the_message_and_redirects_with_anchor(): void
     {
+        // Honeypot fields required by the spam middleware: empty website trap
+        // + a form_loaded_at timestamp older than the 2-second trap.
         $response = $this->post('/contact', [
             'name' => 'Amina',
             'email' => 'amina@example.com',
             'message' => 'The biryani time was spot on, thank you.',
+            'website' => '',
+            'form_loaded_at' => (string) (now()->timestamp - 10),
         ]);
 
         $response->assertRedirect();
@@ -40,6 +44,8 @@ class ContactFormTest extends TestCase
         $this->post('/contact', [
             'email' => 'not-an-email',
             'message' => 'This should not be stored.',
+            'website' => '',
+            'form_loaded_at' => (string) (now()->timestamp - 10),
         ])->assertSessionHasErrors('email');
 
         $this->assertDatabaseCount('contact_messages', 0);

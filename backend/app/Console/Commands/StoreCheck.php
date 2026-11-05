@@ -120,6 +120,32 @@ class StoreCheck extends Command
                 : 'empty - Google sign-in cannot work for store users',
         );
 
+        // Transitional on purpose: id_tokens minted for the legacy project
+        // (baked into distributed 1.0.2 APKs) are accepted until that fleet
+        // retires, so this row is a permanent WARN until then — it must never
+        // fail the preflight.
+        $legacyClientId = trim((string) config('services.google.legacy_client_id'));
+        $checks[] = $this->check(
+            'google_legacy_client_id',
+            'GOOGLE_LEGACY_CLIENT_ID (transitional)',
+            self::WARN,
+            $legacyClientId !== ''
+                ? 'set - 1.0.2 APK installs keep signing in; remove once the 1.0.2 fleet retires'
+                : 'unset - distributed 1.0.2 APKs cannot sign in until they update to the primary client',
+        );
+
+        // The 1.1.0+ app signs in through /api/auth/google/code (PKCE code
+        // exchange), which needs the client secret server-side.
+        $clientSecret = trim((string) config('services.google.client_secret'));
+        $checks[] = $this->check(
+            'google_client_secret',
+            'GOOGLE_CLIENT_SECRET configured',
+            $clientSecret !== '' ? self::PASS : self::FAIL,
+            $clientSecret !== ''
+                ? 'set - /api/auth/google/code PKCE exchange can run'
+                : 'empty - new installs on 1.1.0+ cannot sign in (PKCE code exchange endpoint)',
+        );
+
         $package = (string) config('recipereal.android_package');
         $checks[] = $this->check(
             'android_package',
@@ -127,6 +153,36 @@ class StoreCheck extends Command
             $package === 'com.recipereal.app' ? self::PASS : self::WARN,
             $package !== '' ? $package : '(empty)',
         );
+
+        // Android App Links: /r and /p only verify when assetlinks.json
+        // lists a fingerprint of the keystore that actually signed the APK.
+        $fingerprints = array_values(array_filter(
+            array_map('trim', explode(',', (string) config('recipereal.app_links_sha256'))),
+            fn (string $entry): bool => $entry !== '',
+        ));
+
+        if ($fingerprints === []) {
+            $checks[] = $this->check(
+                'app_links_sha256',
+                'APP_LINKS_SHA256 configured',
+                self::FAIL,
+                'empty - /r and /p app-link verification fails; see docs/google-auth.md and eas credentials',
+            );
+        } else {
+            $invalid = array_values(array_filter(
+                $fingerprints,
+                fn (string $entry): bool => ! $this->fingerprintLooksValid($entry),
+            ));
+            $checks[] = $this->check(
+                'app_links_sha256',
+                'APP_LINKS_SHA256 fingerprints valid',
+                $invalid === [] ? self::PASS : self::FAIL,
+                $invalid === []
+                    ? count($fingerprints).' fingerprint(s) parsed (32-byte hex, colon separators optional)'
+                    : 'invalid: '.implode(' | ', array_slice($invalid, 0, 3))
+                        .' - expect 32-byte SHA-256 hex (colon-separated AA:BB:… ok); docs/google-auth.md + eas credentials',
+            );
+        }
 
         $adminEmails = trim((string) config('admin.emails'));
         $checks[] = $this->check(
@@ -196,6 +252,19 @@ class StoreCheck extends Command
         }
 
         return false;
+    }
+
+    /**
+     * One APP_LINKS_SHA256 entry: plain or colon-separated hex of a 32-byte
+     * SHA-256 fingerprint (what assetlinks.json needs). 20-byte SHA-1 hex in
+     * the same shapes is also accepted, since `eas credentials` prints both.
+     */
+    private function fingerprintLooksValid(string $entry): bool
+    {
+        $hex = (string) preg_replace('/[\s:\-]/', '', $entry);
+
+        return preg_match('/^[A-Fa-f0-9]{64}$/', $hex) === 1
+            || preg_match('/^[A-Fa-f0-9]{40}$/', $hex) === 1;
     }
 
     /**

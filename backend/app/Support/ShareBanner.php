@@ -60,7 +60,7 @@ class ShareBanner
 
         return str_replace(
             ['__STORE_URL__', '__BANNER_TAG__', '__BANNER_GO__'],
-            [$storeUrl, e($tag), e($go)],
+            [e($storeUrl), e($tag), e($go)],
             <<<'HTML'
         <style>
             #rr-store-banner{position:fixed;bottom:0;left:0;right:0;z-index:50;display:flex;

@@ -918,7 +918,7 @@ function normalizeNote(n: any): RecipeNote {
     user: {
       id: Number(n?.user?.id),
       display_name: n?.user?.display_name ?? null,
-      name: n?.user?.name ?? null,
+      name: n?.user?.display_name ?? n?.user?.name ?? null,
       avatar_url: n?.user?.avatar_url ?? null,
     },
   };
@@ -974,6 +974,42 @@ export async function postRecipeNote(
 }
 
 /**
+ * Delete your own community note (DELETE /api/recipes/{recipeId}/notes/
+ * {noteId}, authed, owner-only) → 204.
+ */
+export async function deleteRecipeNote(
+  recipeId: number,
+  noteId: number,
+): Promise<void> {
+  try {
+    await api.delete(`/api/recipes/${recipeId}/notes/${noteId}`);
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new RecipeNoteUnauthorizedError();
+    }
+    throw error;
+  }
+}
+
+/**
+ * Report a community note (POST /api/recipes/{recipeId}/notes/{noteId}/
+ * report, authed, idempotent). 401 → RecipeNoteUnauthorizedError.
+ */
+export async function reportRecipeNote(
+  recipeId: number,
+  noteId: number,
+): Promise<void> {
+  try {
+    await api.post(`/api/recipes/${recipeId}/notes/${noteId}/report`);
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new RecipeNoteUnauthorizedError();
+    }
+    throw error;
+  }
+}
+
+/**
  * The signed-in user's public profile (GET /api/users/me/profile).
  * The endpoint returns { user: {...}, counts: {...} } — the profile fields
  * live under `user` (reading them flat silently nulled avatar_url, which
@@ -1023,7 +1059,7 @@ export async function fetchPublicProfile(userId: number): Promise<MyProfile> {
     user: {
       id: Number(body?.user?.id),
       display_name: body?.user?.display_name ?? null,
-      name: body?.user?.name ?? null,
+      name: body?.user?.display_name ?? body?.user?.name ?? null,
       avatar_url: body?.user?.avatar_url ?? null,
       bio: body?.user?.bio ?? null,
       created_at: typeof body?.user?.created_at === "string" ? body.user.created_at : "",
@@ -1515,7 +1551,7 @@ export async function fetchMyProfileFull(): Promise<MyProfile> {
     user: {
       id: Number(body?.user?.id),
       display_name: body?.user?.display_name ?? null,
-      name: body?.user?.name ?? null,
+      name: body?.user?.display_name ?? body?.user?.name ?? null,
       avatar_url: body?.user?.avatar_url ?? null,
       bio: body?.user?.bio ?? null,
       gender:

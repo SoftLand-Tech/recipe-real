@@ -21,6 +21,13 @@ class StoreCheckCommandTest extends TestCase
         config([
             'app.url' => 'https://recipe-real.softland.tech',
             'services.google.client_id' => 'test-client.apps.googleusercontent.com',
+            // Transitional legacy client (1.0.2 APKs) — accepted but must WARN.
+            'services.google.legacy_client_id' => 'legacy-client.apps.googleusercontent.com',
+            // PKCE code exchange (/api/auth/google/code) requires the secret.
+            'services.google.client_secret' => 'test-secret',
+            // One colon-separated SHA-256 + one plain 20-byte SHA-1 entry:
+            // both shapes the fingerprint validator must accept.
+            'recipereal.app_links_sha256' => '9C:4F:08:1D:2B:7E:60:4A:33:C5:8F:D9:12:7A:4E:6B:05:C8:31:FD:2E:90:B7:44:16:D3:AB:58:70:E1:C9:F6,1234567890abcdef1234567890abcdef12345678',
             'admin.emails' => 'owner@example.com',
         ]);
     }
@@ -68,6 +75,18 @@ class StoreCheckCommandTest extends TestCase
     public function test_store_check_fails_without_an_apk_release(): void
     {
         $this->configureStoreEnv();
+        $this->ensureAccountDeletionRoute();
+
+        $this->artisan('recipereal:store-check')
+            ->expectsOutputToContain('required check(s) failed')
+            ->assertExitCode(1);
+    }
+
+    public function test_store_check_fails_when_app_links_sha256_is_empty(): void
+    {
+        $this->configureStoreEnv();
+        config(['recipereal.app_links_sha256' => '']);
+        $this->fakeRelease();
         $this->ensureAccountDeletionRoute();
 
         $this->artisan('recipereal:store-check')

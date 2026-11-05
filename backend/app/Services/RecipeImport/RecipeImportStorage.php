@@ -193,10 +193,42 @@ class RecipeImportStorage
         }
 
         try {
-            app(PublicUrlGuard::class)->assertPublic($url);
-            $response = Http::timeout(20)->connectTimeout(8)->withoutRedirecting()->get($url);
-            $mime = strtolower((string) $response->header('Content-Type'));
+            $guard = app(PublicUrlGuard::class);
             $maxBytes = (int) config('recipereal.imports.max_image_mb', 8) * 1024 * 1024;
+
+            // Manual redirect walk (≤3 hops). Auto-follow would re-request
+            // the redirected host WITHOUT re-running the SSRF guard, so a
+            // public first hop could bounce the fetch at an internal
+            // address; each Location gets a fresh assertPublic() below.
+            $response = null;
+            $current = $url;
+
+            for ($hop = 0; $hop <= 3; $hop++) {
+                $guard->assertPublic($current);
+                $response = Http::timeout(20)->connectTimeout(8)->withoutRedirecting()->get($current);
+
+                if (! $response->isRedirect()) {
+                    break;
+                }
+
+                $location = trim((string) $response->header('Location'));
+
+                if ($location === '' || $hop === 3) {
+                    return null; // redirect loop / too many hops / no target
+                }
+
+                $current = $this->absoluteRedirectUrl($current, $location);
+
+                if ($current === null) {
+                    return null;
+                }
+            }
+
+            if ($response === null) {
+                return null;
+            }
+
+            $mime = strtolower((string) $response->header('Content-Type'));
             $contentLength = (int) $response->header('Content-Length', 0);
 
             if (
@@ -243,6 +275,46 @@ class RecipeImportStorage
                 Storage::disk($asset['disk'] ?? $this->diskName())->delete($asset['path']);
             }
         }
+    }
+
+    /**
+     * Resolve a redirect Location against the URL that produced it, so the
+     * SSRF guard vets the FINAL absolute URL on every hop (absolute,
+     * scheme-relative "//host/x" and path-relative targets all resolve;
+     * anything that cannot resolve cleanly aborts the fetch).
+     */
+    private function absoluteRedirectUrl(string $base, string $location): ?string
+    {
+        $locationParts = parse_url($location);
+
+        if (! empty($locationParts['scheme']) && ! empty($locationParts['host'])) {
+            return $location;
+        }
+
+        $baseParts = parse_url($base);
+
+        if (empty($baseParts['scheme']) || empty($baseParts['host'])) {
+            return null;
+        }
+
+        $prefix = strtolower((string) $baseParts['scheme']).'://'.strtolower((string) $baseParts['host'])
+            .(isset($baseParts['port']) ? ':'.$baseParts['port'] : '');
+
+        // Scheme-relative ("//cdn.example.com/img.png").
+        if (str_starts_with($location, '//')) {
+            return strtolower((string) $baseParts['scheme']).':'.$location;
+        }
+
+        // Absolute path ("/img.png").
+        if (str_starts_with($location, '/')) {
+            return $prefix.$location;
+        }
+
+        // Path-relative ("img.png") — resolve against the base directory.
+        $basePath = (string) ($baseParts['path'] ?? '/');
+        $directory = substr($basePath, 0, (int) (strrpos($basePath, '/') ?: 0) + 1);
+
+        return $prefix.($directory !== '' ? $directory : '/').$location;
     }
 
     private function safeExtension(string $mime, string $path): string

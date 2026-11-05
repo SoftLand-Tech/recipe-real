@@ -42,9 +42,9 @@ into one ordered list.
 | OTA updates | `expo-updates`, channel `production`, `runtimeVersion.policy: fingerprint`, checks `ON_LOAD` | `mobile/app.config.js`, `mobile/eas.json` |
 | Release build profiles | `production` (AAB, for stores that accept AAB), `production-apk` (arm64 APK for `/download`), and `store-apk` (universal APK for third-party stores) | `mobile/eas.json` |
 | ABI | `production-apk` is `arm64-v8a` only (~30–35 MB); `store-apk` is universal (four ABIs, larger) | `mobile/plugins/arm64-only.js` |
-| Permissions declared | `FOREGROUND_SERVICE`, `SCHEDULE_EXACT_ALARM` (plus notification permissions from the notifee/expo-notifications stack) | `mobile/app.config.js` `android.permissions` |
+| Permissions & cook timing | `SCHEDULE_EXACT_ALARM` + notifee/expo-notifications merges; `POST_NOTIFICATIONS` runtime prompt; legacy storage permissions blocked via `android.blockedPermissions`; **no foreground service runs** — cook timing is wall-clock based and persisted, step alarms fire even when locked or killed, the session restores from its snapshot | `mobile/app.config.js` `android.permissions`, `mobile/src/utils/cookAlarms.ts` |
 | Privacy / terms pages | `/privacy`, `/terms` (terms include the community-conduct rules), `/contact` form | `backend/routes/web.php` |
-| Library (listing copy may use) | ~20,089 recipes, 137,644 steps, 26,771 timed steps; offline library; claim-vs-reality cook times (PRODUCT.md; code comments mention a larger imported table — verify against production before using precise counts) | `PRODUCT.md` |
+| Library (listing copy may use) | **20,000+ recipes** (exact recipe/step counts are unverified — never publish precise counts or step totals); offline library; claim-vs-reality cook times | `PRODUCT.md` |
 
 **Listing-copy rule from `PRODUCT.md`:** only one public user exists. Do not
 invent testimonials, download counts, or ratings anywhere in a store listing.
@@ -82,8 +82,9 @@ accidentally save you):
    prompt; also test with the "Alarms & reminders" special access **denied** —
    Android 14+ denies `SCHEDULE_EXACT_ALARM` by default and the app must
    degrade gracefully, see §4).
-4. Background the app mid-session and return — the foreground service must
-   keep the session alive.
+4. Background the app mid-session (and lock the screen), then return — the
+   session restores from its snapshot; cook timing is wall-clock based and
+   persisted, and step alarms fire even when the screen is locked.
 5. Switch the phone language to Arabic: RTL layout, Arabic recipe titles,
    no clipped or LTR-leaking strings.
 6. Airplane-mode cook session: the offline library must work with no signal.
@@ -189,7 +190,9 @@ if a portal ever leaks it.
 >    (measured by real cooks).
 > 3. Tap **Cook** → Cook Mode: full-screen guided steps with a live stopwatch.
 >    Step through 2–3 steps; allow notifications when prompted — each step can
->    fire an alarm. Pause/resume works; backgrounding keeps the session.
+>    fire an alarm even if you background the app or lock the screen (timing
+>    is persisted; the session restores when you return; no persistent
+>    foreground notification is used). Pause/resume works.
 > 4. Finish (or abandon) the session → the "how did that go?" feedback step
 >    appears.
 > 5. Saving while signed out shows a sign-in prompt; the finished cook is
@@ -219,12 +222,36 @@ permission in the merged manifest.
 |---|---|---|
 | `POST_NOTIFICATIONS` (Android 13+, runtime) | Step alarms and community notifications (likes, comments, moderation notices) | `mobile/src/utils/cookAlarms.ts`, `mobile/src/utils/notifications.ts` (notifee); requested at first Cook Mode start, not at launch |
 | `SCHEDULE_EXACT_ALARM` | **Per-step cooking alarms** must fire at the exact second a step ends — an "±15 min" inexact alarm is useless when the stove is on | `cookAlarms.ts`; Android 14+ denies it by default and the app **degrades gracefully** (falls back, surfaces "Alarms & reminders" settings guidance via `exactAlarmDenied`) |
-| `FOREGROUND_SERVICE` | Keeps the **active cook session** (stopwatch + pending alarms) alive when the app is backgrounded or the screen locks mid-cook | `cookAlarms.ts` registers a notifee foreground service (`asForegroundService: true`) for the running session |
-| Photos — system Photo Picker only (`expo-image-picker`) | Choosing an avatar or attaching recipe/post images | Uses Android's system picker; the app never needs broad storage/media access. **Confirm the merged manifest adds no `READ_MEDIA_*`/`READ_EXTERNAL_STORAGE`** (below) |
-| `INTERNET`, `WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED` (typical SDK merges) | API calls; keeping the screen/session awake (`expo-keep-awake`); re-scheduling alarms after reboot | Standard library merges — verify actual list per build |
+| Photos — photo library only (`expo-image-picker` config plugin) | Choosing an avatar or attaching recipe/post images | The app requests **only photo-library access** (the `photosPermission` string); camera and microphone are explicitly disabled in the plugin config, and `READ_EXTERNAL_STORAGE`/`WRITE_EXTERNAL_STORAGE` are blocked via `android.blockedPermissions` |
+| `INTERNET` (typical SDK merge) | API calls to the RecipeReal backend | Standard library merge — verify the actual list per build |
+
+**No foreground service is requested or run.** An earlier design held the
+cook session open with a notifee foreground service; that was dropped rather
+than fight Android 14+ FGS policy (shortService type with a ~3-minute cap,
+missing typed permission — it could not hold a 30–60 min cook anyway). Cook
+timing is **wall-clock based and persisted**: step alarms fire even when the
+screen is locked or the app is killed, and the session restores from its
+snapshot when you return. **Denying the notification permission degrades
+Cook Mode to silent timing** — the session still runs and restores, but step
+alarms cannot alert.
+
+**Merged notifee permissions — one-line justifications (store forms):**
+
+- `ACCESS_NOTIFICATION_POLICY` — DND-access-adjacent policy access so step
+  alarms can use alarm priority (notifee merge).
+- `VIBRATE` — vibration for step alarms so they are noticed on time
+  (notifee merge).
+- `WAKE_LOCK` — wake the device at a step-alarm moment so it fires on time
+  (notifee merge; `expo-keep-awake` also uses it while the cook screen is
+  open).
+- `RECEIVE_BOOT_COMPLETED` — boot receiver reschedules pending step alarms
+  after a reboot (notifee merge).
 
 **Not requested — say so in store forms:** no location, no contacts, no SMS,
-no camera permission by design, no call state, no storage-wide access.
+no camera or microphone access (explicitly disabled in the
+`expo-image-picker` plugin config), no call state, no storage-wide access
+(`READ_EXTERNAL_STORAGE`/`WRITE_EXTERNAL_STORAGE` blocked via
+`android.blockedPermissions`).
 
 **[repo] Verify the merged manifest before answering any store form:** after
 the EAS build finishes, download the APK and dump its permission list (e.g.
@@ -527,13 +554,13 @@ output folder should stay untracked.
 
 | Question | Answer |
 |---|---|
-| Data collected | Email + name + avatar (via Google sign-in); user-generated content you write (posts, comments, tries, images you attach); cook-session measurements tied to your account |
+| Data collected | Email + name + avatar (via Google sign-in); optional gender (profile field only); user-generated content you write (posts, comments, tries); **images you upload** (avatar, recipe/post attachments); cook-session measurements tied to your account; **install identifier** — a long-lived on-device counter, linked to your account while signed in, surviving account deletion as an unlinked counter |
 | Data used for | Account, showing your content, calibrating *your* cook-time estimates, app improvement |
 | Data shared | Not sold; no ad networks; no third-party analytics SDKs — analytics go to our own backend |
 | Local data | Offline recipe library (SQLite) and settings stay on-device; `allowBackup` is false |
-| Retention/deletion | Full account deletion in-app or via the web request form; analytics events are anonymized on deletion and pruned after 90 days. Community recipes you authored remain with the author link removed; uploaded files may persist in storage/backups (disclose this if the form asks for detail) |
+| Retention/deletion | Full account deletion in-app or via the web request form; analytics events are anonymized on deletion and pruned after 90 days. Community recipes you authored remain with the author link removed; uploaded files may persist in storage/backups (disclose this if the form asks for detail). The install identifier survives deletion as an unlinked counter |
 | Security | All traffic over HTTPS; Google ID tokens verified server-side (signature, audience, nonce) |
-| Permissions | See §4 table — notifications + exact alarms + foreground service (cooking), photo picker only |
+| Permissions | See §4 table — notifications + exact alarms (cooking); photo-library access only, camera/microphone disabled, legacy storage permissions blocked; **no foreground service** |
 
 Do **not** claim "no data collected" — Google-auth email alone makes that
 false, and stores cross-check the APK.

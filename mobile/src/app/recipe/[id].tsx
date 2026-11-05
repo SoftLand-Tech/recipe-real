@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Pressable,
   ScrollView,
@@ -23,6 +24,8 @@ import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
+  deleteRecipeNote,
+  fetchMyProfile,
   fetchRecipeNotes,
   fetchRecipePosts,
   getRecipe,
@@ -32,6 +35,7 @@ import {
   postRecipeNote,
   QuickTimeUnauthorizedError,
   RecipeNoteUnauthorizedError,
+  reportRecipeNote,
   submitQuickTime,
 } from "@/api/client";
 import { WEB_BASE_URL } from "@/config";
@@ -301,6 +305,14 @@ export default function RecipeDetailScreen() {
   const [notePostError, setNotePostError] = useState<string | null>(null);
   const [noteHalalTerms, setNoteHalalTerms] = useState<string[] | null>(null);
   const [noteNeedsAuth, setNoteNeedsAuth] = useState(false);
+  // Signed-in user's id: routes each community note to Delete (own) vs
+  // Report (others). Null until the profile resolves (or when signed out).
+  const [myUserId, setMyUserId] = useState<number | null>(null);
+  // Note ids already reported this visit — the icon flips to a ✓ and the
+  // action no-ops (same per-item reported state as the community feed).
+  const [reportedNoteIds, setReportedNoteIds] = useState<ReadonlySet<number>>(
+    () => new Set(),
+  );
 
   // ---- Community tries (posts attached to this recipe) -----------------------
   // null = not loaded yet (or the load failed silently) → the section stays
@@ -362,6 +374,16 @@ export default function RecipeDetailScreen() {
   useEffect(() => {
     return () => {
       if (noteSavedTimerRef.current) clearTimeout(noteSavedTimerRef.current);
+    };
+  }, []);
+
+  // Community-note action toast: one transient line under the list
+  // ("Note deleted" / "Reported — thank you"), same hide pattern as above.
+  const [noteFlash, setNoteFlash] = useState<string | null>(null);
+  const noteFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (noteFlashTimerRef.current) clearTimeout(noteFlashTimerRef.current);
     };
   }, []);
 
@@ -861,6 +883,16 @@ export default function RecipeDetailScreen() {
           ...Type.bodySm,
           color: colors.ink,
         },
+        // Small per-note action (Delete for the owner, Report for others),
+        // pushed to the head row's trailing edge.
+        noteAction: {
+          marginLeft: "auto",
+        },
+        // Transient delete/report confirmation line under the notes list.
+        noteFlash: {
+          ...Type.caption,
+          color: colors.success,
+        },
         // Compose row (signed-in): single-line input + send button.
         noteCompose: {
           gap: Space.xs,
@@ -1225,6 +1257,87 @@ export default function RecipeDetailScreen() {
       }
     },
     [id, t],
+  );
+
+  /** Flash the transient confirmation line under the notes list (3s). */
+  const showNoteFlash = useCallback((message: string) => {
+    setNoteFlash(message);
+    if (noteFlashTimerRef.current) clearTimeout(noteFlashTimerRef.current);
+    noteFlashTimerRef.current = setTimeout(() => setNoteFlash(null), 3000);
+  }, []);
+
+  /**
+   * Delete the signed-in user's OWN community note: confirm → API → remove
+   * from local state + toast. Failures are logged and leave the note (and
+   * state) untouched.
+   */
+  const onDeleteNote = useCallback(
+    (note: RecipeNote) => {
+      Alert.alert(
+        t("notes.deleteConfirmTitle"),
+        t("notes.deleteConfirmBody"),
+        [
+          { text: t("common.cancel"), style: "cancel" },
+          {
+            text: t("common.delete"),
+            style: "destructive",
+            onPress: () => {
+              void (async () => {
+                try {
+                  const recipeId = Number(id);
+                  await deleteRecipeNote(recipeId, note.id);
+                  setNotes((prev) => prev.filter((n) => n.id !== note.id));
+                  setReportedNoteIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(note.id);
+                    return next;
+                  });
+                  showNoteFlash(t("notes.deleted"));
+                  track("recipe_note_deleted", { recipe_id: recipeId });
+                } catch (error) {
+                  console.warn("[RecipeReal] note delete failed:", error);
+                }
+              })();
+            },
+          },
+        ],
+      );
+    },
+    [id, showNoteFlash, t],
+  );
+
+  /**
+   * Report ANOTHER user's community note: confirm → API → mark reported.
+   * Mirrors the post screen's report confirm flow; idempotent server-side.
+   */
+  const onReportNote = useCallback(
+    (note: RecipeNote) => {
+      if (reportedNoteIds.has(note.id)) return;
+      Alert.alert(
+        t("notes.reportConfirmTitle"),
+        t("notes.reportConfirmBody"),
+        [
+          { text: t("common.cancel"), style: "cancel" },
+          {
+            text: t("community.reportAction"),
+            onPress: () => {
+              void (async () => {
+                try {
+                  const recipeId = Number(id);
+                  await reportRecipeNote(recipeId, note.id);
+                  setReportedNoteIds((prev) => new Set(prev).add(note.id));
+                  showNoteFlash(t("notes.reported"));
+                  track("recipe_note_reported", { recipe_id: recipeId });
+                } catch (error) {
+                  console.warn("[RecipeReal] note report failed:", error);
+                }
+              })();
+            },
+          },
+        ],
+      );
+    },
+    [id, reportedNoteIds, showNoteFlash, t],
   );
 
   /**
@@ -1692,6 +1805,17 @@ export default function RecipeDetailScreen() {
       if (cancelled) return;
       setSignedIn(ok);
       setNotePublic(pref === "on");
+      // The note Delete-vs-Report split needs the signed-in user's id
+      // (same fetchMyProfile pattern as the community feed).
+      if (ok) {
+        fetchMyProfile()
+          .then((me) => {
+            if (!cancelled) setMyUserId(me.id);
+          })
+          .catch(() => {
+            // Non-fatal: notes just show the Report action to everyone.
+          });
+      }
     })();
     return () => {
       cancelled = true;
@@ -2527,6 +2651,10 @@ export default function RecipeDetailScreen() {
                               const initial =
                                 author.charAt(0).toUpperCase() || "?";
                               const rel = relativeDate(t, item.created_at);
+                              const mine =
+                                myUserId != null &&
+                                item.user.id === myUserId;
+                              const reported = reportedNoteIds.has(item.id);
                               return (
                                 <View
                                   key={`note-${item.id}`}
@@ -2555,6 +2683,43 @@ export default function RecipeDetailScreen() {
                                       {rel !== "" ? (
                                         <Text style={styles.noteDate}>{rel}</Text>
                                       ) : null}
+                                      {mine ? (
+                                        <IconPressable
+                                          onPress={() => onDeleteNote(item)}
+                                          hitSlop={Space.xs}
+                                          style={styles.noteAction}
+                                          accessibilityLabel={t("common.delete")}
+                                        >
+                                          <Ionicons
+                                            name="trash-outline"
+                                            size={16}
+                                            color={colors.inkFaint}
+                                          />
+                                        </IconPressable>
+                                      ) : (
+                                        <IconPressable
+                                          onPress={() => onReportNote(item)}
+                                          hitSlop={Space.xs}
+                                          style={styles.noteAction}
+                                          accessibilityLabel={t(
+                                            "community.reportAction",
+                                          )}
+                                        >
+                                          <Ionicons
+                                            name={
+                                              reported
+                                                ? "checkmark"
+                                                : "flag-outline"
+                                            }
+                                            size={16}
+                                            color={
+                                              reported
+                                                ? colors.success
+                                                : colors.inkFaint
+                                            }
+                                          />
+                                        </IconPressable>
+                                      )}
                                     </View>
                                     <Text style={styles.noteBody}>
                                       {item.body}
@@ -2563,6 +2728,11 @@ export default function RecipeDetailScreen() {
                                 </View>
                               );
                             })}
+                            {noteFlash != null ? (
+                              <Text style={styles.noteFlash}>
+                                {noteFlash}
+                              </Text>
+                            ) : null}
                             {notesHasMore ? (
                               <Button
                                 variant="ghost"

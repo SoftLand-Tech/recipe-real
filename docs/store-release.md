@@ -26,6 +26,13 @@ eas build --profile store-apk --platform android        # universal ABI, larger
 > profile name `store-apk` deliberately does not, so the plugin stays out
 > of the way. Do NOT rename this profile to anything starting with
 > `production` — store builds would silently shrink to arm64-only.
+>
+> **Manual ABI overrides (env):** `RECIPE_REAL_UNIVERSAL_ABI=1` forces a
+> universal build and `RECIPE_REAL_ARM64_ONLY=1` forces an arm64-only
+> build, each regardless of the EAS profile; if both are set, the universal
+> flag wins. Useful for local `npx expo prebuild`/`gradlew` runs (where
+> `EAS_BUILD_PROFILE` is unset) or one-off artifacts; the `unzip -l`
+> verification below still applies to whatever you build.
 
 ## Verify the APK ABIs (always, before uploading)
 
@@ -125,6 +132,53 @@ builds that never go through the admin panel. Stores occasionally ask
 - Stores review the binary they were handed; OTA lets us hotfix JS without
   re-uploading to six consoles. Still ship a store build for every
   meaningful release so the listings stay current.
+
+## Enable OTA code signing (recommended before public launch)
+
+`expo-updates` can require every OTA manifest to be cryptographically
+signed; on-device, bundles whose signature does not verify are rejected.
+Without it, anyone who compromises the update pipeline could push arbitrary
+JS to every installed binary. **No signing key exists yet** —
+`mobile/app.config.js` is deliberately not wired for it; do this once
+before public launch and ship it in the next **APK** release (it changes the
+native config, so the runtimeVersion fingerprint changes and OTA alone can
+never deliver it).
+
+1. **Generate the key pair** (one-time; keep both outputs out of git):
+   ```bash
+   npx expo-updates codesigning:generate \
+     --key-output ./updates-codesign/keys \
+     --certificate-output ./updates-codesign/certificates
+   ```
+   Verify the exact flags/options against the Expo SDK 57 docs
+   (docs.expo.dev → EAS Update → Code Signing) before running.
+2. **Point the app config at the certificate** (only after step 1) in
+   `mobile/app.config.js`:
+   ```js
+   updates: {
+     // ...existing url/checkAutomatically/fallbackToCacheTimeout stay...
+     codeSigningCertificate: "./updates-codesign/certificates/certificate.pem",
+     codeSigningMetadata: { keyid: "main", alg: "burner" },
+   }
+   ```
+   (`alg: "burner"` = ES256 with expiring certificates — the Expo default
+   for new key pairs.)
+3. **Store the private key in EAS secrets** — EAS Build and `eas update`
+   read it from the build/publish environment, never from the repo:
+   ```bash
+   eas secret:create --scope project --name EXPO_UPDATES_PRIVATE_KEY \
+     --value "$(cat ./updates-codesign/keys/<generated-private-key-file>)"
+   ```
+   If the generated key is password-protected, also store
+   `EXPO_UPDATES_PRIVATE_KEY_PASSWORD`. Confirm the exact variable names
+   in the same Expo guide.
+4. **Verify:** publish a trivial update (`eas update --branch
+   production`) to a device on the newest binary and confirm it installs;
+   then confirm an unsigned/tampered manifest is rejected.
+5. **Custody:** the private key *is* update trust — back it up with the
+   same discipline as the Android keystore (§ Signing key custody). Losing
+   it means you cannot sign further updates; rotating means a new key pair,
+   a new certificate + `keyid`, and another APK to deliver it.
 
 ## Pre-upload checklist
 

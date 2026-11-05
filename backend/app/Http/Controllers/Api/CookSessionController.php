@@ -113,7 +113,10 @@ class CookSessionController extends Controller
      * submissions — the schema tolerates that (timing_submissions.session_id
      * is a client uuid with no FK to cook_sessions), and the pace
      * calibration job reads only timing submissions, so it is unaffected
-     * and not re-dispatched. The recipe's community aggregates follow via
+     * and not re-dispatched. Guards live in StoreQuickTimeRequest: one
+     * quick-time per user per recipe per 24h, plus a 5x sanity rejection
+     * against reality_minutes once >= 5 real sessions exist.
+     * The recipe's community aggregates follow via
      * the same absorbTimingWrite() full cook sessions feed (averages over
      * the last 100 sessions, Reality Index flipped to 'community', timing
      * caches busted, searchable minutes reindexed).

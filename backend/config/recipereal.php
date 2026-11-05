@@ -104,6 +104,12 @@ return [
 
     'ai' => [
         'default' => env('RECIPE_AI_PROVIDER', 'custom'),
+
+        // Client-supplied provider selection is IGNORED while false (the
+        // configured default is used instead). Admin-only escape hatch for
+        // controlled rollouts; never enable for the public API.
+        'allow_client_provider' => (bool) env('RECIPE_AI_ALLOW_CLIENT_PROVIDER', false),
+
         'inline_max_bytes' => (int) env('RECIPE_AI_INLINE_MAX_BYTES', 20 * 1024 * 1024),
         'providers' => [
             // protocol can be generic, openai_compatible, anthropic, or
@@ -124,7 +130,10 @@ return [
                 'effort' => env('RECIPE_AI_CLI_EFFORT', 'high'),
                 'timeout' => (int) env('RECIPE_AI_CLI_TIMEOUT', 600),
                 'print_timeout' => env('RECIPE_AI_CLI_PRINT_TIMEOUT', '10m'),
-                'dangerously_skip_permissions' => (bool) env('RECIPE_AI_CLI_DANGEROUSLY_SKIP_PERMISSIONS', true),
+                // Default OFF: the CLI must never run with escalated
+                // permissions on the prod queue host. Only an operator who
+                // understands the prompt-injection risk should set the env.
+                'dangerously_skip_permissions' => (bool) env('RECIPE_AI_CLI_DANGEROUSLY_SKIP_PERMISSIONS', false),
                 'workspace_root' => env('RECIPE_AI_CLI_WORKSPACE', ''),
                 'max_output_bytes' => (int) env('RECIPE_AI_CLI_MAX_OUTPUT_BYTES', 2 * 1024 * 1024),
             ],

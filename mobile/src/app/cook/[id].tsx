@@ -20,9 +20,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   alarmAvailable,
   cancelStepAlarm,
+  ensureAlarmPermissionOrExplain,
   formatCookElapsed,
   openAlarmPermissionSettings,
-  requestAlarmPermission,
   scheduleStepAlarm,
   setLiveCookHandlers,
   startCookNotification,
@@ -989,7 +989,7 @@ export default function CookModeScreen() {
       // a stale token and must abort instead of committing.
       const gen = armGenRef.current + 1;
       armGenRef.current = gen;
-      if (!(await requestAlarmPermission())) return false;
+      if (!(await ensureAlarmPermissionOrExplain(t))) return false;
       if (gen !== armGenRef.current) return false;
       const { id, exactAlarmDenied } = await scheduleStepAlarm({
         recipeTitle: lr.title(recipe),

@@ -12,6 +12,11 @@ Artisan::command('inspire', function () {
 Schedule::command('recipereal:prune-events')->daily();
 Schedule::command('recipereal:prune-recipe-imports')->hourly();
 
+// Retention: install heartbeats die after 180 quiet days; public-form
+// messages (contact + deletion requests, reader PII) after 12 months.
+Schedule::command('recipereal:prune-installs')->daily();
+Schedule::command('recipereal:prune-contact-messages')->daily();
+
 // Arabic translations: nightly after the analytics prune (MyMemory's free
 // daily quota resets overnight).
 // DISABLED 2026-08-16: the agy batch pipeline (recipereal-work/PROMPT-500.md)

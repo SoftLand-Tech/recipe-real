@@ -25,6 +25,9 @@ class PostMultiImageTest extends TestCase
     /** Store + show round-trip for a 3-image post. */
     public function test_store_with_images_array_round_trips_through_show(): void
     {
+        // The image-host allowlist must accept this test's CDN host.
+        config(['recipereal.uploads.allowed_image_hosts' => ['cdn.example.com']]);
+
         $user   = User::factory()->create();
         $images = [
             'https://cdn.example.com/a.jpg',

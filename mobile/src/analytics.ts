@@ -1,4 +1,5 @@
 import axios from "axios";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
@@ -26,10 +27,37 @@ const eventsHttp = axios.create({
   },
 });
 
+// Consent cache (session-scoped): read once, overridden by
+// grantAnalyticsConsent() when the user accepts on first launch. Anything
+// other than the stored value 'accepted' (declined / unset / unreadable)
+// keeps analytics OFF — data collection never happens without consent.
+let consentCache: Promise<boolean> | null = null;
+
+async function hasAnalyticsConsent(): Promise<boolean> {
+  if (!consentCache) {
+    consentCache = AsyncStorage.getItem("consent.v1")
+      .then((v) => v === "accepted")
+      .catch(() => false);
+  }
+  return consentCache;
+}
+
+/**
+ * Called by FirstRunConsent when the user taps Accept: flips the cached
+ * consent to true so track() events flow immediately without waiting for
+ * the next cold start.
+ */
+export function grantAnalyticsConsent(): void {
+  consentCache = Promise.resolve(true);
+}
+
 export async function track(
   name: string,
   properties?: Record<string, unknown>,
 ): Promise<void> {
+  // Consent gate: a user who chose "Continue without sharing" must never
+  // emit events, no matter which screen calls track().
+  if (!(await hasAnalyticsConsent())) return;
   try {
     await eventsHttp.post("/api/events", { name, properties: properties ?? {} });
   } catch {

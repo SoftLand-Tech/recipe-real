@@ -30,14 +30,13 @@ class AppServiceProvider extends ServiceProvider
             Log::warning('upload_limits.too_low', ['issue' => $issue]);
         }
 
-        // Dedicated limiter for the credential-taking auth endpoint: 5 attempts
-        // per minute. The endpoint accepts an id_token (never an email), so
-        // key on a hash of the token payload — per-credential throttling —
-        // plus the IP, so one account can't be brute-forced from rotating IPs
-        // and one IP can't melt the endpoint for everyone behind it.
-        RateLimiter::for('auth', fn (Request $request) => [
-            Limit::perMinute(5)->by('tok:'.sha1($request->string('id_token')->toString())),
-            Limit::perMinute(20)->by('ip:'.$request->ip()),
-        ]);
+        // Dedicated limiter for the credential-taking auth endpoints (the
+        // implicit POST /auth/google and the PKCE POST /auth/google/code):
+        // 5 attempts per minute per IP. Both payloads are single-use Google
+        // credentials whose value differs on every attempt, so the former
+        // token-hash bucket never accumulated counts — the IP is the only
+        // stable identity an unauthenticated caller presents. One strict
+        // bucket replaces the old dead tok-hash + redundant 20/min IP pair.
+        RateLimiter::for('auth', fn (Request $request) => Limit::perMinute(5)->by('ip:'.$request->ip()));
     }
 }

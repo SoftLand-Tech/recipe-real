@@ -10,13 +10,32 @@ const { withGradleProperties } = require("expo/config-plugins");
  * Play Store normally gets for free via AAB splitting, which we can't use
  * (direct APK distribution).
  *
- * Scoped to EAS production profiles only (EAS_BUILD_PROFILE) so preview
- * builds and anything running locally stay universal.
+ * Default scoping: EAS production profiles only (EAS_BUILD_PROFILE starts
+ * with "production") so preview builds and anything running locally stay
+ * universal.
+ *
+ * Explicit env overrides (documented in docs/store-release.md; each beats
+ * the profile heuristic — handy for local `npx expo prebuild`/`gradlew`
+ * runs where EAS_BUILD_PROFILE is unset):
+ * - RECIPE_REAL_UNIVERSAL_ABI=1 → universal regardless of profile.
+ * - RECIPE_REAL_ARM64_ONLY=1    → arm64-v8a only regardless of profile.
+ * If both are set, universal wins (it runs on every device, so it is the
+ * safe resolution for contradictory config).
  */
 module.exports = function arm64OnlyPlugin(config) {
   return withGradleProperties(config, (cfg) => {
-    const profile = process.env.EAS_BUILD_PROFILE ?? "";
-    if (!profile.startsWith("production")) {
+    const forceUniversal = process.env.RECIPE_REAL_UNIVERSAL_ABI === "1";
+    const forceArm64Only = process.env.RECIPE_REAL_ARM64_ONLY === "1";
+    let arm64Only;
+    if (forceUniversal) {
+      arm64Only = false;
+    } else if (forceArm64Only) {
+      arm64Only = true;
+    } else {
+      const profile = process.env.EAS_BUILD_PROFILE ?? "";
+      arm64Only = profile.startsWith("production");
+    }
+    if (!arm64Only) {
       return cfg;
     }
     const rest = cfg.modResults.filter((item) => item.key !== "reactNativeArchitectures");

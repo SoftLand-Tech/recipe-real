@@ -5,6 +5,7 @@ namespace App\Services\RecipeImport;
 use App\Models\RecipeImport;
 use App\Services\RecipeImport\Contracts\RecipeAiProvider;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Exception\ProcessStartFailedException;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
@@ -36,6 +37,12 @@ class AgyRecipeAiProvider implements RecipeAiProvider
         $workspace = null;
 
         try {
+            // Hard guard: the flag is disabled by default (see
+            // config/recipereal.php). If an operator turns it on, every CLI
+            // run must leave a loud warning behind — uploaded media can
+            // carry prompt injections and the CLI executes on this host.
+            $this->warnIfSkipPermissions($import);
+
             $workspace = $this->createWorkspace();
             $assets = $this->storage->stageCliAssets($import, $workspace.'/media');
 
@@ -141,6 +148,27 @@ class AgyRecipeAiProvider implements RecipeAiProvider
                 File::deleteDirectory($workspace);
             }
         }
+    }
+
+    /**
+     * Logs once per extraction run when dangerously_skip_permissions is
+     * enabled. Falls back to the default channel until a dedicated
+     * recipe-imports channel exists in config/logging.php.
+     */
+    private function warnIfSkipPermissions(RecipeImport $import): void
+    {
+        if (! (bool) ($this->config['dangerously_skip_permissions'] ?? false)) {
+            return;
+        }
+
+        $channel = config('logging.channels.recipe-imports') !== null
+            ? 'recipe-imports'
+            : (string) config('logging.default', 'stack');
+        Log::channel($channel)->warning('recipe_import.agy.skip_permissions_enabled', [
+            'import_id' => $import->id,
+            'provider' => $this->providerKey,
+            'model' => $this->model(),
+        ]);
     }
 
     /** @return list<string> */

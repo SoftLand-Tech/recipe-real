@@ -74,6 +74,27 @@ class ManageAppReleases extends Page
         $data = $this->form->getState();
         $disk = Storage::disk('local');
 
+        // Content check, not extension trust: an APK is a ZIP archive, so
+        // the stored upload must literally start with the PK\x03\x04 magic
+        // before it can become the payload GET /download serves.
+        $stream = $disk->readStream((string) $data['file']);
+        $magic = is_resource($stream) ? (string) stream_get_contents($stream, 4) : '';
+        if (is_resource($stream)) {
+            fclose($stream);
+        }
+
+        if ($magic !== "PK\x03\x04") {
+            $disk->delete((string) $data['file']);
+
+            Notification::make()
+                ->title('Upload rejected')
+                ->body('That file does not look like a valid APK/ZIP (missing PK header). Nothing was published.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
         $release = AppRelease::create([
             'version' => (string) $data['version'],
             'file_path' => (string) $data['file'],

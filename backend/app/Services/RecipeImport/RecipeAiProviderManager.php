@@ -8,7 +8,11 @@ class RecipeAiProviderManager
 {
     public function provider(?string $name = null): RecipeAiProvider
     {
-        $key = trim((string) ($name ?: config('recipereal.ai.default', 'custom')));
+        // client provider selection disabled by default, admin-only feature
+        $requested = $name !== null && (bool) config('recipereal.ai.allow_client_provider', false)
+            ? $name
+            : null;
+        $key = trim((string) ($requested ?: config('recipereal.ai.default', 'custom')));
         if (! preg_match('/^[a-z0-9_-]+$/i', $key)) {
             throw new RecipeImportException(
                 'The selected recipe AI provider is not configured.',

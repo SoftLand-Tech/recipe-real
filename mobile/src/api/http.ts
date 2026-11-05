@@ -1,6 +1,7 @@
 import axios, { type AxiosInstance } from "axios";
 
 import { API_BASE_URL, AUTH_TOKEN_KEY } from "@/config";
+import { clearAccountScopedCaches } from "@/db/database";
 import { secureStore } from "@/utils/secureStore";
 import type {
   CleanupFactors,
@@ -79,22 +80,34 @@ http.interceptors.request.use(async (config) => {
 });
 
 /**
- * Scrub credential material from an axios error before it propagates:
- * callers routinely log caught errors (`console.warn(..., error)`), and a
- * serialized AxiosError carries the FULL request config — including the
- * live bearer token in `config.headers.Authorization` and the complete
- * URL with any query params. Stripping them here makes every existing log
- * site safe without touching its call sites. Mutates in place and returns
- * the error for convenient pass-through.
+ * Scrub credential/request material from an axios error before it
+ * propagates: callers routinely log caught errors (`console.warn(...,
+ * error)`), and a serialized AxiosError carries the FULL request config —
+ * including the live bearer token in `config.headers.Authorization`, the
+ * complete request URL (`config.url`) and its query params
+ * (`config.params`) and the request body (`config.data` — a failed
+ * login POST carries the Google id_token). Stripping them here makes every
+ * existing log site safe without touching its call sites. Mutates in place
+ * and returns the error for convenient pass-through.
  */
 function scrubError<T>(error: T): T {
   if (!axios.isAxiosError(error)) return error;
   const config = error.config as
-    | { headers?: Record<string, unknown>; url?: string }
+    | {
+        headers?: Record<string, unknown>;
+        url?: string;
+        params?: Record<string, unknown>;
+        data?: unknown;
+      }
     | undefined;
-  if (config?.headers) {
-    delete config.headers.Authorization;
-    delete config.headers.authorization;
+  if (config) {
+    if (config.headers) {
+      delete config.headers.Authorization;
+      delete config.headers.authorization;
+    }
+    delete config.url;
+    delete config.params;
+    delete config.data;
   }
   return error;
 }
@@ -117,6 +130,11 @@ http.interceptors.response.use(
       // The token is dead either way — reset the in-memory mirror too so
       // subsequent requests don't re-attach it.
       setAuthTokenCache(null);
+      // The cache holds account-scoped rows (favorites/notes/pace) that died
+      // with the token — wipe them fire-and-forget so a shared device never
+      // shows the previous user's private data. A wipe failure must not
+      // mask the original 401.
+      void clearAccountScopedCaches().catch(() => {});
     }
     if (error?.response?.status === 429) {
       // Honor the server's Retry-After when present (Laravel sends seconds),

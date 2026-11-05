@@ -9,7 +9,9 @@ use App\Http\Resources\RecipeImportResource;
 use App\Http\Resources\RecipeResource;
 use App\Jobs\ProcessRecipeImport;
 use App\Jobs\RebuildSearchIndex as RebuildSearchIndexJob;
-use App\Models\RecipeImport;use App\Services\RecipeImport\RecipeContentRejected;
+use App\Models\RecipeImport;
+use App\Models\User;
+use App\Services\RecipeImport\RecipeContentRejected;
 use App\Services\RecipeImport\RecipeImportException;
 use App\Services\RecipeImport\RecipeImportService;
 use App\Services\RecipeImport\RecipeImportStorage;
@@ -18,6 +20,7 @@ use App\Support\TypesenseSearch;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -27,6 +30,8 @@ class RecipeImportController extends Controller
         CreateRecipeImportRequest $request,
         RecipeImportService $service,
     ): RecipeImportResource {
+        abort_unless($this->importerAllowed($request->user()), 403, 'Recipe import is not available yet.');
+
         return new RecipeImportResource($service->create($request->user(), $request));
     }
 
@@ -56,8 +61,21 @@ class RecipeImportController extends Controller
         Request $request,
         RecipeImport $recipeImport,
         RecipeImportService $service,
-    ): RecipeImportResource {
+    ): RecipeImportResource|JsonResponse {
+        abort_unless($this->importerAllowed($request->user()), 403, 'Recipe import is not available yet.');
         $this->assertOwner($request, $recipeImport);
+
+        // Extraction jobs are expensive; cap retries per import (24h window
+        // in the cache) so a flaky import cannot be re-queued forever.
+        $key = 'import:retries:'.$recipeImport->id;
+        if ((int) Cache::get($key, 0) >= 3) {
+            return response()->json(['message' => 'Too many retries. Create a new import.'], 429);
+        }
+        if (Cache::get($key) === null) {
+            Cache::put($key, 1, 86400);
+        } else {
+            Cache::increment($key, 1);
+        }
 
         return new RecipeImportResource($service->retry($recipeImport));
     }
@@ -68,6 +86,7 @@ class RecipeImportController extends Controller
         RecipePublisher $publisher,
         RecipeImportStorage $storage,
     ): JsonResponse|RecipeResource {
+        abort_unless($this->importerAllowed($request->user()), 403, 'Recipe import is not available yet.');
         $this->assertOwner($request, $recipeImport);
 
         if ($recipeImport->status === 'published' && $recipeImport->recipe_id !== null) {
@@ -125,6 +144,20 @@ class RecipeImportController extends Controller
         $recipeImport->delete();
 
         return response()->json(null, 204);
+    }
+
+    /**
+     * AI recipe imports are staff-only during the rollout: only emails on
+     * the admin allowlist may queue, retry, or publish an import.
+     */
+    private function importerAllowed($user): bool
+    {
+        $emails = collect(explode(',', (string) config('admin.emails')))
+            ->map(fn ($e) => strtolower(trim($e)))
+            ->filter()
+            ->all();
+
+        return in_array(strtolower($user->email), $emails, true);
     }
 
     private function assertOwner(Request $request, RecipeImport $recipeImport): void

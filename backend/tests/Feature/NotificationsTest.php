@@ -15,7 +15,8 @@ use Tests\TestCase;
  *   1. Liking someone's post creates exactly ONE 'like' notification for the
  *      author (actor = liker); self-likes never notify.
  *   2. Un-liking creates nothing (and leaves old notifications alone);
- *      re-liking after an unlike creates a new row (acceptable v1).
+ *      re-liking within the 7-day cooldown stays at one row (anti-flood
+ *      dedupe); after the cooldown a fresh row is created again.
  *   3. Commenting on someone's post notifies the author once; commenting on
  *      your own post never notifies.
  *   4. GET /api/notifications pages the inbox newest-first (20/page) with
@@ -96,11 +97,11 @@ class NotificationsTest extends TestCase
             ->assertJsonPath('liked', false);
         $this->assertSame(1, Notification::where('user_id', $author->id)->count());
 
-        // Re-like -> a second row (v1 keeps the earlier one).
+        // Re-like within the cooldown -> still one row (anti-flood dedupe).
         $this->actingAs($liker, 'sanctum')
             ->postJson("/api/posts/{$post->id}/like")
             ->assertJsonPath('liked', true);
-        $this->assertSame(2, Notification::where('user_id', $author->id)->count());
+        $this->assertSame(1, Notification::where('user_id', $author->id)->count());
     }
 
     /** Commenting notifies the post author once; a self-comment never does. */

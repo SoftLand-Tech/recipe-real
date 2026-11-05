@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Laravel\Cashier\Subscription;
+use Throwable;
 
 class AccountController extends Controller
 {
@@ -20,6 +21,20 @@ class AccountController extends Controller
     public function __invoke(Request $request)
     {
         $user = $request->user();
+
+        // Premium/Stripe is currently PAUSED (no API keys configured), but
+        // accounts created while it was live may still carry a stripe_id.
+        // Cancel those remote subscriptions BEST-EFFORT before the local
+        // deletion: a Stripe failure (paused keys, API outage) must NEVER
+        // block account deletion. report() keeps the failure visible to
+        // the operator while the user still gets their 204.
+        try {
+            if ($user->stripe_id !== null) {
+                $user->subscriptions->each(fn (Subscription $subscription) => $subscription->cancelNow());
+            }
+        } catch (Throwable $e) {
+            report($e);
+        }
 
         DB::transaction(function () use ($user): void {
             // Sanctum tokens are polymorphic (no FK), so they would outlive

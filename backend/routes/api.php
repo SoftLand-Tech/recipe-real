@@ -31,6 +31,11 @@ use Illuminate\Support\Facades\Route;
 // Google is the only sign-in method; password auth no longer exists.
 Route::middleware('throttle:auth')->group(function (): void {
     Route::post('/auth/google', [AuthController::class, 'google']);
+    // Authorization-code + PKCE exchange (standalone builds, 1.1.0+): the app
+    // sends the one-time code + its code_verifier + expected nonce; the
+    // server performs the token exchange with the client secret and verifies
+    // the resulting id_token exactly like the implicit path below.
+    Route::post('/auth/google/code', [AuthController::class, 'exchangeCode']);
 });
 
 // Public recipe-browsing routes (mobile-first; recipes are public in MVP).
@@ -135,6 +140,12 @@ Route::middleware(['throttle:60,1', 'auth:sanctum', 'not_banned'])->group(functi
     // Community writes: notes on recipes, posts, likes, comments. All
     // halal-gated server-side (see App\Support\HalalGate).
     Route::post('/recipes/{recipe}/notes', [RecipeNoteController::class, 'store']);
+    // Author can remove their own public note; anyone authed can report one
+    // (feeds moderation). Both UGC-policy requirements for store listings.
+    Route::delete('/recipes/{recipe}/notes/{note}', [RecipeNoteController::class, 'destroy'])
+        ->whereNumber('note');
+    Route::post('/recipes/{recipe}/notes/{note}/report', [RecipeNoteController::class, 'report'])
+        ->whereNumber('note');
     Route::post('/posts', [PostController::class, 'store']);
     Route::post('/posts/{post}/like', [PostController::class, 'like']);
     Route::post('/posts/{post}/comments', [PostCommentController::class, 'store']);

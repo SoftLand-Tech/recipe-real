@@ -686,4 +686,22 @@ export const ar: Record<string, string> = {
   "composer.discardRecipeMessage": "لن يتم حفظ وصفتك.",
   "composer.discardPostMessage": "لن يتم حفظ منشورك.",
   "composer.discardBtn": "تجاهل",
+
+  // ---- موافقة أولى + روابط السياسات + إذن المنبهات + إجراءات الملاحظات ----
+  "consent.title": "ملاحظة خصوصية سريعة",
+  "consent.body": "يجمع RecipeReal أحداث استخدام قليلة ومعرّف تثبيت عشوائي لتحسين التقديرات. لا نبيع شيئًا ولا توجد إعلانات.",
+  "consent.accept": "موافق",
+  "consent.decline": "متابعة دون مشاركة",
+  "consent.privacy": "سياسة الخصوصية",
+  "consent.terms": "الشروط",
+  "settings.privacyPolicy": "سياسة الخصوصية",
+  "settings.termsOfService": "شروط الخدمة",
+  "alarm.permissionTitle": "المنبهات تحتاج إذن الإشعارات",
+  "alarm.permissionBody": "فعّل إشعارات RecipeReal لتعمل منبّهات الخطوات. التوقيت يعمل بدونها.",
+  "notes.deleteConfirmTitle": "حذف هذه الملاحظة؟",
+  "notes.deleteConfirmBody": "ستُحذف للجميع ولا يمكن التراجع.",
+  "notes.deleted": "حُذفت الملاحظة",
+  "notes.reportConfirmTitle": "الإبلاغ عن هذه الملاحظة؟",
+  "notes.reportConfirmBody": "يراجع فريقنا البلاغات ويحذف ما يخالف القواعد.",
+  "notes.reported": "تم البلاغ — شكرًا",
 };

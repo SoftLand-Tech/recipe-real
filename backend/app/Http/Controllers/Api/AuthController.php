@@ -35,6 +35,65 @@ class AuthController extends Controller
             ]);
         }
 
+        return $this->issueForGoogleIdToken(
+            $request->string('id_token')->toString(),
+            $request->string('nonce')->toString(),
+        );
+    }
+
+    /**
+     * Authorization-code + PKCE exchange (standalone builds, 1.1.0+): the app
+     * opens Google with an S256 code_challenge and returns with a one-time
+     * code; we swap it — plus its verifier and the client secret — for the
+     * id_token at Google's token endpoint, then verify/mint exactly like the
+     * implicit flow above. The secret lives server-side only.
+     *
+     * @throws ValidationException
+     */
+    public function exchangeCode(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'code' => ['required', 'string', 'max:500'],
+            'code_verifier' => ['required', 'string', 'min:43', 'max:128'],
+            // The mobile app generates Crypto.randomUUID() with dashes
+            // stripped = 32 hex chars; older/other clients may send longer.
+            'nonce' => ['required', 'string', 'min:32', 'max:128'],
+        ]);
+
+        if (! config('services.google.client_id')) {
+            throw ValidationException::withMessages([
+                'code' => ['Google sign-in is not configured.'],
+            ]);
+        }
+
+        $tokenResponse = Http::asForm()->post('https://oauth2.googleapis.com/token', [
+            'code' => $data['code'],
+            'client_id' => config('services.google.client_id'),
+            'client_secret' => config('services.google.client_secret'),
+            'code_verifier' => $data['code_verifier'],
+            'grant_type' => 'authorization_code',
+            // Must byte-match the redirect_uri the app used to start the flow.
+            'redirect_uri' => config('app.url').'/auth/callback',
+        ]);
+
+        $idToken = $tokenResponse->json('id_token');
+
+        if ($tokenResponse->failed() || ! is_string($idToken) || $idToken === '') {
+            throw ValidationException::withMessages([
+                'code' => ['Invalid or expired Google credentials.'],
+            ]);
+        }
+
+        return $this->issueForGoogleIdToken($idToken, $data['nonce']);
+    }
+
+    /**
+     * Shared verification + account linking behind both sign-in paths
+     * (implicit id_token and PKCE code exchange): JWKS-verified claims in,
+     * Sanctum token + user JSON out.
+     */
+    private function issueForGoogleIdToken(string $idToken, string $expectedNonce): JsonResponse
+    {
         // Verify the ID token against Google's public JWKS (RS256 signature,
         // expiry, not-before). aud/iss are not checked by firebase/php-jwt and
         // are validated manually below. `sub` is the stable per-account
@@ -49,7 +108,7 @@ class AuthController extends Controller
                 ->json());
 
             JWT::$leeway = 60;
-            $claims = JWT::decode($request->string('id_token')->toString(), JWK::parseKeySet($jwks));
+            $claims = JWT::decode($idToken, JWK::parseKeySet($jwks));
         } catch (\Throwable $e) {
             throw ValidationException::withMessages([
                 'id_token' => ['Invalid or expired Google credentials.'],
@@ -72,6 +131,29 @@ class AuthController extends Controller
             ]);
         }
 
+        // Nonce binding: the client generates a fresh single-use nonce per
+        // sign-in attempt and Google embeds it inside the id_token. Requiring
+        // an exact match proves this token was minted FOR this attempt — an
+        // id_token injected by another app (custom-scheme intent) or replayed
+        // from an earlier sign-in carries a different/absent nonce and dies
+        // here, even though its signature is perfectly valid.
+        $tokenNonce = isset($claims->nonce) && is_string($claims->nonce) ? $claims->nonce : '';
+        if ($expectedNonce === '' || $tokenNonce === '' || ! hash_equals($expectedNonce, $tokenNonce)) {
+            throw ValidationException::withMessages([
+                'id_token' => ['Invalid or expired Google credentials.'],
+            ]);
+        }
+
+        // Single-use nonces: the first successful sign-in presenting a nonce
+        // consumes it, so a replay of the same (signature-valid,
+        // nonce-matching) id_token — or of an exchanged id_token re-posted
+        // with a new code — dies here.
+        if (! Cache::add('google:nonce:'.hash('sha256', $tokenNonce), true, now()->addMinutes(75))) {
+            throw ValidationException::withMessages([
+                'id_token' => ['Invalid or expired Google credentials.'],
+            ]);
+        }
+
         $googleSub = $claims->sub;
         $email = strtolower($claims->email ?? '');
 
@@ -79,20 +161,6 @@ class AuthController extends Controller
         if (empty($googleSub) || $email === '' || empty($claims->email_verified)) {
             throw ValidationException::withMessages([
                 'id_token' => ['Google account has no verified email.'],
-            ]);
-        }
-
-        // Nonce binding: the client generates a fresh single-use nonce per
-        // sign-in attempt and Google embeds it inside the id_token. Requiring
-        // an exact match proves this token was minted FOR this attempt — an
-        // id_token injected by another app (custom-scheme intent) or replayed
-        // from an earlier sign-in carries a different/absent nonce and dies
-        // here, even though its signature is perfectly valid.
-        $nonce = (string) $request->string('nonce')->toString();
-        $tokenNonce = isset($claims->nonce) && is_string($claims->nonce) ? $claims->nonce : '';
-        if ($nonce === '' || $tokenNonce === '' || ! hash_equals($nonce, $tokenNonce)) {
-            throw ValidationException::withMessages([
-                'id_token' => ['Invalid or expired Google credentials.'],
             ]);
         }
 

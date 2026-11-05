@@ -97,7 +97,7 @@ export default function OnboardingScreen() {
         gender,
         ...(bio.trim() !== "" ? { bio: bio.trim() } : {}),
       });
-      track("onboarding_completed", { gender });
+      track("onboarding_completed");
       leave();
     } catch (err) {
       console.warn("[RecipeReal] onboarding save failed:", err);

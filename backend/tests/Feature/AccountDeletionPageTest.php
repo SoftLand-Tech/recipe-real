@@ -65,10 +65,13 @@ class AccountDeletionPageTest extends TestCase
 
     public function test_request_form_queues_a_marked_contact_message(): void
     {
+        // Honeypot fields for the spam middleware (empty trap + aged timestamp).
         $response = $this->post('/account/delete-request', [
             'name' => 'Amina',
             'email' => 'amina@example.com',
             'message' => 'Please delete my account and data.',
+            'website' => '',
+            'form_loaded_at' => (string) (now()->timestamp - 10),
         ]);
 
         // Redirects back to the form anchor with the success flag.
@@ -93,8 +96,11 @@ class AccountDeletionPageTest extends TestCase
     public function test_request_form_accepts_a_bare_email(): void
     {
         // Name and message are optional — an email alone still queues the request.
-        $this->post('/account/delete-request', ['email' => 'sara@example.com'])
-            ->assertRedirect();
+        $this->post('/account/delete-request', [
+            'email' => 'sara@example.com',
+            'website' => '',
+            'form_loaded_at' => (string) (now()->timestamp - 10),
+        ])->assertRedirect();
 
         $stored = ContactMessage::sole();
         $this->assertNull($stored->name);
@@ -107,6 +113,8 @@ class AccountDeletionPageTest extends TestCase
         $this->post('/account/delete-request', [
             'email' => 'not-an-email',
             'message' => 'delete everything',
+            'website' => '',
+            'form_loaded_at' => (string) (now()->timestamp - 10),
         ])->assertSessionHasErrors('email');
 
         $this->assertDatabaseCount('contact_messages', 0);

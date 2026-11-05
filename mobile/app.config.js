@@ -63,6 +63,7 @@ export default {
     predictiveBackGestureEnabled: false,
     allowBackup: false,
     permissions: ["FOREGROUND_SERVICE", "SCHEDULE_EXACT_ALARM"],
+    blockedPermissions: ["READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE"],
   },
   web: {
     output: "static",
@@ -84,6 +85,14 @@ export default {
     "expo-secure-store",
     "expo-localization",
     "expo-image",
+    [
+      "expo-image-picker",
+      {
+        photosPermission: "Select photos for your avatar, posts and recipes.",
+        cameraPermission: false,
+        microphonePermission: false,
+      },
+    ],
     "./plugins/arm64-only",
     [
       "expo-build-properties",

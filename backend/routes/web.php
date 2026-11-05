@@ -69,7 +69,7 @@ Route::get('/download', function () {
     abort_unless($release !== null, 404);
 
     return $release->toDownloadResponse();
-})->name('app.download');
+})->middleware('throttle:30,1')->name('app.download');
 
 // Per-release download from the admin table (same private-disk stream).
 Route::get('/admin/app-releases/{release}/download', function (AppRelease $release) {
@@ -133,6 +133,7 @@ Route::view('/pricing', 'pages.pricing')->name('pages.pricing');
 Route::view('/tips', 'pages.tips')->name('pages.tips');
 Route::view('/help', 'pages.help')->name('pages.help');
 Route::view('/terms', 'pages.terms')->name('pages.terms');
+Route::view('/copyright', 'pages.copyright')->name('pages.copyright');
 
 Route::get('/blog', function () {
     return view('pages.blog');
@@ -164,7 +165,7 @@ Route::post('/contact', function (Request $request) {
     ContactMessage::create($data);
 
     return redirect()->to(route('pages.contact', ['sent' => 1]).'#form');
-})->middleware('throttle:6,1')->name('pages.contact.submit');
+})->middleware('throttle:6,1', 'spam')->name('pages.contact.submit');
 
 /*
  | ---- Account deletion page + request form (store compliance) --------------
@@ -199,7 +200,7 @@ Route::post('/account/delete-request', function (Request $request) {
     // header). String-concatenating a RedirectResponse instead returns its
     // serialized body as a 200 and loses the status/fragment.
     return redirect()->route('pages.account-delete', ['sent' => 1])->withFragment('form');
-})->middleware('throttle:6,1')->name('pages.account-delete.submit');
+})->middleware('throttle:6,1', 'spam')->name('pages.account-delete.submit');
 
 /*
  | Public web recipe page (GET /r/{recipe}): the share target behind the

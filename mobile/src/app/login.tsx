@@ -12,10 +12,13 @@ import {
 import * as WebBrowser from "expo-web-browser";
 
 import { loginWithGoogle, fetchMyProfileFull } from "@/api/client";
+import { setAuthTokenCache } from "@/api/http";
 import { track } from "@/analytics";
-import { API_BASE_URL, OAUTH_FLOW_KEY } from "@/config";
+import { API_BASE_URL, AUTH_TOKEN_KEY } from "@/config";
 import { useT, type TranslateFn } from "@/i18n";
 import { secureStore } from "@/utils/secureStore";
+import { clearFlowSecret, readFlowSecret, saveFlowSecret } from "@/utils/oauthStorage";
+import type { AuthResponse } from "@/types";
 import {
   MaxContentWidth,
   Space,
@@ -32,12 +35,6 @@ const GOOGLE_CLIENT_ID_PLACEHOLDER = "REPLACE_WITH_GOOGLE_WEB_CLIENT_ID";
  * in the Google console (see resolveAuthRedirectUri for why it's pinned).
  */
 const EXPO_GO_AUTH_PROXY = "https://auth.expo.io/@mamounhisham1/recipereal";
-
-/** The single-use OAuth material generated per sign-in attempt. */
-interface FlowSecret {
-  nonce: string;
-  state: string;
-}
 
 /** Length-independent comparison for state/secret checks. */
 function timingSafeEqual(a: string, b: string): boolean {
@@ -94,6 +91,37 @@ function friendlyError(e: unknown, t: TranslateFn): string {
   return t("login.errGeneric");
 }
 
+/**
+ * Exchange an authorization code for a session (standalone code+PKCE flow):
+ * POST /api/auth/google/code with the code plus the PKCE verifier and nonce
+ * stored for THIS attempt (the backend performs the Google token exchange
+ * server-side and answers the same { token, user } shape as the implicit
+ * /api/auth/google endpoint). The returned token is persisted exactly like
+ * loginWithGoogle does for the implicit flow. Deliberately a direct axios
+ * call in THIS screen, not a client.ts function: the endpoint is
+ * login-only and this file owns the whole OAuth flow.
+ */
+async function exchangeAuthCode(
+  code: string,
+  codeVerifier: string,
+  nonce: string,
+): Promise<AuthResponse> {
+  const { data } = await axios.post<AuthResponse>(
+    `${API_BASE_URL}/api/auth/google/code`,
+    {
+      code,
+      code_verifier: codeVerifier,
+      nonce,
+    },
+  );
+  if (data?.token) {
+    await secureStore.setItemAsync(AUTH_TOKEN_KEY, data.token);
+    // Keep the http layer's in-memory mirror in sync (see getAuthToken).
+    setAuthTokenCache(data.token);
+  }
+  return data;
+}
+
 export default function LoginScreen() {
   const colors = useThemeColors();
   const t = useT();
@@ -110,6 +138,13 @@ export default function LoginScreen() {
   // Expo Go (or nowhere) after the Google consent screen.
   const isStandalone =
     Constants.executionEnvironment !== ExecutionEnvironment.StoreClient;
+  // Which OAuth flow to START: standalone/store builds run the
+  // authorization-CODE + PKCE flow (the implicit id_token they returned
+  // before was interceptable off the recipereal:// scheme bounce). Expo Go
+  // (executionEnvironment === StoreClient) and web keep the implicit
+  // id_token flow — the auth.expo.io proxy and the web popup completion
+  // below only ever deliver an id_token.
+  const useCodePkceFlow = Platform.OS !== "web" && isStandalone;
   // Domain flow: Google redirects straight to OUR trampoline
   // (<API_BASE_URL>/auth/callback — branded, HTTPS, the only kind Google's
   // web client accepts) which forwards the response to recipereal:///login.
@@ -181,10 +216,15 @@ export default function LoginScreen() {
   const nonce = useMemo(() => Crypto.randomUUID().replace(/-/g, ""), []);
   const oauthState = useMemo(() => Crypto.randomUUID().replace(/-/g, ""), []);
 
-  // Google auth request (id-token implicit flow against the Web client). The
-  // redirect goes through our domain trampoline so this works without a
-  // custom-scheme return target. The request loads async; pressing the button
-  // before it's ready surfaces a friendly retry error.
+  // Google auth request (authorization-code + PKCE in standalone/store
+  // builds; id-token implicit flow in Expo Go/web). The redirect goes
+  // through our domain trampoline so this works without a custom-scheme
+  // return target. The request loads async; pressing the button before it's
+  // ready surfaces a friendly retry error.
+  // With usePKCE on, expo-auth-session generates the verifier/challenge when
+  // the request loads, auto-attaches code_challenge (S256) to the auth URL
+  // and keeps the paired verifier on request.codeVerifier (saved into the
+  // flow secret at button-press for the backend exchange).
   // nonce rides via extraParams (Google signs it into the id_token; the
   // backend requires an exact match). state MUST be a top-level option —
   // AuthRequest.makeAuthUrlAsync OVERWRITES extraParams.state with the
@@ -196,7 +236,8 @@ export default function LoginScreen() {
     // ID the request stays un-ready and the button surfaces errNotConfigured
     // instead of building a bogus Google URL.
     clientId: googleClientId ?? "",
-    responseType: ResponseType.IdToken,
+    responseType: useCodePkceFlow ? ResponseType.Code : ResponseType.IdToken,
+    usePKCE: useCodePkceFlow,
     redirectUri: oauthRedirectUri ?? undefined,
     state: oauthState,
     extraParams: { nonce },
@@ -209,28 +250,37 @@ export default function LoginScreen() {
 
   /**
    * DEEP-LINK COMPLETION (standalone Android): when the domain trampoline
-   * fires recipereal:///login?state=…&id_token=…, the OS opens this route as
-   * a deep link while the pending openAuthSessionAsync promise often
-   * resolves as "dismissed" (the custom-scheme navigation tears down the
-   * custom tab).
+   * fires recipereal:///login?state=…&code=… (code+PKCE) or
+   * recipereal:///login?state=…&id_token=… (Expo Go implicit), the OS opens
+   * this route as a deep link while the pending openAuthSessionAsync promise
+   * often resolves as "dismissed" (the custom-scheme navigation tears down
+   * the custom tab).
    *
    * SECURITY: the callback is only trusted when its `state` matches the
    * single-use material generated for THIS attempt (persisted in SecureStore
-   * at button-press so cold-start completions still verify). The secret is
-   * CONSUMED on first read — an id_token injected by another app via the
-   * custom scheme carries no matching state and dies here; a captured URL
-   * can never replay either. Only then is loginWithGoogle called WITH the
-   * paired nonce (which Google signed into the token; backend enforces).
+   * at button-press so cold-start completions still verify). The comparison
+   * happens FIRST — a link injected by another app via the custom scheme
+   * carries no matching state and is IGNORED SILENTLY without burning the
+   * secret, so the genuine callback that follows still completes; only a
+   * VERIFIED callback consumes it (single use — a captured URL can never
+   * replay). Then the code is exchanged WITH the paired PKCE verifier and
+   * nonce, or the id_token submitted WITH its nonce (backend enforces both).
    */
   const deepParams = useLocalSearchParams<{
     id_token?: string;
+    code?: string;
     state?: string;
     error?: string;
+    error_description?: string;
   }>();
   const completedRef = useRef(false);
   const deepIdToken =
     typeof deepParams.id_token === "string" && deepParams.id_token.length > 0
       ? deepParams.id_token
+      : null;
+  const deepCode =
+    typeof deepParams.code === "string" && deepParams.code.length > 0
+      ? deepParams.code
       : null;
   const deepState =
     typeof deepParams.state === "string" && deepParams.state.length > 0
@@ -242,28 +292,52 @@ export default function LoginScreen() {
       : null;
   useEffect(() => {
     if (completedRef.current) return;
-    if (!deepIdToken && !deepError) return;
-    completedRef.current = true;
-    // Strip the credentials from this route entry (setParams with
-    // undefined removes the params) so they can never replay on a later
-    // /login mount — the sign-in continues in THIS component instance.
-    router.setParams({ id_token: undefined, state: undefined, error: undefined });
+    if (!deepIdToken && !deepCode && !deepError) return;
     (async () => {
       try {
-        if (!deepIdToken) {
+        // Verify the state BEFORE marking the completion or touching the
+        // secret: a forged link must neither consume the one-shot
+        // completion nor the stored secret — the genuine callback that
+        // follows still completes.
+        const secret = await readFlowSecret();
+        if (
+          !secret ||
+          !deepState ||
+          !timingSafeEqual(deepState, secret.state)
+        ) {
+          return;
+        }
+        completedRef.current = true;
+        // Strip the credentials from this route entry (setParams with
+        // undefined removes the params) so they can never replay on a later
+        // /login mount — the sign-in continues in THIS component instance.
+        router.setParams({
+          id_token: undefined,
+          code: undefined,
+          state: undefined,
+          error: undefined,
+          error_description: undefined,
+        });
+        // Verified: consume the single-use secret BEFORE any sign-in call.
+        await clearFlowSecret();
+        if (!deepCode && !deepIdToken) {
+          // A verified callback that carries an OAuth error (consent
+          // denied etc.) — the attempt is over, surface it.
           setError(t("login.errNotComplete"));
           return;
         }
         setGoogleBusy(true);
-        // Verify + consume the flow secret BEFORE any sign-in call.
-        const raw = await secureStore.getItemAsync(OAUTH_FLOW_KEY);
-        await secureStore.deleteItemAsync(OAUTH_FLOW_KEY); // single use
-        const secret: FlowSecret | null = raw ? JSON.parse(raw) : null;
-        if (!secret || !deepState || !timingSafeEqual(deepState, secret.state)) {
-          setError(t("login.errNoToken"));
-          return;
+        if (deepCode) {
+          // Standalone code+PKCE completion: backend exchange, then the
+          // exact same post-login path as the implicit flow.
+          await exchangeAuthCode(
+            deepCode,
+            secret.codeVerifier ?? "",
+            secret.nonce,
+          );
+        } else {
+          await loginWithGoogle(deepIdToken as string, secret.nonce);
         }
-        await loginWithGoogle(deepIdToken, secret.nonce);
         track("signed_in", { method: "google" });
         navigateAfterAuth();
       } catch (e) {
@@ -273,7 +347,7 @@ export default function LoginScreen() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deepIdToken, deepState, deepError]);
+  }, [deepIdToken, deepCode, deepState, deepError]);
 
   /**
    * WEB popup completion. Some embedded browsers (the dev preview's
@@ -303,17 +377,21 @@ export default function LoginScreen() {
     (async () => {
       try {
         setGoogleBusy(true);
-        // Verify + consume the flow secret BEFORE any sign-in call.
-        const raw = await secureStore.getItemAsync(OAUTH_FLOW_KEY);
-        await secureStore.deleteItemAsync(OAUTH_FLOW_KEY); // single use
-        const secret: FlowSecret | null = raw ? JSON.parse(raw) : null;
+        // Verify the state BEFORE touching the secret (same order as the
+        // deep-link path): a non-matching fragment is ignored silently
+        // without burning the single-use material; only a verified match
+        // consumes it before the sign-in call.
+        const secret = await readFlowSecret();
         if (
-          !idToken ||
           !secret ||
           !returnedState ||
           !timingSafeEqual(returnedState, secret.state)
         ) {
-          setError(t("login.errNoToken"));
+          return;
+        }
+        await clearFlowSecret();
+        if (!idToken) {
+          setError(t("login.errNotComplete"));
           return;
         }
         await loginWithGoogle(idToken, secret.nonce);
@@ -368,14 +446,16 @@ export default function LoginScreen() {
 
     setGoogleBusy(true);
     try {
-      // Persist this attempt's anti-injection material BEFORE opening
+      // Persist this attempt's single-use material BEFORE opening
       // Google: the deep-link completion (possibly a cold start, fresh JS
-      // context) verifies state and reads the nonce from here.
-      const flowSecret: FlowSecret = { nonce, state: oauthState };
-      await secureStore.setItemAsync(
-        OAUTH_FLOW_KEY,
-        JSON.stringify(flowSecret),
-      );
+      // context) verifies state and reads the nonce — and, in the code
+      // flow, the PKCE verifier expo-auth-session generated for this
+      // request — from here.
+      await saveFlowSecret({
+        nonce,
+        state: oauthState,
+        codeVerifier: request?.codeVerifier,
+      });
 
       const authUrl =
         request.url ?? (await request.makeAuthUrlAsync(Google.discovery));
@@ -410,22 +490,26 @@ export default function LoginScreen() {
       if (result.type !== "success") {
         return;
       }
-      // A "success" carrying NO params is the Android fragment-drop
-      // signature (token lost in the custom-scheme redirect) — surface it
+      // A "success" carrying NEITHER id_token (Expo Go/web implicit) NOR
+      // code (standalone PKCE) is the Android fragment-drop signature
+      // (credentials lost in the custom-scheme redirect) — surface it
       // instead of failing silently back to the sign-in screen. The URL is
       // logged WITHOUT its query/fragment so no credential material can
       // reach the (possibly non-stripped) console.
-      if (!result.url || !result.url.includes("id_token")) {
+      if (
+        !result.url ||
+        (!result.url.includes("id_token") && !result.url.includes("code"))
+      ) {
         console.warn(
-          "[RecipeReal] auth returned success with no id_token:",
+          "[RecipeReal] auth returned success with no id_token/code:",
           result.url.split(/[?#]/)[0],
         );
         setError(t("login.errNoToken"));
         return;
       }
 
-      // The trampoline (and Google's implicit flow) may deliver the params
-      // in the URL FRAGMENT — normalize #params to ?params before parsing.
+      // The trampoline (and Google's flows) may deliver the params in the
+      // URL FRAGMENT — normalize #params to ?params before parsing.
       const resultUrl = result.url.includes("#")
         ? result.url.replace("#", "?")
         : result.url;
@@ -435,11 +519,10 @@ export default function LoginScreen() {
         return;
       }
 
+      const returnedCode = parsed.params?.code;
       const idToken = parsed.params?.id_token;
       const returnedState = parsed.params?.state;
       if (
-        typeof idToken !== "string" ||
-        !idToken ||
         typeof returnedState !== "string" ||
         !timingSafeEqual(returnedState, oauthState)
       ) {
@@ -449,11 +532,21 @@ export default function LoginScreen() {
 
       // The deep-link completion effect may have already claimed this
       // sign-in (Android resolves the session as dismissed while the deep
-      // link carries the token) — never submit twice.
+      // link carries the credentials) — never submit twice.
       if (completedRef.current) return;
       completedRef.current = true;
 
-      await loginWithGoogle(idToken, nonce);
+      if (typeof returnedCode === "string" && returnedCode) {
+        // Standalone code+PKCE: backend exchange with the verifier this
+        // request generated, then the same post-login path as implicit.
+        await exchangeAuthCode(returnedCode, request.codeVerifier ?? "", nonce);
+      } else if (typeof idToken === "string" && idToken) {
+        // Implicit (Expo Go/web): existing id_token handling.
+        await loginWithGoogle(idToken, nonce);
+      } else {
+        setError(t("login.errNoToken"));
+        return;
+      }
       track("signed_in", { method: "google" });
       navigateAfterAuth();
     } catch (e) {

@@ -26,7 +26,10 @@ class ProfileController extends Controller
         $me = $request->user('sanctum');
         $following = $me ? Follow::where('follower_id', $me->id)->where('followed_id', $user->id)->exists() : false;
 
-        return response()->json(array_merge($this->payload($user), [
+        // PUBLIC identity only: the internal users.name and gender never
+        // leave the account (privacy hardening H4). Authed /users/me/*
+        // endpoints keep the full payload (see show()/update()).
+        return response()->json(array_merge($this->payload($user, publicOnly: true), [
             'is_following' => $following,
             'is_self' => $me ? $me->id === $user->id : false,
         ]));
@@ -73,23 +76,42 @@ class ProfileController extends Controller
         return response()->json($this->payload($user->refresh()));
     }
 
-    private function payload(User $user): array
+    /**
+     * Profile payload. $publicOnly strips the internal account fields
+     * (users.name, gender) — anything reachable WITHOUT the user's own
+     * token must never carry them; the authed /users/me endpoints keep
+     * the full shape the mobile client already relies on.
+     */
+    private function payload(User $user, bool $publicOnly = false): array
     {
         $followersCount = (int) Follow::where('followed_id', $user->id)->count();
         $followingCount = (int) Follow::where('follower_id', $user->id)->count();
 
+        $identity = [
+            'id' => $user->id,
+            'display_name' => $user->display_name ?? $user->name,
+            // Raw marker (no name fallback): onboarding gates on this —
+            // fresh Google accounts have display_name NULL until the
+            // user types one in /onboarding.
+            'has_display_name' => $user->display_name !== null && $user->display_name !== '',
+        ];
+
+        if ($publicOnly) {
+            // Public identity = display_name only, with a neutral fallback
+            // for accounts that never set one (EN/AR aware for the share
+            // pages' locale).
+            $identity['display_name'] = trim((string) ($user->display_name ?? '')) !== ''
+                ? $user->display_name
+                : (app()->getLocale() === 'ar' ? 'طاهٍ' : 'A cook');
+        } else {
+            $identity['name'] = $user->name;
+            $identity['gender'] = $user->gender;
+        }
+
         return [
-            'user' => [
-                'id' => $user->id,
-                'display_name' => $user->display_name ?? $user->name,
-                // Raw marker (no name fallback): onboarding gates on this —
-                // fresh Google accounts have display_name NULL until the
-                // user types one in /onboarding.
-                'has_display_name' => $user->display_name !== null && $user->display_name !== '',
-                'name' => $user->name,
+            'user' => $identity + [
                 'avatar_url' => $user->avatar_url,
                 'bio' => $user->bio,
-                'gender' => $user->gender,
                 'created_at' => $user->created_at?->toIso8601String(),
             ],
             'counts' => [

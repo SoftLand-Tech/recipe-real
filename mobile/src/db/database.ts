@@ -618,6 +618,23 @@ export async function clearAccountData(): Promise<void> {
 }
 
 /**
+ * Clear the identity-scoped caches when the SIGNED-IN ACCOUNT CHANGES on
+ * this device (expired token then a different Google account signs in):
+ * favorites, local notes and pace calibrations belong to the previous
+ * user. Queued cook sessions are intentionally KEPT — they are the
+ * device-owner's real cooking history and must still sync after sign-in.
+ * Distinct from clearAccountData() (logout/delete), which wipes everything.
+ */
+export async function clearAccountScopedCaches(): Promise<void> {
+  const db = await getDb();
+  await runSerialized(async () => {
+    await db.execAsync("DELETE FROM pace_calibrations;");
+    await db.execAsync("DELETE FROM favorites;");
+    await db.execAsync("DELETE FROM notes;");
+  });
+}
+
+/**
  * Light background refresh: fetch all recipe pages WITHOUT steps (small
  * payloads) and upsert them, leaving the cached step library untouched.
  */

@@ -694,4 +694,22 @@ export const en: Record<string, string> = {
   "composer.discardRecipeMessage": "Your recipe won't be saved.",
   "composer.discardPostMessage": "Your post won't be saved.",
   "composer.discardBtn": "Discard",
+
+  // ---- First-run consent + policy links + alarm permission + note actions ----
+  "consent.title": "Quick privacy note",
+  "consent.body": "RecipeReal collects minimal usage events and a random install id to improve estimates. Nothing is sold and there are no ads.",
+  "consent.accept": "Accept",
+  "consent.decline": "Continue without sharing",
+  "consent.privacy": "Privacy policy",
+  "consent.terms": "Terms",
+  "settings.privacyPolicy": "Privacy policy",
+  "settings.termsOfService": "Terms of service",
+  "alarm.permissionTitle": "Alarms need notification access",
+  "alarm.permissionBody": "Enable notifications for RecipeReal so step alarms can fire. Timing still works without them.",
+  "notes.deleteConfirmTitle": "Delete this note?",
+  "notes.deleteConfirmBody": "It will be removed for everyone. This cannot be undone.",
+  "notes.deleted": "Note deleted",
+  "notes.reportConfirmTitle": "Report this note?",
+  "notes.reportConfirmBody": "Our team reviews reports and removes content that breaks the rules.",
+  "notes.reported": "Reported — thank you",
 };

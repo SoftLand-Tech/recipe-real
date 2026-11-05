@@ -53,6 +53,15 @@
     <div class="card" id="form">
         <form method="POST" action="{{ route('pages.account-delete.submit') }}">
             @csrf
+            {{-- Honeypot (M15): real users never see or fill the 'website'
+                 field, and form_loaded_at marks the render time for the
+                 2-second minimum submit age. The 'spam' middleware checks
+                 both server-side. --}}
+            <div aria-hidden="true" style="position:absolute; left:-9999px; height:0; overflow:hidden;">
+                <label for="website">Website</label>
+                <input id="website" name="website" type="text" autocomplete="off" tabindex="-1">
+            </div>
+            <input type="hidden" name="form_loaded_at" value="{{ time() }}">
             <div class="field">
                 <label for="name">{{ __('site.account_delete_name') }} <span style="color: var(--faint); font-weight: 600;">{{ __('site.account_delete_optional') }}</span></label>
                 <input id="name" name="name" type="text" maxlength="100" value="{{ old('name') }}" autocomplete="name" placeholder="{{ __('site.account_delete_name_ph') }}">

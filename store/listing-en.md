@@ -25,9 +25,11 @@ measured reality and calibrates every estimate to your pace.
 WHAT YOU GET
 
 • Honest cook times — every recipe shows the time it claims next to what it
-  really takes, measured by real cooks in Cook Mode.
+  really takes, measured by real cooks in Cook Mode (AI estimates are shown
+  until cooks have measured a recipe).
 • Guided Cook Mode — a full-screen, step-by-step stopwatch with step alarms,
-  pause/resume, and per-step timing that keeps working on a locked phone.
+  pause/resume, and per-step timing. Alarms and timing keep working with the
+  screen locked.
 • Calibrated to you — the more you cook, the closer every estimate gets to your
   kitchen, not an average one.
 • A library of 20,000+ recipes across categories for weeknight dinners,

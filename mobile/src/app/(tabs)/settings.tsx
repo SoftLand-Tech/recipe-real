@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   I18nManager,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,6 +22,7 @@ import {
   useScrollChrome,
 } from "@/components/chrome";
 
+import { cancelAllScheduledNotifications } from "@/utils/cookAlarms";
 import {
   isNotificationsAvailable,
   requestNotificationsPermission,
@@ -54,6 +56,10 @@ import {
   Toggle,
   useHeaderActionsRights,
 } from "@/components/ui";
+
+/** Legal pages, opened in the system browser (same URLs as the consent modal). */
+const PRIVACY_URL = "https://recipe-real.softland.tech/privacy";
+const TERMS_URL = "https://recipe-real.softland.tech/terms";
 
 const THEME_OPTIONS: { pref: ThemePref; labelKey: string }[] = [
   { pref: "system", labelKey: "theme.system" },
@@ -345,6 +351,9 @@ export default function SettingsScreen() {
     } catch {
       // logout() clears the stored token in its finally block; ignore errors.
     }
+    // Drop any still-scheduled cook alarms — they belong to the signed-out
+    // user's sessions and must not fire for whoever picks up the device next.
+    await cancelAllScheduledNotifications();
     // Also clear the Pace screen's remount cache so the next signed-in user
     // never sees the previous account's pace data flash on remount.
     clearPaceCache();
@@ -358,6 +367,9 @@ export default function SettingsScreen() {
     setDeleteFailed(false);
     try {
       await deleteAccount();
+      // The account (and its cook sessions) is gone server-side; cancel any
+      // of its alarms still scheduled locally too.
+      await cancelAllScheduledNotifications();
       clearPaceCache();
       await refreshAuth();
     } catch (error) {
@@ -740,6 +752,23 @@ export default function SettingsScreen() {
           </Card>
         )}
       </View>
+
+      {/* Legal: privacy policy + terms, opened in the system browser. */}
+      <Card padding={0} style={styles.group}>
+        <SettingsRow
+          icon="shield-checkmark-outline"
+          label={t("settings.privacyPolicy")}
+          chevron
+          onPress={() => void Linking.openURL(PRIVACY_URL).catch(() => {})}
+        />
+        <View style={styles.divider} />
+        <SettingsRow
+          icon="document-text-outline"
+          label={t("settings.termsOfService")}
+          chevron
+          onPress={() => void Linking.openURL(TERMS_URL).catch(() => {})}
+        />
+      </Card>
 
       {/* About — one plain centered footer line, no card. */}
       <Text style={styles.aboutText}>{t("settings.about", { version })}</Text>

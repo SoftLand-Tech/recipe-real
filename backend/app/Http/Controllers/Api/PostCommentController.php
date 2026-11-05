@@ -81,13 +81,28 @@ class PostCommentController extends Controller
 
         // Inline notification event: someone else's comment notifies the post
         // author (self-comments never notify).
+        //
+        // Flood guard (M6): an actor re-commenting on the same post within
+        // 7 days must not stack identical notifications — skip the insert
+        // when one with the same (recipient, actor, post, type) already
+        // exists from the last 7 days. The comment itself still lands.
         if ($post->user_id !== $request->user()->id) {
-            Notification::create([
-                'user_id'  => $post->user_id,
-                'type'     => 'comment',
-                'actor_id' => $request->user()->id,
-                'post_id'  => $post->id,
-            ]);
+            $recentlyNotified = Notification::query()
+                ->where('user_id', $post->user_id)
+                ->where('actor_id', $request->user()->id)
+                ->where('post_id', $post->id)
+                ->where('type', 'comment')
+                ->where('created_at', '>=', now()->subDays(7))
+                ->exists();
+
+            if (! $recentlyNotified) {
+                Notification::create([
+                    'user_id'  => $post->user_id,
+                    'type'     => 'comment',
+                    'actor_id' => $request->user()->id,
+                    'post_id'  => $post->id,
+                ]);
+            }
         }
 
         return (new PostCommentResource($comment))

@@ -12,7 +12,7 @@
  * is likewise unavailable there) — tap-to-open, the sticky session
  * notification and step alarms all need a dev build or APK.
  */
-import { Platform } from "react-native";
+import { Alert, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { translate, type TranslateFn } from "@/i18n";
@@ -85,6 +85,21 @@ export async function requestAlarmPermission(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * requestAlarmPermission() + a localized explanation when it fails.
+ * Callers used to drop the denial silently, which read as a bug (a chip
+ * that does nothing). Returns the same boolean: true → alarms may arm.
+ */
+export async function ensureAlarmPermissionOrExplain(
+  t: TranslateFn,
+): Promise<boolean> {
+  const granted = await requestAlarmPermission();
+  if (!granted) {
+    Alert.alert(t("alarm.permissionTitle"), t("alarm.permissionBody"));
+  }
+  return granted;
 }
 
 // ---- Channels ---------------------------------------------------------------
@@ -234,14 +249,14 @@ export async function consumePendingNotifNav(): Promise<string | null> {
  * pause-adjusted elapsed. Re-posting on pause/resume swaps the action title
  * (Pause <-> Resume) and the base.
  *
- * Stickiness: `ongoing` keeps the row non-dismissible and `asForegroundService`
- * elevates it to a foreground-service notification, so swiping the app out
- * of recents (or the OS reclaiming the process) does NOT take it down — it
- * stands until the cook finishes, is discarded, or the session is stopped.
- * (Requires the FOREGROUND_SERVICE manifest permission + the registered
- * foreground-service task; both wired at app start. Aggressive OEM
- * force-stops can still clear it — the in-app session banner then remains
- * the source of truth, and the notification is re-posted on next launch.)
+ * Stickiness: `ongoing` keeps the row non-dismissible while the process is
+ * alive. The foreground-service elevation (`asForegroundService`) was
+ * REMOVED on purpose: on Android 14+ notifee's merged service is
+ * shortService-typed and posts fail without the FOREGROUND_SERVICE_*
+ * typed permission — a plain ongoing notification is correct. Aggressive
+ * OEM force-stops or swipe-aways can still clear the row — the in-app
+ * session banner then remains the source of truth, and the notification
+ * is re-posted on next launch.
  *
  * Paused state does NOT show a ticking chronometer: Android notification
  * chronometers cannot freeze, and leaving one running while paused would
@@ -282,7 +297,8 @@ export async function startCookNotification(
       android: {
         channelId: COOK_CHANNEL_ID,
         ongoing: true,
-        asForegroundService: true,
+        // FGS removed - Android 14 shortService cap; timing is wall-clock
+        // and alarms fire regardless.
         // Body tap → global handler opens the cook screen.
         pressAction: { id: "default" },
         showTimestamp: false,
@@ -472,6 +488,21 @@ export async function cancelStepAlarm(id: string | null): Promise<void> {
     await api.cancelNotification(id);
   } catch {
     // Already fired or cancelled — nothing to do.
+  }
+}
+
+/**
+ * Cancel every notification AND scheduled trigger (delivered + pending
+ * steps). No-op when the API is unavailable; a failure is logged, never
+ * thrown (callers use it as wholesale cleanup).
+ */
+export async function cancelAllScheduledNotifications(): Promise<void> {
+  const api = await notifeeApi();
+  if (!api) return;
+  try {
+    await api.cancelAllNotifications();
+  } catch (error) {
+    console.warn("[RecipeReal] cancelAllNotifications failed:", error);
   }
 }
 
@@ -713,9 +744,9 @@ let globalEventsInit = false;
  *   screen is mounted, snapshot fallback otherwise; body taps navigate.
  * - Background PRESS (headless): snapshot-backed pause/resume/finish, and
  *   body taps stash their destination for _layout to consume on foreground.
- * - Foreground-service task registration (required for asForegroundService
- *   posts; the task itself resolves immediately — the ongoing notification
- *   is the persistent surface, not the task).
+ * - Foreground-service task registration (legacy no-op: posts stopped
+ *   declaring FGS on Android 14 — see startCookNotification; the task
+ *   itself resolves immediately).
  *
  * This REPLACES the old per-screen initCookEventHandlers (removed): a
  * screen-mounted listener unsubscribed on unmount AND double-fired while
@@ -730,7 +761,8 @@ export function initGlobalCookEvents(): void {
       try {
         mod.default.registerForegroundService(() => Promise.resolve());
       } catch {
-        // Registration is best-effort; posts still attempt FGS.
+        // Registration is best-effort (kept harmless: no post declares
+        // FGS anymore — see startCookNotification).
       }
       try {
         mod.default.onForegroundEvent((event) => {

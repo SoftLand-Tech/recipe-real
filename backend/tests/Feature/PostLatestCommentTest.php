@@ -63,14 +63,15 @@ class PostLatestCommentTest extends TestCase
         $this->assertNotEquals($older->id, $row['latest_comment']['id']);
         $this->assertNotEmpty($row['latest_comment']['created_at']);
         $this->assertSame($commenterB->id, $row['latest_comment']['user']['id']);
+        // Public payloads expose display_name only (never the account name).
         $this->assertSame(
-            [$commenterB->display_name, $commenterB->name, $commenterB->avatar_url],
+            [$commenterB->display_name, $commenterB->avatar_url],
             [
                 $row['latest_comment']['user']['display_name'],
-                $row['latest_comment']['user']['name'],
                 $row['latest_comment']['user']['avatar_url'],
             ],
         );
+        $this->assertArrayNotHasKey('name', $row['latest_comment']['user']);
     }
 
     /** Posts without comments carry latest_comment === null. */

@@ -22,7 +22,6 @@ class CreateRecipeImportRequest extends FormRequest
 
         return [
             'source_url' => ['nullable', 'url', 'max:2000'],
-            'provider' => ['nullable', 'string', 'max:80', 'regex:/^[a-z0-9_-]+$/i'],
             'primary_file' => [
                 'nullable',
                 'file',

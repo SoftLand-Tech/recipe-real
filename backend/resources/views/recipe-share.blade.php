@@ -37,6 +37,20 @@
         $descParts[] = "{$steps} ".($steps === 1 ? __('site.share_step') : __('site.share_steps'));
     }
     $description = implode(' · ', $descParts);
+
+    // Attribution: imported rows keep the original Food.com recipe URL in
+    // source_url; every share page also links the copyright/takedown page.
+    $sourceUrl = trim((string) $recipe->source_url);
+    $sourceHost = $sourceUrl !== '' ? (string) parse_url($sourceUrl, PHP_URL_HOST) : '';
+    $sourceLabel = $sourceHost !== '' && str_contains($sourceHost, 'food.com')
+        ? 'Food.com'
+        : $sourceHost;
+    if ($sourceLabel !== '') {
+        // og:text can't carry a link — name the source instead, localized.
+        $description .= app()->getLocale() === 'ar'
+            ? ' · المصدر: '.$sourceLabel
+            : ' · Source: '.$sourceLabel;
+    }
 @endphp
         <title>{{ $pageTitle }} — RecipeReal</title>
         <meta name="description" content="{{ $description }}">
@@ -141,6 +155,18 @@
                 font-size: 0.95rem;
                 margin: 14px 0 0;
             }
+            .attribution {
+                color: #6E5F52;
+                font-size: 0.82rem;
+                margin: 10px 0 0;
+            }
+            .attribution a {
+                color: #BF5523;
+                text-decoration: none;
+            }
+            .attribution a:hover {
+                text-decoration: underline;
+            }
             footer {
                 color: #6E5F52;
                 font-size: 0.88rem;
@@ -182,6 +208,18 @@
 @if ($steps !== null)
                 <p class="meta">{{ $steps }} {{ $steps === 1 ? __('site.share_step') : __('site.share_steps') }}</p>
 @endif
+@php
+    $copyrightUrl = url('/copyright');
+@endphp
+@if ($sourceUrl !== '')
+                <p class="attribution">
+                    {{ app()->getLocale() === 'ar' ? 'المصدر:' : 'Source:' }}
+                    <a href="{{ $sourceUrl }}" rel="noopener noreferrer nofollow" target="_blank">{{ $sourceLabel !== '' ? $sourceLabel : $sourceUrl }}</a>
+                </p>
+@endif
+                <p class="attribution">
+                    <a href="{{ $copyrightUrl }}">{{ app()->getLocale() === 'ar' ? 'حقوق الوصفات وطلبات الحذف' : 'Recipe attribution & takedowns' }}</a>
+                </p>
             </article>
 
             <footer>{{ __('site.share_cooked') }} <a href="/">RecipeReal</a></footer>

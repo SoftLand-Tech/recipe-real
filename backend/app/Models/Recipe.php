@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class Recipe extends Model
@@ -112,39 +113,52 @@ class Recipe extends Model
      * recalculateReality(). Shared by full Cook Mode sessions (which carry
      * per-step timings) and one-tap quick-time logs (totals only).
      *
-     * - community_avg_minutes: plain average of total_actual_minutes over
-     *   the last 100 sessions (null-safe: untouched when there are none).
-     * - cleanup_avg_minutes: same over non-null cleanup_minutes.
-     * - recipe_steps.community_avg_minutes: all-time average of
-     *   timing_submissions per step, for the given step ids (constrained to
-     *   this recipe's steps). An empty list heals steps that already have
-     *   submissions (e.g. sessions logged before step aggregates existed).
+     * - community_avg_minutes: poison-resistant average of
+     *   total_actual_minutes over the last 100 sessions, with every user
+     *   capped at their 5 most recent rows (null-safe: untouched when
+     *   there are none).
+     * - cleanup_avg_minutes: same window and per-user cap over non-null
+     *   cleanup_minutes.
+     * - recipe_steps.community_avg_minutes: average of timing_submissions
+     *   per step with the same 100-row window and per-user cap, for the
+     *   given step ids (constrained to this recipe's steps). An empty list
+     *   heals steps that already have submissions (e.g. sessions logged
+     *   before step aggregates existed).
      *
      * Saves the model when anything changed (recalculateReality persists
      * when the reality columns moved; the averages are saved explicitly).
      */
     public function refreshCommunityTiming(array $stepIds = []): void
     {
-        $avg = CookSession::query()
-            ->where('recipe_id', $this->id)
-            ->whereNotNull('total_actual_minutes')
-            ->latest('id')
-            ->limit(100)
-            ->avg('total_actual_minutes');
+        // Anti-poisoning: fetch the last 100 contributing rows (same window
+        // as before), then cap every user at their 5 most recent rows before
+        // averaging — see cappedPerUserAverage().
+        $avg = $this->cappedPerUserAverage(
+            CookSession::query()
+                ->where('recipe_id', $this->id)
+                ->whereNotNull('total_actual_minutes')
+                ->latest('id')
+                ->limit(100)
+                ->get(['user_id', 'total_actual_minutes']),
+            'total_actual_minutes',
+        );
 
         if ($avg !== null) {
-            $this->community_avg_minutes = round((float) $avg, 2);
+            $this->community_avg_minutes = round($avg, 2);
         }
 
-        $cleanupAvg = CookSession::query()
-            ->where('recipe_id', $this->id)
-            ->whereNotNull('cleanup_minutes')
-            ->latest('id')
-            ->limit(100)
-            ->avg('cleanup_minutes');
+        $cleanupAvg = $this->cappedPerUserAverage(
+            CookSession::query()
+                ->where('recipe_id', $this->id)
+                ->whereNotNull('cleanup_minutes')
+                ->latest('id')
+                ->limit(100)
+                ->get(['user_id', 'cleanup_minutes']),
+            'cleanup_minutes',
+        );
 
         if ($cleanupAvg !== null) {
-            $this->cleanup_avg_minutes = round((float) $cleanupAvg, 2);
+            $this->cleanup_avg_minutes = round($cleanupAvg, 2);
         }
 
         if ($stepIds === []) {
@@ -163,14 +177,21 @@ class Recipe extends Model
                 ->pluck('id');
 
             foreach ($ownedStepIds as $stepId) {
-                $stepAvg = TimingSubmission::query()
-                    ->where('recipe_step_id', $stepId)
-                    ->avg('actual_minutes');
+                // Same anti-poisoning cap per step: last 100 submissions,
+                // at most 5 per user before averaging.
+                $stepAvg = $this->cappedPerUserAverage(
+                    TimingSubmission::query()
+                        ->where('recipe_step_id', $stepId)
+                        ->latest('id')
+                        ->limit(100)
+                        ->get(['user_id', 'actual_minutes']),
+                    'actual_minutes',
+                );
 
                 if ($stepAvg !== null) {
                     RecipeStep::query()
                         ->where('id', $stepId)
-                        ->update(['community_avg_minutes' => round((float) $stepAvg, 2)]);
+                        ->update(['community_avg_minutes' => round($stepAvg, 2)]);
                 }
             }
         }
@@ -180,6 +201,30 @@ class Recipe extends Model
         }
 
         $this->recalculateReality();
+    }
+
+    /**
+     * Anti-poisoning cap for community averages: from the already-fetched
+     * rows (newest first, capped at 100 BEFORE this cut), each user_id
+     * contributes at most its 5 MOST RECENT rows; the flattened capped rows
+     * are then averaged. Without it one account spamming logs could dominate
+     * reality_minutes — the "Really takes" data cooks trust. With it, five
+     * rows is a full voice no matter how many more the account logs.
+     *
+     * @param  Collection<int, Model>  $rows
+     */
+    private function cappedPerUserAverage(Collection $rows, string $column): ?float
+    {
+        $contributions = $rows
+            ->groupBy('user_id')
+            ->flatMap(fn (Collection $userRows) => $userRows->take(5))
+            ->pluck($column);
+
+        if ($contributions->isEmpty()) {
+            return null;
+        }
+
+        return (float) $contributions->avg();
     }
 
     /**

@@ -304,8 +304,9 @@ class TypesenseSearch
         ];
 
         $filters = [];
+        $category = $this->sanitizedCategory($category);
         if ($category !== '') {
-            $filters[] = 'category:='.mb_strtolower(trim($category));
+            $filters[] = 'category:='.$category;
         }
         if ($timeMax !== null) {
             $filters[] = 'minutes:<='.$timeMax;
@@ -394,6 +395,34 @@ class TypesenseSearch
     private function openCircuit(): void
     {
         Cache::put(self::CIRCUIT_OPEN_KEY, true, self::CIRCUIT_OPEN_TTL_SECONDS);
+    }
+
+    /**
+     * Typesense's filter_by is a small expression language (field:value,
+     * &&, ||, comparisons) — a raw category straight off the query string
+     * could smuggle operators into it (M5 filter injection). Strip the
+     * operator/backtick characters, normalize case/whitespace, then apply
+     * a final strict allowlist shaped like the index-time categories
+     * (documentFor lowercases + trims). Anything empty or invalid drops
+     * the category filter entirely — browse-all for that facet beats
+     * erroring the whole search.
+     */
+    private function sanitizedCategory(string $category): string
+    {
+        $category = mb_strtolower(trim($category));
+
+        // Operator + structural characters first: backticks, colons, the
+        // && / || connectors and every comparison character.
+        $category = str_replace(['`', ':', '||', '&&', '<', '>', '='], '', $category);
+        $category = trim((string) preg_replace('/\s+/', ' ', $category));
+
+        if ($category === '') {
+            return '';
+        }
+
+        return preg_match("/^[a-z0-9][a-z0-9 &'-]{0,59}$/", $category) === 1
+            ? $category
+            : '';
     }
 
     /**

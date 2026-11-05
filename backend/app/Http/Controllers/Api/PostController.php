@@ -358,13 +358,29 @@ class PostController extends Controller
         // Inline notification event: a fresh LIKE by someone other than the
         // author notifies the author. Un-liking creates nothing and leaves
         // any earlier notification rows alone (v1 keeps them).
+        //
+        // Flood guard (M6): like → unlike → like toggling would otherwise
+        // re-notify the author on EVERY flip. Skip the insert when an
+        // identical notification (same recipient, actor, post, type)
+        // already exists from the last 7 days — the like itself still
+        // toggles normally.
         if ($liked && $post->user_id !== $request->user()->id) {
-            Notification::create([
-                'user_id'  => $post->user_id,
-                'type'     => 'like',
-                'actor_id' => $request->user()->id,
-                'post_id'  => $post->id,
-            ]);
+            $recentlyNotified = Notification::query()
+                ->where('user_id', $post->user_id)
+                ->where('actor_id', $request->user()->id)
+                ->where('post_id', $post->id)
+                ->where('type', 'like')
+                ->where('created_at', '>=', now()->subDays(7))
+                ->exists();
+
+            if (! $recentlyNotified) {
+                Notification::create([
+                    'user_id'  => $post->user_id,
+                    'type'     => 'like',
+                    'actor_id' => $request->user()->id,
+                    'post_id'  => $post->id,
+                ]);
+            }
         }
 
         return response()->json([
