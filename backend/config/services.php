@@ -36,7 +36,14 @@ return [
     ],
 
     'google' => [
+        // PRIMARY client (the 2026-11 "recipereal" Cloud project). Used for
+        // outbound OAuth redirects (admin panel) and as the first accepted aud.
         'client_id' => env('GOOGLE_CLIENT_ID'),
+        // LEGACY client (the old project baked into distributed 1.0.2 APKs).
+        // id_tokens minted for it are still ACCEPTED during the transition so
+        // existing installs keep signing in; new builds ship the primary ID.
+        // Remove once every distributed APK uses the primary client.
+        'legacy_client_id' => env('GOOGLE_LEGACY_CLIENT_ID'),
         'admin_redirect_uri' => env('GOOGLE_ADMIN_REDIRECT_URI'),
     ],
 

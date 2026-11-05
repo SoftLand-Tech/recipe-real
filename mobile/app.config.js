@@ -103,8 +103,9 @@ export default {
   },
   extra: {
     reciperealApiBaseUrl: API_BASE_URL,
+    // "recipereal" Cloud project (2026-11) — published consent screen.
     googleWebClientId:
-      "412318680966-oo5cbharsvo1jo4fvi6824taqq6n6du5.apps.googleusercontent.com",
+      "546591490861-c6gqi2a7q2ueqfrl4lu0khs3qbfjercq.apps.googleusercontent.com",
     router: {},
     eas: {
       projectId: "5c0acc82-1f29-48b1-a1b4-64aeecb11836",

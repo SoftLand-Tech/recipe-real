@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\GoogleLoginRequest;
+use App\Services\GoogleIdTokenService;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use Firebase\JWT\JWK;
@@ -55,8 +56,14 @@ class AuthController extends Controller
             ]);
         }
 
+        // Accept tokens minted for the primary client OR the legacy one
+        // (GOOGLE_LEGACY_CLIENT_ID): distributed 1.0.2 APKs still carry the
+        // old project's client ID until the next binary release.
+        $acceptedClientIds = GoogleIdTokenService::acceptedClientIds();
         $aud = $claims->aud ?? null;
-        $audMatches = is_array($aud) ? in_array($clientId, $aud, true) : $aud === $clientId;
+        $audMatches = is_array($aud)
+            ? (bool) array_intersect($acceptedClientIds, $aud)
+            : in_array($aud, $acceptedClientIds, true);
         $issMatches = in_array($claims->iss ?? null, ['https://accounts.google.com', 'accounts.google.com'], true);
 
         if (! $audMatches || ! $issMatches) {

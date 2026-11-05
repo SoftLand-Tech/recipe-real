@@ -1,27 +1,36 @@
 # Google sign-in — setup
 
-Google sign-in is fully implemented (mobile + backend) but needs **one value
-you must create**: a Google OAuth **Web Client ID**.
+Google sign-in is fully implemented (mobile + backend).
 
-## 1. Create the Web Client ID (one-time)
+## Current client (2026-11-05)
 
-1. Open [Google Cloud Console](https://console.cloud.google.com/) → create or
-   pick a project.
-2. **APIs & Services → OAuth consent screen**: External, fill app name
-   (RecipeReal) + support email. Test users are fine for beta.
-3. **APIs & Services → Credentials → Create credentials → OAuth client ID** →
-   type **Web application**.
-4. **Authorized redirect URIs** — add BOTH:
-   ```
-   https://auth.expo.io/@mamounhisham1/recipereal          # Expo Go runs
-   https://recipe-real.softland.tech/auth/callback         # standalone builds
-   ```
-   The first is the Expo auth proxy used when running in Expo Go. The second
-   is our domain trampoline (`routes/web.php` `/auth/callback`): standalone
-   builds send it to Google, and the trampoline forwards the result to the
-   `recipereal:///login` deep link (mobile/src/app/login.tsx handles both the
-   browser-session return and the deep-linked token). Removing either URI
-   breaks sign-in in the other environment.
+| Fact | Value |
+|---|---|
+| Cloud project | `recipereal` (number 546591490861), owner mamounprogrammer@gmail.com |
+| OAuth client | "RecipeReal Web" — Web application |
+| Client ID | `546591490861-c6gqi2a7q2ueqfrl4lu0khs3qbfjercq.apps.googleusercontent.com` |
+| Consent screen | **In production** (published 2026-11-05); app name RecipeReal; support email mamounprogrammer@gmail.com; home https://recipe-real.softland.tech; privacy /privacy; terms /terms; authorized domain softland.tech |
+| JS origin | `https://recipe-real.softland.tech` |
+| Redirect URIs | `https://recipe-real.softland.tech/auth/callback` (app), `https://recipe-real.softland.tech/admin/auth/google/callback` (admin panel), `https://auth.expo.io/@mamounhisham1/recipereal` (Expo Go) |
+
+### Legacy client (transition)
+
+The OLD project's client ID (`412318680966-oo5cbharsvo1jo4fvi6824taqq6n6du5.apps.googleusercontent.com`)
+is baked into every distributed 1.0.2 APK. The backend accepts id_tokens for
+**both** clients during the transition: set `GOOGLE_LEGACY_CLIENT_ID` in
+production env alongside `GOOGLE_CLIENT_ID` (see
+`GoogleIdTokenService::acceptedClientIds()`). Remove the legacy var once no
+1.0.2-era installs remain in the wild. Covered by
+`tests/Feature/GoogleClientTransitionTest.php`.
+
+## History: how the client was created
+
+1. Google Cloud Console → project `recipereal`.
+2. Google Auth Platform → Branding: app name RecipeReal, support email,
+   home/privacy/terms URLs, authorized domain `softland.tech`.
+3. Audience: User type **External** → **Publish app** → In production.
+4. Clients → Create client → **Web application** →
+   "RecipeReal Web" with the JS origin + three redirect URIs above.
 5. Copy the **Client ID** (`...apps.googleusercontent.com`).
 
 ## 2. Configure

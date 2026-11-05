@@ -21,10 +21,25 @@ class GoogleIdTokenService
      * @return object|null the token claims, or null when the token is
      *                    invalid, expired, or not issued for THIS client
      */
+    /**
+     * Every client ID whose id_tokens are accepted: the primary client plus
+     * the legacy one (GOOGLE_LEGACY_CLIENT_ID) while transition-era APKs are
+     * still in the wild.
+     *
+     * @return list<string>
+     */
+    public static function acceptedClientIds(): array
+    {
+        return array_values(array_filter([
+            (string) config('services.google.client_id'),
+            (string) config('services.google.legacy_client_id'),
+        ], fn (string $id): bool => $id !== ''));
+    }
+
     public function verify(string $idToken): ?object
     {
-        $clientId = (string) config('services.google.client_id');
-        if ($clientId === '' || $idToken === '') {
+        $accepted = self::acceptedClientIds();
+        if ($accepted === [] || $idToken === '') {
             return null;
         }
 
@@ -40,8 +55,8 @@ class GoogleIdTokenService
 
         $aud = $claims->aud ?? null;
         $audMatches = is_array($aud)
-            ? in_array($clientId, $aud, true)
-            : $aud === $clientId;
+            ? (bool) array_intersect($accepted, $aud)
+            : in_array($aud, $accepted, true);
         $issMatches = in_array(
             $claims->iss ?? null,
             ['https://accounts.google.com', 'accounts.google.com'],
