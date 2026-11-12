@@ -43,7 +43,7 @@ Store consoles change their forms frequently. Treat each checklist below as the
 preparation list; re-verify field labels and pixel limits in the console at
 submission time. Common to every channel:
 
-- [ ] Signed `store-apk` (universal) release for `com.recipereal.app` version `1.1.0` built and tested.
+- [ ] Signed `store-apk` (v7a+arm64) release for `com.recipereal.app` version `1.1.0` built and tested.
 - [ ] Privacy policy URL live and reachable (`/privacy`).
 - [ ] Account-deletion URL live and reachable (`/account/delete`) — it must
       exist **before** the first submission, not after.

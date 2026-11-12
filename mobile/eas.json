@@ -40,7 +40,8 @@
       "channel": "production",
       "releaseChannel": "production",
       "env": {
-        "RECIPEREAL_API_BASE_URL": "https://recipe-real.softland.tech"
+        "RECIPEREAL_API_BASE_URL": "https://recipe-real.softland.tech",
+        "RECIPE_REAL_STORE_ABI": "arm"
       },
       "android": {
         "buildType": "apk"

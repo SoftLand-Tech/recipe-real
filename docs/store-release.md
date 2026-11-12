@@ -12,27 +12,33 @@ Related: `docs/deploy.md` (backend), `docs/launch.md` (original EAS notes).
 
 | Profile | ABIs | Approx. size | Use for |
 |---|---|---|---|
-| `production-apk` | `arm64-v8a` only | ~30–35 MB | Our `GET /download` sideload flow — every real phone since ~2016 is arm64. |
-| `store-apk` | universal (`armeabi-v7a`, `arm64-v8a`, `x86`, `x86_64`) | much larger (~3× the native libs) | Store uploads: store review pipelines may run 32-bit or x86 images, and stores like Uptodown/GetApps also serve older `armeabi-v7a` devices. |
+| `production-apk` | `arm64-v8a` only | ~25–30 MB compressed | Our `GET /download` sideload flow — every real phone since ~2016 is arm64. |
+| `store-apk` | `armeabi-v7a` + `arm64-v8a` (the two real-world ARM ABIs; x86 emulator slices dropped) | ~35–45 MB compressed | Store uploads: covers every real phone (incl. the 32-bit tail common in MENA) at a fraction of the universal size. x86 devices are emulators/rare tablets — not a store-review surface. |
 
 ```bash
 cd mobile
-eas build --profile production-apk --platform android   # arm64-v8a only, ~30–35 MB
-eas build --profile store-apk --platform android        # universal ABI, larger
+eas build --profile production-apk --platform android   # arm64-v8a only, ~25–30 MB
+eas build --profile store-apk --platform android        # v7a+arm64, ~35–45 MB
 ```
 
-> **Why `store-apk` is universal:** `mobile/plugins/arm64-only.js` strips
-> ABIs only when `EAS_BUILD_PROFILE` **starts with `production`**. The
-> profile name `store-apk` deliberately does not, so the plugin stays out
-> of the way. Do NOT rename this profile to anything starting with
-> `production` — store builds would silently shrink to arm64-only.
+> **Why `store-apk` keeps the two ARM ABIs:** the profile sets env
+> `RECIPE_REAL_STORE_ABI=arm`, which `mobile/plugins/arm64-only.js` reads
+> to package `armeabi-v7a` + `arm64-v8a` (the 32-bit tail is real in MENA;
+> x86 slices only serve emulators). Do NOT rename this profile to anything
+> starting with `production` — that would silently shrink it to
+> arm64-only.
 >
-> **Manual ABI overrides (env):** `RECIPE_REAL_UNIVERSAL_ABI=1` forces a
-> universal build and `RECIPE_REAL_ARM64_ONLY=1` forces an arm64-only
-> build, each regardless of the EAS profile; if both are set, the universal
-> flag wins. Useful for local `npx expo prebuild`/`gradlew` runs (where
-> `EAS_BUILD_PROFILE` is unset) or one-off artifacts; the `unzip -l`
-> verification below still applies to whatever you build.
+> **ABI overrides (env), each beating the profile heuristic:**
+> `RECIPE_REAL_UNIVERSAL_ABI=1` forces all four ABIs, `RECIPE_REAL_ARM64_ONLY=1`
+> forces arm64-only, `RECIPE_REAL_STORE_ABI=arm` forces v7a+arm64. Useful
+> for local prebuild/gradlew runs; the `unzip -l` check below still applies.
+>
+> **Native-lib compression:** `useLegacyPackaging: true` in
+> `app.config.js` (expo-build-properties) compresses the `.so` entries —
+> that plus the ABI trim is why store APKs dropped from ~112 MB to roughly
+> a third of that. Trade-off: first launch extracts the libs to disk and
+> starts marginally slower; download size is the priority for a sideloaded
+> app.
 
 ## Verify the APK ABIs (always, before uploading)
 
@@ -43,11 +49,11 @@ unzip -l RecipeReal.apk | grep lib/
 Expected output per profile:
 
 - `production-apk` → **only** `lib/arm64-v8a/` entries (one directory).
-- `store-apk` → all four: `lib/armeabi-v7a/`, `lib/arm64-v8a/`,
-  `lib/x86/`, `lib/x86_64/`.
+- `store-apk` → exactly two: `lib/armeabi-v7a/` and `lib/arm64-v8a/`.
 
-If a `store-apk` build shows a single `lib/arm64-v8a/`, the plugin scoping
-broke (profile renamed or plugin logic changed) — fix before uploading.
+If a `store-apk` build shows `lib/x86*/` entries or a single
+`lib/arm64-v8a/`, the plugin scoping broke (profile renamed, plugin logic
+changed, or env overrides set) — fix before uploading.
 
 ## Versioning (`appVersionSource: "remote"`)
 

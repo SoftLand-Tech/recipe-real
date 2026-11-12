@@ -107,6 +107,12 @@ export default {
         android: {
           enableProguardInReleaseBuilds: true,
           enableShrinkResourcesInReleaseBuilds: true,
+          // Compress .so files inside the APK instead of storing them
+          // uncompressed. Much smaller download (the direct-APK equivalent
+          // of what AAB splitting does on Play); first launch extracts
+          // them — a little disk + startup time, the right trade for a
+          // sideloaded app.
+          useLegacyPackaging: true,
           extraProguardRules:
             "-keep class expo.modules.updates.** { *; }\n-keep class expo.modules.updates-interface.** { *; }",
         },

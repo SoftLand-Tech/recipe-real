@@ -40,8 +40,8 @@ into one ordered list.
 | Halal screening | `App\Support\HalalGate` (pork + alcohol regexes, vinegar/ham lookarounds) screens all UGC (posts, comments, notes, user recipes, bios) and AI-published imports. The base Food.com library is **not** screened by this gate — audit/curate before claiming library-wide screening | `backend/app/Support/HalalGate.php` and its callers |
 | Direct APK distribution | `GET /download` streams newest `AppRelease` (version, size, **sha256**, notes); per-release download in the admin "App releases" page | `backend/routes/web.php`, `backend/app/Models/AppRelease.php` |
 | OTA updates | `expo-updates`, channel `production`, `runtimeVersion.policy: fingerprint`, checks `ON_LOAD` | `mobile/app.config.js`, `mobile/eas.json` |
-| Release build profiles | `production` (AAB, for stores that accept AAB), `production-apk` (arm64 APK for `/download`), and `store-apk` (universal APK for third-party stores) | `mobile/eas.json` |
-| ABI | `production-apk` is `arm64-v8a` only (~30–35 MB); `store-apk` is universal (four ABIs, larger) | `mobile/plugins/arm64-only.js` |
+| Release build profiles | `production` (AAB, for stores that accept AAB), `production-apk` (arm64 APK for `/download`), and `store-apk` (`armeabi-v7a` + `arm64-v8a` APK for third-party stores) | `mobile/eas.json` |
+| ABI | `production-apk` is `arm64-v8a` only; `store-apk` is `armeabi-v7a` + `arm64-v8a` (covers the 32-bit device tail without x86 emulator weight); both compress native libs (`useLegacyPackaging`) | `mobile/plugins/arm64-only.js`, `mobile/app.config.js` |
 | Permissions & cook timing | `SCHEDULE_EXACT_ALARM` + notifee/expo-notifications merges; `POST_NOTIFICATIONS` runtime prompt; legacy storage permissions blocked via `android.blockedPermissions`; **no foreground service runs** — cook timing is wall-clock based and persisted, step alarms fire even when locked or killed, the session restores from its snapshot | `mobile/app.config.js` `android.permissions`, `mobile/src/utils/cookAlarms.ts` |
 | Privacy / terms pages | `/privacy`, `/terms` (terms include the community-conduct rules), `/contact` form | `backend/routes/web.php` |
 | Library (listing copy may use) | **20,000+ recipes** (exact recipe/step counts are unverified — never publish precise counts or step totals); offline library; claim-vs-reality cook times | `PRODUCT.md` |
@@ -55,7 +55,7 @@ invent testimonials, download counts, or ratings anywhere in a store listing.
 
 Work top-to-bottom; the OAuth consent screen (§2) is the long pole.
 
-- [ ] **[repo]** Release APK built and signed: `eas build --profile store-apk --platform android` (universal APK for stores) and `eas build --profile production-apk --platform android` (arm64 APK for `/download`); EAS signs with the managed keystore — see §6.
+- [ ] **[repo]** Release APK built and signed: `eas build --profile store-apk --platform android` (v7a+arm64 APK for stores) and `eas build --profile production-apk --platform android` (arm64 APK for `/download`); EAS signs with the managed keystore — see §6.
 - [ ] **[repo]** `versionCode` is known and higher than every previously distributed build (EAS assigns it because `eas.json` sets `appVersionSource: "remote"` — record the number from the EAS build page; see §6.3).
 - [ ] **[repo]** `version` (versionName, `mobile/app.config.js`) bumped if this is a new release (currently `1.1.0`).
 - [ ] **[repo]** `cd backend && php artisan recipereal:store-check` passes every required check (routes, OAuth config, release metadata; the OAuth-consent and Android-Verification rows are manual warnings).
@@ -366,7 +366,7 @@ The admin "App releases" page stores every APK (`version`, size, **sha256**,
 notes); `GET /download` streams the newest; the landing adapts its badges.
 Release ritual:
 
-1. `cd mobile && eas build --profile production-apk --platform android` for `/download`; build `--profile store-apk` for the universal store artifact.
+1. `cd mobile && eas build --profile production-apk --platform android` for `/download`; build `--profile store-apk` for the v7a+arm64 store artifact.
 2. Download the APK; note the EAS-assigned versionCode (§6.3).
 3. Upload through the admin "App releases" page — **verify the recorded
    sha256** matches a locally computed one (`sha256sum` on the file) so
@@ -423,7 +423,7 @@ as of November 2026 and portals change quietly.
 - [ ] Search APKPure for "RecipeReal" / `com.recipereal.app` first — if a
       scraped listing already exists, use their claim/verify flow instead of a
       duplicate (§10.3).
-- [ ] Upload the EAS `store-apk` (universal) build; APKPure does not re-sign
+- [ ] Upload the EAS `store-apk` (v7a+arm64) build; APKPure does not re-sign
       (confirm at upload) — same signature as the other store builds.
 - [ ] Fill listing (§9). EN+AR description is accepted; screenshots EN set.
 - [ ] Review notes: paste §3 script + test account.
@@ -491,7 +491,7 @@ as of November 2026 and portals change quietly.
   Account: free **[account]**.
 - [ ] Register the developer account.
 - [ ] Upload the `store-apk` APK through the Amazon developer portal.
-- [ ] **ABI:** use the universal `store-apk` build. The `production-apk`
+- [ ] **ABI:** use the `store-apk` build (`armeabi-v7a` + `arm64-v8a`). The `production-apk`
       profile is `arm64-v8a`-only and would refuse to install on 32-bit Fire
       tablets; `store-apk` includes all four ABIs, so it covers the Fire fleet.
 - [ ] Amazon **re-signs submissions** (historically; confirm) → §6.2
@@ -656,7 +656,7 @@ Ordered; parallelize where noted.
 | APKMirror "no developer uploads" | Medium | Their FAQ if it ever matters |
 | Android Developer Verification tiers (free 20-device limited account, advanced install flow) and 2027 expansion schedule | Medium — the program is young | Android developer help hub at registration |
 | Google consent: non-sensitive scopes publish without full verification | High, but not guaranteed | Console publish flow |
-| Fire OS compatibility | Resolved for store uploads by the universal `store-apk` profile; verify on a real Fire device | Amazon's device list + a real Fire device |
+| Fire OS compatibility | Resolved for store uploads by the `store-apk` profile (v7a+arm64); verify on a real Fire device | Amazon's device list + a real Fire device |
 | `/account/delete` web page live | Verified in this repo (page + request form + tests, 2026-11-05); still curl the production URL before filling store forms | Production browser |
 | Graceful signed-out Cook Mode completion | Implemented 2026-11-05 (finished cook queued locally; done screen asks for sign-in) | Release build before submitting |
 | Exact versionCode EAS assigns to the next build | Unknown until built | EAS build page after each build |

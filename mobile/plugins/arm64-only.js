@@ -19,27 +19,34 @@ const { withGradleProperties } = require("expo/config-plugins");
  * runs where EAS_BUILD_PROFILE is unset):
  * - RECIPE_REAL_UNIVERSAL_ABI=1 → universal regardless of profile.
  * - RECIPE_REAL_ARM64_ONLY=1    → arm64-v8a only regardless of profile.
- * If both are set, universal wins (it runs on every device, so it is the
- * safe resolution for contradictory config).
+ * - RECIPE_REAL_STORE_ABI=arm   → the two real-world ARM ABIs (v7a+arm64),
+ *                                 dropping the x86 emulator slices; used by
+ *                                 the store-apk profile to halve APK size.
+ * Precedence when several are set: UNIVERSAL wins (runs on every device —
+ * the safe resolution), then ARM64_ONLY, then STORE_ABI=arm.
  */
 module.exports = function arm64OnlyPlugin(config) {
   return withGradleProperties(config, (cfg) => {
     const forceUniversal = process.env.RECIPE_REAL_UNIVERSAL_ABI === "1";
     const forceArm64Only = process.env.RECIPE_REAL_ARM64_ONLY === "1";
-    let arm64Only;
-    if (forceUniversal) {
-      arm64Only = false;
-    } else if (forceArm64Only) {
-      arm64Only = true;
-    } else {
-      const profile = process.env.EAS_BUILD_PROFILE ?? "";
-      arm64Only = profile.startsWith("production");
-    }
-    if (!arm64Only) {
-      return cfg;
-    }
+    const forceArm = process.env.RECIPE_REAL_STORE_ABI === "arm";
+    const profile = process.env.EAS_BUILD_PROFILE ?? "";
+    const stripToArm64 = !forceUniversal && (forceArm64Only || (!forceArm && profile.startsWith("production")));
+
     const rest = cfg.modResults.filter((item) => item.key !== "reactNativeArchitectures");
-    rest.push({ type: "property", key: "reactNativeArchitectures", value: "arm64-v8a" });
+
+    if (stripToArm64) {
+      rest.push({ type: "property", key: "reactNativeArchitectures", value: "arm64-v8a" });
+    } else if (forceArm) {
+      // Store target: both real-world ARM ABIs — 32-bit phones still matter
+      // in the MENA install base, but the x86 emulator slices are dead
+      // weight in a universal APK (roughly a third of the file size).
+      rest.push({ type: "property", key: "reactNativeArchitectures", value: "armeabi-v7a,arm64-v8a" });
+    } else if (forceUniversal) {
+      rest.push({ type: "property", key: "reactNativeArchitectures", value: "armeabi-v7a,arm64-v8a,x86,x86_64" });
+    } else {
+      return cfg; // preview/local builds stay universal by default
+    }
     cfg.modResults = rest;
     return cfg;
   });
