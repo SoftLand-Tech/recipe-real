@@ -12,6 +12,11 @@ import {
   COMMUNITY_FEED_KEY,
 } from "@/utils/communityMirror";
 import {
+  BROWSE_MIRROR_KEY,
+  clearMirroredBrowseCache,
+  writeMirroredBrowse,
+} from "@/utils/browseMirror";
+import {
   ACTIVE_COOK_POINTER_KEY,
   resetCookSessionCache,
 } from "@/utils/cookSessionStatus";
@@ -21,6 +26,7 @@ import {
   getCached,
   invalidateKey,
   invalidatePrefix,
+  peekCached,
   setCached,
 } from "@/api/swrCache";
 import { secureStore } from "@/utils/secureStore";
@@ -127,6 +133,7 @@ async function clearAccountScopedCaches(): Promise<void> {
   authEpoch += 1;
   clearSwrCache();
   clearMirroredFeedCache();
+  clearMirroredBrowseCache();
   clearPostPreview();
   clearPostCreated();
   clearFeedMutations();
@@ -136,6 +143,7 @@ async function clearAccountScopedCaches(): Promise<void> {
     const doomed = keys.filter(
       (k) =>
         k === COMMUNITY_FEED_KEY ||
+        k === BROWSE_MIRROR_KEY ||
         k === "recipereal.homeRails" ||
         k === "recipereal.postComposerDraft" ||
         k === "recipereal.quickTimeStale" ||
@@ -234,7 +242,7 @@ export async function getRecipe(id: number | string): Promise<Recipe> {
 /** Page size for the server-driven Browse list (server clamps to 1..50). */
 const SEARCH_PER_PAGE = 20;
 const SEARCH_CACHE_PREFIX = "search:";
-const SEARCH_TTL_MS = 30_000;
+const SEARCH_TTL_MS = 60_000;
 
 function searchCacheKey(params: SearchParams): string {
   return `${SEARCH_CACHE_PREFIX}${JSON.stringify({
@@ -248,6 +256,18 @@ function searchCacheKey(params: SearchParams): string {
 }
 
 /**
+ * Synchronous / non-mutating peek into the SWR search cache. Returns the cached
+ * page if younger than `maxAgeMs` (defaults to SEARCH_TTL_MS).
+ */
+export function peekCachedSearch(
+  params: SearchParams = {},
+  maxAgeMs: number = SEARCH_TTL_MS,
+): RecipePage | undefined {
+  const key = searchCacheKey(params);
+  return peekCached<RecipePage>(key, maxAgeMs);
+}
+
+/**
  * One page of the public search endpoint (GET /api/recipes/search). Empty `q`
  * is a filtered browse; the response rows are LIGHT (no recipe_steps) and
  * defensively normalized (the local dev DB has metadata only partially).
@@ -256,9 +276,11 @@ export async function searchRecipes(
   params: SearchParams = {},
 ): Promise<RecipePage> {
   const key = searchCacheKey(params);
-  const cached = getCached<RecipePage>(key, SEARCH_TTL_MS);
-  if (cached !== undefined) {
-    return cached;
+  if (!params.bypassCache) {
+    const cached = getCached<RecipePage>(key, SEARCH_TTL_MS);
+    if (cached !== undefined) {
+      return cached;
+    }
   }
   return dedupeInFlight(key, async () => {
     const page = await fetchSearchPage({
@@ -270,8 +292,27 @@ export async function searchRecipes(
       per_page: params.perPage ?? SEARCH_PER_PAGE,
     });
     setCached(key, page);
+
+    // Keep the Browse mirror updated on any unfiltered default page-1 fetch:
+    const isDefaultPage1 =
+      (!params.q || params.q.trim() === "") &&
+      (!params.category || params.category.trim() === "") &&
+      params.maxTime == null &&
+      (!params.sort || params.sort === "top_rated") &&
+      (params.page == null || params.page === 1);
+    if (isDefaultPage1 && page.recipes.length > 0) {
+      writeMirroredBrowse(page).catch(() => {});
+    }
+
     return page;
   });
+}
+
+/** Explicitly fetch fresh search recipes from network, bypassing SWR cache. */
+export async function freshSearchRecipes(
+  params: SearchParams = {},
+): Promise<RecipePage> {
+  return searchRecipes({ ...params, bypassCache: true });
 }
 
 /** AsyncStorage cache key for the category chips (server data, 1h-cached server-side). */

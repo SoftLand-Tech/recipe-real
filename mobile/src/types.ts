@@ -259,6 +259,7 @@ export interface SearchParams {
   sort?: SearchSort;
   page?: number;
   perPage?: number;
+  bypassCache?: boolean;
 }
 
 /** One row of GET /api/recipes/categories (top real Food.com categories). */

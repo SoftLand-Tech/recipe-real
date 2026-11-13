@@ -193,6 +193,41 @@ class PerformanceOptimizationsTest extends TestCase
         $this->get('/api/recipes/seed?page=1&per_page=10', ['If-None-Match' => $etag])->assertStatus(304);
     }
 
+    public function test_unfiltered_search_returns_etag_cache_control_304_and_invalidates_etag_on_payload_change(): void
+    {
+        $this->createQualityRecipe(['title' => 'First Quality Recipe']);
+
+        $first = $this->getJson('/api/recipes/search')->assertOk();
+        $etag = $first->headers->get('ETag');
+        $cacheControl = (string) $first->headers->get('Cache-Control');
+
+        $this->assertNotEmpty($etag);
+        $this->assertStringContainsString('public', $cacheControl);
+        $this->assertStringContainsString('max-age=60', $cacheControl);
+        $this->assertStringContainsString('stale-while-revalidate=300', $cacheControl);
+
+        // Cache hit returns identical JSON payload and matching ETag.
+        $second = $this->getJson('/api/recipes/search')->assertOk();
+        $this->assertSame($first->json(), $second->json());
+        $this->assertSame($etag, $second->headers->get('ETag'));
+
+        // Conditional request with matching ETag returns 304 Not Modified.
+        $this->get('/api/recipes/search', ['If-None-Match' => $etag])->assertStatus(304);
+
+        // Invalidate cache and add another recipe to change payload.
+        Cache::flush();
+        $this->createQualityRecipe(['title' => 'Second Quality Recipe']);
+
+        $third = $this->getJson('/api/recipes/search')->assertOk();
+        $newEtag = $third->headers->get('ETag');
+        $this->assertNotEmpty($newEtag);
+        $this->assertNotSame($etag, $newEtag);
+
+        // Stale ETag returns 200, fresh ETag returns 304.
+        $this->get('/api/recipes/search', ['If-None-Match' => $etag])->assertOk();
+        $this->get('/api/recipes/search', ['If-None-Match' => $newEtag])->assertStatus(304);
+    }
+
     public function test_show_caches_payload_across_hits_and_records_views_for_authed_users(): void
     {
         $recipe = $this->createQualityRecipe();

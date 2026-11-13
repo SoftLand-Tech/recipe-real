@@ -11,6 +11,7 @@ import {
   View,
   type ListRenderItem,
 } from "react-native";
+import { Image as ExpoImage } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
@@ -26,7 +27,9 @@ import {
   fetchRealityRail,
   getCookSessions,
   hasToken,
+  searchRecipes,
 } from "@/api/client";
+import { writeMirroredBrowse } from "@/utils/browseMirror";
 import { track } from "@/analytics";
 import {
   countCachedRecipes,
@@ -788,6 +791,46 @@ export default function HomeScreen() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Prefetch Browse tab default page 1 + categories + warm images after interactions settle:
+  useEffect(() => {
+    if (!initialRailsSettled) return;
+    let cancelled = false;
+    const task = InteractionManager.runAfterInteractions(() => {
+      // 1. Silent prefetch of default searchRecipes({ page: 1 })
+      searchRecipes({ page: 1 })
+        .then((page) => {
+          if (cancelled || !page?.recipes?.length) return;
+          writeMirroredBrowse(page).catch(() => {});
+          // 2. Warm top-6 image URLs via expo-image Image.prefetch (best-effort)
+          const topImages = page.recipes
+            .slice(0, 6)
+            .map((r) => r.image_url)
+            .filter(
+              (url): url is string =>
+                typeof url === "string" && url.trim().length > 0,
+            );
+          for (const url of topImages) {
+            try {
+              ExpoImage.prefetch(url);
+            } catch {
+              // Best-effort image prefetch
+            }
+          }
+        })
+        .catch(() => {
+          // Best-effort prefetch
+        });
+
+      // 3. Prefetch fetchCategories()
+      fetchCategories().catch(() => {});
+    });
+
+    return () => {
+      cancelled = true;
+      task.cancel();
+    };
+  }, [initialRailsSettled]);
 
   // "Recently cooked": the first sessions as light pseudo-recipes plus a
   // relative-date caption per card (rel.* keys).

@@ -121,8 +121,17 @@ class RecipeController extends Controller
             $cacheKey = CommunityFeedCache::timingCacheKey("recipes:search:p1:pp{$perPage}:s{$sortKey}:ts{$tsFlag}");
 
             $cached = Cache::get($cacheKey);
-            if (is_array($cached)) {
-                return response()->json($cached);
+            if (is_array($cached) && isset($cached['payload'], $cached['etag'])) {
+                $response = response()->json($cached['payload']);
+                $response->setEtag($cached['etag']);
+                $response->setCache([
+                    'public' => true,
+                    'max_age' => 60,
+                    'stale_while_revalidate' => 300,
+                ]);
+                $response->isNotModified($request);
+
+                return $response;
             }
 
             [$collection, $usedTypesense] = $this->resolveSearchCollection(
@@ -136,13 +145,27 @@ class RecipeController extends Controller
                 $page
             );
             $payload = $collection->toResponse($request)->getData(true);
+            $etag = sha1($cacheKey.'|'.$request->fullUrl().'|'.(json_encode($payload) ?: ''));
+            $entry = [
+                'payload' => $payload,
+                'etag' => $etag,
+            ];
 
             // Never pin a transient FTS fallback response under the :ts1 key.
             if (! $typesense->enabled() || $usedTypesense) {
-                Cache::put($cacheKey, $payload, now()->addMinutes(5));
+                Cache::put($cacheKey, $entry, now()->addMinutes(5));
             }
 
-            return response()->json($payload);
+            $response = response()->json($payload);
+            $response->setEtag($etag);
+            $response->setCache([
+                'public' => true,
+                'max_age' => 60,
+                'stale_while_revalidate' => 300,
+            ]);
+            $response->isNotModified($request);
+
+            return $response;
         }
 
         [$collection] = $this->resolveSearchCollection($request, $typesense, $perPage, $q, $category, $hasMaxTime, $sort, $page);

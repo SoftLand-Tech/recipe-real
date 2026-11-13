@@ -10,6 +10,7 @@ import {
 import {
   ActivityIndicator,
   FlatList,
+  InteractionManager,
   LayoutAnimation,
   Pressable,
   ScrollView,
@@ -36,8 +37,9 @@ import {
   useLocalSearchParams,
 } from "expo-router";
 
-import { fetchCategories, searchRecipes } from "@/api/client";
+import { fetchCategories, peekCachedSearch, searchRecipes } from "@/api/client";
 import { isOfflineError } from "@/api/http";
+import { getMirroredBrowseSync, readMirroredBrowse } from "@/utils/browseMirror";
 import { track } from "@/analytics";
 import {
   countCachedRecipes,
@@ -928,21 +930,46 @@ export default function BrowseScreen() {
     [chrome],
   );
 
+  // Synchronous cache hydration on mount:
+  // When no query/filter/sort is active and params.filter is absent, check SWR
+  // cache first, then in-memory mirror. If present, hydrate immediately so Browse
+  // mounts directly in "ready" state with real cards, skipping skeleton flash.
+  const initialData = useMemo(() => {
+    if (paramFilter) return null;
+    const swr = peekCachedSearch({ page: 1 });
+    if (swr && swr.recipes.length > 0) {
+      return {
+        recipes: swr.recipes,
+        meta: { current: swr.currentPage, last: swr.lastPage },
+        total: swr.total,
+      };
+    }
+    const mirror = getMirroredBrowseSync();
+    if (mirror && mirror.recipes.length > 0) {
+      return {
+        recipes: mirror.recipes,
+        meta: { current: mirror.currentPage, last: mirror.lastPage },
+        total: mirror.total,
+      };
+    }
+    return null;
+  }, [paramFilter]);
+
   // ---- Local cache source (offline fallback + favorites) --------------------
   const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [state, setState] = useState<LoadState>("loading");
+  const [state, setState] = useState<LoadState>(initialData ? "ready" : "loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
   // Ids of recipes carrying a personal note — drives the pencil badge on cards.
   const [noteIds, setNoteIds] = useState<Set<number>>(new Set());
 
   // ---- Server-driven list ----------------------------------------------------
-  const [serverItems, setServerItems] = useState<Recipe[]>([]);
+  const [serverItems, setServerItems] = useState<Recipe[]>(initialData?.recipes ?? []);
   const [serverMeta, setServerMeta] = useState<{
     current: number;
     last: number;
-  } | null>(null);
-  const [serverTotal, setServerTotal] = useState(0);
+  } | null>(initialData?.meta ?? null);
+  const [serverTotal, setServerTotal] = useState(initialData?.total ?? 0);
   const [loadingMore, setLoadingMore] = useState(false);
   // Offline fallback active: the list renders the LOCAL cached pipeline and
   // the "Offline — showing saved recipes" caption chip shows.
@@ -975,7 +1002,7 @@ export default function BrowseScreen() {
   const [visibleRecipes, setVisibleRecipes] = useState<Recipe[]>([]);
   // Start in applying state: until the first search/computation lands, the
   // skeleton shows instead of a one-frame "No recipes available yet" flash.
-  const [applying, setApplying] = useState(true);
+  const [applying, setApplying] = useState(initialData == null);
 
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -1009,13 +1036,37 @@ export default function BrowseScreen() {
     setRecipes(next);
   }, []);
 
+  const hasServerQueryOrFilterRef = useRef(false);
   // Mirror of the server item count for stale-closure-free error handling
   // (runSearch must not depend on the serverItems array identity).
-  const serverItemsCountRef = useRef(0);
+  const serverItemsCountRef = useRef(initialData?.recipes.length ?? 0);
   const commitServerItems = useCallback((next: Recipe[]) => {
     serverItemsCountRef.current = next.length;
     setServerItems(next);
   }, []);
+
+  // If SWR / in-memory mirror was absent (cold launch without prefetch),
+  // read the persistent AsyncStorage mirror immediately:
+  useEffect(() => {
+    if (initialData != null || paramFilter) return;
+    let cancelled = false;
+    readMirroredBrowse()
+      .then((mirrored) => {
+        if (cancelled || !mirrored || mirrored.recipes.length === 0) return;
+        // Only hydrate if we are still at 0 server items and no filter has been picked
+        if (serverItemsCountRef.current === 0 && !hasServerQueryOrFilterRef.current) {
+          commitServerItems(mirrored.recipes);
+          setServerMeta({ current: mirrored.currentPage, last: mirrored.lastPage });
+          setServerTotal(mirrored.total);
+          setState("ready");
+          setApplying(false);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [initialData, paramFilter, commitServerItems]);
 
   // Background continuation after a cold first-page seed: stream the remaining
   // seed pages into the cache, then reload the list if offline. Non-blocking on
@@ -1177,39 +1228,49 @@ export default function BrowseScreen() {
    * cached data was shown (so the caller can decide whether a light
    * background refresh is worthwhile).
    */
-  const loadFromCache = useCallback(async (): Promise<boolean> => {
-    setState("loading");
-    setErrorMessage(null);
-    try {
-      const count = await countCachedRecipes();
-      if (count === 0) {
-        // Cold cache: seed just the first page (a fraction of the dataset) so
-        // the fallback library exists quickly; the rest arrives in background.
-        const first = await seedCacheFirstPage();
-        if (offlineRef.current) {
-          applyRecipes(first);
+  const loadFromCache = useCallback(
+    async (options?: { silent?: boolean }): Promise<boolean> => {
+      const silent = options?.silent === true;
+      if (!silent && serverItemsCountRef.current === 0) {
+        setState("loading");
+        setErrorMessage(null);
+      }
+      try {
+        const count = await countCachedRecipes();
+        if (count === 0) {
+          // Cold cache: seed just the first page (a fraction of the dataset) so
+          // the fallback library exists quickly; the rest arrives in background.
+          const first = await seedCacheFirstPage();
+          if (offlineRef.current) {
+            applyRecipes(first);
+          }
+          if (!silent || offlineRef.current) {
+            setState("ready");
+          }
+          continueSeedInBackground();
+          return false;
         }
-        setState("ready");
-        continueSeedInBackground();
+        if (offlineRef.current) {
+          applyRecipes(await getCachedRecipeSummaries());
+        }
+        if (!silent || offlineRef.current) {
+          setState("ready");
+        }
+        return true;
+      } catch (error) {
+        console.warn("[RecipeReal] loadFromCache failed:", error);
+        // The cache only backs the fallback — never blank a working server list.
+        if (!silent && serverItemsCountRef.current === 0) {
+          setErrorMessage(
+            error instanceof Error ? error.message : t("common.loadFailedRecipes"),
+          );
+          setState("error");
+        }
         return false;
       }
-      if (offlineRef.current) {
-        applyRecipes(await getCachedRecipeSummaries());
-      }
-      setState("ready");
-      return true;
-    } catch (error) {
-      console.warn("[RecipeReal] loadFromCache failed:", error);
-      // The cache only backs the fallback — never blank a working server list.
-      if (serverItemsCountRef.current === 0) {
-        setErrorMessage(
-          error instanceof Error ? error.message : t("common.loadFailedRecipes"),
-        );
-        setState("error");
-      }
-      return false;
-    }
-  }, [continueSeedInBackground, applyRecipes, t]);
+    },
+    [continueSeedInBackground, applyRecipes, t],
+  );
 
   // Map the current UI state to search-endpoint params. "quick" = under 30
   // minutes door-to-door (tightened further by a stricter panel cap); the
@@ -1229,7 +1290,12 @@ export default function BrowseScreen() {
   const buildSearchParamsRef = useRef(buildSearchParams);
   useEffect(() => {
     buildSearchParamsRef.current = buildSearchParams;
-  }, [buildSearchParams]);
+    hasServerQueryOrFilterRef.current =
+      search.trim().length > 0 ||
+      filter.kind !== "all" ||
+      timeMax != null ||
+      sortMode !== "default";
+  }, [buildSearchParams, search, filter.kind, timeMax, sortMode]);
 
   // Monotonic request id: only the LATEST search/scroll request may commit
   // state, so out-of-order responses never clobber newer results.
@@ -1242,48 +1308,60 @@ export default function BrowseScreen() {
    * keeps whatever is already on screen, or surfaces the error state when
    * there is nothing to show. Never crashes.
    */
-  const runSearch = useCallback(async () => {
-    const requestId = ++searchRequestIdRef.current;
-    try {
-      const result = await searchRecipes({
-        ...buildSearchParamsRef.current(),
-        page: 1,
-      });
-      if (requestId !== searchRequestIdRef.current) return;
-      commitServerItems(result.recipes);
-      setServerMeta({ current: result.currentPage, last: result.lastPage });
-      setServerTotal(result.total);
-      setOffline(false);
-      setErrorMessage(null);
-      setState("ready");
-      setApplying(false);
-    } catch (error) {
-      if (requestId !== searchRequestIdRef.current) return;
-      console.warn("[RecipeReal] search failed:", error);
-      if (isOfflineError(error)) {
-        // Offline WITH a usable cache: local pipeline + banner chip.
-        try {
-          const cached = await getCachedRecipeSummaries();
-          if (cached.length > 0) {
-            applyRecipes(cached);
-            setOffline(true);
-            setState("ready");
-            setApplying(false);
-            return;
+  const runSearch = useCallback(
+    async (options?: { bypassCache?: boolean }) => {
+      const requestId = ++searchRequestIdRef.current;
+      try {
+        const result = await searchRecipes({
+          ...buildSearchParamsRef.current(),
+          page: 1,
+          bypassCache: options?.bypassCache,
+        });
+        if (requestId !== searchRequestIdRef.current) return;
+        commitServerItems(result.recipes);
+        setServerMeta({ current: result.currentPage, last: result.lastPage });
+        setServerTotal(result.total);
+        setOffline(false);
+        setErrorMessage(null);
+        setState("ready");
+        setApplying(false);
+      } catch (error) {
+        if (requestId !== searchRequestIdRef.current) return;
+        console.warn("[RecipeReal] search failed:", error);
+        if (isOfflineError(error)) {
+          // Offline WITH a usable cache: local pipeline + banner chip.
+          try {
+            let cached = await getCachedRecipeSummaries();
+            if (cached.length === 0) {
+              const count = await countCachedRecipes();
+              if (count === 0) {
+                cached = await seedCacheFirstPage();
+              } else {
+                cached = await getCachedRecipeSummaries();
+              }
+            }
+            if (cached.length > 0) {
+              applyRecipes(cached);
+              setOffline(true);
+              setState("ready");
+              setApplying(false);
+              return;
+            }
+          } catch {
+            // Fall through to the error state below.
           }
-        } catch {
-          // Fall through to the error state below.
+        }
+        // Server answered with an error (or offline with an empty cache):
+        // keep any content already on screen, else surface the error state.
+        setApplying(false);
+        if (serverItemsCountRef.current === 0) {
+          setErrorMessage(t("common.couldNotLoadRecipes"));
+          setState("error");
         }
       }
-      // Server answered with an error (or offline with an empty cache):
-      // keep any content already on screen, else surface the error state.
-      setApplying(false);
-      if (serverItemsCountRef.current === 0) {
-        setErrorMessage(t("common.couldNotLoadRecipes"));
-        setState("error");
-      }
-    }
-  }, [commitServerItems, applyRecipes, t]);
+    },
+    [commitServerItems, applyRecipes, t],
+  );
 
   /**
    * Server-driven search: initial mount and discrete chip/filter/sort taps
@@ -1297,10 +1375,10 @@ export default function BrowseScreen() {
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (offline) return; // Local pipeline owns the screen while offline.
-    if (
+    const isFilterChange =
       serverFilterKey !== prevServerFilterKeyRef.current &&
-      prevServerFilterKeyRef.current != null
-    ) {
+      prevServerFilterKeyRef.current != null;
+    if (isFilterChange) {
       setApplying(true);
     }
     prevServerFilterKeyRef.current = serverFilterKey;
@@ -1316,12 +1394,12 @@ export default function BrowseScreen() {
     if (searchChanged) {
       searchDebounceRef.current = setTimeout(() => {
         searchDebounceRef.current = null;
-        runSearch().catch((error) => {
+        runSearch({ bypassCache: true }).catch((error) => {
           console.warn("[RecipeReal] search effect failed:", error);
         });
       }, SEARCH_DEBOUNCE_MS);
     } else {
-      runSearch().catch((error) => {
+      runSearch({ bypassCache: isFilterChange }).catch((error) => {
         console.warn("[RecipeReal] search effect failed:", error);
       });
     }
@@ -1407,33 +1485,43 @@ export default function BrowseScreen() {
     // parallel. (They also refresh on focus — see useFocusEffect above.)
     reloadFavorites();
     reloadNoteIds();
-    loadFromCache().then((hadCachedData) => {
-      // Only light-refresh when we showed previously cached data; a cold
-      // cache was just (progressively) seeded, so refreshing would re-download
-      // what the seed continuation is already fetching.
-      if (hadCachedData) {
-        // Self-heal first: if the cached step library was wiped (legacy
-        // INSERT OR REPLACE cascade), re-seed with steps instead of doing a
-        // light refresh (which never downloads steps).
-        repairCachedStepsIfNeeded()
-          .then(async (repaired) => {
-            if (repaired) {
-              if (offlineRef.current) {
-                applyRecipes(await getCachedRecipeSummaries());
+
+    // Move heavy SQLite cache checking, seed continuation, and repair behind
+    // interactions so the initial Browse mount never competes with SQLite writes
+    // or seed downloads.
+    const task = InteractionManager.runAfterInteractions(() => {
+      loadFromCache({ silent: true }).then((hadCachedData) => {
+        // Only light-refresh when we showed previously cached data; a cold
+        // cache was just (progressively) seeded, so refreshing would re-download
+        // what the seed continuation is already fetching.
+        if (hadCachedData) {
+          // Self-heal first: if the cached step library was wiped (legacy
+          // INSERT OR REPLACE cascade), re-seed with steps instead of doing a
+          // light refresh (which never downloads steps).
+          repairCachedStepsIfNeeded()
+            .then(async (repaired) => {
+              if (repaired) {
+                if (offlineRef.current) {
+                  applyRecipes(await getCachedRecipeSummaries());
+                }
+              } else {
+                await refreshInBackground();
               }
-            } else {
-              await refreshInBackground();
-            }
-          })
-          .catch((error) => {
-            console.warn("[RecipeReal] cache repair check failed:", error);
-          });
-      }
-      // Best-effort: upload any cook sessions queued while offline.
-      flushPendingCookSessions().catch((error) => {
-        console.warn("[RecipeReal] background flush failed:", error);
+            })
+            .catch((error) => {
+              console.warn("[RecipeReal] cache repair check failed:", error);
+            });
+        }
+        // Best-effort: upload any cook sessions queued while offline.
+        flushPendingCookSessions().catch((error) => {
+          console.warn("[RecipeReal] background flush failed:", error);
+        });
       });
     });
+
+    return () => {
+      task.cancel();
+    };
     // We intentionally run this only once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1448,8 +1536,8 @@ export default function BrowseScreen() {
     };
     try {
       if (!offline) {
-        // FAST: one API request re-running the CURRENT query.
-        await runSearch();
+        // FAST: one API request re-running the CURRENT query, bypassing SWR cache.
+        await runSearch({ bypassCache: true });
       } else {
         // INSTANT: reload the local fallback source from SQLite.
         applyRecipes(await getCachedRecipeSummaries());
@@ -1469,7 +1557,7 @@ export default function BrowseScreen() {
     // Error state: retry the cache pipeline; the debounced search effect
     // picks the server list back up once the cache resolves.
     await loadFromCache();
-    void runSearch();
+    void runSearch({ bypassCache: true });
   }, [loadFromCache, runSearch]);
 
   // Quick-time staleness: the detail screen flags a fresh submit; on the next
@@ -1484,7 +1572,7 @@ export default function BrowseScreen() {
           if (raw == null) return;
           AsyncStorage.removeItem(QUICK_TIME_STALE_KEY).catch(() => {});
           if (!offline) {
-            runSearch().catch(() => {
+            runSearch({ bypassCache: true }).catch(() => {
               // Best-effort background work.
             });
           }

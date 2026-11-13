@@ -31,6 +31,19 @@ export function getCached<T>(key: string, ttlMs: number): T | undefined {
 }
 
 /**
+ * Peek at cached data for `key` without altering LRU order or deleting expired entries.
+ * Returns undefined if absent or if `maxAgeMs` is specified and the entry is older than `maxAgeMs`.
+ */
+export function peekCached<T>(key: string, maxAgeMs?: number): T | undefined {
+  const entry = cache.get(key);
+  if (!entry) return undefined;
+  if (maxAgeMs !== undefined && Date.now() - entry.savedAt >= maxAgeMs) {
+    return undefined;
+  }
+  return entry.data as T;
+}
+
+/**
  * Store `data` under `key`, evicting the oldest entry if the cache exceeds
  * `MAX_CACHE_ENTRIES`.
  */
