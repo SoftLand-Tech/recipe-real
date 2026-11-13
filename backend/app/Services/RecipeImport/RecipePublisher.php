@@ -7,6 +7,7 @@ use App\Models\RecipeImport;
 use App\Models\RecipeStep;
 use App\Models\User;
 use App\Support\HalalGate;
+use App\Support\RecipeFtsIndex;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
@@ -103,12 +104,14 @@ class RecipePublisher
 
             if (Schema::hasTable('recipes_fts')) {
                 $raw = $recipe->getAttributes();
-                DB::table('recipes_fts')->insert([
-                    'rowid' => $recipe->id,
-                    'title' => strtolower((string) $recipe->title),
-                    'ingredients' => $raw['ingredients'] ?? '',
-                    'description' => $raw['description'] ?? '',
-                ]);
+                DB::table('recipes_fts')->insert(RecipeFtsIndex::row(
+                    id: (int) $recipe->id,
+                    title: (string) $recipe->title,
+                    titleAr: isset($raw['title_ar']) ? (string) $raw['title_ar'] : null,
+                    ingredientsRaw: isset($raw['ingredients']) ? (string) $raw['ingredients'] : null,
+                    ingredientsArRaw: isset($raw['ingredients_ar']) ? (string) $raw['ingredients_ar'] : null,
+                    description: isset($raw['description']) ? (string) $raw['description'] : null,
+                ));
             }
 
             if ($lockedImport !== null) {

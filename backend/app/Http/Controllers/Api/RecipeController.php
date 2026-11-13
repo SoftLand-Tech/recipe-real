@@ -8,6 +8,7 @@ use App\Http\Resources\RecipeResource;
 use App\Jobs\RecordRecipeView;
 use App\Models\Recipe;
 use App\Support\CommunityFeedCache;
+use App\Support\RecipeFtsIndex;
 use App\Support\TypesenseSearch;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
@@ -260,7 +261,11 @@ class RecipeController extends Controller
             ->select(RecipeCardResource::COLUMNS);
 
         if ($q !== '') {
-            $query->where('title', 'like', "%{$q}%");
+            $query->where(function (Builder $like) use ($q): void {
+                $like->where('title', 'like', "%{$q}%")
+                    ->orWhere('title_ar', 'like', "%{$q}%")
+                    ->orWhere('ingredients_ar', 'like', "%{$q}%");
+            });
         }
 
         $this->applySearchFilters($query, $request);
@@ -302,29 +307,12 @@ class RecipeController extends Controller
     }
 
     /**
-     * Sanitize free text into an FTS5 MATCH expression: each token stripped
-     * to letters/digits (quotes, colons, hyphens etc. are FTS5 syntax and
-     * break the parser), suffixed with `*` for prefix matching, joined by
-     * spaces (implicit AND). Returns '' when nothing usable remains.
+     * Sanitize free text into an FTS5 MATCH expression via RecipeFtsIndex
+     * so query normalization matches index-time normalization.
      */
     private function ftsMatch(string $q): string
     {
-        $tokens = preg_split('/\s+/u', $q) ?: [];
-
-        $tokens = array_map(
-            fn (string $token) => (string) preg_replace('/[^\p{L}\p{N}]/u', '', $token),
-            $tokens
-        );
-
-        $tokens = array_values(array_filter(
-            $tokens,
-            fn (string $token) => $token !== ''
-        ));
-
-        return implode(' ', array_map(
-            fn (string $token) => $token.'*',
-            $tokens
-        ));
+        return RecipeFtsIndex::matchExpression($q);
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\RecipeFtsIndex;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -52,12 +53,10 @@ class RebuildSearchIndex extends Command
         $started = microtime(true);
 
         while (true) {
-            // Fetch the next id-ordered chunk with the exact index-time
-            // expressions (must mirror the sync triggers in migration 000017).
+            // Fetch the next id-ordered chunk and normalize through RecipeFtsIndex::row()
+            // so batch indexing matches per-row writes.
             $rows = DB::select(
-                'SELECT id AS rowid, lower(title) AS title, '
-                ."COALESCE(ingredients, '') AS ingredients, "
-                ."COALESCE(description, '') AS description "
+                'SELECT id, title, title_ar, ingredients, ingredients_ar, description '
                 .'FROM recipes WHERE id > ? ORDER BY id LIMIT '.self::CHUNK,
                 [$lastId]
             );
@@ -65,16 +64,26 @@ class RebuildSearchIndex extends Command
                 break;
             }
 
-            DB::transaction(function () use ($rows): void {
-                foreach (array_chunk($rows, self::INSERT_BATCH) as $batch) {
-                    DB::table('recipes_fts')->insert(
-                        array_map(fn ($row) => (array) $row, $batch)
-                    );
+            $ftsRows = array_map(
+                static fn ($row): array => RecipeFtsIndex::row(
+                    id: (int) $row->id,
+                    title: (string) $row->title,
+                    titleAr: $row->title_ar !== null ? (string) $row->title_ar : null,
+                    ingredientsRaw: $row->ingredients !== null ? (string) $row->ingredients : null,
+                    ingredientsArRaw: $row->ingredients_ar !== null ? (string) $row->ingredients_ar : null,
+                    description: $row->description !== null ? (string) $row->description : null,
+                ),
+                $rows
+            );
+
+            DB::transaction(function () use ($ftsRows): void {
+                foreach (array_chunk($ftsRows, self::INSERT_BATCH) as $batch) {
+                    DB::table('recipes_fts')->insert($batch);
                 }
             });
 
             $indexed += count($rows);
-            $lastId = (int) end($rows)->rowid;
+            $lastId = (int) end($rows)->id;
 
             if ($indexed % self::PROGRESS_EVERY === 0 || $indexed >= $total) {
                 $this->info(sprintf('  %d / %d (%.1fs)', $indexed, $total, microtime(true) - $started));
