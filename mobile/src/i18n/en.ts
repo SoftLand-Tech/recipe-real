@@ -106,6 +106,8 @@ export const en: Record<string, string> = {
   "browse.offlineCaption": "Offline — showing saved recipes",
   "browse.loadingMore": "Loading more…",
   "browse.addRecipe": "Add a recipe",
+  "browse.filtersActive": "Active filters: {count}",
+  "browse.removeFilter": "Remove {label}",
 
   // ---- Recipe detail ------------------------------------------------------
   "detail.freeLimitTitle": "Free limit reached",

@@ -107,6 +107,8 @@ export const ar: Record<string, string> = {
   "browse.offlineCaption": "بدون اتصال — عرض الوصفات المحفوظة",
   "browse.loadingMore": "جارٍ تحميل المزيد…",
   "browse.addRecipe": "إضافة وصفة",
+  "browse.filtersActive": "الفلاتر النشطة: {count}",
+  "browse.removeFilter": "إزالة {label}",
 
   // ---- صفحة الوصفة -----------------------------------------------------------
   "detail.freeLimitTitle": "بلغت الحد المجاني",
