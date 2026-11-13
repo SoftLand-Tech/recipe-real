@@ -12,6 +12,7 @@ import {
   addNotificationTapListener,
   getColdStartNotificationData,
   setupNotificationHandler,
+  syncNudgePrefWithPermission,
 } from "@/utils/notifications";
 import {
   navigateNotificationTarget,
@@ -87,9 +88,11 @@ export function NotificationSetup() {
 
     (async () => {
       // Parallelize notification handler setup, tap listener registration,
-      // and cold-start tap queries so boot doesn't pay them sequentially.
-      const [, listenerUnsub, cookTarget, expoTap, pending] = await Promise.all([
+      // permission/preference sync, and cold-start tap queries so boot doesn't
+      // pay them sequentially.
+      const [, , listenerUnsub, cookTarget, expoTap, pending] = await Promise.all([
         setupNotificationHandler().catch(() => undefined),
+        syncNudgePrefWithPermission().catch(() => undefined),
         addNotificationTapListener((data) => {
           const href = notificationDataToHref(data);
           if (href) navigateNotificationTarget(href, "expo-tap");
@@ -145,6 +148,7 @@ export function NotificationSetup() {
 
     const appStateSub = AppState.addEventListener("change", (state) => {
       if (state !== "active") return;
+      void syncNudgePrefWithPermission().catch(() => undefined);
       consumePendingNotifNav()
         .then((href) => {
           if (!href) return;

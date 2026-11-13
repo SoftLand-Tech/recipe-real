@@ -64,6 +64,8 @@ Route::middleware('throttle:240,1')->group(function (): void {
     // in matching order (profile screen broke with 404 "No user 'me'").
     Route::get('/users/{user}/profile', [ProfileController::class, 'showPublic'])
         ->whereNumber('user');
+    Route::get('/users/{user}/recipes', [ProfileController::class, 'recipes'])
+        ->whereNumber('user');
     Route::get('/users/{user}/followers', [FollowController::class, 'followers'])
         ->whereNumber('user');
     Route::get('/users/{user}/following', [FollowController::class, 'following'])

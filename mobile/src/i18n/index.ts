@@ -103,6 +103,7 @@ export function greaseLevelLabel(t: TranslateFn, raw: string): string {
 /** Format a minute count with explicit unit suffixes, e.g. "45m" / "1h 5m". */
 export function formatMinutes(m: number, mUnit: string, hUnit: string): string {
   if (!Number.isFinite(m) || m <= 0) return `0${mUnit}`;
+  if (m < 1) return `1${mUnit}`;
   if (m < 60) return `${Math.round(m)}${mUnit}`;
   const h = Math.floor(m / 60);
   const rem = Math.round(m % 60);

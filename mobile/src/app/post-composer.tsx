@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as ImagePicker from "expo-image-picker";
@@ -24,6 +26,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import {
   createPost,
+  fetchMyProfile,
+  getRecipe,
   hasToken,
   HalalRejectionError,
   OfflineError,
@@ -31,14 +35,21 @@ import {
   uploadImage,
 } from "@/api/client";
 import { track } from "@/analytics";
-import type { Post, Recipe } from "@/types";
+import type { Post, PublicProfile, Recipe } from "@/types";
 import { markPostCreated } from "@/utils/postCreated";
-import { useLang, useT } from "@/i18n";
-import { Radius, Space, Type, useThemeColors } from "@/theme";
+import { bestMinutes } from "@/utils/recipeTime";
+import { useFmtMinutes, useLang, useT, type TranslateFn } from "@/i18n";
 import {
+  Radius,
+  Shadow,
+  Space,
+  Type,
+  useThemeColors,
+  type ThemeColors,
+} from "@/theme";
+import {
+  Avatar,
   Button,
-  Card,
-  Chip,
   ComposeImageGrid,
   IconPressable,
 } from "@/components/ui";
@@ -46,7 +57,9 @@ import {
 // ---- Constants ---------------------------------------------------------------
 
 const POST_BODY_MAX = 2000;
-const RECIPE_PICK_RESULTS = 5;
+const CHAR_COUNT_THRESHOLD = 1700;
+const CHAR_COUNT_WARN = 1900;
+const RECIPE_PICK_RESULTS = 6;
 const RECIPE_SEARCH_DEBOUNCE_MS = 350;
 const MAX_IMAGES = 6;
 
@@ -54,9 +67,8 @@ const MAX_IMAGES = 6;
  * AsyncStorage key for the post-composer draft. Community writes are NOT
  * offline-queued (the offline queue is cook-sessions-only), so the draft —
  * body text plus the attached recipe — is persisted on every change and
- * restored on mount. It is removed only after a successful post, meaning an
- * offline failure, an app kill, or navigating away never silently loses
- * composed text (the unsaved-changes guard below covers in-session leaves).
+ * restored on mount. It is removed only after a successful post or an explicit
+ * discard, meaning an offline failure or app kill never loses composed text.
  */
 const POST_COMPOSER_DRAFT_KEY = "recipereal.postComposerDraft";
 
@@ -77,26 +89,435 @@ function useLocalizedTitle(): (recipe: Recipe) => string {
   );
 }
 
+// ---- Presentational helpers --------------------------------------------------
+
+function RecipeThumb({
+  uri,
+  size,
+  colors,
+}: {
+  uri?: string | null;
+  size: number;
+  colors: ThemeColors;
+}) {
+  const [failedUri, setFailedUri] = useState<string | null>(null);
+  const hasUri = typeof uri === "string" && uri.trim().length > 0;
+  const failed = hasUri && failedUri === uri;
+
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: Radius.sm,
+        backgroundColor: colors.surfaceSoft,
+        alignItems: "center",
+        justifyContent: "center",
+        overflow: "hidden",
+      }}
+    >
+      {hasUri && !failed ? (
+        <Image
+          source={{ uri: uri as string }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          transition={0}
+          cachePolicy="memory-disk"
+          recyclingKey={uri as string}
+          onError={() => setFailedUri(uri as string)}
+        />
+      ) : (
+        <Ionicons
+          name="restaurant-outline"
+          size={Math.round(size * 0.44)}
+          color={colors.inkFaint}
+        />
+      )}
+    </View>
+  );
+}
+
+/**
+ * Top-right Post pill button.
+ * Android paint rules: static styles only (no Pressable style callback).
+ */
+function HeaderPostPill({
+  label,
+  ready,
+  loading,
+  disabled,
+  onPress,
+  colors,
+}: {
+  label: string;
+  ready: boolean;
+  loading: boolean;
+  disabled: boolean;
+  onPress: () => void;
+  colors: ThemeColors;
+}) {
+  const [pressed, setPressed] = useState(false);
+  const active = ready || loading;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      hitSlop={Space.xs}
+      style={[
+        pillStyles.headerPill,
+        active
+          ? { backgroundColor: colors.accent }
+          : { backgroundColor: colors.surfaceSoft },
+        !disabled && pressed ? pillStyles.pressed : null,
+      ]}
+    >
+      {loading ? (
+        <ActivityIndicator size="small" color="#FFFFFF" />
+      ) : null}
+      <Text
+        style={[
+          pillStyles.headerPillText,
+          { color: active ? "#FFFFFF" : colors.inkFaint },
+        ]}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
+ * Quick attachment bar pill button.
+ * Android paint rules: static styles only (no Pressable style callback).
+ */
+function ToolbarPill({
+  icon,
+  label,
+  active = false,
+  disabled = false,
+  onPress,
+  colors,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  active?: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+  colors: ThemeColors;
+}) {
+  const [pressed, setPressed] = useState(false);
+
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled, selected: active }}
+      style={[
+        pillStyles.toolbarPill,
+        {
+          backgroundColor: active ? colors.accentSoft : colors.surfaceSoft,
+          borderColor: active ? colors.accent : colors.hairline,
+        },
+        disabled ? pillStyles.disabled : null,
+        !disabled && pressed ? pillStyles.pressed : null,
+      ]}
+    >
+      <Ionicons
+        name={icon}
+        size={18}
+        color={active ? colors.accent : colors.inkSecondary}
+      />
+      <Text
+        style={[
+          pillStyles.toolbarPillText,
+          { color: active ? colors.accent : colors.ink },
+        ]}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
+ * Compact "+ Add more" pill shown below the photo grid when < MAX_IMAGES.
+ * Android paint rules: static styles only (no Pressable style callback).
+ */
+function AddMorePhotosPill({
+  label,
+  disabled,
+  onPress,
+  colors,
+}: {
+  label: string;
+  disabled: boolean;
+  onPress: () => void;
+  colors: ThemeColors;
+}) {
+  const [pressed, setPressed] = useState(false);
+
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={[
+        pillStyles.addMorePill,
+        {
+          backgroundColor: colors.surfaceSoft,
+          borderColor: colors.hairline,
+        },
+        disabled ? pillStyles.disabled : null,
+        !disabled && pressed ? pillStyles.pressed : null,
+      ]}
+    >
+      <Ionicons name="add" size={16} color={colors.accent} />
+      <Text style={[pillStyles.addMoreText, { color: colors.ink }]} numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
+ * Themed discard confirmation dialog replacing native Alert.alert.
+ * Android paint rules: static styles only (no Pressable style callback).
+ */
+function DiscardConfirmModal({
+  visible,
+  onKeepEditing,
+  onDiscard,
+  colors,
+  t,
+}: {
+  visible: boolean;
+  onKeepEditing: () => void;
+  onDiscard: () => void;
+  colors: ThemeColors;
+  t: TranslateFn;
+}) {
+  const [keepPressed, setKeepPressed] = useState(false);
+  const [discardPressed, setDiscardPressed] = useState(false);
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      statusBarTranslucent
+      navigationBarTranslucent
+      onRequestClose={onKeepEditing}
+    >
+      <View style={modalStyles.backdrop}>
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={onKeepEditing}
+          accessible={false}
+        />
+        <View
+          style={[
+            modalStyles.card,
+            Shadow.floating,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.hairline,
+            },
+          ]}
+        >
+          <View
+            style={[
+              modalStyles.iconBadge,
+              { backgroundColor: colors.dangerSoft },
+            ]}
+          >
+            <Ionicons name="trash-outline" size={22} color={colors.danger} />
+          </View>
+          <Text style={[modalStyles.title, { color: colors.ink }]}>
+            {t("composer.discardPostTitle")}
+          </Text>
+          <Text style={[modalStyles.message, { color: colors.inkSecondary }]}>
+            {t("composer.discardPostMessage")}
+          </Text>
+          <View style={modalStyles.actions}>
+            <Pressable
+              onPress={onKeepEditing}
+              onPressIn={() => setKeepPressed(true)}
+              onPressOut={() => setKeepPressed(false)}
+              accessibilityRole="button"
+              style={[
+                modalStyles.btn,
+                { backgroundColor: colors.surfaceSoft },
+                keepPressed ? pillStyles.pressed : null,
+              ]}
+            >
+              <Text
+                style={[modalStyles.btnText, { color: colors.ink }]}
+                numberOfLines={1}
+              >
+                {t("composer.keepEditing")}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={onDiscard}
+              onPressIn={() => setDiscardPressed(true)}
+              onPressOut={() => setDiscardPressed(false)}
+              accessibilityRole="button"
+              style={[
+                modalStyles.btn,
+                { backgroundColor: colors.danger },
+                discardPressed ? pillStyles.pressed : null,
+              ]}
+            >
+              <Text
+                style={[modalStyles.btnText, { color: "#FFFFFF" }]}
+                numberOfLines={1}
+              >
+                {t("composer.discardBtn")}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const pillStyles = StyleSheet.create({
+  headerPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Space.xs,
+    borderRadius: Radius.pill,
+    paddingHorizontal: Space.lg,
+    minHeight: 36,
+  },
+  headerPillText: {
+    ...Type.bodySm,
+    fontWeight: "700",
+  },
+  toolbarPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Space.xs,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    paddingHorizontal: Space.md,
+    paddingVertical: Space.sm,
+  },
+  toolbarPillText: {
+    ...Type.bodySm,
+    fontWeight: "600",
+  },
+  addMorePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 4,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    paddingHorizontal: Space.md,
+    paddingVertical: Space.xs + 2,
+  },
+  addMoreText: {
+    ...Type.caption,
+    fontWeight: "600",
+  },
+  pressed: {
+    opacity: 0.72,
+  },
+  disabled: {
+    opacity: 0.45,
+  },
+});
+
+const modalStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: Space.xl,
+  },
+  card: {
+    width: "100%",
+    maxWidth: 340,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    padding: Space.xl,
+    alignItems: "center",
+    gap: Space.sm,
+  },
+  iconBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: Space.xs,
+  },
+  title: {
+    ...Type.h3,
+    textAlign: "center",
+  },
+  message: {
+    ...Type.bodySm,
+    textAlign: "center",
+    marginBottom: Space.sm,
+  },
+  actions: {
+    flexDirection: "row",
+    alignSelf: "stretch",
+    gap: Space.sm,
+  },
+  btn: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: Radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Space.md,
+  },
+  btnText: {
+    ...Type.bodySm,
+    fontWeight: "700",
+  },
+});
+
 // ---- Screen ------------------------------------------------------------------
 
 /**
  * Dedicated post compose screen (/post-composer).
  *
- * Extracted verbatim from the inline ComposeCard in community.tsx. On
- * successful submission it calls router.back() so the community tab regains
- * focus — useFocusEffect in that tab re-checks auth state and the feed
- * auto-refreshes (this is the existing refresh-on-focus mechanism).
- *
- * Route: pushed via router.push("/post-composer") from the Community tab.
- * Safe-area + keyboard-avoiding handled here; no double-header.
+ * Modern social post composer (Instagram/Threads/Facebook inspired) matching
+ * RecipeReal's warm tokens. On successful submission it calls router.back()
+ * so the community tab regains focus and paints/refreshes the new post.
  */
 export default function PostComposerScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const t = useT();
+  const { dir } = useLang();
   const lr = useLocalizedTitle();
+  const fmtMinutes = useFmtMinutes();
+
   // Recipe prefill (e.g. the recipe page's "Share your try"): the id is the
-  // source of truth for recipe_id; the title is display-only.
+  // source of truth for recipe_id; the title is display-only until hydrated.
   const params = useLocalSearchParams<{
     recipeId?: string;
     recipeTitle?: string;
@@ -104,17 +525,19 @@ export default function PostComposerScreen() {
 
   const [body, setBody] = useState("");
   const [pickedUris, setPickedUris] = useState<string[]>([]);
+  const [myProfile, setMyProfile] = useState<PublicProfile | null>(null);
 
+  const [recipePickerOpen, setRecipePickerOpen] = useState(false);
   const [recipeQuery, setRecipeQuery] = useState("");
   const [recipeResults, setRecipeResults] = useState<Recipe[]>([]);
+  const [suggestedRecipes, setSuggestedRecipes] = useState<Recipe[]>([]);
+  const [suggestionsLoaded, setSuggestionsLoaded] = useState(false);
   const [recipeSearching, setRecipeSearching] = useState(false);
-  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
-
-  // Prefilled recipe (params): seed the selection without a search.
-  useEffect(() => {
+  // Prefilled recipe (params): seed the selection immediately.
+  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(() => {
     const id = Number(params.recipeId);
-    if (!Number.isFinite(id) || id <= 0) return;
-    setSelectedRecipe({
+    if (!Number.isFinite(id) || id <= 0) return null;
+    return {
       id,
       title: params.recipeTitle ?? "",
       source_url: null,
@@ -123,14 +546,10 @@ export default function PostComposerScreen() {
       publisher_time_minutes: null,
       community_avg_minutes: null,
       cleanup_avg_minutes: null,
-    });
-    // Run once per param pair — params are stable for this screen's life.
-  }, [params.recipeId, params.recipeTitle]);
+    };
+  });
 
-  // Restore a persisted draft (body + attached recipe) from an earlier
-  // session — e.g. an offline failure or an app kill. A recipe prefill via
-  // params (recipe page's "Share your try") always wins over the draft's
-  // recipe; the drafted body text is restored either way.
+  // Restore a persisted draft (body + attached recipe) from an earlier session.
   useEffect(() => {
     let cancelled = false;
     AsyncStorage.getItem(POST_COMPOSER_DRAFT_KEY)
@@ -142,9 +561,6 @@ export default function PostComposerScreen() {
             setBody(draft.body);
           }
           const draftRecipeId = draft.recipeId;
-          // A param prefill ("Share your try") wins: its effect runs on the
-          // same mount, so only restore the draft's recipe when no prefill
-          // was requested.
           const prefilled = (params.recipeId ?? "").trim().length > 0;
           if (
             !prefilled &&
@@ -165,19 +581,40 @@ export default function PostComposerScreen() {
             });
           }
         } catch {
-          // Corrupt draft: ignore it (it gets overwritten on next change).
+          // Corrupt draft: ignore it.
         }
       })
       .catch(() => {
-        // Best-effort: the composer works fine without a restored draft.
+        // Best-effort.
       });
     return () => {
       cancelled = true;
     };
-    // Mount-only: params are stable for this screen's life, and the prefill
-    // effect above owns param-driven selection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Hydrate stubbed prefill/draft recipe so the attached card displays its
+  // thumbnail, localized title, and cook time pill.
+  const selectedRecipeId = selectedRecipe?.id ?? null;
+  const selectedNeedsHydration =
+    selectedRecipe != null && selectedRecipe.image_url === undefined;
+  useEffect(() => {
+    if (!selectedNeedsHydration || selectedRecipeId == null) return;
+    let cancelled = false;
+    getRecipe(selectedRecipeId)
+      .then((full) => {
+        if (cancelled) return;
+        setSelectedRecipe((prev) =>
+          prev && prev.id === full.id ? full : prev,
+        );
+      })
+      .catch(() => {
+        // Non-fatal: the prefilled title still displays cleanly.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedNeedsHydration, selectedRecipeId]);
 
   // Persist the draft on every change so composed text survives offline
   // failures and app kills. An empty composer clears the stored draft.
@@ -189,39 +626,39 @@ export default function PostComposerScreen() {
     const snapshot: PostComposerDraft = {
       body,
       recipeId: selectedRecipe?.id ?? null,
-      recipeTitle: selectedRecipe?.title ?? "",
+      recipeTitle: selectedRecipe ? lr(selectedRecipe) : "",
     };
     AsyncStorage.setItem(
       POST_COMPOSER_DRAFT_KEY,
       JSON.stringify(snapshot),
-    ).catch(() => {
-      // Best-effort persistence.
-    });
-  }, [body, selectedRecipe]);
+    ).catch(() => {});
+  }, [body, selectedRecipe, lr]);
 
   const [posting, setPosting] = useState(false);
-  // Set on a successful create: permanently disarms the unsaved-changes
-  // guard (see usePreventRemove below) and keeps the Post button muted until
-  // the screen pops.
   const [posted, setPosted] = useState(false);
-  // Synchronous submit lock: `posting` only flips on the next render, so a
-  // fast double-tap could otherwise fire two creates.
   const submitLockRef = useRef(false);
   const [uploadCaption, setUploadCaption] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [halalTerms, setHalalTerms] = useState<string[] | null>(null);
 
-  // ---- Auth gate -----------------------------------------------------------------
-  // Signed-out visitors get a sign-in prompt instead of a form that 401s
-  // after they've written everything. Re-checked on focus so returning
-  // from /login lands back on a usable composer.
+  // ---- Auth gate & profile load ---------------------------------------------
   const [authed, setAuthed] = useState<boolean | null>(null);
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       (async () => {
         const ok = await hasToken();
-        if (!cancelled) setAuthed(ok);
+        if (cancelled) return;
+        setAuthed(ok);
+        if (ok) {
+          fetchMyProfile()
+            .then((me) => {
+              if (!cancelled) setMyProfile(me);
+            })
+            .catch(() => {
+              // Non-fatal: Avatar renders fallback initial.
+            });
+        }
       })();
       return () => {
         cancelled = true;
@@ -229,45 +666,55 @@ export default function PostComposerScreen() {
     }, []),
   );
 
-  // ---- Debounced recipe search (stale-response safe) ------------------------------
-  // A monotonic id per query: only the LATEST search may commit results, so
-  // a slow earlier response can never overwrite a newer one's rows. All
-  // state updates happen inside the timer callback (never synchronously in
-  // the effect body).
+  // ---- Suggested recipes + debounced recipe search ---------------------------
+  // A monotonic id per query guarantees stale responses never overwrite newer ones.
+  // All setState calls run inside timer/async callbacks, never synchronously in the effect body.
   const searchRequestIdRef = useRef(0);
   useEffect(() => {
-    if (selectedRecipe != null) return;
+    if (!recipePickerOpen) return;
     const q = recipeQuery.trim();
+    if (q.length === 0 && suggestionsLoaded) return;
+
     const requestId = ++searchRequestIdRef.current;
+    const delay = q.length === 0 ? 0 : RECIPE_SEARCH_DEBOUNCE_MS;
     const timer = setTimeout(() => {
       if (searchRequestIdRef.current !== requestId) return;
-      if (q.length === 0) {
-        setRecipeResults([]);
-        setRecipeSearching(false);
-        return;
-      }
       setRecipeSearching(true);
-      searchRecipes({ q, perPage: RECIPE_PICK_RESULTS })
+      searchRecipes({
+        ...(q.length > 0 ? { q } : {}),
+        perPage: RECIPE_PICK_RESULTS,
+      })
         .then((page) => {
           if (searchRequestIdRef.current !== requestId) return;
-          setRecipeResults(page.recipes.slice(0, RECIPE_PICK_RESULTS));
+          const rows = page.recipes.slice(0, RECIPE_PICK_RESULTS);
+          if (q.length === 0) {
+            setSuggestedRecipes(rows);
+            setSuggestionsLoaded(true);
+          } else {
+            setRecipeResults(rows);
+          }
         })
         .catch(() => {
           if (searchRequestIdRef.current !== requestId) return;
-          setRecipeResults([]);
+          if (q.length === 0) {
+            setSuggestionsLoaded(true);
+          } else {
+            setRecipeResults([]);
+          }
         })
         .finally(() => {
           if (searchRequestIdRef.current === requestId) {
             setRecipeSearching(false);
           }
         });
-    }, RECIPE_SEARCH_DEBOUNCE_MS);
+    }, delay);
+
     return () => clearTimeout(timer);
-  }, [recipeQuery, selectedRecipe]);
+  }, [recipePickerOpen, recipeQuery, suggestionsLoaded]);
 
   const pickImages = useCallback(async () => {
     const remaining = MAX_IMAGES - pickedUris.length;
-    if (remaining <= 0) return;
+    if (remaining <= 0 || posting) return;
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
@@ -281,14 +728,56 @@ export default function PostComposerScreen() {
           .filter(Boolean)
           .slice(0, remaining);
         setPickedUris((prev) => [...prev, ...newUris].slice(0, MAX_IMAGES));
+        setError(null);
       }
     } catch (err) {
       console.warn("[RecipeReal] image pick failed:", err);
     }
-  }, [pickedUris]);
+  }, [pickedUris.length, posting]);
+
+  const capturePhoto = useCallback(async () => {
+    const remaining = MAX_IMAGES - pickedUris.length;
+    if (remaining <= 0 || posting) return;
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        setError(t("composer.cameraPermDenied"));
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["images"],
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets.length > 0) {
+        const uri = result.assets[0]?.uri;
+        if (uri) {
+          setPickedUris((prev) => [...prev, uri].slice(0, MAX_IMAGES));
+          setError(null);
+        }
+      }
+    } catch (err) {
+      console.warn("[RecipeReal] camera capture failed:", err);
+      setError(t("composer.cameraUnavailable"));
+    }
+  }, [pickedUris.length, posting, t]);
 
   const removeImage = useCallback((index: number) => {
     setPickedUris((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const toggleRecipePicker = useCallback(() => {
+    setRecipePickerOpen((prev) => !prev);
+  }, []);
+
+  const selectRecipe = useCallback((recipe: Recipe) => {
+    setSelectedRecipe(recipe);
+    setRecipePickerOpen(false);
+    setRecipeQuery("");
+  }, []);
+
+  const clearRecipe = useCallback(() => {
+    setSelectedRecipe(null);
+    setRecipeQuery("");
   }, []);
 
   const submit = useCallback(async () => {
@@ -320,8 +809,6 @@ export default function PostComposerScreen() {
             const url = await uploadImage(pickedUris[i]);
             uploadedUrls.push(url);
           } catch (uploadError) {
-            // Draft is kept (body/pickedUris/selectedRecipe untouched):
-            // surface the offline message verbatim when that's the cause.
             setError(
               uploadError instanceof OfflineError
                 ? uploadError.message
@@ -331,9 +818,6 @@ export default function PostComposerScreen() {
           }
         }
       }
-      // Publish phase: keep a visible status line (spinner + text) until the
-      // request resolves — on a slow connection the button spinner alone was
-      // easy to miss.
       setUploadCaption(t("community.publishingPost"));
 
       const created: Post = await createPost({
@@ -348,56 +832,29 @@ export default function PostComposerScreen() {
       });
       succeeded = true;
 
-      // Success, BEFORE navigating:
-      // - `posted` + an emptied form keep the unsaved-changes guard disarmed.
-      //   expo-router only QUEUES router.back()/replace(); the queue drains in
-      //   a passive effect after the next render. The old `finally` ran
-      //   setPosting(false) right after the enqueue, so the guard re-armed
-      //   (`dirty && !posting`) before the queued pop ran — the pop was
-      //   intercepted and the discard dialog appeared after a successful
-      //   post. `posted` is the durable disarm.
-      // - `posting` stays true so the Post button remains muted until the
-      //   screen is actually gone.
-      // - The created post is handed to the community feed so it paints the
-      //   row immediately (it already exists server-side) and keeps it
-      //   pinned across the first refresh, past the feed's ranking/cache.
       setPosted(true);
       setBody("");
       setPickedUris([]);
       setSelectedRecipe(null);
       setUploadCaption(null);
       markPostCreated(created);
-      // Success: the persisted draft is stale — drop it so the next compose
-      // starts clean.
       AsyncStorage.removeItem(POST_COMPOSER_DRAFT_KEY).catch(() => {});
-      // Navigate back; community tab regains focus → useFocusEffect refreshes feed.
-      // Web: GO_BACK can silently no-op in browsers (nothing to pop after a
-      // reload/auth replace), leaving the composer open — a second Post press
-      // then creates a duplicate. Routing to the feed explicitly always works;
-      // the composer's only other entry (recipe share) lands on the feed too.
+
       if (Platform.OS === "web") {
         router.replace("/community");
       } else {
         router.back();
       }
-      // Optionally surface the created post id via params for immediate prepend
-      // — the focus-based refresh covers it without extra coupling.
-      void created;
     } catch (err) {
       if (err instanceof HalalRejectionError) {
         setHalalTerms(err.terms);
       } else if (err instanceof OfflineError) {
-        // Offline (createPost is not queued): the draft stays in state AND
-        // in AsyncStorage — show the retry message, never clear the text.
         setError(err.message);
       } else {
         console.warn("[RecipeReal] post creation failed:", err);
         setError(t("community.postFailed"));
       }
     } finally {
-      // Failure: unlock so the user can retry (the draft is intact).
-      // Success: stay locked and muted — the screen is popping, and any
-      // further press would create a duplicate.
       if (!succeeded) {
         submitLockRef.current = false;
         setPosting(false);
@@ -406,9 +863,49 @@ export default function PostComposerScreen() {
     }
   }, [body, posting, pickedUris, selectedRecipe, t]);
 
+  // ---- Unsaved-changes guard + themed discard dialog ------------------------
+  const dirty =
+    body.trim().length > 0 ||
+    pickedUris.length > 0 ||
+    selectedRecipe != null;
+  const navigation = useNavigation();
+  const [discardModalOpen, setDiscardModalOpen] = useState(false);
+  const pendingNavActionRef = useRef<Parameters<typeof navigation.dispatch>[0] | null>(
+    null,
+  );
+
+  const publishing = posting && !posted;
+  const guardActive =
+    Platform.OS !== "web" &&
+    (publishing || (dirty && !posting && !posted));
+
+  usePreventRemove(guardActive, ({ data }) => {
+    if (publishing) return;
+    pendingNavActionRef.current = data.action;
+    setDiscardModalOpen(true);
+  });
+
+  const handleKeepEditing = useCallback(() => {
+    setDiscardModalOpen(false);
+    pendingNavActionRef.current = null;
+  }, []);
+
+  const handleConfirmDiscard = useCallback(() => {
+    const action = pendingNavActionRef.current;
+    pendingNavActionRef.current = null;
+    setDiscardModalOpen(false);
+    AsyncStorage.removeItem(POST_COMPOSER_DRAFT_KEY).catch(() => {});
+    if (action) {
+      navigation.dispatch(action);
+    } else {
+      router.back();
+    }
+  }, [navigation]);
+
   const styles = useMemo(
     () =>
-      StyleSheet.create({        flex: { flex: 1 },
+      StyleSheet.create({
+        flex: { flex: 1 },
         container: {
           flex: 1,
           backgroundColor: colors.canvas,
@@ -424,10 +921,19 @@ export default function PostComposerScreen() {
           borderBottomColor: colors.hairline,
           backgroundColor: colors.canvas,
         },
+        headerSideStart: {
+          minWidth: 76,
+          alignItems: "flex-start",
+        },
+        headerSideEnd: {
+          minWidth: 76,
+          alignItems: "flex-end",
+        },
         headerTitle: {
-          ...Type.h3,
+          ...Type.title,
           color: colors.ink,
           flex: 1,
+          textAlign: "center",
         },
         closeBtn: {
           width: 36,
@@ -438,142 +944,246 @@ export default function PostComposerScreen() {
           justifyContent: "center",
         },
         closeDisabled: {
-          opacity: 0.5,
+          opacity: 0.45,
         },
         scroll: {
           flex: 1,
         },
         scrollContent: {
-          padding: Space.lg,
+          paddingHorizontal: Space.lg,
+          paddingTop: Space.lg,
+          paddingBottom: Space.xxl,
           gap: Space.md,
-          paddingBottom: insets.bottom + Space.xxl,
         },
-        card: {
+        authorRow: {
+          flexDirection: "row",
+          alignItems: "center",
           gap: Space.md,
-          borderWidth: 1,
-          borderColor: colors.accentSoft,
         },
-        bodyInput: {
-          ...Type.body,
+        authorMeta: {
+          flex: 1,
+          gap: 3,
+          alignItems: "flex-start",
+        },
+        authorName: {
+          ...Type.title,
+          fontSize: 16,
           color: colors.ink,
+        },
+        audiencePill: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 4,
           backgroundColor: colors.surfaceSoft,
-          borderRadius: Radius.md,
-          padding: Space.md,
-          minHeight: 120,
-          textAlignVertical: "top",
+          borderRadius: Radius.pill,
+          paddingHorizontal: Space.sm,
+          paddingVertical: 2,
         },
-        errorText: {
-          ...Type.bodySm,
-          color: colors.danger,
-        },
-        attachLabel: {
+        audienceText: {
           ...Type.caption,
           color: colors.inkSecondary,
           fontWeight: "600",
         },
-        selectedRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.sm,
-        },
-        photoActions: {
-          flexDirection: "row",
-          flexWrap: "wrap",
-          gap: Space.sm,
-        },
-        resultRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.sm,
-          paddingVertical: Space.xs,
-        },
-        resultTitle: {
-          ...Type.bodySm,
+        bodyInput: {
+          fontSize: 17,
+          lineHeight: 24,
           color: colors.ink,
+          minHeight: 130,
+          paddingTop: Space.xs,
+          paddingBottom: Space.sm,
+          paddingHorizontal: 0,
+          textAlignVertical: "top",
+          textAlign: dir === "rtl" ? "right" : "left",
+        },
+        charCount: {
+          ...Type.caption,
+          alignSelf: "flex-end",
+          fontVariant: ["tabular-nums"],
+        },
+        uploadBanner: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+          backgroundColor: colors.accentSoft,
+          borderRadius: Radius.md,
+          paddingHorizontal: Space.md,
+          paddingVertical: Space.sm,
+        },
+        uploadCaption: {
+          ...Type.bodySm,
+          color: colors.accent,
+          fontWeight: "600",
           flex: 1,
         },
-        searchRow: {
+        errorBox: {
           flexDirection: "row",
           alignItems: "center",
           gap: Space.sm,
+          backgroundColor: colors.dangerSoft,
+          borderRadius: Radius.md,
+          paddingHorizontal: Space.md,
+          paddingVertical: Space.sm,
+        },
+        errorText: {
+          ...Type.bodySm,
+          color: colors.danger,
+          flex: 1,
+        },
+        mediaSection: {
+          gap: Space.sm,
+        },
+        attachedRecipeCard: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.md,
+          backgroundColor: colors.surface,
+          borderWidth: 1,
+          borderColor: colors.hairline,
+          borderRadius: Radius.lg,
+          padding: Space.sm + 2,
+        },
+        attachedRecipeBody: {
+          flex: 1,
+          gap: 4,
+          alignItems: "flex-start",
+        },
+        attachedRecipeTitle: {
+          ...Type.bodySm,
+          fontWeight: "700",
+          color: colors.ink,
+        },
+        cookTimePill: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 4,
+          backgroundColor: colors.surfaceSoft,
+          borderRadius: Radius.pill,
+          paddingHorizontal: Space.sm,
+          paddingVertical: 2,
+        },
+        cookTimeText: {
+          ...Type.caption,
+          color: colors.inkSecondary,
+          fontWeight: "600",
+        },
+        removeRecipeBtn: {
+          width: 28,
+          height: 28,
+          borderRadius: 14,
+          backgroundColor: colors.surfaceSoft,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        pickerPanel: {
+          backgroundColor: colors.surface,
+          borderWidth: 1,
+          borderColor: colors.hairline,
+          borderRadius: Radius.lg,
+          padding: Space.md,
+          gap: Space.sm,
+        },
+        pickerHeaderRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+        },
+        pickerTitle: {
+          ...Type.caption,
+          fontWeight: "700",
+          color: colors.inkSecondary,
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
+        },
+        searchBox: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+          backgroundColor: colors.surfaceSoft,
+          borderRadius: Radius.pill,
+          paddingHorizontal: Space.md,
+          paddingVertical: Space.xs + 2,
         },
         searchInput: {
           flex: 1,
           ...Type.bodySm,
           color: colors.ink,
-          backgroundColor: colors.surfaceSoft,
-          borderRadius: Radius.pill,
-          paddingHorizontal: Space.md,
-          paddingVertical: Space.sm,
+          paddingVertical: Space.xs,
+          textAlign: dir === "rtl" ? "right" : "left",
         },
-        searching: {
-          alignSelf: "flex-start",
+        pickerLoading: {
+          paddingVertical: Space.md,
+          alignItems: "center",
         },
-        actions: {
+        pickerList: {
+          gap: Space.xs,
+        },
+        candidateRow: {
           flexDirection: "row",
+          alignItems: "center",
           gap: Space.sm,
+          paddingVertical: Space.xs + 2,
+          paddingHorizontal: Space.xs,
+          borderRadius: Radius.md,
         },
-        uploadStatus: {
+        candidateInfo: {
+          flex: 1,
+          gap: 2,
+          alignItems: "flex-start",
+        },
+        candidateTitle: {
+          ...Type.bodySm,
+          fontWeight: "600",
+          color: colors.ink,
+        },
+        candidateMeta: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 4,
+        },
+        candidateTime: {
+          ...Type.caption,
+          color: colors.inkSecondary,
+        },
+        pickerEmpty: {
+          ...Type.bodySm,
+          color: colors.inkFaint,
+          textAlign: "center",
+          paddingVertical: Space.md,
+        },
+        toolbar: {
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: colors.hairline,
+          backgroundColor: colors.canvas,
+          paddingHorizontal: Space.lg,
+          paddingTop: Space.sm,
+          paddingBottom: Math.max(insets.bottom, Space.sm),
+        },
+        toolbarRow: {
           flexDirection: "row",
           alignItems: "center",
           gap: Space.sm,
         },
-        uploadCaption: {
-          ...Type.bodySm,
+        authCenter: {
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          gap: Space.md,
+          padding: Space.xxl,
+        },
+        authPromptText: {
+          ...Type.body,
           color: colors.inkSecondary,
+          textAlign: "center",
         },
       }),
-    [colors, insets],
+    [colors, insets.top, insets.bottom, dir],
   );
 
-  // ---- Unsaved-changes guard -------------------------------------------------------
-  // Armed once the user types anything, picks a photo or attaches a recipe;
-  // covers the header ✕, Cancel button, Android back gesture and any other
-  // removal of this screen.
-  const dirty =
-    body.trim().length > 0 ||
-    pickedUris.length > 0 ||
-    selectedRecipe != null;
-  const navigation = useNavigation();
-  // Web: never arm the guard. react-native-web's Alert.alert is a stub, so a
-  // blocked removal shows NO dialog and every exit from the composer (✕, the
-  // post-success navigation) is silently swallowed. The draft is already
-  // persisted to AsyncStorage on every change, so nothing is lost.
-  // `posted` keeps the guard disarmed for the post-success pop regardless of
-  // when expo-router's queued navigation actually dispatches.
-  //
-  // While a publish is in flight the guard is also armed, but silently: the
-  // post is already being created, so letting a back gesture leave would
-  // still create it — the user would think they cancelled while the post
-  // shows up later. Requests are bounded by the API's 15s timeout, and the
-  // composer shows a spinner + "Posting…" for the whole wait.
-  const publishing = posting && !posted;
-  const guardActive =
-    Platform.OS !== "web" &&
-    (publishing || (dirty && !posting && !posted));
-  usePreventRemove(
-    guardActive,
-    ({ data }) => {
-    if (publishing) return; // Silent: wait out the in-flight request.
-    Alert.alert(
-      t("composer.discardTitle"),
-      t("composer.discardPostMessage"),
-      [
-        { text: t("common.cancel"), style: "cancel" },
-        {
-          text: t("composer.discardBtn"),
-          style: "destructive",
-          onPress: () => navigation.dispatch(data.action),
-        },
-      ],
-    );
-  });
-
-  // ---- Auth gate (after all hooks) ---------------------------------------------------
+  // ---- Auth gate (after all hooks) ------------------------------------------
   if (authed === null) {
     return (
       <View style={styles.container}>
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        <View style={styles.authCenter}>
           <ActivityIndicator color={colors.accent} size="small" />
         </View>
       </View>
@@ -583,16 +1193,24 @@ export default function PostComposerScreen() {
   if (authed === false) {
     return (
       <View style={styles.container}>
-        <View
-          style={{
-            flex: 1,
-            alignItems: "center",
-            justifyContent: "center",
-            gap: Space.md,
-            padding: Space.xxl,
-          }}
-        >
-          <Text style={[styles.attachLabel, { textAlign: "center" }]}>
+        <View style={styles.headerBar}>
+          <View style={styles.headerSideStart}>
+            <IconPressable
+              onPress={() => router.back()}
+              accessibilityLabel={t("common.cancel")}
+              hitSlop={Space.xs}
+              style={styles.closeBtn}
+            >
+              <Ionicons name="close" size={20} color={colors.inkSecondary} />
+            </IconPressable>
+          </View>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {t("composer.createPostTitle")}
+          </Text>
+          <View style={styles.headerSideEnd} />
+        </View>
+        <View style={styles.authCenter}>
+          <Text style={styles.authPromptText}>
             {t("community.signInPrompt")}
           </Text>
           <Button
@@ -605,20 +1223,58 @@ export default function PostComposerScreen() {
     );
   }
 
+  const authorDisplayName = (
+    myProfile?.display_name ??
+    myProfile?.name ??
+    ""
+  ).trim();
+  const canPost = !posting && !posted && body.trim().length > 0;
+  const charCountColor =
+    body.length >= POST_BODY_MAX
+      ? colors.danger
+      : body.length >= CHAR_COUNT_WARN
+        ? colors.amber
+        : colors.inkFaint;
+  const attachedRecipeMinutes = selectedRecipe
+    ? bestMinutes(selectedRecipe)
+    : null;
+  const atMaxImages = pickedUris.length >= MAX_IMAGES;
+  const displayedRecipes =
+    recipeQuery.trim().length === 0 ? suggestedRecipes : recipeResults;
+
   return (
     <View style={styles.container}>
-      {/* Header bar with close button */}
+      {/* Top bar: X close | centered title | prominent Post pill */}
       <View style={styles.headerBar}>
-        <Text style={styles.headerTitle}>{t("community.composeTitle")}</Text>
-        <IconPressable
-          onPress={() => router.back()}
-          disabled={posting && !posted}
-          accessibilityLabel={t("common.cancel")}
-          hitSlop={Space.xs}
-          style={[styles.closeBtn, posting && !posted ? styles.closeDisabled : null]}
-        >
-          <Ionicons name="close" size={20} color={colors.inkSecondary} />
-        </IconPressable>
+        <View style={styles.headerSideStart}>
+          <IconPressable
+            onPress={() => router.back()}
+            disabled={posting && !posted}
+            accessibilityLabel={t("common.cancel")}
+            hitSlop={Space.xs}
+            style={[
+              styles.closeBtn,
+              posting && !posted ? styles.closeDisabled : null,
+            ]}
+          >
+            <Ionicons name="close" size={20} color={colors.inkSecondary} />
+          </IconPressable>
+        </View>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {t("composer.createPostTitle")}
+        </Text>
+        <View style={styles.headerSideEnd}>
+          <HeaderPostPill
+            label={
+              posting ? t("community.posting") : t("community.postAction")
+            }
+            ready={canPost}
+            loading={posting}
+            disabled={!canPost}
+            onPress={() => void submit()}
+            colors={colors}
+          />
+        </View>
       </View>
 
       <KeyboardAvoidingView
@@ -630,156 +1286,278 @@ export default function PostComposerScreen() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          <Card style={styles.card}>
-            {/* Body */}
-            <TextInput
-              style={styles.bodyInput}
-              value={body}
-              onChangeText={setBody}
-              placeholder={t("community.composePlaceholder")}
-              placeholderTextColor={colors.inkFaint}
-              multiline
-              maxLength={POST_BODY_MAX}
-              editable={!posting}
+          {/* Author row */}
+          <View style={styles.authorRow}>
+            <Avatar
+              name={authorDisplayName || "?"}
+              uri={myProfile?.avatar_url}
+              size={42}
             />
+            <View style={styles.authorMeta}>
+              {authorDisplayName.length > 0 ? (
+                <Text style={styles.authorName} numberOfLines={1}>
+                  {authorDisplayName}
+                </Text>
+              ) : null}
+              <View style={styles.audiencePill}>
+                <Ionicons
+                  name="earth-outline"
+                  size={12}
+                  color={colors.inkSecondary}
+                />
+                <Text style={styles.audienceText} numberOfLines={1}>
+                  {t("composer.audiencePublic")}
+                </Text>
+              </View>
+            </View>
+          </View>
 
-            {/* Multi-image preview grid (with remove buttons) */}
-            {pickedUris.length > 0 ? (
+          {/* Spacious, borderless auto-growing writing canvas */}
+          <TextInput
+            style={styles.bodyInput}
+            value={body}
+            onChangeText={setBody}
+            placeholder={t("community.composePlaceholder")}
+            placeholderTextColor={colors.inkFaint}
+            multiline
+            scrollEnabled={false}
+            maxLength={POST_BODY_MAX}
+            editable={!posting}
+            autoFocus={params.recipeId == null}
+          />
+
+          {body.length >= CHAR_COUNT_THRESHOLD ? (
+            <Text style={[styles.charCount, { color: charCountColor }]}>
+              {body.length} / {POST_BODY_MAX}
+            </Text>
+          ) : null}
+
+          {/* Upload / publish status banner */}
+          {uploadCaption != null ? (
+            <View style={styles.uploadBanner}>
+              <ActivityIndicator size="small" color={colors.accent} />
+              <Text style={styles.uploadCaption}>{uploadCaption}</Text>
+            </View>
+          ) : null}
+
+          {/* Halal / validation / upload error */}
+          {halalTerms != null ? (
+            <View style={styles.errorBox}>
+              <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
+              <Text style={styles.errorText}>
+                {t("community.halalBlocked", { terms: halalTerms.join(", ") })}
+              </Text>
+            </View>
+          ) : null}
+          {error != null && halalTerms == null ? (
+            <View style={styles.errorBox}>
+              <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : null}
+
+          {/* Attached photos preview grid + quick Add more */}
+          {pickedUris.length > 0 ? (
+            <View style={styles.mediaSection}>
               <ComposeImageGrid
                 uris={pickedUris}
                 onRemove={removeImage}
                 disabled={posting}
               />
-            ) : null}
-
-            {/* Photo action buttons */}
-            <View style={styles.photoActions}>
-              {pickedUris.length < MAX_IMAGES ? (
-                <Button
-                  title={
-                    pickedUris.length === 0
-                      ? t("community.addImages")
-                      : t("community.addMoreImages")
-                  }
-                  variant="ghost"
-                  onPress={() => void pickImages()}
+              {pickedUris.length < 4 ? (
+                <AddMorePhotosPill
+                  label={t("community.addMoreImages")}
                   disabled={posting}
+                  onPress={() => void pickImages()}
+                  colors={colors}
                 />
               ) : null}
             </View>
+          ) : null}
 
-            {/* Upload / publish progress: spinner + status text, visible for
-                the whole (possibly long) operation. */}
-            {uploadCaption != null ? (
-              <View style={styles.uploadStatus}>
-                <ActivityIndicator size="small" color={colors.accent} />
-                <Text style={styles.uploadCaption}>{uploadCaption}</Text>
-              </View>
-            ) : null}
-
-            {/* Recipe attach */}
-            {selectedRecipe ? (
-              <View style={styles.selectedRow}>
-                <Chip
-                  label={lr(selectedRecipe)}
-                  tone="accent"
-                  size="sm"
-                  icon={
+          {/* Rich attached recipe preview card */}
+          {selectedRecipe ? (
+            <View style={styles.attachedRecipeCard}>
+              <RecipeThumb
+                uri={selectedRecipe.image_url}
+                size={56}
+                colors={colors}
+              />
+              <View style={styles.attachedRecipeBody}>
+                <Text style={styles.attachedRecipeTitle} numberOfLines={2}>
+                  {lr(selectedRecipe)}
+                </Text>
+                {attachedRecipeMinutes != null ? (
+                  <View style={styles.cookTimePill}>
                     <Ionicons
-                      name="restaurant-outline"
+                      name="time-outline"
                       size={12}
-                      color={colors.accent}
+                      color={colors.inkSecondary}
                     />
-                  }
-                />
+                    <Text style={styles.cookTimeText}>
+                      {fmtMinutes(attachedRecipeMinutes)}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+              <IconPressable
+                onPress={clearRecipe}
+                hitSlop={Space.xs}
+                disabled={posting}
+                accessibilityRole="button"
+                accessibilityLabel={t("composer.removeRecipeA11y")}
+                style={styles.removeRecipeBtn}
+              >
+                <Ionicons name="close" size={16} color={colors.inkSecondary} />
+              </IconPressable>
+            </View>
+          ) : null}
+
+          {/* Inline visual Recipe Picker panel */}
+          {recipePickerOpen ? (
+            <View style={styles.pickerPanel}>
+              <View style={styles.pickerHeaderRow}>
+                <Text style={styles.pickerTitle}>
+                  {recipeQuery.trim().length === 0
+                    ? t("composer.suggestedRecipes")
+                    : t("community.attachRecipe")}
+                </Text>
                 <IconPressable
-                  onPress={() => {
-                    setSelectedRecipe(null);
-                    setRecipeQuery("");
-                    setRecipeResults([]);
-                  }}
+                  onPress={() => setRecipePickerOpen(false)}
                   hitSlop={Space.xs}
-                  disabled={posting}
-                  accessibilityRole="button"
                   accessibilityLabel={t("common.cancel")}
                 >
-                  <Ionicons name="close" size={18} color={colors.inkSecondary} />
+                  <Ionicons
+                    name="chevron-up"
+                    size={18}
+                    color={colors.inkSecondary}
+                  />
                 </IconPressable>
               </View>
-            ) : (
-              <>
-                <Text style={styles.attachLabel}>{t("community.attachRecipe")}</Text>
-                <View style={styles.searchRow}>
-                  <Ionicons name="search" size={16} color={colors.inkFaint} />
-                  <TextInput
-                    style={styles.searchInput}
-                    value={recipeQuery}
-                    onChangeText={setRecipeQuery}
-                    placeholder={t("browse.searchPlaceholder")}
-                    placeholderTextColor={colors.inkFaint}
-                    editable={!posting}
-                    returnKeyType="search"
-                  />
-                </View>
-                {recipeSearching ? (
-                  <ActivityIndicator
-                    color={colors.accent}
-                    size="small"
-                    style={styles.searching}
-                  />
+
+              <View style={styles.searchBox}>
+                <Ionicons name="search" size={16} color={colors.inkFaint} />
+                <TextInput
+                  style={styles.searchInput}
+                  value={recipeQuery}
+                  onChangeText={setRecipeQuery}
+                  placeholder={t("browse.searchPlaceholder")}
+                  placeholderTextColor={colors.inkFaint}
+                  editable={!posting}
+                  returnKeyType="search"
+                />
+                {recipeQuery.length > 0 ? (
+                  <IconPressable
+                    onPress={() => setRecipeQuery("")}
+                    hitSlop={Space.xs}
+                    accessibilityLabel={t("common.cancel")}
+                  >
+                    <Ionicons
+                      name="close-circle"
+                      size={16}
+                      color={colors.inkFaint}
+                    />
+                  </IconPressable>
                 ) : null}
-                <View style={{ gap: Space.xs }}>
-                  {recipeResults.map((recipe) => (
-                    <IconPressable
-                      key={`pick-${recipe.id}`}
-                      onPress={() => setSelectedRecipe(recipe)}
-                      style={styles.resultRow}
-                      disabled={posting}
-                    >
-                      <Ionicons
-                        name="add-circle-outline"
-                        size={18}
-                        color={colors.accent}
-                      />
-                      <Text style={styles.resultTitle} numberOfLines={1}>
-                        {lr(recipe)}
-                      </Text>
-                    </IconPressable>
-                  ))}
+              </View>
+
+              {recipeSearching ||
+              (recipeQuery.trim().length === 0 && !suggestionsLoaded) ? (
+                <View style={styles.pickerLoading}>
+                  <ActivityIndicator color={colors.accent} size="small" />
                 </View>
-              </>
-            )}
-
-            {/* Halal / generic error */}
-            {halalTerms != null ? (
-              <Text style={styles.errorText}>
-                {t("community.halalBlocked", { terms: halalTerms.join(", ") })}
-              </Text>
-            ) : null}
-            {error != null && halalTerms == null ? (
-              <Text style={styles.errorText}>{error}</Text>
-            ) : null}
-
-            {/* Actions */}
-            <View style={styles.actions}>
-              <Button
-                title={t("common.cancel")}
-                variant="ghost"
-                onPress={() => router.back()}
-                disabled={posting && !posted}
-              />
-              <Button
-                title={t("community.postAction")}
-                variant="primary"
-                loading={posting}
-                loadingLabel={t("community.posting")}
-                disabled={posting || posted || body.trim().length === 0}
-                onPress={() => void submit()}
-              />
+              ) : displayedRecipes.length === 0 ? (
+                <Text style={styles.pickerEmpty}>
+                  {t("composer.noRecipesFound")}
+                </Text>
+              ) : (
+                <View style={styles.pickerList}>
+                  {displayedRecipes.map((recipe) => {
+                    const mins = bestMinutes(recipe);
+                    return (
+                      <IconPressable
+                        key={`pick-${recipe.id}`}
+                        onPress={() => selectRecipe(recipe)}
+                        style={styles.candidateRow}
+                        disabled={posting}
+                      >
+                        <RecipeThumb
+                          uri={recipe.image_url}
+                          size={44}
+                          colors={colors}
+                        />
+                        <View style={styles.candidateInfo}>
+                          <Text style={styles.candidateTitle} numberOfLines={1}>
+                            {lr(recipe)}
+                          </Text>
+                          {mins != null ? (
+                            <View style={styles.candidateMeta}>
+                              <Ionicons
+                                name="time-outline"
+                                size={12}
+                                color={colors.inkSecondary}
+                              />
+                              <Text style={styles.candidateTime}>
+                                {fmtMinutes(mins)}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+                        <Ionicons
+                          name="add-circle-outline"
+                          size={20}
+                          color={colors.accent}
+                        />
+                      </IconPressable>
+                    );
+                  })}
+                </View>
+              )}
             </View>
-          </Card>
+          ) : null}
         </ScrollView>
+
+        {/* Sticky quick attachment action bar */}
+        <View style={styles.toolbar}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.toolbarRow}
+          >
+            <ToolbarPill
+              icon="images-outline"
+              label={t("composer.toolbarPhotos")}
+              disabled={posting || atMaxImages}
+              onPress={() => void pickImages()}
+              colors={colors}
+            />
+            <ToolbarPill
+              icon="camera-outline"
+              label={t("composer.toolbarCamera")}
+              disabled={posting || atMaxImages}
+              onPress={() => void capturePhoto()}
+              colors={colors}
+            />
+            <ToolbarPill
+              icon="restaurant-outline"
+              label={t("composer.toolbarTagRecipe")}
+              active={recipePickerOpen || selectedRecipe != null}
+              disabled={posting}
+              onPress={toggleRecipePicker}
+              colors={colors}
+            />
+          </ScrollView>
+        </View>
       </KeyboardAvoidingView>
+
+      <DiscardConfirmModal
+        visible={discardModalOpen}
+        onKeepEditing={handleKeepEditing}
+        onDiscard={handleConfirmDiscard}
+        colors={colors}
+        t={t}
+      />
     </View>
   );
 }

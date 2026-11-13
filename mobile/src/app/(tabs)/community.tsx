@@ -34,7 +34,6 @@ import {
   blockUser,
   deletePost,
   fetchMyProfile,
-  fetchNotifications,
   fetchPosts,
   followUser,
   getAuthEpoch,
@@ -74,6 +73,7 @@ import {
   IconPressable,
   ImageViewerModal,
   PostImageGrid,
+  useHeaderActionsRights,
 } from "@/components/ui";
 
 type LoadState = "loading" | "ready" | "error";
@@ -1025,8 +1025,6 @@ export default function CommunityScreen() {
   const [state, setState] = useState<LoadState>("loading");
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  // Header-bell badge: unread likes/comments on the user's own posts.
-  const [unreadCount, setUnreadCount] = useState(0);
   // Transient post-compose notice above the feed: "loading" while the
   // forced page-1 refresh is in flight (a slow network stays visible),
   // "done" once it lands, then auto-dismissed.
@@ -1237,10 +1235,10 @@ export default function CommunityScreen() {
     };
   }, [fetchPage]);
 
-  // On every focus: refresh auth state, the unread bell count AND silently
-  // reload feed page 1. This covers returning from /post-composer (new post
-  // visible at top), /notifications (badge re-syncs after mark-read) and
-  // /login (compose affordance unlocks) without extra event coupling.
+  // On every focus: refresh auth state AND silently reload feed page 1. This
+  // covers returning from /post-composer (new post visible at top) and /login
+  // (compose affordance unlocks) without extra event coupling. Shared header
+  // bell unread count is refreshed by useHeaderActionsRights().
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
@@ -1264,18 +1262,6 @@ export default function CommunityScreen() {
           setMyUserId(null);
           setMyAvatar(null);
           setMyName(null);
-        }
-        // Cheap inbox page 1 fetch: only the meta.unread_count is used.
-        if (ok) {
-          fetchNotifications(1)
-            .then((inbox) => {
-              if (!cancelled) setUnreadCount(inbox.unreadCount);
-            })
-            .catch(() => {
-              // Non-fatal: the badge just stays at its last value.
-            });
-        } else if (!cancelled) {
-          setUnreadCount(0);
         }
       })();
       // Silent feed refresh on re-focus — throttled: when the last
@@ -1614,35 +1600,6 @@ export default function CommunityScreen() {
         footer: {
           paddingVertical: Space.lg,
         },
-        // ---- Header bell + unread badge ------------------------------------
-        bellWrap: {
-          // Sized box so the absolutely-positioned badge anchors to the
-          // glyph, not the 40dp header circle.
-          width: 26,
-          height: 26,
-          alignItems: "center",
-          justifyContent: "center",
-        },
-        badge: {
-          // Logical `end`/`top` keep the badge on the correct corner in RTL.
-          position: "absolute",
-          top: -3,
-          end: -7,
-          minWidth: 16,
-          height: 16,
-          borderRadius: 8,
-          backgroundColor: colors.danger,
-          alignItems: "center",
-          justifyContent: "center",
-          paddingHorizontal: 3,
-        },
-        badgeText: {
-          // White on the danger red reads in both light and dark themes.
-          fontSize: 10,
-          fontWeight: "700",
-          color: "#FFFFFF",
-          letterSpacing: 0,
-        },
         // Composer entry card — Facebook style top of feed
         composerCard: {
           flexDirection: "row",
@@ -1945,49 +1902,8 @@ export default function CommunityScreen() {
   ]);
 
   // Shared trailing actions: ride the big title's row at the top, and the
-  // bar's row once scrolled (two instances of the same nodes).
-  const communityRights =
-    signedIn === false
-      ? undefined
-      : [
-          <IconPressable
-            key="bell"
-            onPress={() => router.push("/notifications")}
-            accessibilityLabel={
-              unreadCount > 0
-                ? `${t("notif.bellA11y")} · ${t("notif.unreadA11y", { n: unreadCount })}`
-                : t("notif.bellA11y")
-            }
-            hitSlop={Space.xs}
-          >
-            <View style={styles.bellWrap}>
-              <Ionicons
-                name="notifications-outline"
-                size={24}
-                color={colors.inkSecondary}
-              />
-              {unreadCount > 0 ? (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText} numberOfLines={1}>
-                    {unreadCount > 99 ? "99+" : unreadCount}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-          </IconPressable>,
-          <IconPressable
-            key="profile"
-            onPress={() => router.push("/profile")}
-            accessibilityLabel={t("profile.title")}
-            hitSlop={Space.xs}
-          >
-            <Ionicons
-              name="person-circle-outline"
-              size={26}
-              color={colors.inkSecondary}
-            />
-          </IconPressable>,
-        ];
+  // bar's row once scrolled (matches every other tab identically).
+  const communityRights = useHeaderActionsRights();
 
   return (
     <View style={styles.container}>

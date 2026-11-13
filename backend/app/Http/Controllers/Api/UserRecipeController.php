@@ -37,27 +37,27 @@ class UserRecipeController extends Controller
     public function store(StoreUserRecipeRequest $request): JsonResponse
     {
         $data = $request->validated();
+        [$title, $titleAr] = $this->normalizeTitle($data['title'] ?? null, $data['title_ar'] ?? null);
+        $steps = $this->normalizeSteps($data['steps']);
 
         // HALAL GATE: reject pork/alcohol content before anything is
         // written, listing the offending terms.
         $this->assertHalal([
-            $data['title'],
-            $data['title_ar'] ?? null,
+            $title,
+            $titleAr,
             $data['description'] ?? null,
             $data['ingredients'],
-            array_column($data['steps'], 'description'),
-            array_column($data['steps'], 'description_ar'),
+            array_column($steps, 'description'),
+            array_column($steps, 'description_ar'),
         ]);
 
-        $recipe = DB::transaction(function () use ($request, $data): Recipe {
-            $steps = $data['steps'];
-
+        $recipe = DB::transaction(function () use ($request, $data, $title, $titleAr, $steps): Recipe {
             $recipe = Recipe::create([
                 'owner_id' => $request->user()->id,
                 'source_type' => 'user',
-                'title' => $data['title'],
+                'title' => $title,
                 'source_url' => $data['source_url'] ?? null,
-                'title_ar' => $data['title_ar'] ?? null,
+                'title_ar' => $titleAr,
                 'description' => $data['description'] ?? null,
                 'image_url' => $data['image_url'] ?? null,
                 // The user's own claim drives the publisher estimate; the
@@ -128,28 +128,41 @@ class UserRecipeController extends Controller
         $this->assertOwner($request, $recipe);
 
         $data = $request->validated();
+        $updatingTitle = array_key_exists('title', $data) || array_key_exists('title_ar', $data);
+        [$resolvedTitle, $resolvedTitleAr] = $updatingTitle
+            ? $this->normalizeTitle(
+                array_key_exists('title', $data) ? $data['title'] : $recipe->title,
+                array_key_exists('title_ar', $data) ? $data['title_ar'] : $recipe->title_ar,
+            )
+            : [$recipe->title, $recipe->title_ar];
+        $steps = isset($data['steps']) ? $this->normalizeSteps($data['steps']) : null;
 
         // HALAL GATE on the resulting content: provided fields win, unset
         // fields fall back to the stored ones (the scan sees the final
         // state either way).
         $this->assertHalal([
-            $data['title'] ?? $recipe->title,
-            $data['title_ar'] ?? $recipe->title_ar,
+            $resolvedTitle,
+            $resolvedTitleAr,
             $data['description'] ?? $recipe->description,
             $data['ingredients'] ?? $recipe->ingredients,
-            isset($data['steps'])
-                ? array_column($data['steps'], 'description')
+            $steps !== null
+                ? array_column($steps, 'description')
                 : $recipe->recipeSteps->pluck('description')->all(),
-            isset($data['steps'])
-                ? array_column($data['steps'], 'description_ar')
+            $steps !== null
+                ? array_column($steps, 'description_ar')
                 : $recipe->recipeSteps->pluck('description_ar')->all(),
         ]);
 
-        DB::transaction(function () use ($request, $data, $recipe): void {
+        DB::transaction(function () use ($data, $recipe, $updatingTitle, $resolvedTitle, $resolvedTitleAr, $steps): void {
             $recipe->fill(collect($data)->only([
-                'title', 'title_ar', 'description', 'image_url', 'source_url',
+                'description', 'image_url', 'source_url',
                 'servings', 'prep_time_minutes', 'cook_time_minutes',
             ])->all());
+
+            if ($updatingTitle) {
+                $recipe->title = $resolvedTitle;
+                $recipe->title_ar = $resolvedTitleAr;
+            }
 
             if (array_key_exists('estimated_minutes', $data)) {
                 $recipe->publisher_time_minutes = $data['estimated_minutes'];
@@ -169,8 +182,7 @@ class UserRecipeController extends Controller
                 $recipe->ingredients_structured = $data['ingredients_structured'];
             }
 
-            if (isset($data['steps'])) {
-                $steps = $data['steps'];
+            if ($steps !== null) {
                 $recipe->steps = array_column($steps, 'description');
                 $recipe->steps_ar = $this->stepsArJson($steps);
                 $recipe->steps_count = count($steps);
@@ -310,6 +322,45 @@ class UserRecipeController extends Controller
                 'terms' => $terms,
             ], 422));
         }
+    }
+
+    /**
+     * Ensure `title` (NOT NULL in DB) falls back to `title_ar` when only
+     * Arabic is given, while preserving `title_ar` as null when blank.
+     *
+     * @return array{0: string, 1: ?string}
+     */
+    private function normalizeTitle(?string $title, ?string $titleAr): array
+    {
+        $cleanTitleAr = filled($titleAr) ? trim((string) $titleAr) : null;
+        $cleanTitle = filled($title) ? trim((string) $title) : ($cleanTitleAr ?? '');
+
+        return [$cleanTitle, $cleanTitleAr];
+    }
+
+    /**
+     * Normalize each step so `description` (NOT NULL in DB) falls back to
+     * `description_ar` when English is omitted, preserving `description_ar`.
+     *
+     * @param  list<array<string, mixed>>  $steps
+     * @return list<array<string, mixed>>
+     */
+    private function normalizeSteps(array $steps): array
+    {
+        return array_map(function (array $step): array {
+            $descAr = filled($step['description_ar'] ?? null)
+                ? trim((string) $step['description_ar'])
+                : null;
+            $desc = filled($step['description'] ?? null)
+                ? trim((string) $step['description'])
+                : ($descAr ?? '');
+
+            return [
+                ...$step,
+                'description' => $desc,
+                'description_ar' => $descAr,
+            ];
+        }, array_values($steps));
     }
 
     /**

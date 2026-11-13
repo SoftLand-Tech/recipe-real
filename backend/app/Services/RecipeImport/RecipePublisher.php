@@ -25,20 +25,23 @@ class RecipePublisher
         ?RecipeImport $import = null,
         ?User $publishedBy = null,
     ): Recipe {
+        [$title, $titleAr] = $this->normalizeTitle($data['title'] ?? null, $data['title_ar'] ?? null);
+        $steps = $this->normalizeSteps($data['steps'] ?? []);
+
         $terms = HalalGate::scan([
-            $data['title'] ?? null,
-            $data['title_ar'] ?? null,
+            $title,
+            $titleAr,
             $data['description'] ?? null,
             $data['ingredients'] ?? [],
-            array_column($data['steps'] ?? [], 'description'),
-            array_column($data['steps'] ?? [], 'description_ar'),
+            array_column($steps, 'description'),
+            array_column($steps, 'description_ar'),
         ]);
 
         if ($terms !== []) {
             throw new RecipeContentRejected($terms);
         }
 
-        return DB::transaction(function () use ($owner, $data, $import, $publishedBy): Recipe {
+        return DB::transaction(function () use ($owner, $data, $import, $publishedBy, $title, $titleAr, $steps): Recipe {
             $lockedImport = $import === null
                 ? null
                 : RecipeImport::query()->lockForUpdate()->findOrFail($import->id);
@@ -53,7 +56,6 @@ class RecipePublisher
                 );
             }
 
-            $steps = array_values($data['steps'] ?? []);
             $ingredients = array_values($data['ingredients'] ?? []);
             $imageUrl = array_key_exists('image_url', $data)
                 ? $data['image_url']
@@ -69,11 +71,11 @@ class RecipePublisher
             $recipe = Recipe::create([
                 'owner_id' => $owner->id,
                 'source_type' => 'user',
-                'title' => $data['title'],
+                'title' => $title,
                 'source_url' => array_key_exists('source_url', $data)
                     ? $data['source_url']
                     : $lockedImport?->source_url,
-                'title_ar' => $data['title_ar'] ?? null,
+                'title_ar' => $titleAr,
                 'description' => $data['description'] ?? null,
                 'image_url' => $imageUrl,
                 'publisher_time_minutes' => $data['estimated_minutes'],
@@ -127,6 +129,45 @@ class RecipePublisher
 
             return $recipe;
         });
+    }
+
+    /**
+     * Ensure `title` (NOT NULL in DB) falls back to `title_ar` when only
+     * Arabic is given, while preserving `title_ar` as null when blank.
+     *
+     * @return array{0: string, 1: ?string}
+     */
+    private function normalizeTitle(?string $title, ?string $titleAr): array
+    {
+        $cleanTitleAr = filled($titleAr) ? trim((string) $titleAr) : null;
+        $cleanTitle = filled($title) ? trim((string) $title) : ($cleanTitleAr ?? '');
+
+        return [$cleanTitle, $cleanTitleAr];
+    }
+
+    /**
+     * Normalize each step so `description` (NOT NULL in DB) falls back to
+     * `description_ar` when English is omitted, preserving `description_ar`.
+     *
+     * @param  list<array<string, mixed>>  $steps
+     * @return list<array<string, mixed>>
+     */
+    private function normalizeSteps(array $steps): array
+    {
+        return array_map(function (array $step): array {
+            $descAr = filled($step['description_ar'] ?? null)
+                ? trim((string) $step['description_ar'])
+                : null;
+            $desc = filled($step['description'] ?? null)
+                ? trim((string) $step['description'])
+                : ($descAr ?? '');
+
+            return [
+                ...$step,
+                'description' => $desc,
+                'description_ar' => $descAr,
+            ];
+        }, array_values($steps));
     }
 
     /** @param list<array<string, mixed>> $steps */

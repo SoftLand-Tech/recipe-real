@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState, type ComponentProps, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentProps, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   I18nManager,
   Linking,
   Pressable,
@@ -26,6 +27,7 @@ import { cancelAllScheduledNotifications } from "@/utils/cookAlarms";
 import {
   isNotificationsAvailable,
   requestNotificationsPermission,
+  syncNudgePrefWithPermission,
 } from "@/utils/notifications";
 
 import { deleteAccount, hasToken, logout } from "@/api/client";
@@ -37,7 +39,7 @@ import {
   seedCacheRemainingPages,
   SEED_PAGE_SIZE,
 } from "@/db/database";
-import { getNudgePref, setNudgePref } from "@/utils/prefs";
+import { setNudgePref } from "@/utils/prefs";
 import { clearPaceCache } from "../pace";
 import { useT } from "@/i18n";
 import type { LangPref } from "@/i18n";
@@ -323,23 +325,55 @@ export default function SettingsScreen() {
     }
   }, []);
 
-  // Refresh auth + the nudge preference whenever the screen gains focus, so
-  // the account rows update after returning from /login (sign-in / sign-out).
+  const applyNudgePref = useCallback((nudge: "on" | "off") => {
+    const enabled = nudge === "on";
+    setNudgeOn(enabled);
+    if (enabled) {
+      setNudgeBlocked(false);
+      setNudgeUnavailable(false);
+    }
+  }, []);
+
+  // Refresh auth + sync the nudge preference with OS permission on mount /
+  // focus, so account rows and the Notifications switch stay accurate after
+  // returning from /login, Cook Mode, Recipe Detail, or OS Settings.
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       (async () => {
-        const [ok, nudge] = await Promise.all([hasToken(), getNudgePref()]);
+        const [ok, nudge] = await Promise.all([
+          hasToken(),
+          syncNudgePrefWithPermission(),
+        ]);
         if (cancelled) return;
         setAuthed(ok);
-        setNudgeOn(nudge === "on");
+        applyNudgePref(nudge);
       })();
       void reloadCachedCount();
       return () => {
         cancelled = true;
       };
-    }, [reloadCachedCount]),
+    }, [applyNudgePref, reloadCachedCount]),
   );
+
+  // Also re-sync immediately when returning to the foreground from OS Settings
+  // while the Settings screen is already focused.
+  useEffect(() => {
+    let mounted = true;
+    void syncNudgePrefWithPermission().then((nudge) => {
+      if (mounted) applyNudgePref(nudge);
+    });
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active") return;
+      void syncNudgePrefWithPermission().then((nudge) => {
+        if (mounted) applyNudgePref(nudge);
+      });
+    });
+    return () => {
+      mounted = false;
+      sub.remove();
+    };
+  }, [applyNudgePref]);
 
   const refreshAuth = useCallback(async () => {
     setAuthed(await hasToken());
@@ -405,16 +439,26 @@ export default function SettingsScreen() {
     setNudgeOn(value);
     setNudgeBlocked(false);
     setNudgeUnavailable(false);
-    await setNudgePref(value ? "on" : "off");
-    if (!value) return;
+    if (!value) {
+      await setNudgePref("off");
+      return;
+    }
     // expo-notifications cannot load in Expo Go on Android — surface that
     // instead of failing silently. Otherwise best-effort permission request;
-    // if the system denies/blocks, hint at the system setting instead.
+    // if the system denies/blocks, revert the switch and hint at system
+    // settings instead.
     if (!(await isNotificationsAvailable())) {
+      setNudgeOn(false);
+      await setNudgePref("off");
       setNudgeUnavailable(true);
       return;
     }
-    setNudgeBlocked(!(await requestNotificationsPermission()));
+    const granted = await requestNotificationsPermission();
+    setNudgeOn(granted);
+    if (!granted) {
+      await setNudgePref("off");
+    }
+    setNudgeBlocked(!granted);
   }, []);
 
   /**

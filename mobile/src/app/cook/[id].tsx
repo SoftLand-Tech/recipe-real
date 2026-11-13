@@ -4,6 +4,9 @@ import {
   ActivityIndicator,
   Alert,
   BackHandler,
+  Modal,
+  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -43,7 +46,7 @@ import {
   getPendingCookSessionCount,
   upsertRecipes,
 } from "@/db/database";
-import { Button, Badge, Chip, Card, IconPressable, StepDots, ActionSheet } from "@/components/ui";
+import { Button, Badge, Chip, Card, IconPressable, StepDots } from "@/components/ui";
 import {
   useFmtMinutes,
   useLang,
@@ -485,72 +488,204 @@ export default function CookModeScreen() {
           ...Type.bodySm,
           color: colors.inkSecondary,
         },
-        // "Recipe said X — you took Y" reality check on the feedback screen.
-        vsClaim: {
-          ...Type.bodySm,
-          color: colors.inkSecondary,
-          textAlign: "center",
-        },
         // Feedback phase
+        feedbackScroll: {
+          flexGrow: 1,
+          justifyContent: "center",
+          paddingHorizontal: Space.xl,
+          paddingVertical: Space.lg,
+        },
         feedbackWrap: {
-          flex: 1,
+          width: "100%",
+          maxWidth: 480,
+          alignSelf: "center",
+          alignItems: "center",
+          gap: Space.md,
+        },
+        feedbackHeaderBadge: {
+          width: 60,
+          height: 60,
+          borderRadius: Radius.pill,
+          backgroundColor: colors.accentSoft,
           alignItems: "center",
           justifyContent: "center",
-          paddingHorizontal: Space.xxl,
-          gap: Space.md,
+          marginBottom: Space.xs,
         },
         feedbackTitle: {
           ...Type.h1,
           color: colors.ink,
           textAlign: "center",
         },
-        feedbackStatsRow: {
-          flexDirection: "row",
-          alignItems: "stretch",
-          justifyContent: "center",
-          gap: Space.sm,
-          marginTop: Space.xs,
+        feedbackRecipeTitle: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+          textAlign: "center",
+          marginTop: -Space.xs,
         },
-        totalPill: {
+        statCompareCard: {
+          width: "100%",
+          backgroundColor: colors.surface,
           borderRadius: Radius.lg,
-          paddingVertical: Space.md,
-          paddingHorizontal: Space.xl,
-          alignItems: "center",
-          minWidth: 120,
+          borderWidth: 1,
+          borderColor: colors.hairline,
+          paddingVertical: Space.lg,
+          paddingHorizontal: Space.lg,
+          marginTop: Space.xs,
+          ...Shadow.card,
         },
-        totalPillValue: {
+        statCompareRow: {
+          flexDirection: "row",
+          alignItems: "center",
+        },
+        statCompareCol: {
+          flex: 1,
+          alignItems: "center",
+          gap: Space.xs,
+        },
+        statDivider: {
+          width: 1,
+          alignSelf: "stretch",
+          backgroundColor: colors.hairline,
+          marginHorizontal: Space.md,
+        },
+        statValue: {
           ...Type.h2,
           fontWeight: "800",
+          fontVariant: ["tabular-nums"],
         },
-        totalPillLabel: {
+        statLabel: {
           ...Type.caption,
           color: colors.inkFaint,
-          marginTop: Space.xs,
           textTransform: "uppercase",
+          letterSpacing: 0.6,
+          textAlign: "center",
+        },
+        statHorizontalDivider: {
+          height: 1,
+          backgroundColor: colors.hairline,
+          marginVertical: Space.md,
         },
         cleanupEstimate: {
           ...Type.caption,
           color: colors.inkSecondary,
           fontWeight: "500",
+          textAlign: "center",
         },
         feedbackPrompt: {
-          ...Type.body,
-          color: colors.inkSecondary,
+          ...Type.title,
+          color: colors.ink,
           textAlign: "center",
           marginTop: Space.sm,
         },
         feedbackButtons: {
           width: "100%",
           gap: Space.sm,
-          marginTop: Space.sm,
+          marginTop: Space.xs,
         },
-        feedbackCard: {
+        feedbackOptionCard: {
+          width: "100%",
+          backgroundColor: colors.surface,
+          borderWidth: 1,
+          borderColor: colors.hairline,
+          borderRadius: Radius.lg,
+        },
+        feedbackOptionDisabled: {
+          opacity: 0.6,
+        },
+        feedbackOptionRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.md,
+        },
+        feedbackIconBadge: {
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        feedbackOptionText: {
+          flex: 1,
+          gap: 2,
+        },
+        feedbackOptionTitle: {
+          ...Type.title,
+          fontWeight: "700",
+          color: colors.ink,
+          textAlign: "auto",
+        },
+        feedbackOptionSub: {
+          ...Type.caption,
+          color: colors.inkSecondary,
+          textAlign: "auto",
+        },
+        // Centered confirmation modals (discard / finish early)
+        modalScrim: {
+          flex: 1,
+          backgroundColor: colors.scrim,
+          alignItems: "center",
+          justifyContent: "center",
+          padding: Space.xl,
+        },
+        modalCard: {
+          backgroundColor: colors.surface,
+          borderRadius: Radius.lg,
+          borderWidth: 1,
+          borderColor: colors.hairline,
+          padding: Space.xl,
+          maxWidth: 360,
           width: "100%",
           alignItems: "center",
+          gap: Space.md,
+          ...Shadow.floating,
         },
-        feedbackCardText: {
+        modalIconBadge: {
+          width: 56,
+          height: 56,
+          borderRadius: Radius.pill,
+          alignItems: "center",
+          justifyContent: "center",
+          marginBottom: Space.xs,
+        },
+        modalTitle: {
           ...Type.h3,
-          fontWeight: "700",
+          color: colors.ink,
+          textAlign: "center",
+        },
+        modalMessage: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+          textAlign: "center",
+          lineHeight: 20,
+        },
+        modalActions: {
+          alignSelf: "stretch",
+          gap: Space.sm,
+          marginTop: Space.xs,
+        },
+        modalPillBtn: {
+          minHeight: 48,
+        },
+        modalDestructiveBtn: {
+          alignSelf: "stretch",
+          minHeight: 48,
+          borderRadius: Radius.pill,
+          backgroundColor: colors.dangerSoft,
+          borderWidth: 1,
+          borderColor: colors.dangerSoft,
+          alignItems: "center",
+          justifyContent: "center",
+          paddingVertical: Space.md,
+          paddingHorizontal: Space.xl,
+        },
+        modalDestructivePressed: {
+          opacity: 0.75,
+        },
+        modalDestructiveText: {
+          fontSize: Type.title.fontSize,
+          fontWeight: "600",
+          color: colors.danger,
+          textAlign: "center",
         },
         // Manual time adjustment (feedback phase).
         adjustWrap: {
@@ -641,6 +776,15 @@ export default function CookModeScreen() {
   const [currentIndex, setCurrentIndex] = useState(0);
   /** Wall-clock instant the cook started; null until Start is pressed. */
   const [cookStartAt, setCookStartAt] = useState<number | null>(null);
+  /** Sync ref mirror of cookStartAt so same-turn handlers (auto-start + mark) see it immediately. */
+  const cookStartAtRef = useRef<number | null>(null);
+  /** Wall-clock instant the session entered/hydrated (fallback if finished without pressing Start). */
+  const screenEnteredAtRef = useRef<number>(0);
+  useEffect(() => {
+    if (screenEnteredAtRef.current === 0) {
+      screenEnteredAtRef.current = Date.now();
+    }
+  }, []);
   /** Total ms spent paused across all completed pause intervals. */
   const [pausedMsTotal, setPausedMsTotal] = useState(0);
   /** Set while paused (the instant the pause began); null while running. */
@@ -694,11 +838,14 @@ export default function CookModeScreen() {
   // Step the user manually DISARMED — auto-arm must not fight them on the
   // same step (re-arms only after leaving and re-entering it).
   const lastAutoArmStepRef = useRef<number | null>(null);
+  /** Step currently being armed manually so auto-arm doesn't race it. */
+  const armingStepRef = useRef<number | null>(null);
   const [armedStep, setArmedStep] = useState<number | null>(null);
-  // Confirmations (the app's ActionSheet — never native Alerts): finishing
-  // an active cook, and discarding one via ✕ / back.
+  // Confirmations (centered confirmation Modals — never native Alerts):
+  // finishing an active cook, and discarding one via ✕ / back.
   const [confirmFinish, setConfirmFinish] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [discardPressed, setDiscardPressed] = useState(false);
   // Alarms need the NATIVE notifee module: null = still resolving,
   // false = Expo Go / unavailable (chip renders muted + caption).
   const [alarmsUsable, setAlarmsUsable] = useState<boolean | null>(null);
@@ -765,6 +912,7 @@ export default function CookModeScreen() {
     if (loadState !== "ready" || !recipe || restoreAttemptedRef.current) return;
     restoreAttemptedRef.current = true;
     (async () => {
+      let restored = false;
       try {
         const raw = await AsyncStorage.getItem(sessionKey);
         if (raw != null) {
@@ -779,6 +927,7 @@ export default function CookModeScreen() {
             clearCookSessionPointer(recipe.id);
             await AsyncStorage.removeItem(sessionKey).catch(() => {});
           } else if (statusRef.current === "idle") {
+            restored = true;
             pausesRef.current = Array.isArray(saved.pauses)
               ? saved.pauses.filter(
                   (p) =>
@@ -804,6 +953,8 @@ export default function CookModeScreen() {
                 )
               : [];
             const paused = saved.status === "paused";
+            cookStartAtRef.current = saved.cookStartAt;
+            screenEnteredAtRef.current = saved.cookStartAt;
             setCookStartAt(saved.cookStartAt);
             setPausedAt(paused ? (saved.pausedAt ?? saved.cookStartAt) : null);
             setPausedMsTotal(
@@ -811,6 +962,7 @@ export default function CookModeScreen() {
                 ? saved.pausedMsTotal
                 : 0,
             );
+            statusRef.current = paused ? "paused" : "running";
             setStatus(paused ? "paused" : "running");
             setCurrentIndex(
               Math.min(
@@ -839,6 +991,9 @@ export default function CookModeScreen() {
         }
       } catch {
         // Corrupt snapshot: start idle, never crash the screen.
+      }
+      if (!restored) {
+        screenEnteredAtRef.current = Date.now();
       }
       setHydrated(true);
     })();
@@ -979,6 +1134,57 @@ export default function CookModeScreen() {
   // is computed inside the memoized ElapsedTimer/StepPaceBar children, which
   // own the tick (see above). Nothing in this screen re-renders on a timer.
 
+  // ---- Step mark & start actions --------------------------------------------
+
+  /**
+   * Enter step `i` (post-Start): close the currently open visit at `at`,
+   * stamp the first-entry mark (visited dots), and open a new visit for
+   * this step. Revisits append visits — durations sum them — so loitering
+   * via Back/Next is attributed to the step actually on screen.
+   */
+  const recordMark = useCallback(
+    (i: number, atOverride?: number) => {
+      if (cookStartAtRef.current == null && cookStartAt == null) return;
+      const stepNumber = steps[i]?.step_number;
+      if (stepNumber == null) return;
+      const at = atOverride ?? Date.now();
+      const visits = visitsRef.current;
+      for (let k = visits.length - 1; k >= 0; k--) {
+        if (visits[k].to == null) {
+          visits[k].to = Math.max(at, visits[k].from);
+          break;
+        }
+      }
+      if (stepMarksRef.current[stepNumber] == null) {
+        stepMarksRef.current[stepNumber] = at;
+      }
+      visits.push({ stepNumber, from: at, to: null });
+    },
+    [cookStartAt, steps],
+  );
+
+  const startCooking = useCallback(() => {
+    if (!recipe || cookStartAtRef.current != null || cookStartAt != null) return;
+    const at = Date.now();
+    cookStartAtRef.current = at;
+    setCookStartAt(at);
+    setPausedMsTotal(0);
+    setPausedAt(null);
+    statusRef.current = "running";
+    setStatus("running");
+    recordMark(currentIndex, at);
+    // Persistent Android notification with the ticking chronometer (no-op
+    // in Expo Go / iOS — the in-app stopwatch is unaffected).
+    void startCookNotification({
+      recipeTitle: lr.title(recipe),
+      recipeId: recipe.id,
+      startedAt: at,
+      pausedMs: 0,
+      paused: false,
+      t,
+    });
+  }, [recipe, cookStartAt, currentIndex, recordMark, lr, t]);
+
   // ---- Step alarms (notifee; no-op in Expo Go) ------------------------------
 
   /**
@@ -1002,53 +1208,60 @@ export default function CookModeScreen() {
       if (!recipe || typeof minutes !== "number" || minutes <= 0) {
         return false;
       }
-      await clearArmedAlarm();
-      // Claim the latest arm generation AFTER the clear's own bump: any arm
-      // started earlier (fast Next/Back taps racing these awaits) now holds
-      // a stale token and must abort instead of committing.
-      const gen = armGenRef.current + 1;
-      armGenRef.current = gen;
-      if (!(await ensureAlarmPermissionOrExplain(t))) return false;
-      if (gen !== armGenRef.current) return false;
-      const { id, exactAlarmDenied } = await scheduleStepAlarm({
-        recipeTitle: lr.title(recipe),
-        recipeId: recipe.id,
-        stepNumber: step.step_number,
-        minutes,
-        t,
-      });
-      if (gen !== armGenRef.current) {
-        // Superseded while the schedule await was in flight: cancel the
-        // orphan so a stale alarm can't fire on the wrong step.
-        if (id) await cancelStepAlarm(id);
-        return false;
-      }
-      if (id) {
-        armedAlarmIdRef.current = id;
-        setArmedStep(step.step_number);
-        track("alarm_armed", {
-          recipe_id: recipe.id,
-          step_number: step.step_number,
+      armingStepRef.current = step.step_number;
+      try {
+        await clearArmedAlarm();
+        // Claim the latest arm generation AFTER the clear's own bump: any arm
+        // started earlier (fast Next/Back taps racing these awaits) now holds
+        // a stale token and must abort instead of committing.
+        const gen = armGenRef.current + 1;
+        armGenRef.current = gen;
+        if (!(await ensureAlarmPermissionOrExplain(t))) return false;
+        if (gen !== armGenRef.current) return false;
+        const { id, exactAlarmDenied } = await scheduleStepAlarm({
+          recipeTitle: lr.title(recipe),
+          recipeId: recipe.id,
+          stepNumber: step.step_number,
           minutes,
+          t,
         });
-        return true;
+        if (gen !== armGenRef.current) {
+          // Superseded while the schedule await was in flight: cancel the
+          // orphan so a stale alarm can't fire on the wrong step.
+          if (id) await cancelStepAlarm(id);
+          return false;
+        }
+        if (id) {
+          armedAlarmIdRef.current = id;
+          setArmedStep(step.step_number);
+          track("alarm_armed", {
+            recipe_id: recipe.id,
+            step_number: step.step_number,
+            minutes,
+          });
+          return true;
+        }
+        // Android 14+ denies exact alarms by default for new installs —
+        // send the user to the OS switch once; silent failure helps nobody.
+        if (exactAlarmDenied) {
+          Alert.alert(
+            t("cook.alarmPermTitle"),
+            t("cook.alarmPermMessage"),
+            [
+              { text: t("common.cancel"), style: "cancel" },
+              {
+                text: t("cook.alarmPermOpen"),
+                onPress: () => void openAlarmPermissionSettings(),
+              },
+            ],
+          );
+        }
+        return false;
+      } finally {
+        if (armingStepRef.current === step.step_number) {
+          armingStepRef.current = null;
+        }
       }
-      // Android 14+ denies exact alarms by default for new installs —
-      // send the user to the OS switch once; silent failure helps nobody.
-      if (exactAlarmDenied) {
-        Alert.alert(
-          t("cook.alarmPermTitle"),
-          t("cook.alarmPermMessage"),
-          [
-            { text: t("common.cancel"), style: "cancel" },
-            {
-              text: t("cook.alarmPermOpen"),
-              onPress: () => void openAlarmPermissionSettings(),
-            },
-          ],
-        );
-      }
-      return false;
     },
     [recipe, clearArmedAlarm, lr, t],
   );
@@ -1066,8 +1279,11 @@ export default function CookModeScreen() {
       return;
     }
     lastAutoArmStepRef.current = null;
+    if (statusRef.current === "idle") {
+      startCooking();
+    }
     await armStepAlarm(step);
-  }, [steps, currentIndex, armedStep, clearArmedAlarm, armStepAlarm]);
+  }, [steps, currentIndex, armedStep, clearArmedAlarm, armStepAlarm, startCooking]);
 
   // AUTO-ARM: entering a timed step while the stopwatch is running starts
   // its alarm automatically — an alarm you must know to arm is barely an
@@ -1080,6 +1296,7 @@ export default function CookModeScreen() {
     const minutes = step.literal_minutes;
     if (typeof minutes !== "number" || minutes <= 0) return;
     if (armedStep != null) return;
+    if (armingStepRef.current === step.step_number) return;
     if (lastAutoArmStepRef.current === step.step_number) return;
     void armStepAlarm(step);
     // Deliberately not keyed on armStepAlarm/armedStep: this fires on step
@@ -1087,54 +1304,7 @@ export default function CookModeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex, status, phase, steps]);
 
-  // ---- Stopwatch actions -----------------------------------------------------
-
-  /**
-   * Enter step `i` (post-Start): close the currently open visit at `at`,
-   * stamp the first-entry mark (visited dots), and open a new visit for
-   * this step. Revisits append visits — durations sum them — so loitering
-   * via Back/Next is attributed to the step actually on screen.
-   */
-  const recordMark = useCallback(
-    (i: number) => {
-      if (cookStartAt == null) return;
-      const stepNumber = steps[i]?.step_number;
-      if (stepNumber == null) return;
-      const at = Date.now();
-      const visits = visitsRef.current;
-      for (let k = visits.length - 1; k >= 0; k--) {
-        if (visits[k].to == null) {
-          visits[k].to = Math.max(at, visits[k].from);
-          break;
-        }
-      }
-      if (stepMarksRef.current[stepNumber] == null) {
-        stepMarksRef.current[stepNumber] = at;
-      }
-      visits.push({ stepNumber, from: at, to: null });
-    },
-    [cookStartAt, steps],
-  );
-
-  const startCooking = useCallback(() => {
-    if (!recipe || cookStartAt != null) return;
-    const at = Date.now();
-    setCookStartAt(at);
-    setPausedMsTotal(0);
-    setPausedAt(null);
-    setStatus("running");
-    recordMark(currentIndex);
-    // Persistent Android notification with the ticking chronometer (no-op
-    // in Expo Go / iOS — the in-app stopwatch is unaffected).
-    void startCookNotification({
-      recipeTitle: lr.title(recipe),
-      recipeId: recipe.id,
-      startedAt: at,
-      pausedMs: 0,
-      paused: false,
-      t,
-    });
-  }, [recipe, cookStartAt, currentIndex, recordMark, lr, t]);
+  // ---- Stopwatch pause/finish actions --------------------------------------
 
   /** The single Pause/Resume control (button + notification quick action). */
   const togglePauseResume = useCallback(() => {
@@ -1183,54 +1353,115 @@ export default function CookModeScreen() {
    */
   const finishCooking = useCallback(() => {
     if (!recipe || phase !== "cooking") return;
-    const startAt = cookStartAt;
-    const endWall = pausedAt ?? Date.now();
+    const now = Date.now();
+    const effectiveStartAt =
+      cookStartAt ?? cookStartAtRef.current ?? (screenEnteredAtRef.current || now);
+    const endWall = pausedAt ?? now;
+    const finalAccumPausedMs =
+      pausedMsTotal + (pausedAt != null ? Math.max(0, now - pausedAt) : 0);
+    const sessionElapsedMs = Math.max(
+      0,
+      now - effectiveStartAt - finalAccumPausedMs,
+    );
     const pauses = pausesRef.current;
-    let built: CookSummary;
-    if (startAt == null) {
-      // Never started: everything submits as 0 (same as idle steps before).
-      built = {
-        perStep: steps.map((step) => ({ step, actual_minutes: 0 })),
-        cleanup_minutes: null,
-        total_actual_minutes: 0,
-      };
+    const visits = visitsRef.current;
+
+    if (
+      cookStartAt == null &&
+      cookStartAtRef.current == null &&
+      visits.length === 0 &&
+      sessionElapsedMs > 0 &&
+      steps[currentIndex] != null
+    ) {
+      // Finished without pressing Start: attribute elapsed screen time to the
+      // active step so per-step timings stay consistent with the logged total.
+      visits.push({
+        stepNumber: steps[currentIndex].step_number,
+        from: effectiveStartAt,
+        to: Math.max(endWall, effectiveStartAt),
+      });
     } else {
       // Close the still-open visit at the finish instant so the tail of the
       // current step is counted exactly once.
-      const visits = visitsRef.current;
       for (let k = visits.length - 1; k >= 0; k--) {
         if (visits[k].to == null) {
           visits[k].to = Math.max(endWall, visits[k].from);
           break;
         }
       }
-      const perStep = steps.map((step) => {
-        let ms = 0;
-        for (const seg of visits) {
-          if (seg.stepNumber !== step.step_number || seg.to == null) continue;
-          ms += adjust(seg.from, seg.to, pauses);
-        }
-        return {
-          step,
-          actual_minutes: round2(Math.max(0, ms) / 60000),
-        };
-      });
-      const cleanupSum =
+    }
+
+    let perStep = steps.map((step) => {
+      let ms = 0;
+      for (const seg of visits) {
+        if (seg.stepNumber !== step.step_number || seg.to == null) continue;
+        ms += adjust(seg.from, seg.to, pauses);
+      }
+      return {
+        step,
+        actual_minutes: round2(Math.max(0, ms) / 60000),
+      };
+    });
+
+    const hasNonCleanup =
+      perStep.filter((p) => p.step.step_type !== "cleanup").length > 0;
+    const isCountedInTotal = (p: { step: RecipeStep }) =>
+      hasNonCleanup ? p.step.step_type !== "cleanup" : true;
+
+    const summedStepMinutes = round2(
+      perStep
+        .filter(isCountedInTotal)
+        .reduce((sum, p) => sum + p.actual_minutes, 0),
+    );
+    const rawTotalMinutes = Math.max(
+      summedStepMinutes,
+      round2(sessionElapsedMs / 60000),
+    );
+    const totalActualMinutes =
+      sessionElapsedMs > 0
+        ? Math.max(1, Math.round(rawTotalMinutes))
+        : rawTotalMinutes;
+
+    // Keep per-step timings aligned with totalActualMinutes when time was spent.
+    if (totalActualMinutes > 0 && summedStepMinutes !== totalActualMinutes) {
+      if (summedStepMinutes > 0) {
+        const factor = totalActualMinutes / summedStepMinutes;
+        perStep = perStep.map((p) =>
+          isCountedInTotal(p)
+            ? { ...p, actual_minutes: round2(p.actual_minutes * factor) }
+            : p,
+        );
+      } else if (perStep.length > 0) {
+        const targetIdx = perStep.findIndex(
+          (p, idx) => idx === currentIndex && isCountedInTotal(p),
+        );
+        const fallbackIdx =
+          targetIdx >= 0
+            ? targetIdx
+            : perStep.findIndex((p) => isCountedInTotal(p));
+        const chosenIdx = fallbackIdx >= 0 ? fallbackIdx : 0;
+        perStep = perStep.map((p, idx) =>
+          idx === chosenIdx
+            ? { ...p, actual_minutes: totalActualMinutes }
+            : p,
+        );
+      }
+    }
+
+    const cleanupSum =
+      round2(
         perStep
           .filter((p) => p.step.step_type === "cleanup")
-          .reduce((sum, p) => sum + p.actual_minutes, 0) || null;
-      const nonCleanup =
-        perStep.filter((p) => p.step.step_type !== "cleanup").length > 0;
-      built = {
-        perStep,
-        cleanup_minutes: cleanupSum,
-        total_actual_minutes: round2(
-          perStep
-            .filter((p) => (nonCleanup ? p.step.step_type !== "cleanup" : true))
-            .reduce((sum, p) => sum + p.actual_minutes, 0),
-        ),
-      };
-    }
+          .reduce((sum, p) => sum + p.actual_minutes, 0),
+      ) || null;
+
+    const built: CookSummary = {
+      perStep,
+      cleanup_minutes: cleanupSum,
+      total_actual_minutes: totalActualMinutes,
+    };
+
+    statusRef.current = "finished";
     setStatus("finished");
     setSummary(built);
     setAdjustedTotal(null);
@@ -1250,6 +1481,8 @@ export default function CookModeScreen() {
     phase,
     cookStartAt,
     pausedAt,
+    pausedMsTotal,
+    currentIndex,
     steps,
     clearArmedAlarm,
     clearPersistedSession,
@@ -1282,15 +1515,18 @@ export default function CookModeScreen() {
 
   // ---- Step navigation -------------------------------------------------------
 
-  /** Enter step `i`: cancel the armed alarm and record its entry mark. */
+  /** Enter step `i`: auto-start if idle, cancel the armed alarm, and record its entry mark. */
   const goToStep = useCallback(
     (i: number) => {
       if (i === currentIndex) return;
       void clearArmedAlarm();
+      if (statusRef.current === "idle") {
+        startCooking();
+      }
       setCurrentIndex(i);
       recordMark(i);
     },
-    [currentIndex, clearArmedAlarm, recordMark],
+    [currentIndex, clearArmedAlarm, startCooking, recordMark],
   );
 
   const nextStep = useCallback(() => {
@@ -1467,7 +1703,7 @@ export default function CookModeScreen() {
    * Close (✕ / back affordance). While a cook session is actually running
    * or paused, ask before discarding — the stopwatch and per-step timings
    * are lost otherwise. Idle (never started) and post-finish phases close
-   * immediately. The ask is the app's ActionSheet (never a native Alert).
+   * immediately. The ask is a centered confirmation Modal (never a native Alert).
    */
   const requestClose = useCallback(() => {
     const sessionActive =
@@ -1578,10 +1814,48 @@ export default function CookModeScreen() {
   if (phase === "feedback" || phase === "submitting" || phase === "done") {
     const submitting = phase === "submitting";
     const measuredTotal = summary?.total_actual_minutes ?? 0;
-    // The displayed total follows a manual adjustment (the pill, the
-    // claim-vs-reality line and the submit all read this one value).
+    // The displayed total follows a manual adjustment (the stat card, the
+    // claim comparison, and the submit all read this one value).
     const totalCooked = adjustedTotal ?? measuredTotal;
     const cleanupMinutes = summary?.cleanup_minutes ?? null;
+    const publisherMinutes =
+      recipe?.publisher_time_minutes != null
+        ? Math.round(recipe.publisher_time_minutes)
+        : null;
+    const feedbackOptions: {
+      value: Feedback;
+      icon: "flash-outline" | "checkmark-circle-outline" | "time-outline";
+      badgeBg: string;
+      iconColor: string;
+      title: string;
+      subtitle: string;
+    }[] = [
+      {
+        value: "faster",
+        icon: "flash-outline",
+        badgeBg: colors.accentSoft,
+        iconColor: colors.accent,
+        title: t("cook.faster"),
+        subtitle: t("cook.fasterSub"),
+      },
+      {
+        value: "as_expected",
+        icon: "checkmark-circle-outline",
+        badgeBg: colors.surfaceSoft,
+        iconColor: colors.ink,
+        title: t("cook.asExpected"),
+        subtitle: t("cook.asExpectedSub"),
+      },
+      {
+        value: "slower",
+        icon: "time-outline",
+        badgeBg: colors.surfaceSoft,
+        iconColor: colors.inkSecondary,
+        title: t("cook.slower"),
+        subtitle: t("cook.slowerSub"),
+      },
+    ];
+
     return (
       <View
         style={[
@@ -1592,278 +1866,287 @@ export default function CookModeScreen() {
           },
         ]}
       >
-        <View style={styles.feedbackWrap}>
-          <Text style={styles.feedbackTitle}>{t("cook.youCooked")}</Text>
-
-          <View style={styles.feedbackStatsRow}>
-            <View
-              style={[
-                styles.totalPill,
-                { backgroundColor: colors.accentSoft },
-              ]}
-            >
-              <Text style={[styles.totalPillValue, { color: colors.accent }]}>
-                {fmtMin(totalCooked)}
-              </Text>
-              <Text style={styles.totalPillLabel}>
-                {t("cook.totalCooked")}
-              </Text>
+        <ScrollView
+          contentContainerStyle={styles.feedbackScroll}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.feedbackWrap}>
+            <View style={styles.feedbackHeaderBadge}>
+              <Ionicons
+                name="restaurant-outline"
+                size={28}
+                color={colors.accent}
+              />
             </View>
-            {cleanupMinutes != null ? (
-              <View
-                style={[
-                  styles.totalPill,
-                  { backgroundColor: colors.surfaceSoft },
-                ]}
-              >
-                <Text
-                  style={[styles.totalPillValue, { color: colors.inkSecondary }]}
-                >
-                  {fmtMin(cleanupMinutes)}
-                </Text>
-                <Text style={styles.totalPillLabel}>
-                  {t("common.cleanup")}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-
-          {/* Reality check — the brand moment: the publisher's claim vs the
-              stopwatch truth this session just recorded. */}
-          {recipe?.publisher_time_minutes != null && totalCooked > 0 ? (
-            <Text style={styles.vsClaim}>
-              {t("cook.vsClaim", {
-                claim: fmtMin(Math.round(recipe.publisher_time_minutes)),
-                actual: fmtMin(totalCooked),
-              })}
+            <Text style={styles.feedbackTitle}>{t("cook.youCooked")}</Text>
+            <Text style={styles.feedbackRecipeTitle} numberOfLines={2}>
+              {lr.title(recipe)}
             </Text>
-          ) : null}
 
-          {cleanupEstimate != null ? (
-            <Text style={styles.cleanupEstimate}>
-              {t("cook.cleanupEstimate", { n: Math.round(cleanupEstimate) })}
-            </Text>
-          ) : null}
-
-          {/* Manual time adjustment: the stopwatch stands unless the cook
-              corrects it (forgotten pause, interruption). The adjusted total
-              scales every per-step timing proportionally at submit. */}
-          {phase === "feedback" && totalCooked > 0 ? (
-            <View style={styles.adjustWrap}>
-              {!adjustOpen ? (
-                <>
-                  <Button
-                    title={t("cook.adjustTime")}
-                    variant="ghost"
-                    icon="time-outline"
-                    onPress={() => {
-                      setAdjustDraft(
-                        String(
-                          Math.round(adjustedTotal ?? totalCooked),
-                        ),
-                      );
-                      setAdjustOpen(true);
-                    }}
-                  />
-                  {adjustedTotal != null ? (
-                    <Text style={styles.adjustedNote}>
-                      {t("cook.adjustedNote", {
-                        measured: fmtMin(measuredTotal),
-                        adjusted: fmtMin(adjustedTotal),
-                      })}
-                    </Text>
-                  ) : null}
-                </>
-              ) : (
-                <Card style={styles.adjustCard}>
-                  <Text style={styles.adjustHint}>
-                    {t("cook.adjustHint")}
+            <View style={styles.statCompareCard}>
+              <View style={styles.statCompareRow}>
+                <View style={styles.statCompareCol}>
+                  <Text style={[styles.statValue, { color: colors.timing }]}>
+                    {fmtMin(totalCooked)}
                   </Text>
-                  <View style={styles.adjustRow}>
-                    <IconPressable
-                      onPress={() =>
-                        setAdjustDraft((d) =>
-                          String(Math.max(0, (parseInt(d, 10) || 0) - 1)),
-                        )
-                      }
-                      accessibilityLabel={t("cook.adjustMinus")}
-                      hitSlop={Space.xs}
-                      style={styles.stepperBtn}
-                    >
-                      <Ionicons
-                        name="remove"
-                        size={20}
-                        color={colors.accent}
-                      />
-                    </IconPressable>
-                    <TextInput
-                      style={styles.adjustInput}
-                      value={adjustDraft}
-                      onChangeText={(v) =>
-                        setAdjustDraft(v.replace(/[^0-9]/g, "").slice(0, 4))
-                      }
-                      placeholder={String(Math.round(totalCooked))}
-                      placeholderTextColor={colors.inkFaint}
-                      keyboardType="number-pad"
-                      returnKeyType="done"
-                      maxLength={4}
-                      accessibilityLabel={t("cook.adjustTime")}
-                    />
-                    <Text style={styles.adjustUnit}>{t("common.min")}</Text>
-                    <IconPressable
-                      onPress={() =>
-                        setAdjustDraft((d) =>
-                          String(
-                            Math.min(1440, (parseInt(d, 10) || 0) + 1),
-                          ),
-                        )
-                      }
-                      accessibilityLabel={t("cook.adjustPlus")}
-                      hitSlop={Space.xs}
-                      style={styles.stepperBtn}
-                    >
-                      <Ionicons name="add" size={20} color={colors.accent} />
-                    </IconPressable>
-                  </View>
-                  <View style={styles.adjustActions}>
+                  <Text style={styles.statLabel}>{t("cook.yourTime")}</Text>
+                </View>
+                {publisherMinutes != null ? (
+                  <>
+                    <View style={styles.statDivider} />
+                    <View style={styles.statCompareCol}>
+                      <Text
+                        style={[
+                          styles.statValue,
+                          { color: colors.inkSecondary },
+                        ]}
+                      >
+                        {fmtMin(publisherMinutes)}
+                      </Text>
+                      <Text style={styles.statLabel}>
+                        {t("cook.publisherEst")}
+                      </Text>
+                    </View>
+                  </>
+                ) : null}
+              </View>
+              {cleanupMinutes != null || cleanupEstimate != null ? (
+                <>
+                  <View style={styles.statHorizontalDivider} />
+                  <Text style={styles.cleanupEstimate}>
+                    {cleanupMinutes != null
+                      ? `${t("common.cleanup")}: ${fmtMin(cleanupMinutes)}`
+                      : t("cook.cleanupEstimate", {
+                          n: Math.round(cleanupEstimate!),
+                        })}
+                  </Text>
+                </>
+              ) : null}
+            </View>
+
+            {/* Manual time adjustment: the stopwatch stands unless the cook
+                corrects it (forgotten pause, interruption). The adjusted total
+                scales every per-step timing proportionally at submit. */}
+            {phase === "feedback" && totalCooked > 0 ? (
+              <View style={styles.adjustWrap}>
+                {!adjustOpen ? (
+                  <>
                     <Button
-                      title={t("common.cancel")}
+                      title={t("cook.adjustTime")}
                       variant="ghost"
-                      onPress={() => setAdjustOpen(false)}
-                    />
-                    <Button
-                      title={t("cook.adjustUse")}
+                      icon="time-outline"
                       onPress={() => {
-                        const parsed = parseInt(adjustDraft, 10);
-                        setAdjustedTotal(
-                          Number.isFinite(parsed)
-                            ? Math.min(1440, Math.max(0, parsed))
-                            : null,
+                        setAdjustDraft(
+                          String(
+                            Math.round(adjustedTotal ?? totalCooked),
+                          ),
                         );
-                        setAdjustOpen(false);
+                        setAdjustOpen(true);
                       }}
                     />
-                  </View>
-                </Card>
-              )}
-            </View>
-          ) : null}
+                    {adjustedTotal != null ? (
+                      <Text style={styles.adjustedNote}>
+                        {t("cook.adjustedNote", {
+                          measured: fmtMin(measuredTotal),
+                          adjusted: fmtMin(adjustedTotal),
+                        })}
+                      </Text>
+                    ) : null}
+                  </>
+                ) : (
+                  <Card style={styles.adjustCard}>
+                    <Text style={styles.adjustHint}>
+                      {t("cook.adjustHint")}
+                    </Text>
+                    <View style={styles.adjustRow}>
+                      <IconPressable
+                        onPress={() =>
+                          setAdjustDraft((d) =>
+                            String(Math.max(0, (parseInt(d, 10) || 0) - 1)),
+                          )
+                        }
+                        accessibilityLabel={t("cook.adjustMinus")}
+                        hitSlop={Space.xs}
+                        style={styles.stepperBtn}
+                      >
+                        <Ionicons
+                          name="remove"
+                          size={20}
+                          color={colors.accent}
+                        />
+                      </IconPressable>
+                      <TextInput
+                        style={styles.adjustInput}
+                        value={adjustDraft}
+                        onChangeText={(v) =>
+                          setAdjustDraft(v.replace(/[^0-9]/g, "").slice(0, 4))
+                        }
+                        placeholder={String(Math.round(totalCooked))}
+                        placeholderTextColor={colors.inkFaint}
+                        keyboardType="number-pad"
+                        returnKeyType="done"
+                        maxLength={4}
+                        accessibilityLabel={t("cook.adjustTime")}
+                      />
+                      <Text style={styles.adjustUnit}>{t("common.min")}</Text>
+                      <IconPressable
+                        onPress={() =>
+                          setAdjustDraft((d) =>
+                            String(
+                              Math.min(1440, (parseInt(d, 10) || 0) + 1),
+                            ),
+                          )
+                        }
+                        accessibilityLabel={t("cook.adjustPlus")}
+                        hitSlop={Space.xs}
+                        style={styles.stepperBtn}
+                      >
+                        <Ionicons name="add" size={20} color={colors.accent} />
+                      </IconPressable>
+                    </View>
+                    <View style={styles.adjustActions}>
+                      <Button
+                        title={t("common.cancel")}
+                        variant="ghost"
+                        onPress={() => setAdjustOpen(false)}
+                      />
+                      <Button
+                        title={t("cook.adjustUse")}
+                        onPress={() => {
+                          const parsed = parseInt(adjustDraft, 10);
+                          setAdjustedTotal(
+                            Number.isFinite(parsed)
+                              ? Math.min(1440, Math.max(0, parsed))
+                              : null,
+                          );
+                          setAdjustOpen(false);
+                        }}
+                      />
+                    </View>
+                  </Card>
+                )}
+              </View>
+            ) : null}
 
-          {phase !== "done" ? (
-            <>
-              <Text style={styles.feedbackPrompt}>
-                {t("cook.feedbackPrompt")}
-              </Text>
-              <View style={styles.feedbackButtons}>
-                <Card
-                  onPress={submitting ? undefined : () => handleSubmit("faster")}
-                  padding={Space.lg}
-                  style={[
-                    styles.feedbackCard,
-                    { backgroundColor: colors.successSoft },
-                  ]}
-                >
-                  <Text style={[styles.feedbackCardText, { color: colors.success }]}>
-                    {t("cook.faster")}
-                  </Text>
-                </Card>
-                <Card
-                  onPress={
-                    submitting ? undefined : () => handleSubmit("as_expected")
-                  }
-                  padding={Space.lg}
-                  style={[
-                    styles.feedbackCard,
-                    { backgroundColor: colors.amberSoft },
-                  ]}
-                >
+            {phase !== "done" ? (
+              <>
+                <Text style={styles.feedbackPrompt}>
+                  {t("cook.feedbackPrompt")}
+                </Text>
+                <View style={styles.feedbackButtons}>
+                  {feedbackOptions.map((option) => (
+                    <Card
+                      key={option.value}
+                      onPress={
+                        submitting
+                          ? undefined
+                          : () => handleSubmit(option.value)
+                      }
+                      padding={Space.lg}
+                      shadow="card"
+                      style={[
+                        styles.feedbackOptionCard,
+                        submitting ? styles.feedbackOptionDisabled : null,
+                      ]}
+                    >
+                      <View style={styles.feedbackOptionRow}>
+                        <View
+                          style={[
+                            styles.feedbackIconBadge,
+                            { backgroundColor: option.badgeBg },
+                          ]}
+                        >
+                          <Ionicons
+                            name={option.icon}
+                            size={20}
+                            color={option.iconColor}
+                          />
+                        </View>
+                        <View style={styles.feedbackOptionText}>
+                          <Text style={styles.feedbackOptionTitle}>
+                            {option.title}
+                          </Text>
+                          <Text style={styles.feedbackOptionSub}>
+                            {option.subtitle}
+                          </Text>
+                        </View>
+                        <Ionicons
+                          name={
+                            dir === "rtl" ? "chevron-back" : "chevron-forward"
+                          }
+                          size={18}
+                          color={colors.inkFaint}
+                        />
+                      </View>
+                    </Card>
+                  ))}
+                </View>
+              </>
+            ) : (
+              <View style={styles.doneWrap}>
+                {submitMsg ? (
                   <Text
                     style={[
-                      styles.feedbackCardText,
-                      // Step-tone amber fg: #8A5A12 on light, warm on dark.
-                      { color: colors.stepTones.active.fg },
+                      styles.savedMsg,
+                      submitFailed
+                        ? { color: colors.danger }
+                        : needsAuth
+                          ? { color: colors.inkSecondary }
+                          : { color: colors.success },
                     ]}
                   >
-                    {t("cook.asExpected")}
+                    {submitMsg}
                   </Text>
-                </Card>
-                <Card
-                  onPress={submitting ? undefined : () => handleSubmit("slower")}
-                  padding={Space.lg}
-                  style={[
-                    styles.feedbackCard,
-                    { backgroundColor: colors.dangerSoft },
-                  ]}
-                >
-                  <Text style={[styles.feedbackCardText, { color: colors.danger }]}>
-                    {t("cook.slower")}
+                ) : null}
+                {/* Pace calibrations recompute in a background job (and after
+                    an offline flush), so they can lag the save by seconds to
+                    minutes — say so, or the Pace tab looks broken. */}
+                {!submitFailed && !needsAuth && submitMsg ? (
+                  <Text style={[styles.savedMsg, { color: colors.inkSecondary }]}>
+                    {t("cook.pacePending")}
                   </Text>
-                </Card>
-              </View>
-            </>
-          ) : (
-            <View style={styles.doneWrap}>
-              {submitMsg ? (
-                <Text
-                  style={[
-                    styles.savedMsg,
-                    submitFailed
-                      ? { color: colors.danger }
-                      : needsAuth
-                        ? { color: colors.inkSecondary }
-                        : { color: colors.success },
-                  ]}
-                >
-                  {submitMsg}
-                </Text>
-              ) : null}
-              {/* Pace calibrations recompute in a background job (and after
-                  an offline flush), so they can lag the save by seconds to
-                  minutes — say so, or the Pace tab looks broken. */}
-              {!submitFailed && !needsAuth && submitMsg ? (
-                <Text style={[styles.savedMsg, { color: colors.inkSecondary }]}>
-                  {t("cook.pacePending")}
-                </Text>
-              ) : null}
-              {needsAuth ? (
-                <>
+                ) : null}
+                {needsAuth ? (
+                  <>
+                    <Button
+                      title={t("cook.signInToSave")}
+                      onPress={() => router.push("/login")}
+                      fullWidth
+                      size="lg"
+                    />
+                    <Button
+                      title={t("cook.done")}
+                      variant="ghost"
+                      onPress={finish}
+                      fullWidth
+                    />
+                  </>
+                ) : (
                   <Button
-                    title={t("cook.signInToSave")}
-                    onPress={() => router.push("/login")}
+                    title={t("cook.done")}
+                    onPress={finish}
                     fullWidth
                     size="lg"
                   />
-                  <Button
-                    title={t("cook.done")}
-                    variant="ghost"
-                    onPress={finish}
-                    fullWidth
-                  />
-                </>
-              ) : (
-                <Button
-                  title={t("cook.done")}
-                  onPress={finish}
-                  fullWidth
-                  size="lg"
-                />
-              )}
-            </View>
-          )}
+                )}
+              </View>
+            )}
 
-          {submitting ? (
-            <View style={styles.submittingRow}>
-              <ActivityIndicator color={colors.accent} size="small" />
-              <Text style={styles.muted}>{t("cook.saving")}</Text>
-            </View>
-          ) : phase !== "done" ? (
-            <Button
-              title={t("cook.skip")}
-              variant="ghost"
-              onPress={() => handleSubmit(null)}
-            />
-          ) : null}
-        </View>
+            {submitting ? (
+              <View style={styles.submittingRow}>
+                <ActivityIndicator color={colors.accent} size="small" />
+                <Text style={styles.muted}>{t("cook.saving")}</Text>
+              </View>
+            ) : phase !== "done" ? (
+              <Button
+                title={t("cook.skip")}
+                variant="ghost"
+                onPress={() => handleSubmit(null)}
+              />
+            ) : null}
+          </View>
+        </ScrollView>
       </View>
     );
   }
@@ -1899,6 +2182,14 @@ export default function CookModeScreen() {
       : status === "paused"
         ? t("cook.hintPaused")
         : t("cook.hintIdle");
+
+  const remainingSteps = Math.max(0, steps.length - 1 - currentIndex);
+  const finishModalMessage =
+    remainingSteps === 0
+      ? t("cook.finishMessage")
+      : remainingSteps === 1
+        ? t("cook.finishRemainingOne")
+        : t("cook.finishRemainingMany", { n: remainingSteps });
 
   // Visited (entered post-Start) steps render as filled dots.
   const doneFlags = steps.map(
@@ -2149,50 +2440,126 @@ export default function CookModeScreen() {
         )}
       </View>
 
-      {/* Finish confirmation — never end an active cook on a stray tap. */}
-      <ActionSheet
+      {/* Finish confirmation — centered dialog card, never end an active cook on a stray tap. */}
+      <Modal
         visible={confirmFinish}
-        onClose={() => setConfirmFinish(false)}
-        title={t("cook.finishTitle")}
-        message={t("cook.finishMessage")}
-        actions={[
-          {
-            key: "finish",
-            label: t("cook.finishCooking"),
-            icon: "checkmark-circle-outline",
-            onPress: () => {
-              setConfirmFinish(false);
-              finishCooking();
-            },
-          },
-        ]}
-      />
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => setConfirmFinish(false)}
+      >
+        <View style={styles.modalScrim}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setConfirmFinish(false)}
+            accessibilityLabel={t("common.cancel")}
+          />
+          <View style={styles.modalCard}>
+            <View
+              style={[
+                styles.modalIconBadge,
+                { backgroundColor: colors.accentSoft },
+              ]}
+            >
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={28}
+                color={colors.accent}
+              />
+            </View>
+            <Text style={styles.modalTitle}>{t("cook.finishTitle")}</Text>
+            <Text style={styles.modalMessage}>{finishModalMessage}</Text>
+            <View style={styles.modalActions}>
+              <Button
+                title={t("cook.finishLogTime")}
+                variant="primary"
+                size="lg"
+                fullWidth
+                onPress={() => {
+                  setConfirmFinish(false);
+                  finishCooking();
+                }}
+                style={styles.modalPillBtn}
+              />
+              <Button
+                title={t("cook.keepCooking")}
+                variant="secondary"
+                size="lg"
+                fullWidth
+                onPress={() => setConfirmFinish(false)}
+                style={styles.modalPillBtn}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Discard confirmation (✕ / hardware back on an active session). */}
-      <ActionSheet
+      <Modal
         visible={confirmDiscard}
-        onClose={() => setConfirmDiscard(false)}
-        title={t("cook.discardTitle")}
-        message={t("cook.discardMessage")}
-        actions={[
-          {
-            key: "discard",
-            label: t("cook.discardBtn"),
-            icon: "trash-outline",
-            tone: "destructive",
-            onPress: () => {
-              setConfirmDiscard(false);
-              // Discarded by the user: must not resurrect on next visit.
-              clearPersistedSession();
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.replace(`/recipe/${id}`);
-              }
-            },
-          },
-        ]}
-      />
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => setConfirmDiscard(false)}
+      >
+        <View style={styles.modalScrim}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setConfirmDiscard(false)}
+            accessibilityLabel={t("common.cancel")}
+          />
+          <View style={styles.modalCard}>
+            <View
+              style={[
+                styles.modalIconBadge,
+                { backgroundColor: colors.dangerSoft },
+              ]}
+            >
+              <Ionicons name="exit-outline" size={26} color={colors.danger} />
+            </View>
+            <Text style={styles.modalTitle}>{t("cook.discardTitle")}</Text>
+            <Text style={styles.modalMessage}>{t("cook.discardMessage")}</Text>
+            <View style={styles.modalActions}>
+              <Button
+                title={t("cook.keepCooking")}
+                variant="primary"
+                size="lg"
+                fullWidth
+                onPress={() => setConfirmDiscard(false)}
+                style={styles.modalPillBtn}
+              />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("cook.discardExitBtn")}
+                onPress={() => {
+                  setDiscardPressed(false);
+                  setConfirmDiscard(false);
+                  // Discarded by the user: must not resurrect on next visit.
+                  clearPersistedSession();
+                  if (router.canGoBack()) {
+                    router.back();
+                  } else {
+                    router.replace(`/recipe/${id}`);
+                  }
+                }}
+                onPressIn={() => setDiscardPressed(true)}
+                onPressOut={() => setDiscardPressed(false)}
+                style={
+                  discardPressed
+                    ? [styles.modalDestructiveBtn, styles.modalDestructivePressed]
+                    : styles.modalDestructiveBtn
+                }
+              >
+                <Text style={styles.modalDestructiveText}>
+                  {t("cook.discardExitBtn")}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

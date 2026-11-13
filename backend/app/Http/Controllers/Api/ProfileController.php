@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateProfileRequest;
+use App\Http\Resources\RecipeCardResource;
 use App\Models\Follow;
 use App\Models\Post;
 use App\Models\Recipe;
@@ -12,6 +13,7 @@ use App\Models\User;
 use App\Support\ShareCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 
 class ProfileController extends Controller
@@ -33,6 +35,20 @@ class ProfileController extends Controller
             'is_following' => $following,
             'is_self' => $me ? $me->id === $user->id : false,
         ]));
+    }
+
+    /**
+     * Public paginated list of recipes owned by the given user.
+     */
+    public function recipes(Request $request, User $user): AnonymousResourceCollection
+    {
+        $recipes = Recipe::query()
+            ->where('owner_id', $user->id)
+            ->select(RecipeCardResource::COLUMNS)
+            ->latest('id')
+            ->paginate(20);
+
+        return RecipeCardResource::collection($recipes);
     }
 
     public function update(UpdateProfileRequest $request): JsonResponse
@@ -105,6 +121,7 @@ class ProfileController extends Controller
                 : (app()->getLocale() === 'ar' ? 'طاهٍ' : 'A cook');
         } else {
             $identity['name'] = $user->name;
+            $identity['email'] = $user->email;
             $identity['gender'] = $user->gender;
         }
 
