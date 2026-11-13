@@ -3,7 +3,6 @@ import {
   Animated,
   Dimensions,
   FlatList,
-  Image as RNImage,
   Modal,
   PanResponder,
   Pressable,
@@ -31,6 +30,7 @@ const CARD_MARGIN_V = 20;
 const CARD_PADDING = 10;
 const CARD_RADIUS = Radius.lg; // 16
 const CARD_IMAGE_RADIUS = Radius.sm; // 8
+const VIEWABILITY_CONFIG = { viewAreaCoveragePercentThreshold: 50 };
 
 // ---- Fullscreen viewer ---------------------------------------------------------
 
@@ -59,26 +59,6 @@ const ViewerCardPage = memo(function ViewerCardPage({
   onClose,
 }: ViewerCardPageProps) {
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    if (uri) {
-      RNImage.getSize(
-        uri,
-        (width, height) => {
-          if (active && width > 0 && height > 0) {
-            setDimensions((prev) => prev ?? { width, height });
-          }
-        },
-        () => {
-          // Handled via expo-image onLoad fallback
-        },
-      );
-    }
-    return () => {
-      active = false;
-    };
-  }, [uri]);
 
   const handleLoad = useCallback((event: ImageLoadEventData) => {
     const { width, height } = event.source;
@@ -259,8 +239,6 @@ export const ImageViewerModal = memo(function ImageViewerModal({
     [],
   );
 
-  const viewabilityConfig = { viewAreaCoveragePercentThreshold: 50 };
-
   // Chrome: just the counter, bottom-center. Dismissing: tap the scrim,
   // swipe down, or the hardware back button — no ✕ button by design.
   const counterBottom = insets.bottom + 20;
@@ -311,7 +289,7 @@ export const ImageViewerModal = memo(function ImageViewerModal({
             index,
           })}
           onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={viewabilityConfig}
+          viewabilityConfig={VIEWABILITY_CONFIG}
           renderItem={({ item }) => (
             <ViewerCardPage
               uri={item}

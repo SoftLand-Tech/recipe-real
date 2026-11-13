@@ -1,4 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { memo } from "react";
 import { StyleSheet } from "react-native";
 
 import { useLang } from "@/i18n";
@@ -24,9 +25,12 @@ const DIMENSIONS = { sm: 30, lg: 38 } as const;
  * Anchored to the physical top-end corner: `left`/`right` don't flip in RTL,
  * so the side is chosen from the resolved layout direction.
  */
-export function HeartButton({ favorited, onPress, size = "sm" }: HeartButtonProps) {
+export const HeartButton = memo(function HeartButton({
+  favorited,
+  onPress,
+  size = "sm",
+}: HeartButtonProps) {
   const { dir } = useLang();
-  const dim = DIMENSIONS[size];
   return (
     <IconPressable
       onPress={onPress}
@@ -34,11 +38,7 @@ export function HeartButton({ favorited, onPress, size = "sm" }: HeartButtonProp
       style={[
         styles.base,
         dir === "rtl" ? styles.baseRtl : styles.baseLtr,
-        {
-          width: dim,
-          height: dim,
-          borderRadius: Radius.pill,
-        },
+        size === "lg" ? styles.sizeLg : styles.sizeSm,
       ]}
     >
       <Ionicons
@@ -48,7 +48,7 @@ export function HeartButton({ favorited, onPress, size = "sm" }: HeartButtonProp
       />
     </IconPressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   base: {
@@ -57,11 +57,20 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.35)",
     alignItems: "center",
     justifyContent: "center",
+    borderRadius: Radius.pill,
   },
   baseLtr: {
     right: Space.sm,
   },
   baseRtl: {
     left: Space.sm,
+  },
+  sizeSm: {
+    width: DIMENSIONS.sm,
+    height: DIMENSIONS.sm,
+  },
+  sizeLg: {
+    width: DIMENSIONS.lg,
+    height: DIMENSIONS.lg,
   },
 });

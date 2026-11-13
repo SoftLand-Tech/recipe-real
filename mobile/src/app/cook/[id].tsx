@@ -28,6 +28,10 @@ import {
   startCookNotification,
   stopCookNotification,
 } from "@/utils/cookAlarms";
+import {
+  clearCookSessionPointer,
+  markCookSessionActive,
+} from "@/utils/cookSessionStatus";
 import { stepMinutes } from "@/utils/recipeTime";
 
 import { getRecipe, hasToken, submitCookSession } from "@/api/client";
@@ -203,8 +207,10 @@ interface StepPaceBarProps {
   running: boolean;
   /** Pause-adjusted elapsed to show while NOT running (fresh at pause). */
   frozenMs: number;
-  /** Pause-adjusted elapsed for the live tick (stable callback over refs). */
-  getElapsedMs: (now: number) => number;
+  /** Step number being timed (primitive so memoization holds). */
+  stepNumber: number;
+  /** Stable ref-backed helper returning pause-adjusted elapsed ms for a step. */
+  stepVisitElapsedMs: (stepNumber: number, at: number) => number;
   expectedMs: number;
   wrapStyle: ViewStyle;
   trackStyle: ViewStyle;
@@ -219,7 +225,8 @@ interface StepPaceBarProps {
 const StepPaceBar = memo(function StepPaceBar({
   running,
   frozenMs,
-  getElapsedMs,
+  stepNumber,
+  stepVisitElapsedMs,
   expectedMs,
   wrapStyle,
   trackStyle,
@@ -237,7 +244,7 @@ const StepPaceBar = memo(function StepPaceBar({
     const handle = setInterval(() => setNow(Date.now()), TICK_MS);
     return () => clearInterval(handle);
   }, [running]);
-  const elapsedMs = running ? getElapsedMs(now) : frozenMs;
+  const elapsedMs = running ? stepVisitElapsedMs(stepNumber, now) : frozenMs;
   const overMin =
     elapsedMs > expectedMs
       ? Math.max(1, Math.round((elapsedMs - expectedMs) / 60_000))
@@ -745,8 +752,9 @@ export default function CookModeScreen() {
   // not that it is immune to clock edits.
   const sessionKey = `cook-session:${String(id)}`;
   const clearPersistedSession = useCallback(() => {
+    clearCookSessionPointer(Number(id));
     void AsyncStorage.removeItem(sessionKey).catch(() => {});
-  }, [sessionKey]);
+  }, [id, sessionKey]);
 
   // Restore once, when the recipe is ready. Stale (>24h) or foreign-recipe
   // snapshots are discarded; the armed alarm id is restored too so an alarm
@@ -768,6 +776,7 @@ export default function CookModeScreen() {
             typeof saved.cookStartAt === "number" &&
             Date.now() - saved.cookStartAt < MAX_RESTORE_AGE_MS;
           if (!fresh) {
+            clearCookSessionPointer(recipe.id);
             await AsyncStorage.removeItem(sessionKey).catch(() => {});
           } else if (statusRef.current === "idle") {
             pausesRef.current = Array.isArray(saved.pauses)
@@ -844,7 +853,8 @@ export default function CookModeScreen() {
   // and skipped after finish (finishCooking clears the key explicitly).
   useEffect(() => {
     if (!hydrated || phase !== "cooking" || status === "finished") return;
-    if (cookStartAt == null) {
+    if (cookStartAt == null || (status !== "running" && status !== "paused")) {
+      clearCookSessionPointer(recipe?.id ?? Number(id));
       void AsyncStorage.removeItem(sessionKey).catch(() => {});
       return;
     }
@@ -863,6 +873,15 @@ export default function CookModeScreen() {
       armedAlarmId: armedAlarmIdRef.current,
       armedStep,
     };
+    markCookSessionActive({
+      recipeId: payload.recipeId,
+      title: payload.title ?? null,
+      cookStartAt: payload.cookStartAt,
+      pausedAt: payload.pausedAt,
+      pausedMsTotal: payload.pausedMsTotal,
+      status,
+      armedAlarmId: payload.armedAlarmId,
+    });
     void AsyncStorage.setItem(sessionKey, JSON.stringify(payload)).catch(
       () => {},
     );
@@ -1916,8 +1935,8 @@ export default function CookModeScreen() {
         />
       </View>
 
-      {/* Single-step body (remounts on index change) */}
-      <View key={currentIndex} style={styles.stepBody}>
+      {/* Single-step body (updates in place on index change) */}
+      <View style={styles.stepBody}>
         <View style={styles.stepMetaRow}>
           <Badge
             label={stepTypeLabel(t, step.step_type || "active")}
@@ -2015,10 +2034,9 @@ export default function CookModeScreen() {
         {stepExpectedMs != null && status !== "idle" ? (
           <StepPaceBar
             running={status === "running"}
-            frozenMs={stepFrozenMs}
-            getElapsedMs={(nowMs) =>
-              stepVisitElapsedMs(step.step_number, nowMs)
-            }
+            frozenMs={status === "running" ? 0 : stepFrozenMs}
+            stepNumber={step.step_number}
+            stepVisitElapsedMs={stepVisitElapsedMs}
             expectedMs={stepExpectedMs}
             wrapStyle={styles.stepPaceWrap}
             trackStyle={styles.stepTrack}

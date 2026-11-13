@@ -27,19 +27,49 @@ const eventsHttp = axios.create({
   },
 });
 
-// Consent cache (session-scoped): read once, overridden by
-// grantAnalyticsConsent() when the user accepts on first launch. Anything
-// other than the stored value 'accepted' (declined / unset / unreadable)
-// keeps analytics OFF — data collection never happens without consent.
-let consentCache: Promise<boolean> | null = null;
+export const CONSENT_STORAGE_KEY = "consent.v1";
 
-async function hasAnalyticsConsent(): Promise<boolean> {
+// Consent cache (session-scoped): read once, shared across analytics.ts,
+// FirstRunConsent, and _layout.tsx, and overridden when the user decides on
+// first launch. Anything other than the stored value 'accepted' (declined /
+// unset / unreadable) keeps analytics OFF.
+const CONSENT_READ_ERROR = Symbol("consent_read_error");
+type CachedConsent = string | null | typeof CONSENT_READ_ERROR;
+
+let consentCache: Promise<CachedConsent> | null = null;
+
+function readConsentRaw(): Promise<CachedConsent> {
   if (!consentCache) {
-    consentCache = AsyncStorage.getItem("consent.v1")
-      .then((v) => v === "accepted")
-      .catch(() => false);
+    consentCache = AsyncStorage.getItem(CONSENT_STORAGE_KEY).catch(
+      () => CONSENT_READ_ERROR,
+    );
   }
   return consentCache;
+}
+
+/**
+ * Whether the user opted INTO analytics sharing: true only for the stored
+ * value 'accepted'. Anything else — 'essential', unset, or an unreadable
+ * store — reports false so callers treat sharing as OFF by default.
+ */
+export async function hasAnalyticsConsent(): Promise<boolean> {
+  return (await readConsentRaw()) === "accepted";
+}
+
+/**
+ * Whether first-run consent still needs to be prompted (only when no answer
+ * is stored; storage read failures stay hidden instead of nagging).
+ */
+export async function shouldPromptAnalyticsConsent(): Promise<boolean> {
+  return (await readConsentRaw()) == null;
+}
+
+/**
+ * Update the session-scoped consent cache after a user decision so
+ * subsequent checks / track() calls reflect it immediately.
+ */
+export function setAnalyticsConsentCache(value: "accepted" | "essential"): void {
+  consentCache = Promise.resolve(value);
 }
 
 /**
@@ -48,7 +78,7 @@ async function hasAnalyticsConsent(): Promise<boolean> {
  * the next cold start.
  */
 export function grantAnalyticsConsent(): void {
-  consentCache = Promise.resolve(true);
+  setAnalyticsConsentCache("accepted");
 }
 
 export async function track(

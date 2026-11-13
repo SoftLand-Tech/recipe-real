@@ -27,7 +27,7 @@ import { useThemePrefs } from "@/theme";
  * the sequence starts immediately: accent lines sweep across the center,
  * the lines converge into a splash of rings, and the mark springs in —
  * its first and only appearance. The overlay then fades away to reveal
- * the app. Total ≈ 2.1s.
+ * the app. Total ≈ 700ms.
  */
 
 const LOGO_SOURCE = require("@/assets/images/recipereallogo.webp");
@@ -39,26 +39,26 @@ const SCREEN_WIDTH = Dimensions.get("window").width;
 
 /** One sweeping accent line: screen-relative width, opacity peak, stagger. */
 const LINES = [
-  { widthFrac: 0.52, peak: 0.3, delay: 290, fromLeft: true, dy: -30 },
-  { widthFrac: 0.7, peak: 0.55, delay: 145, fromLeft: false, dy: -15 },
+  { widthFrac: 0.52, peak: 0.3, delay: 100, fromLeft: true, dy: -30 },
+  { widthFrac: 0.7, peak: 0.55, delay: 50, fromLeft: false, dy: -15 },
   { widthFrac: 0.88, peak: 0.95, delay: 0, fromLeft: true, dy: 0 },
-  { widthFrac: 0.7, peak: 0.55, delay: 145, fromLeft: false, dy: 15 },
-  { widthFrac: 0.52, peak: 0.3, delay: 290, fromLeft: true, dy: 30 },
+  { widthFrac: 0.7, peak: 0.55, delay: 50, fromLeft: false, dy: 15 },
+  { widthFrac: 0.52, peak: 0.3, delay: 100, fromLeft: true, dy: 30 },
 ] as const;
 
 /** Per-line sweep length inside the master clock below. */
-const SWEEP_MS = 820;
-const SWEEP_TOTAL_MS = SWEEP_MS + 290;
+const SWEEP_MS = 280;
+const SWEEP_TOTAL_MS = SWEEP_MS + 100;
 
 /** Timeline offsets (ms from start). */
 const T = {
-  sweep: 120,
-  flash: 600,
-  ring1: 600,
-  ring2: 690,
-  reveal: 680,
-  fade: 1760,
-  fadeMs: 340,
+  sweep: 0,
+  flash: 140,
+  ring1: 140,
+  ring2: 180,
+  reveal: 160,
+  fade: 520,
+  fadeMs: 180,
 } as const;
 
 function c01(v: number): number {
@@ -75,18 +75,26 @@ export function AnimatedSplash() {
   // the screen (preventAutoHideAsync in the root layout), so there is no
   // flash risk in either direction.
   const [visible, setVisible] = useState(true);
+  const [fading, setFading] = useState(false);
   const started = useRef(false);
+  const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // SAFETY NET: the overlay normally unmounts via the Reanimation
   // finished-callback, but if the JS side dies mid-reveal that callback
   // never fires — and this full-screen view would strand the app under it
-  // forever (no red screens in release). 5s is comfortably past the ~2.1s
+  // forever (no red screens in release). 2.5s is comfortably past the ~700ms
   // sequence, so a healthy run always dismisses itself first.
   useEffect(() => {
     if (!visible) return;
-    const fallback = setTimeout(() => setVisible(false), 5000);
+    const fallback = setTimeout(() => setVisible(false), 2500);
     return () => clearTimeout(fallback);
   }, [visible]);
+
+  useEffect(() => {
+    return () => {
+      if (fadeTimerRef.current != null) clearTimeout(fadeTimerRef.current);
+    };
+  }, []);
 
   const sweep = useSharedValue(0);
   const ring1 = useSharedValue(0);
@@ -100,6 +108,8 @@ export function AnimatedSplash() {
     if (started.current) return;
     started.current = true;
 
+    fadeTimerRef.current = setTimeout(() => setFading(true), T.fade);
+
     // Lines sweep — a linear master clock each line windows into.
     sweep.value = withDelay(
       T.sweep,
@@ -107,24 +117,24 @@ export function AnimatedSplash() {
     );
 
     // Splash: a soft flash plus two rings expanding out of the center.
-    flash.value = withDelay(T.flash, withTiming(1, { duration: 430, easing: OUT_CUBIC }));
-    ring1.value = withDelay(T.ring1, withTiming(1, { duration: 560, easing: OUT_CUBIC }));
-    ring2.value = withDelay(T.ring2, withTiming(1, { duration: 600, easing: OUT_CUBIC }));
+    flash.value = withDelay(T.flash, withTiming(1, { duration: 200, easing: OUT_CUBIC }));
+    ring1.value = withDelay(T.ring1, withTiming(1, { duration: 260, easing: OUT_CUBIC }));
+    ring2.value = withDelay(T.ring2, withTiming(1, { duration: 280, easing: OUT_CUBIC }));
 
     // Mark springs in — its first and only appearance.
     logoOpacity.value = withDelay(
       T.reveal,
-      withTiming(1, { duration: 260, easing: Easing.out(Easing.quad) }),
+      withTiming(1, { duration: 150, easing: Easing.out(Easing.quad) }),
     );
     logoScale.value = withDelay(
       T.reveal,
-      withSpring(1, { damping: 13, stiffness: 175, mass: 0.95 }),
+      withSpring(1, { damping: 14, stiffness: 260, mass: 0.8 }),
     );
 
     // Fade the whole overlay away, then unmount.
     logoScale.value = withDelay(
       T.fade,
-      withTiming(1.045, { duration: 320, easing: Easing.inOut(Easing.quad) }),
+      withTiming(1.045, { duration: T.fadeMs, easing: Easing.inOut(Easing.quad) }),
     );
     overlayOpacity.value = withDelay(
       T.fade,
@@ -142,13 +152,12 @@ export function AnimatedSplash() {
   }, []);
 
   const onLayout = useCallback(() => {
-    // The overlay opens as the same plain canvas as the native splash, so
-    // dismiss the native one only once this view exists, then play.
-    SplashScreen.hideAsync()
-      .catch(() => {
-        // Already hidden or unavailable (dev web) — play anyway.
-      })
-      .finally(() => start());
+    // Start the reveal immediately alongside dismissing the native splash so
+    // the handoff isn't delayed by an extra native round-trip.
+    start();
+    void SplashScreen.hideAsync().catch(() => {
+      // Already hidden or unavailable (dev web) — reveal already started.
+    });
   }, [start]);
 
   if (!visible) return null;
@@ -156,6 +165,7 @@ export function AnimatedSplash() {
   return (
     <Animated.View
       onLayout={onLayout}
+      pointerEvents={fading ? "none" : "auto"}
       style={[styles.overlay, { backgroundColor: colors.canvas, opacity: overlayOpacity }]}
     >
       {LINES.map((_, i) => (

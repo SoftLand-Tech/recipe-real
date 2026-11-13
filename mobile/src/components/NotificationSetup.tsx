@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { AppState } from "react-native";
+import { AppState, InteractionManager } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { useT } from "@/i18n";
@@ -83,27 +83,35 @@ export function NotificationSetup() {
   useEffect(() => {
     let cancelled = false;
     let unsubExpo: (() => void) | null = null;
+    initGlobalCookEvents();
+
     (async () => {
-      await setupNotificationHandler();
-      initGlobalCookEvents();
-      try {
-        unsubExpo = await addNotificationTapListener((data) => {
+      // Parallelize notification handler setup, tap listener registration,
+      // and cold-start tap queries so boot doesn't pay them sequentially.
+      const [, listenerUnsub, cookTarget, expoTap, pending] = await Promise.all([
+        setupNotificationHandler().catch(() => undefined),
+        addNotificationTapListener((data) => {
           const href = notificationDataToHref(data);
           if (href) navigateNotificationTarget(href, "expo-tap");
-        });
-      } catch {
-        // Listener unavailable — cold-start path below still works.
+        }).catch(() => null),
+        getColdStartCookTarget().catch(() => null),
+        getColdStartNotificationData().catch(() => null),
+        consumePendingNotifNav().catch(() => null),
+      ]);
+
+      if (cancelled) {
+        try {
+          listenerUnsub?.();
+        } catch {
+          // Already removed.
+        }
+        return;
       }
-      if (cancelled) return;
+      unsubExpo = listenerUnsub;
+
       // Cold-start taps: notifee (cook/alarm) + expo (planner) + any
       // headless body-tap stash, first hit wins.
       try {
-        const [cookTarget, expoTap, pending] = await Promise.all([
-          getColdStartCookTarget(),
-          getColdStartNotificationData(),
-          consumePendingNotifNav(),
-        ]);
-        if (cancelled) return;
         if (pending) {
           const href = parseStoredHref(pending);
           if (href) navigateNotificationTarget(href, "pending-tap");
@@ -116,20 +124,25 @@ export function NotificationSetup() {
       } catch {
         // Taps are best-effort; the app still boots normally.
       }
-      if (cancelled) return;
-      // A live session without its sticky row (force-stop took it down):
-      // re-post it now that we're alive again.
-      try {
-        const session = await readActiveCookSession();
-        if (!cancelled && session) {
-          await repostActiveCookNotification(session, t);
-        }
-      } catch {
-        // Best-effort.
-      }
     })().catch(() => {
       // Startup plumbing must never break boot.
     });
+
+    // Defer the sticky-repost check until initial animations/interactions settle
+    // so it doesn't compete with splash and first-frame rendering.
+    const repostTask = InteractionManager.runAfterInteractions(() => {
+      if (cancelled) return;
+      readActiveCookSession()
+        .then((session) => {
+          if (!cancelled && session) {
+            return repostActiveCookNotification(session, t);
+          }
+        })
+        .catch(() => {
+          // Best-effort.
+        });
+    });
+
     const appStateSub = AppState.addEventListener("change", (state) => {
       if (state !== "active") return;
       consumePendingNotifNav()
@@ -144,6 +157,7 @@ export function NotificationSetup() {
     });
     return () => {
       cancelled = true;
+      repostTask.cancel();
       try {
         unsubExpo?.();
       } catch {

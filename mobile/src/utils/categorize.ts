@@ -83,13 +83,28 @@ const CATEGORY_RULES: ReadonlyArray<readonly [CategoryId, RegExp]> = [
   ],
 ];
 
+const MAX_TITLE_CACHE = 5000;
+const titleCategoryCache = new Map<string, CategoryId>();
+
 /** Map a recipe title to a category. Titles are matched case-insensitively. */
 export function categorizeTitle(title: string): CategoryId {
   const t = title.toLowerCase();
+  const cached = titleCategoryCache.get(t);
+  if (cached !== undefined) return cached;
+
+  let result: CategoryId = "other";
   for (const [id, re] of CATEGORY_RULES) {
-    if (re.test(t)) return id;
+    if (re.test(t)) {
+      result = id;
+      break;
+    }
   }
-  return "other";
+  if (titleCategoryCache.size >= MAX_TITLE_CACHE) {
+    const oldest = titleCategoryCache.keys().next().value;
+    if (oldest !== undefined) titleCategoryCache.delete(oldest);
+  }
+  titleCategoryCache.set(t, result);
+  return result;
 }
 
 /** Human label for a category id ("other" → "More"). */

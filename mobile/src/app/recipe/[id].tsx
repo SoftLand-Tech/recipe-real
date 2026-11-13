@@ -1,9 +1,12 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useLocalSearchParams, router, useFocusEffect } from "expo-router";
 import {
+  forwardRef,
   Fragment,
+  memo,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -12,6 +15,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  InteractionManager,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -64,6 +68,8 @@ import {
   Space,
   Type,
   useThemeColors,
+  type LangDir,
+  type ThemeColors,
 } from "@/theme";
 import {
   greaseLevelLabel,
@@ -98,7 +104,7 @@ import {
 import { shareLink } from "@/utils/share";
 import { peekPostCreated } from "@/utils/postCreated";
 
-type LoadState = "loading" | "ready" | "error";
+type LoadState = "idle" | "loading" | "ready" | "error";
 
 /** Rounds a nullable minute value, returning null when absent. */
 function roundMin(value: number | null | undefined): number | null {
@@ -249,147 +255,8 @@ function parseStructuredIngredients(value: unknown): StructuredIngredient[] {
   );
 }
 
-export default function RecipeDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const insets = useSafeAreaInsets();
-  const colors = useThemeColors();
-  const t = useT();
-  const { dir } = useLang();
-  const fmtMin = useFmtMinutes();
-  const lr = useLocalizedRecipe();
-
-  const [recipe, setRecipe] = useState<Recipe | null>(null);
-  const [state, setState] = useState<LoadState>("loading");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  // True while the screen paints a LIGHT cached row (no structured
-  // recipe_steps) and the fresh copy is still loading: the timeline section
-  // shows its compact inline placeholder and Cook Mode stays disabled until
-  // steps land (or the fetch settles without any).
-  const [stepsPending, setStepsPending] = useState(false);
-  const [calibrations, setCalibrations] = useState<PaceCalibration[]>([]);
-  const [favorited, setFavorited] = useState(false);
-  // Personal note (local-only): the current editor text, the last saved
-  // baseline (to detect changes), and a short-lived "Saved ✓" flag.
-  const [note, setNote] = useState("");
-  const [savedNote, setSavedNote] = useState("");
-  const [noteJustSaved, setNoteJustSaved] = useState(false);
-  /** Set when the local note save fails — surfaced inline (never silent). */
-  const [noteSaveError, setNoteSaveError] = useState<string | null>(null);
-  // "Make public" toggle under the note editor: when on, saving the local note
-  // ALSO posts it as a public community note. Persisted as the default.
-  const [notePublic, setNotePublic] = useState(false);
-  // Sign-in state for the owner Edit control + note compose row (read once).
-  const [signedIn, setSignedIn] = useState(false);
-  // Active tab of the merged notes card ("personal" = device-local note,
-  // "community" = public notes list). Defaults to the personal note.
-  const [notesTab, setNotesTab] = useState<"personal" | "community">(
-    "personal",
-  );
-  // The personal-note editor is COLLAPSED by default: without this flag the
-  // tab shows either the saved note (tap to edit) or an "Add a note" row —
-  // the textarea/save/toggle stack only mounts while editing.
-  const [noteEditing, setNoteEditing] = useState(false);
-
-  // ---- Community notes (public, paginated 20/page) -----------------------------
-  const [notes, setNotes] = useState<RecipeNote[]>([]);
-  const [notesLoading, setNotesLoading] = useState(true);
-  const [notesHasMore, setNotesHasMore] = useState(false);
-  const [notesPage, setNotesPage] = useState(1);
-  const [notesError, setNotesError] = useState<string | null>(null);
-  // Once-only guard for the community_notes_viewed analytics event (ref: no
-  // re-render needed — see the tracking effect below).
-  const notesTrackedRef = useRef(false);
-  // Compose row state (signed-in users only).
-  const [noteDraft, setNoteDraft] = useState("");
-  const [notePosting, setNotePosting] = useState(false);
-  const [notePostError, setNotePostError] = useState<string | null>(null);
-  const [noteHalalTerms, setNoteHalalTerms] = useState<string[] | null>(null);
-  const [noteNeedsAuth, setNoteNeedsAuth] = useState(false);
-  // Signed-in user's id: routes each community note to Delete (own) vs
-  // Report (others). Null until the profile resolves (or when signed out).
-  const [myUserId, setMyUserId] = useState<number | null>(null);
-  // Note ids already reported this visit — the icon flips to a ✓ and the
-  // action no-ops (same per-item reported state as the community feed).
-  const [reportedNoteIds, setReportedNoteIds] = useState<ReadonlySet<number>>(
-    () => new Set(),
-  );
-
-  // ---- Community tries (posts attached to this recipe) -----------------------
-  // null = not loaded yet (or the load failed silently) → the section stays
-  // hidden; an empty array = loaded + no posts → the empty state shows.
-  const [tries, setTries] = useState<Post[] | null>(null);
-  // Paginator total from the server (the true count even past the 20-row page).
-  const [triesTotal, setTriesTotal] = useState(0);
-  // "Show all" expands the compact 3-row preview to every loaded row.
-  const [triesExpanded, setTriesExpanded] = useState(false);
-
-  // Quick-time contribution: honest-breakdown form ("did you make this?"):
-  // plates made, hands-on minutes, total minutes (required) and cleanup
-  // minutes. Rendered for everyone; an unauthenticated submit surfaces the
-  // sign-in CTA (the 401 is mapped to QuickTimeUnauthorizedError in the client).
-  const [quickPlates, setQuickPlates] = useState("");
-  const [quickHandsOn, setQuickHandsOn] = useState("");
-  const [quickTotal, setQuickTotal] = useState("");
-  const [quickCleanup, setQuickCleanup] = useState("");
-  const [quickSubmitting, setQuickSubmitting] = useState(false);
-  const [quickDone, setQuickDone] = useState(false);
-  const [quickAvg, setQuickAvg] = useState<number | null>(null);
-  const [quickCleanupAvg, setQuickCleanupAvg] = useState<number | null>(null);
-  const [quickError, setQuickError] = useState<string | null>(null);
-  const [quickNeedsAuth, setQuickNeedsAuth] = useState(false);
-  // Fade-in for the "Thanks! …" success line (native-driven opacity).
-  const quickFadeRef = useRef(new Animated.Value(0));
-  // Quick-time card: ALWAYS collapsed to the trigger row on first paint; the
-  // breakdown form expands inline below it on tap. `quickDone` is separate so
-  // a successful submit collapses the form but keeps the one-line thanks.
-  const [quickOpen, setQuickOpen] = useState(false);
-  // Opacity-dim pressed state for the trigger row (Android paint rules).
-  const [quickPressed, setQuickPressed] = useState(false);
-  // Focuses the inline total-time input as soon as it mounts.
-  const quickInputRef = useRef<TextInput | null>(null);
-
-  // ---- Start-time planner (eat-at mode) --------------------------------------
-  // Target eat time as a ms epoch; null = "start now" mode (the timeline
-  // anchors at the per-recipe load moment). Any stepper press enters plan
-  // mode and REANCHORS the timeline so dinner lands at the chosen time.
-  const [planEatAt, setPlanEatAt] = useState<number | null>(null);
-  // "Notify me" scheduling: spinner while arming, scheduled-step count after.
-  const [planLoading, setPlanLoading] = useState(false);
-  const [planCount, setPlanCount] = useState<number | null>(null);
-  // Ids of the currently scheduled plan notifications (kept in a ref: no
-  // re-renders; used to replace/cancel the plan and cleared on unmount).
-  const planIdsRef = useRef<(string | null)[]>([]);
-
-  // Cancel any scheduled plan notifications when the screen unmounts.
-  useEffect(() => {
-    return () => {
-      cancelPlannedNotifications(planIdsRef.current).catch(() => {
-        // Best-effort cleanup.
-      });
-    };
-  }, []);
-
-  // Hides the "Saved ✓" confirmation a few seconds after a successful save.
-  const noteSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    return () => {
-      if (noteSavedTimerRef.current) clearTimeout(noteSavedTimerRef.current);
-    };
-  }, []);
-
-  // Community-note action toast: one transient line under the list
-  // ("Note deleted" / "Reported — thank you"), same hide pattern as above.
-  const [noteFlash, setNoteFlash] = useState<string | null>(null);
-  const noteFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    return () => {
-      if (noteFlashTimerRef.current) clearTimeout(noteFlashTimerRef.current);
-    };
-  }, []);
-
-  const styles = useMemo(
-    () =>
-      StyleSheet.create({
+function createDetailStyles(colors: ThemeColors, dir: LangDir) {
+  return StyleSheet.create({
         screen: {
           flex: 1,
           position: "relative",
@@ -1060,7 +927,1152 @@ export default function RecipeDetailScreen() {
           color: "#FFFFFF",
           fontWeight: "700",
         },
-      }),
+      });
+}
+
+type DetailStyles = ReturnType<typeof createDetailStyles>;
+
+interface IngredientRowProps {
+  ingredient: string;
+  structured?: StructuredIngredient;
+  styles: DetailStyles;
+}
+
+const IngredientRow = memo(function IngredientRow({
+  ingredient,
+  structured,
+  styles,
+}: IngredientRowProps) {
+  const qty =
+    structured?.qty_display ??
+    (structured?.qty != null ? String(structured.qty) : null);
+  const unit = structured?.unit?.trim() || null;
+  const itemText = [structured?.item?.trim(), structured?.prep?.trim()]
+    .filter(Boolean)
+    .join(", ");
+  const qtyPart = [qty, unit].filter(Boolean).join(" ");
+  const hasStructure = qtyPart !== "" && itemText !== "";
+  return (
+    <View style={styles.bulletRow}>
+      <Text style={styles.bullet}>•</Text>
+      {hasStructure ? (
+        <Text style={styles.bulletText}>
+          <Text style={styles.ingredientQty}>{qtyPart}</Text>
+          {` ${itemText}`}
+        </Text>
+      ) : (
+        <Text style={styles.bulletText}>{ingredient}</Text>
+      )}
+    </View>
+  );
+});
+
+interface TimelineStepRowProps {
+  step: RecipeStep;
+  adjusted: number | null;
+  description: string;
+  styles: DetailStyles;
+}
+
+const TimelineStepRow = memo(function TimelineStepRow({
+  step,
+  adjusted,
+  description,
+  styles,
+}: TimelineStepRowProps) {
+  const t = useT();
+  const fmtMin = useFmtMinutes();
+  const passive = step.step_type === "passive";
+  return (
+    <View
+      style={[
+        styles.timelineRow,
+        passive && styles.timelineRowPassive,
+      ]}
+    >
+      <View
+        style={[
+          styles.timelineDot,
+          passive && styles.timelineDotPassive,
+        ]}
+      />
+      <View style={styles.timelineInfo}>
+        {/* Full step text — this row IS the step list (no separate Steps
+            section below). The step number leads the text; hands-off +
+            adjusted notes fold into ONE small meta line. */}
+        <Text style={styles.timelineDesc}>
+          <Text style={styles.timelineStepNum}>
+            {`${t("detail.stepCaption", {
+              n: step.step_number,
+            })} `}
+          </Text>
+          {description}
+        </Text>
+        {passive || adjusted != null ? (
+          <Text style={styles.timelineMeta}>
+            {[
+              passive ? t("common.handsOff") : null,
+              adjusted != null
+                ? t("detail.adjustedForYou", {
+                    time: fmtMin(adjusted),
+                  })
+                : null,
+            ]
+              .filter(Boolean)
+              .join("  ·  ")}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+});
+
+interface NoteRowProps {
+  item: RecipeNote;
+  mine: boolean;
+  reported: boolean;
+  onDelete: (note: RecipeNote) => void;
+  onReport: (note: RecipeNote) => void;
+  inkFaintColor: string;
+  successColor: string;
+  styles: DetailStyles;
+}
+
+const NoteRow = memo(function NoteRow({
+  item,
+  mine,
+  reported,
+  onDelete,
+  onReport,
+  inkFaintColor,
+  successColor,
+  styles,
+}: NoteRowProps) {
+  const t = useT();
+  const author = noteAuthorName(item.user);
+  const initial = author.charAt(0).toUpperCase() || "?";
+  const rel = relativeDate(t, item.created_at);
+  const handleDelete = useCallback(() => onDelete(item), [onDelete, item]);
+  const handleReport = useCallback(() => onReport(item), [onReport, item]);
+
+  return (
+    <View style={styles.noteRow}>
+      <View style={styles.avatar}>
+        {item.user.avatar_url ? (
+          <Image
+            source={{ uri: item.user.avatar_url }}
+            style={styles.avatarImage}
+            contentFit="cover"
+            transition={0}
+            cachePolicy="memory-disk"
+            recyclingKey={item.user.avatar_url}
+          />
+        ) : (
+          <Text style={styles.avatarText}>{initial}</Text>
+        )}
+      </View>
+      <View style={styles.noteInfo}>
+        <View style={styles.noteHeadRow}>
+          <Text style={styles.noteAuthor}>{author}</Text>
+          {rel !== "" ? <Text style={styles.noteDate}>{rel}</Text> : null}
+          {mine ? (
+            <IconPressable
+              onPress={handleDelete}
+              hitSlop={Space.xs}
+              style={styles.noteAction}
+              accessibilityLabel={t("common.delete")}
+            >
+              <Ionicons
+                name="trash-outline"
+                size={16}
+                color={inkFaintColor}
+              />
+            </IconPressable>
+          ) : (
+            <IconPressable
+              onPress={handleReport}
+              hitSlop={Space.xs}
+              style={styles.noteAction}
+              accessibilityLabel={t("community.reportAction")}
+            >
+              <Ionicons
+                name={reported ? "checkmark" : "flag-outline"}
+                size={16}
+                color={reported ? successColor : inkFaintColor}
+              />
+            </IconPressable>
+          )}
+        </View>
+        <Text style={styles.noteBody}>{item.body}</Text>
+      </View>
+    </View>
+  );
+});
+
+interface TryRowProps {
+  item: Post;
+  styles: DetailStyles;
+}
+
+const TryRow = memo(function TryRow({ item, styles }: TryRowProps) {
+  const author = postAuthorName(item.user);
+  const handlePress = useCallback(() => {
+    router.push(`/post/${item.id}`);
+  }, [item.id]);
+
+  return (
+    <IconPressable onPress={handlePress} style={styles.tryRow}>
+      <Avatar name={author} uri={item.user.avatar_url} size={32} />
+      <View style={styles.tryMain}>
+        <Text style={styles.tryAuthor} numberOfLines={1}>
+          {author}
+        </Text>
+        <Text style={styles.tryBody} numberOfLines={2}>
+          {item.body}
+        </Text>
+        {item.images.length > 0 ? (
+          <View style={styles.tryThumbs}>
+            {item.images.slice(0, 3).map((uri, index) => (
+              <Image
+                key={`try-${item.id}-img-${index}`}
+                source={{ uri }}
+                style={styles.tryThumb}
+                contentFit="cover"
+                transition={0}
+                cachePolicy="memory-disk"
+                recyclingKey={uri}
+              />
+            ))}
+          </View>
+        ) : null}
+      </View>
+    </IconPressable>
+  );
+});
+
+interface QuickTimeCardHandle {
+  open: () => void;
+}
+
+interface QuickTimeCardProps {
+  recipe: Recipe;
+  numericId: number;
+  onSubmitted: (communityAvgMinutes: number | null) => void;
+  colors: ThemeColors;
+  styles: DetailStyles;
+}
+
+const QuickTimeCard = memo(
+  forwardRef<QuickTimeCardHandle, QuickTimeCardProps>(function QuickTimeCard(
+    { recipe, numericId, onSubmitted, colors, styles },
+    ref,
+  ) {
+    const t = useT();
+    const fmtMin = useFmtMinutes();
+    const recipeRef = useRef(recipe);
+    useEffect(() => {
+      recipeRef.current = recipe;
+    }, [recipe]);
+
+    // Quick-time contribution: honest-breakdown form ("did you make this?"):
+    // plates made, hands-on minutes, total minutes (required) and cleanup
+    // minutes. Rendered for everyone; an unauthenticated submit surfaces the
+    // sign-in CTA (the 401 is mapped to QuickTimeUnauthorizedError in the client).
+    const [quickPlates, setQuickPlates] = useState("");
+    const [quickHandsOn, setQuickHandsOn] = useState("");
+    const [quickTotal, setQuickTotal] = useState("");
+    const [quickCleanup, setQuickCleanup] = useState("");
+    const [quickSubmitting, setQuickSubmitting] = useState(false);
+    const [quickDone, setQuickDone] = useState(false);
+    const [quickAvg, setQuickAvg] = useState<number | null>(null);
+    const [quickCleanupAvg, setQuickCleanupAvg] = useState<number | null>(null);
+    const [quickError, setQuickError] = useState<string | null>(null);
+    const [quickNeedsAuth, setQuickNeedsAuth] = useState(false);
+    // Fade-in for the "Thanks! …" success line (native-driven opacity).
+    const [quickFade] = useState(() => new Animated.Value(0));
+    // Quick-time card: ALWAYS collapsed to the trigger row on first paint; the
+    // breakdown form expands inline below it on tap. `quickDone` is separate so
+    // a successful submit collapses the form but keeps the one-line thanks.
+    const [quickOpen, setQuickOpen] = useState(false);
+    // Opacity-dim pressed state for the trigger row (Android paint rules).
+    const [quickPressed, setQuickPressed] = useState(false);
+    // Focuses the inline total-time input as soon as it mounts.
+    const quickInputRef = useRef<TextInput | null>(null);
+
+    /**
+     * Reveal the inline quick-time form inside the card and focus the required
+     * total-time input. Focus waits one frame so the just-mounted TextInput
+     * exists first.
+     */
+    const openQuick = useCallback(() => {
+      setQuickOpen(true);
+      requestAnimationFrame(() => quickInputRef.current?.focus());
+    }, []);
+
+    useImperativeHandle(ref, () => ({ open: openQuick }), [openQuick]);
+
+    const onSubmitQuickTime = useCallback(async () => {
+      const minutes = parseIntOrNull(quickTotal);
+      if (minutes == null || minutes < 1 || minutes > 1440) return;
+      const handsOn = parseIntOrNull(quickHandsOn);
+      if (handsOn != null && handsOn > minutes) return; // Client-side guard.
+      if (!Number.isFinite(numericId)) return;
+      const cleanupMinutes = parseIntOrNull(quickCleanup);
+      const plates = parseIntOrNull(quickPlates);
+      setQuickSubmitting(true);
+      setQuickError(null);
+      setQuickNeedsAuth(false);
+      try {
+        const result = await submitQuickTime(numericId, {
+          minutes,
+          ...(handsOn != null ? { hands_on_minutes: handsOn } : {}),
+          ...(cleanupMinutes != null ? { cleanup_minutes: cleanupMinutes } : {}),
+          ...(plates != null ? { servings: plates } : {}),
+        });
+        track("quick_time_submitted", { recipe_id: numericId, minutes });
+        setQuickAvg(result.community_avg_minutes);
+        setQuickCleanupAvg(result.cleanup_avg_minutes);
+        setQuickDone(true);
+        setQuickOpen(false);
+        onSubmitted(result.community_avg_minutes);
+        const currentRecipe = recipeRef.current;
+        if (currentRecipe) {
+          upsertRecipes(
+            [
+              {
+                ...currentRecipe,
+                community_avg_minutes: result.community_avg_minutes,
+                cleanup_avg_minutes: result.cleanup_avg_minutes,
+              },
+            ],
+            { withSteps: false },
+          ).catch(() => {});
+        }
+        AsyncStorage.setItem(QUICK_TIME_STALE_KEY, String(Date.now())).catch(
+          () => {},
+        );
+        quickFade.setValue(0);
+        Animated.timing(quickFade, {
+          toValue: 1,
+          duration: 350,
+          useNativeDriver: true,
+        }).start();
+      } catch (error) {
+        console.warn("[RecipeReal] quick-time submit failed:", error);
+        if (error instanceof QuickTimeUnauthorizedError) {
+          setQuickNeedsAuth(true);
+          setQuickError(t("quick.signInRequired"));
+        } else if (error instanceof OfflineError) {
+          setQuickError(error.message);
+        } else {
+          setQuickError(t("quick.error"));
+        }
+      } finally {
+        setQuickSubmitting(false);
+      }
+    }, [
+      quickTotal,
+      quickHandsOn,
+      quickCleanup,
+      quickPlates,
+      numericId,
+      onSubmitted,
+      quickFade,
+      t,
+    ]);
+
+    // ---- Quick-time field validation (client-side guards for the submit) ----
+    const quickTotalValue = parseIntOrNull(quickTotal);
+    const quickHandsOnValue = parseIntOrNull(quickHandsOn);
+    const quickPlatesValue = parseIntOrNull(quickPlates);
+    const quickCleanupValue = parseIntOrNull(quickCleanup);
+    const quickTotalValid =
+      quickTotalValue != null &&
+      quickTotalValue >= 1 &&
+      quickTotalValue <= 1440;
+    const quickHandsOnExceeds =
+      quickTotalValid &&
+      quickHandsOnValue != null &&
+      quickHandsOnValue > quickTotalValue;
+    const quickValid =
+      quickTotalValid &&
+      !quickHandsOnExceeds &&
+      (quickHandsOnValue == null ||
+        (quickHandsOnValue >= 0 && quickHandsOnValue <= 1440)) &&
+      (quickPlatesValue == null ||
+        (quickPlatesValue >= 1 && quickPlatesValue <= 50)) &&
+      (quickCleanupValue == null ||
+        (quickCleanupValue >= 0 && quickCleanupValue <= 1440));
+
+    /**
+     * Renders one labeled numeric field of the quick-time form. Called as a
+     * function (not a nested component) so React never remounts the inputs —
+     * a component defined in render would recreate the TextInput each keystroke
+     * and drop keyboard focus.
+     */
+    const quickField = (
+      label: string,
+      value: string,
+      onChange: (text: string) => void,
+      opts: { optional?: boolean; focusRef?: boolean } = {},
+    ) => (
+      <View style={styles.quickField}>
+        <Text style={styles.quickFieldLabel}>
+          {label}
+          {opts.optional ? (
+            <Text style={styles.quickFieldOptional}>
+              {` · ${t("quick.optional")}`}
+            </Text>
+          ) : null}
+        </Text>
+        <TextInput
+          {...(opts.focusRef ? { ref: quickInputRef } : {})}
+          style={styles.quickInput}
+          value={value}
+          onChangeText={(text) => onChange(text.replace(/[^0-9]/g, ""))}
+          placeholderTextColor={colors.inkFaint}
+          keyboardType="number-pad"
+          maxLength={4}
+        />
+      </View>
+    );
+
+    return (
+      <View style={styles.section}>
+        <Card padding={Space.lg}>
+          <Pressable
+            onPress={quickOpen ? () => setQuickOpen(false) : openQuick}
+            onPressIn={() => setQuickPressed(true)}
+            onPressOut={() => setQuickPressed(false)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: quickOpen }}
+            hitSlop={Space.xs}
+            style={[
+              styles.quickTriggerRow,
+              quickPressed ? { opacity: 0.7 } : null,
+            ]}
+          >
+            <Ionicons
+              name="stopwatch-outline"
+              size={20}
+              color={colors.accent}
+            />
+            <Text style={styles.quickTriggerLabel} numberOfLines={1}>
+              {t("quick.didYouMake")}
+            </Text>
+            <Ionicons
+              name={quickOpen ? "chevron-up" : "chevron-down"}
+              size={18}
+              color={colors.inkFaint}
+            />
+          </Pressable>
+          {quickDone && !quickOpen ? (
+            <Animated.Text
+              style={[styles.quickSuccess, { opacity: quickFade }]}
+              numberOfLines={1}
+            >
+              {quickAvg != null
+                ? t("quick.thanksBreakdown", { time: fmtMin(quickAvg) })
+                : // No server average (offline / sparse data): thank the
+                  // user WITHOUT dressing their own input up as an average.
+                  t("quick.thanksOwnTime")}
+              {quickCleanupAvg != null
+                ? ` · ${t("quick.thanksCleanup", {
+                    cleanup: fmtMin(quickCleanupAvg),
+                  })}`
+                : ""}
+            </Animated.Text>
+          ) : null}
+          {quickOpen ? (
+            <View style={styles.quickForm}>
+              {quickField(t("quick.plates"), quickPlates, setQuickPlates, {
+                optional: true,
+              })}
+              {quickField(t("quick.handsOn"), quickHandsOn, setQuickHandsOn, {
+                optional: true,
+              })}
+              {quickField(t("quick.totalQ"), quickTotal, setQuickTotal, {
+                focusRef: true,
+              })}
+              {quickField(t("quick.cleanupQ"), quickCleanup, setQuickCleanup, {
+                optional: true,
+              })}
+              {quickHandsOnExceeds ? (
+                <Text style={styles.quickError}>
+                  {t("quick.handsOnTooLong")}
+                </Text>
+              ) : null}
+              <Button
+                title={t("quick.submit")}
+                variant="primary"
+                fullWidth
+                disabled={!quickValid}
+                loading={quickSubmitting}
+                onPress={onSubmitQuickTime}
+              />
+              {quickError != null ? (
+                <Text style={styles.quickError}>{quickError}</Text>
+              ) : null}
+              {quickNeedsAuth ? (
+                <Pressable
+                  onPress={() => router.push("/login")}
+                  hitSlop={Space.sm}
+                  style={styles.quickSignIn}
+                >
+                  <Text style={styles.quickSignIn}>{t("quick.signIn")}</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+        </Card>
+      </View>
+    );
+  }),
+);
+
+interface NotesSectionProps {
+  numericId: number;
+  signedIn: boolean;
+  myUserId: number | null;
+  initialNote: { recipeId: number; text: string } | null;
+  initialNotePublic: boolean;
+  notes: RecipeNote[];
+  notesLoading: boolean;
+  notesHasMore: boolean;
+  notesError: string | null;
+  onRetryNotes: () => void;
+  onLoadMoreNotes: () => void;
+  onNoteCreated: (created: RecipeNote) => void;
+  onNoteDeleted: (noteId: number) => void;
+  colors: ThemeColors;
+  styles: DetailStyles;
+}
+
+const NotesSection = memo(function NotesSection({
+  numericId,
+  signedIn,
+  myUserId,
+  initialNote,
+  initialNotePublic,
+  notes,
+  notesLoading,
+  notesHasMore,
+  notesError,
+  onRetryNotes,
+  onLoadMoreNotes,
+  onNoteCreated,
+  onNoteDeleted,
+  colors,
+  styles,
+}: NotesSectionProps) {
+  const t = useT();
+
+  // Personal note (local-only): derived from async SQLite seed until edited/saved.
+  const [noteOverride, setNoteOverride] = useState<string | null>(null);
+  const [savedNoteOverride, setSavedNoteOverride] = useState<string | null>(
+    null,
+  );
+  const seededNote =
+    initialNote && initialNote.recipeId === numericId ? initialNote.text : "";
+  const note = noteOverride ?? seededNote;
+  const savedNote = savedNoteOverride ?? seededNote;
+  const [noteJustSaved, setNoteJustSaved] = useState(false);
+  /** Set when the local note save fails — surfaced inline (never silent). */
+  const [noteSaveError, setNoteSaveError] = useState<string | null>(null);
+  // "Make public" toggle under the note editor: when on, saving the local note
+  // ALSO posts it as a public community note. Persisted as the default.
+  const [notePublicOverride, setNotePublicOverride] = useState<boolean | null>(
+    null,
+  );
+  const notePublic = notePublicOverride ?? initialNotePublic;
+  // Active tab of the merged notes card ("personal" = device-local note,
+  // "community" = public notes list). Defaults to the personal note.
+  const [notesTab, setNotesTab] = useState<"personal" | "community">(
+    "personal",
+  );
+  // The personal-note editor is COLLAPSED by default: without this flag the
+  // tab shows either the saved note (tap to edit) or an "Add a note" row —
+  // the textarea/save/toggle stack only mounts while editing.
+  const [noteEditing, setNoteEditing] = useState(false);
+
+  // Compose row state (signed-in users only).
+  const [noteDraft, setNoteDraft] = useState("");
+  const [notePosting, setNotePosting] = useState(false);
+  const [notePostError, setNotePostError] = useState<string | null>(null);
+  const [noteHalalTerms, setNoteHalalTerms] = useState<string[] | null>(null);
+  const [noteNeedsAuth, setNoteNeedsAuth] = useState(false);
+  // Note ids already reported this visit — the icon flips to a ✓ and the
+  // action no-ops (same per-item reported state as the community feed).
+  const [reportedNoteIds, setReportedNoteIds] = useState<ReadonlySet<number>>(
+    () => new Set(),
+  );
+  const reportedNoteIdsRef = useRef(reportedNoteIds);
+  useEffect(() => {
+    reportedNoteIdsRef.current = reportedNoteIds;
+  }, [reportedNoteIds]);
+
+  // Hides the "Saved ✓" confirmation a few seconds after a successful save.
+  const noteSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (noteSavedTimerRef.current) clearTimeout(noteSavedTimerRef.current);
+    };
+  }, []);
+
+  // Community-note action toast: one transient line under the list
+  // ("Note deleted" / "Reported — thank you"), same hide pattern as above.
+  const [noteFlash, setNoteFlash] = useState<string | null>(null);
+  const noteFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (noteFlashTimerRef.current) clearTimeout(noteFlashTimerRef.current);
+    };
+  }, []);
+
+  /**
+   * Post a public community note. Returns true on success. Maps failures to
+   * the compose-row inline states: 401 → sign-in prompt, halal 422 → the
+   * offending terms, anything else → the generic error string.
+   */
+  const postPublicNote = useCallback(
+    async (body: string): Promise<boolean> => {
+      if (!Number.isFinite(numericId) || body.trim() === "") return false;
+      setNotePosting(true);
+      setNotePostError(null);
+      setNoteHalalTerms(null);
+      setNoteNeedsAuth(false);
+      try {
+        const created = await postRecipeNote(numericId, body.trim());
+        onNoteCreated(created);
+        track("recipe_note_posted", { recipe_id: numericId });
+        return true;
+      } catch (error) {
+        console.warn("[RecipeReal] note post failed:", error);
+        if (error instanceof RecipeNoteUnauthorizedError) {
+          setNoteNeedsAuth(true);
+        } else if (error instanceof HalalRejectionError) {
+          setNoteHalalTerms(error.terms);
+          setNotePostError(
+            t("detail.noteHalalBlocked", { terms: error.terms.join(", ") }),
+          );
+        } else if (error instanceof OfflineError) {
+          setNotePostError(error.message);
+        } else {
+          setNotePostError(t("detail.notePostFailed"));
+        }
+        return false;
+      } finally {
+        setNotePosting(false);
+      }
+    },
+    [numericId, onNoteCreated, t],
+  );
+
+  /** Flash the transient confirmation line under the notes list (3s). */
+  const showNoteFlash = useCallback((message: string) => {
+    setNoteFlash(message);
+    if (noteFlashTimerRef.current) clearTimeout(noteFlashTimerRef.current);
+    noteFlashTimerRef.current = setTimeout(() => setNoteFlash(null), 3000);
+  }, []);
+
+  /**
+   * Delete the signed-in user's OWN community note: confirm → API → remove
+   * from local state + toast. Failures are logged and leave the note (and
+   * state) untouched.
+   */
+  const onDeleteNote = useCallback(
+    (targetNote: RecipeNote) => {
+      Alert.alert(
+        t("notes.deleteConfirmTitle"),
+        t("notes.deleteConfirmBody"),
+        [
+          { text: t("common.cancel"), style: "cancel" },
+          {
+            text: t("common.delete"),
+            style: "destructive",
+            onPress: () => {
+              void (async () => {
+                try {
+                  await deleteRecipeNote(numericId, targetNote.id);
+                  onNoteDeleted(targetNote.id);
+                  setReportedNoteIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(targetNote.id);
+                    return next;
+                  });
+                  showNoteFlash(t("notes.deleted"));
+                  track("recipe_note_deleted", { recipe_id: numericId });
+                } catch (error) {
+                  console.warn("[RecipeReal] note delete failed:", error);
+                }
+              })();
+            },
+          },
+        ],
+      );
+    },
+    [numericId, onNoteDeleted, showNoteFlash, t],
+  );
+
+  /**
+   * Report ANOTHER user's community note: confirm → API → mark reported.
+   * Mirrors the post screen's report confirm flow; idempotent server-side.
+   */
+  const onReportNote = useCallback(
+    (targetNote: RecipeNote) => {
+      if (reportedNoteIdsRef.current.has(targetNote.id)) return;
+      Alert.alert(
+        t("notes.reportConfirmTitle"),
+        t("notes.reportConfirmBody"),
+        [
+          { text: t("common.cancel"), style: "cancel" },
+          {
+            text: t("community.reportAction"),
+            onPress: () => {
+              void (async () => {
+                try {
+                  await reportRecipeNote(numericId, targetNote.id);
+                  setReportedNoteIds((prev) => new Set(prev).add(targetNote.id));
+                  showNoteFlash(t("notes.reported"));
+                  track("recipe_note_reported", { recipe_id: numericId });
+                } catch (error) {
+                  console.warn("[RecipeReal] note report failed:", error);
+                }
+              })();
+            },
+          },
+        ],
+      );
+    },
+    [numericId, showNoteFlash, t],
+  );
+
+  /**
+   * Saves the personal note locally, then flashes a "Saved ✓" confirmation.
+   * When "Make public" is on (or was just flipped on — see the toggle
+   * handler) and there is text to share, the same note is ALSO posted as a
+   * public community note — a 401 surfaces the sign-in prompt on the compose
+   * row while the local save still succeeds.
+   */
+  const onSaveNote = useCallback(
+    async (forcePublic?: boolean) => {
+      try {
+        await saveNote(numericId, note);
+        setSavedNoteOverride(note);
+        setNoteSaveError(null);
+        track("note_saved", { recipe_id: numericId });
+        setNoteJustSaved(true);
+        if (noteSavedTimerRef.current) clearTimeout(noteSavedTimerRef.current);
+        noteSavedTimerRef.current = setTimeout(() => {
+          setNoteJustSaved(false);
+        }, 3000);
+        if ((forcePublic ?? notePublic) && note.trim() !== "") {
+          await postPublicNote(note);
+        }
+      } catch {
+        // Local save failed — surface it instead of failing silently.
+        setNoteSaveError(t("detail.noteSaveFailed"));
+      }
+    },
+    [numericId, note, notePublic, postPublicNote, t],
+  );
+
+  /**
+   * Flipping "Make public" on with text present publishes IMMEDIATELY (no
+   * separate Save needed); with no text the toggle is disabled — there is
+   * nothing to make public.
+   */
+  const onToggleNotePublic = useCallback(
+    (value: boolean) => {
+      if (value && note.trim() === "") return;
+      setNotePublicOverride(value);
+      AsyncStorage.setItem(NOTE_PUBLIC_PREF_KEY, value ? "on" : "off").catch(
+        () => {
+          // Best-effort persistence.
+        },
+      );
+      if (value) {
+        void onSaveNote(true);
+      }
+    },
+    [note, onSaveNote],
+  );
+
+  /** Send button of the compose row: post the draft, clear it on success. */
+  const onSendNote = useCallback(async () => {
+    const ok = await postPublicNote(noteDraft);
+    if (ok) setNoteDraft("");
+  }, [noteDraft, postPublicNote]);
+
+  const noteDirty = note !== savedNote;
+
+  return (
+    <View style={styles.section}>
+      <Card padding={Space.lg}>
+        <View style={styles.notesSegment}>
+          {(["personal", "community"] as const).map((tab, index) => (
+            <Fragment key={tab}>
+              {index === 1 ? <View style={styles.notesSegmentDivider} /> : null}
+              <Pressable
+                onPress={() => setNotesTab(tab)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: notesTab === tab }}
+                style={[
+                  styles.notesSegmentBtn,
+                  notesTab === tab ? styles.notesSegmentBtnActive : null,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.notesSegmentLabel,
+                    notesTab === tab ? styles.notesSegmentLabelActive : null,
+                  ]}
+                >
+                  {tab === "personal"
+                    ? t("detail.notesTabPersonal")
+                    : t("detail.notesTabCommunity")}
+                </Text>
+              </Pressable>
+            </Fragment>
+          ))}
+        </View>
+
+        {notesTab === "personal" ? (
+          noteEditing ? (
+            <>
+              <TextInput
+                style={styles.noteInput}
+                value={note}
+                onChangeText={(text) => {
+                  setNoteOverride(text);
+                  if (noteSaveError) setNoteSaveError(null);
+                }}
+                placeholder={t("detail.notesPlaceholder")}
+                placeholderTextColor={colors.inkFaint}
+                multiline
+                autoFocus
+              />
+              <View style={styles.noteActions}>
+                <Button
+                  variant="primary"
+                  disabled={!noteDirty}
+                  title={t("detail.saveNote")}
+                  onPress={onSaveNote}
+                />
+                {noteJustSaved ? (
+                  <Text style={styles.noteSaved}>{t("detail.saved")}</Text>
+                ) : null}
+                <View style={styles.publicToggleInline}>
+                  <Text style={styles.publicToggleLabel} numberOfLines={1}>
+                    {t("detail.notePublicToggle")}
+                  </Text>
+                  <Toggle
+                    value={notePublic}
+                    disabled={note.trim() === ""}
+                    onValueChange={onToggleNotePublic}
+                  />
+                </View>
+              </View>
+              {noteSaveError ? (
+                <Text style={styles.noteError}>{noteSaveError}</Text>
+              ) : null}
+            </>
+          ) : savedNote.length > 0 ? (
+            <Pressable
+              onPress={() => {
+                setNoteOverride(savedNote);
+                setNoteEditing(true);
+              }}
+              hitSlop={Space.xs}
+              accessibilityRole="button"
+              style={styles.noteViewRow}
+            >
+              <Text style={styles.noteViewText}>{savedNote}</Text>
+              <Text style={styles.noteEditHint}>{t("detail.editNote")}</Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={() => {
+                setNoteOverride("");
+                setNoteEditing(true);
+              }}
+              hitSlop={Space.xs}
+              accessibilityRole="button"
+              style={styles.noteAddRow}
+            >
+              <Ionicons
+                name="pencil-outline"
+                size={16}
+                color={colors.inkFaint}
+              />
+              <Text style={styles.noteAddPlaceholder}>
+                {t("detail.addNote")}
+              </Text>
+            </Pressable>
+          )
+        ) : (
+          <>
+            {notesError != null ? (
+              <View style={styles.notesCenter}>
+                <Text style={styles.notesMuted}>{notesError}</Text>
+                <Button
+                  variant="ghost"
+                  title={t("common.retry")}
+                  onPress={onRetryNotes}
+                />
+              </View>
+            ) : notesLoading && notes.length === 0 ? (
+              <View style={styles.notesCenter}>
+                <ActivityIndicator color={colors.accent} size="small" />
+              </View>
+            ) : notes.length === 0 ? (
+              <View style={styles.emptyBlock}>
+                <View style={styles.emptyIconWrap}>
+                  <Ionicons
+                    name="chatbox-ellipses-outline"
+                    size={22}
+                    color={colors.accent}
+                  />
+                </View>
+                <Text style={styles.emptyText}>{t("detail.notesEmpty")}</Text>
+              </View>
+            ) : (
+              <View style={styles.notesList}>
+                {notes.map((item) => (
+                  <NoteRow
+                    key={`note-${item.id}`}
+                    item={item}
+                    mine={myUserId != null && item.user.id === myUserId}
+                    reported={reportedNoteIds.has(item.id)}
+                    onDelete={onDeleteNote}
+                    onReport={onReportNote}
+                    inkFaintColor={colors.inkFaint}
+                    successColor={colors.success}
+                    styles={styles}
+                  />
+                ))}
+                {noteFlash != null ? (
+                  <Text style={styles.noteFlash}>{noteFlash}</Text>
+                ) : null}
+                {notesHasMore ? (
+                  <Button
+                    variant="ghost"
+                    title={t("detail.loadMoreNotes")}
+                    loading={notesLoading}
+                    disabled={notesLoading}
+                    onPress={onLoadMoreNotes}
+                    style={styles.notesLoadMore}
+                  />
+                ) : null}
+              </View>
+            )}
+            {signedIn ? (
+              <View style={styles.noteCompose}>
+                <View style={styles.noteComposeRow}>
+                  <TextInput
+                    style={styles.noteComposeInput}
+                    value={noteDraft}
+                    onChangeText={setNoteDraft}
+                    placeholder={t("detail.noteComposePlaceholder")}
+                    placeholderTextColor={colors.inkFaint}
+                    maxLength={1000}
+                    editable={!notePosting}
+                  />
+                  <Button
+                    variant="primary"
+                    title={t("detail.noteSend")}
+                    loading={notePosting}
+                    disabled={notePosting || noteDraft.trim().length === 0}
+                    onPress={onSendNote}
+                  />
+                </View>
+                {noteHalalTerms != null ? (
+                  <Text style={styles.noteError}>
+                    {noteHalalTerms.join(", ")}
+                  </Text>
+                ) : null}
+                {notePostError != null && noteHalalTerms == null ? (
+                  <Text style={styles.noteError}>{notePostError}</Text>
+                ) : null}
+                {noteNeedsAuth ? (
+                  <Pressable
+                    onPress={() => router.push("/login")}
+                    hitSlop={Space.sm}
+                  >
+                    <Text style={styles.noteSignIn}>
+                      {t("detail.notesSignIn")}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : (
+              <Pressable
+                onPress={() => router.push("/login")}
+                hitSlop={Space.sm}
+                style={styles.noteCompose}
+              >
+                <Text style={styles.noteSignIn}>{t("detail.notesSignIn")}</Text>
+              </Pressable>
+            )}
+          </>
+        )}
+      </Card>
+    </View>
+  );
+});
+
+interface TriesSectionProps {
+  tries: Post[];
+  triesTotal: number;
+  onShareTry: () => void;
+  accentColor: string;
+  styles: DetailStyles;
+}
+
+const TriesSection = memo(function TriesSection({
+  tries,
+  triesTotal,
+  onShareTry,
+  accentColor,
+  styles,
+}: TriesSectionProps) {
+  const t = useT();
+  const [triesExpanded, setTriesExpanded] = useState(false);
+
+  const visibleTries = triesExpanded
+    ? tries
+    : tries.slice(0, TRIES_PREVIEW_COUNT);
+
+  return (
+    <View style={styles.section}>
+      <Card padding={Space.lg}>
+        <SectionHeader
+          title={
+            triesTotal > 0
+              ? t("detail.communityTriesCount", { n: triesTotal })
+              : t("detail.communityTries")
+          }
+        />
+        {tries.length === 0 ? (
+          <View style={styles.emptyBlock}>
+            <View style={styles.emptyIconWrap}>
+              <Ionicons name="images-outline" size={22} color={accentColor} />
+            </View>
+            <Text style={styles.emptyText}>{t("detail.triesEmpty")}</Text>
+            <Button
+              variant="ghost"
+              title={t("detail.shareYourTry")}
+              onPress={onShareTry}
+            />
+          </View>
+        ) : (
+          <View style={styles.triesList}>
+            {visibleTries.map((item) => (
+              <TryRow key={`try-${item.id}`} item={item} styles={styles} />
+            ))}
+            {!triesExpanded && tries.length > TRIES_PREVIEW_COUNT ? (
+              <Button
+                variant="ghost"
+                title={t("detail.showAllTries")}
+                onPress={() => setTriesExpanded(true)}
+                style={styles.triesShowAll}
+              />
+            ) : null}
+          </View>
+        )}
+      </Card>
+    </View>
+  );
+});
+
+export default function RecipeDetailScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const numericId = Number(id);
+  const validRecipeId = Number.isFinite(numericId);
+  const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
+  const t = useT();
+  const { dir } = useLang();
+  const fmtMin = useFmtMinutes();
+  const lr = useLocalizedRecipe();
+
+  const [recipe, setRecipe] = useState<Recipe | null>(null);
+  const [state, setState] = useState<LoadState>("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // True while the screen paints a LIGHT cached row (no structured
+  // recipe_steps) and the fresh copy is still loading: the timeline section
+  // shows its compact inline placeholder and Cook Mode stays disabled until
+  // steps land (or the fetch settles without any).
+  const [stepsPending, setStepsPending] = useState(false);
+  const [calibrations, setCalibrations] = useState<PaceCalibration[]>([]);
+  const [favorited, setFavorited] = useState(false);
+  const [initialNote, setInitialNote] = useState<{
+    recipeId: number;
+    text: string;
+  } | null>(null);
+  const [initialNotePublic, setInitialNotePublic] = useState(false);
+  // Sign-in state for the owner Edit control + note compose row (read once).
+  const [signedIn, setSignedIn] = useState(false);
+
+  // ---- Community notes (public, paginated 20/page) -----------------------------
+  const [notes, setNotes] = useState<RecipeNote[]>([]);
+  const [notesLoading, setNotesLoading] = useState(true);
+  const [notesHasMore, setNotesHasMore] = useState(false);
+  const [notesPage, setNotesPage] = useState(1);
+  const [notesError, setNotesError] = useState<string | null>(null);
+  // Once-only guard for the community_notes_viewed analytics event (ref: no
+  // re-render needed — see the tracking effect below).
+  const notesTrackedRef = useRef(false);
+  // Signed-in user's id: routes each community note to Delete (own) vs
+  // Report (others). Null until the profile resolves (or when signed out).
+  const [myUserId, setMyUserId] = useState<number | null>(null);
+
+  // ---- Community tries (posts attached to this recipe) -----------------------
+  // null = not loaded yet (or the load failed silently) → the section stays
+  // hidden; an empty array = loaded + no posts → the empty state shows.
+  const [tries, setTries] = useState<Post[] | null>(null);
+  // Paginator total from the server (the true count even past the 20-row page).
+  const [triesTotal, setTriesTotal] = useState(0);
+
+  // Server-recomputed average returned right after a quick-time submission on
+  // this device (undefined until submitted; lets FactBox update without owning
+  // form keystroke state).
+  const [quickSubmittedAvg, setQuickSubmittedAvg] = useState<
+    number | null | undefined
+  >(undefined);
+  const quickCardRef = useRef<QuickTimeCardHandle | null>(null);
+
+  // ---- Start-time planner (eat-at mode) --------------------------------------
+  // Target eat time as a ms epoch; null = "start now" mode (the timeline
+  // anchors at the per-recipe load moment). Any stepper press enters plan
+  // mode and REANCHORS the timeline so dinner lands at the chosen time.
+  const [planEatAt, setPlanEatAt] = useState<number | null>(null);
+  // "Notify me" scheduling: spinner while arming, scheduled-step count after.
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planCount, setPlanCount] = useState<number | null>(null);
+  // Ids of the currently scheduled plan notifications (kept in a ref: no
+  // re-renders; used to replace/cancel the plan and cleared on unmount).
+  const planIdsRef = useRef<(string | null)[]>([]);
+
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // Cancel any scheduled plan notifications when the screen unmounts.
+  useEffect(() => {
+    return () => {
+      cancelPlannedNotifications(planIdsRef.current).catch(() => {
+        // Best-effort cleanup.
+      });
+    };
+  }, []);
+
+  const styles = useMemo(
+    () => createDetailStyles(colors, dir),
     [colors, dir],
   );
 
@@ -1082,105 +2094,123 @@ export default function RecipeDetailScreen() {
 
   const loadRecipe = useCallback(async () => {
     const requestId = ++loadRequestIdRef.current;
-    setState("loading");
     setErrorMessage(null);
-    // Reset the quick-time contribution + planner state for the (new) recipe;
+    setRecipe((prev) => (prev && prev.id === numericId ? prev : null));
+    timelineTrackedRef.current = false;
+    notesTrackedRef.current = false;
+    // Reset planner + quick-time override + note seed for the (new) recipe;
     // any notifications armed for the previous recipe are cancelled.
     cancelPlannedNotifications(planIdsRef.current).catch(() => {});
     planIdsRef.current = [];
     setPlanEatAt(null);
     setPlanLoading(false);
     setPlanCount(null);
-    setQuickPlates("");
-    setQuickHandsOn("");
-    setQuickTotal("");
-    setQuickCleanup("");
-    setQuickSubmitting(false);
-    setQuickDone(false);
-    setQuickAvg(null);
-    setQuickCleanupAvg(null);
-    setQuickError(null);
-    setQuickNeedsAuth(false);
-    setQuickOpen(false);
-    quickFadeRef.current.setValue(0);
+    setQuickSubmittedAvg(undefined);
+    setInitialNote(null);
     setStepsPending(false);
-    try {
-      const numericId = Number(id);
-      // 1. Paint ANY cached copy immediately — including a light row whose
-      // structured steps were never cached: hero, stats, info chips and
-      // ingredients render right away; the timeline section shows its inline
-      // placeholder until the fresh copy swaps in.
-      const result = await getCachedRecipe(numericId);
-      const paintedFromCache = result != null;
-      if (paintedFromCache) {
-        if (requestId !== loadRequestIdRef.current) return;
+
+    let networkResolved = false;
+    let paintedFromCache = false;
+    let viewedTracked = false;
+    const markViewed = (recipeId: number) => {
+      if (viewedTracked) return;
+      viewedTracked = true;
+      track("recipe_viewed", { recipe_id: recipeId });
+    };
+
+    // Fire local SQLite reads (cached recipe, favorite flag, personal note)
+    // and the live network fetch CONCURRENTLY so there is no 3-stage
+    // waterfall. Only transition into full-screen "loading" if cache misses
+    // AND network has not resolved yet (zero spinner flash for cached hits).
+    if (validRecipeId) {
+      isFavorite(numericId)
+        .then((fav) => {
+          if (requestId === loadRequestIdRef.current) setFavorited(fav);
+        })
+        .catch(() => {
+          // Favorites are best-effort; never crash the detail screen.
+        });
+
+      getNote(numericId)
+        .then((stored) => {
+          if (requestId === loadRequestIdRef.current) {
+            setInitialNote({ recipeId: numericId, text: stored ?? "" });
+          }
+        })
+        .catch(() => {
+          // Notes are best-effort; never block the detail screen.
+        });
+    }
+
+    const cachePromise = (
+      validRecipeId
+        ? getCachedRecipe(numericId).catch(() => null)
+        : Promise.resolve(null)
+    ).then((result) => {
+      if (requestId !== loadRequestIdRef.current) return;
+      if (networkResolved) return;
+      if (result != null) {
+        paintedFromCache = true;
         setRecipe(result);
         setState("ready");
         setStepsPending((result.recipe_steps?.length ?? 0) === 0);
-        // Fire-and-forget analytics once the recipe is on screen.
-        track("recipe_viewed", { recipe_id: result.id });
-        // Best-effort: seed the favorite state from local storage (never blocks).
-        isFavorite(numericId)
-          .then(setFavorited)
-          .catch(() => {});
+        markViewed(result.id);
+      } else {
+        setState("loading");
       }
-      // 2. Load the live copy and swap it in behind the request-id guard.
-      // From a cache paint this is a background revalidation (a stale cache
-      // never pins the screen); from a cold miss it is the primary load.
-      // Self-heal: whenever the fetched recipe carries steps, re-cache them
-      // so the step library repairs itself recipe by recipe.
-      try {
-        const fetched = await getRecipe(id);
-        if (fetched.recipe_steps?.length) {
-          upsertRecipes([fetched], { withSteps: true }).catch(() => {});
-        }
-        if (requestId !== loadRequestIdRef.current) return;
-        setRecipe(fetched);
-        setStepsPending(false);
-        if (!paintedFromCache) {
-          setState("ready");
-          track("recipe_viewed", { recipe_id: fetched.id });
-          isFavorite(numericId)
-            .then(setFavorited)
-            .catch(() => {});
-        }
-      } catch (error) {
-        if (!paintedFromCache) throw error;
-        if (requestId === loadRequestIdRef.current) {
-          // Offline: the cached copy stays on screen; the placeholder makes
-          // way for the plain-text steps when the row carries any.
-          setStepsPending(false);
-        }
-        console.warn("[RecipeReal] detail revalidation failed:", error);
+    });
+
+    try {
+      const fetched = await getRecipe(id);
+      networkResolved = true;
+      if (fetched.recipe_steps?.length) {
+        upsertRecipes([fetched], { withSteps: true }).catch(() => {});
       }
+      if (requestId !== loadRequestIdRef.current) return;
+      setRecipe(fetched);
+      setStepsPending(false);
+      setState("ready");
+      markViewed(fetched.id);
     } catch (error) {
+      await cachePromise;
+      if (requestId !== loadRequestIdRef.current) return;
+      if (paintedFromCache) {
+        // Offline: the cached copy stays on screen; the placeholder makes
+        // way for the plain-text steps when the row carries any.
+        setStepsPending(false);
+        console.warn("[RecipeReal] detail revalidation failed:", error);
+        return;
+      }
       console.warn("[RecipeReal] loadRecipe failed:", error);
       setErrorMessage(
         error instanceof Error ? error.message : t("common.loadFailedRecipe"),
       );
       setState("error");
     }
-  }, [id, t]);
+  }, [id, numericId, validRecipeId, t]);
 
   useEffect(() => {
     loadRecipe();
   }, [loadRecipe]);
 
-  // Best-effort: load personalized pace multipliers after the recipe renders.
-  // Only when authenticated; never blocks the recipe view.
+  // Best-effort: load personalized pace multipliers after navigation push
+  // transitions complete. Only when authenticated; never blocks the recipe view.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      if (!(await hasToken())) return;
-      try {
-        const items = await refreshPaceCalibrations();
-        if (!cancelled) setCalibrations(items);
-      } catch (error) {
-        console.warn("[RecipeReal] pace load failed:", error);
-      }
-    })();
+    const task = InteractionManager.runAfterInteractions(() => {
+      void (async () => {
+        if (cancelled || !(await hasToken())) return;
+        try {
+          const items = await refreshPaceCalibrations();
+          if (!cancelled) setCalibrations(items);
+        } catch (error) {
+          console.warn("[RecipeReal] pace load failed:", error);
+        }
+      })();
+    });
     return () => {
       cancelled = true;
+      task.cancel();
     };
   }, []);
 
@@ -1217,284 +2247,16 @@ export default function RecipeDetailScreen() {
     }
   }, [recipe, lr]);
 
-  /**
-   * Post a public community note. Returns true on success. Maps failures to
-   * the compose-row inline states: 401 → sign-in prompt, halal 422 → the
-   * offending terms, anything else → the generic error string.
-   */
-  const postPublicNote = useCallback(
-    async (body: string): Promise<boolean> => {
-      const recipeId = Number(id);
-      if (!Number.isFinite(recipeId) || body.trim() === "") return false;
-      setNotePosting(true);
-      setNotePostError(null);
-      setNoteHalalTerms(null);
-      setNoteNeedsAuth(false);
-      try {
-        const created = await postRecipeNote(recipeId, body.trim());
-        setNotes((prev) => [created, ...prev.filter((n) => n.id !== created.id)]);
-        track("recipe_note_posted", { recipe_id: recipeId });
-        return true;
-      } catch (error) {
-        console.warn("[RecipeReal] note post failed:", error);
-        if (error instanceof RecipeNoteUnauthorizedError) {
-          setNoteNeedsAuth(true);
-        } else if (error instanceof HalalRejectionError) {
-          setNoteHalalTerms(error.terms);
-          setNotePostError(
-            t("detail.noteHalalBlocked", { terms: error.terms.join(", ") }),
-          );
-        } else if (error instanceof OfflineError) {
-          // Offline (not queued — the queue is cook-sessions-only): the
-          // draft is kept (cleared only on success), show the retry message.
-          setNotePostError(error.message);
-        } else {
-          setNotePostError(t("detail.notePostFailed"));
-        }
-        return false;
-      } finally {
-        setNotePosting(false);
-      }
-    },
-    [id, t],
-  );
-
-  /** Flash the transient confirmation line under the notes list (3s). */
-  const showNoteFlash = useCallback((message: string) => {
-    setNoteFlash(message);
-    if (noteFlashTimerRef.current) clearTimeout(noteFlashTimerRef.current);
-    noteFlashTimerRef.current = setTimeout(() => setNoteFlash(null), 3000);
-  }, []);
-
-  /**
-   * Delete the signed-in user's OWN community note: confirm → API → remove
-   * from local state + toast. Failures are logged and leave the note (and
-   * state) untouched.
-   */
-  const onDeleteNote = useCallback(
-    (note: RecipeNote) => {
-      Alert.alert(
-        t("notes.deleteConfirmTitle"),
-        t("notes.deleteConfirmBody"),
-        [
-          { text: t("common.cancel"), style: "cancel" },
-          {
-            text: t("common.delete"),
-            style: "destructive",
-            onPress: () => {
-              void (async () => {
-                try {
-                  const recipeId = Number(id);
-                  await deleteRecipeNote(recipeId, note.id);
-                  setNotes((prev) => prev.filter((n) => n.id !== note.id));
-                  setReportedNoteIds((prev) => {
-                    const next = new Set(prev);
-                    next.delete(note.id);
-                    return next;
-                  });
-                  showNoteFlash(t("notes.deleted"));
-                  track("recipe_note_deleted", { recipe_id: recipeId });
-                } catch (error) {
-                  console.warn("[RecipeReal] note delete failed:", error);
-                }
-              })();
-            },
-          },
-        ],
-      );
-    },
-    [id, showNoteFlash, t],
-  );
-
-  /**
-   * Report ANOTHER user's community note: confirm → API → mark reported.
-   * Mirrors the post screen's report confirm flow; idempotent server-side.
-   */
-  const onReportNote = useCallback(
-    (note: RecipeNote) => {
-      if (reportedNoteIds.has(note.id)) return;
-      Alert.alert(
-        t("notes.reportConfirmTitle"),
-        t("notes.reportConfirmBody"),
-        [
-          { text: t("common.cancel"), style: "cancel" },
-          {
-            text: t("community.reportAction"),
-            onPress: () => {
-              void (async () => {
-                try {
-                  const recipeId = Number(id);
-                  await reportRecipeNote(recipeId, note.id);
-                  setReportedNoteIds((prev) => new Set(prev).add(note.id));
-                  showNoteFlash(t("notes.reported"));
-                  track("recipe_note_reported", { recipe_id: recipeId });
-                } catch (error) {
-                  console.warn("[RecipeReal] note report failed:", error);
-                }
-              })();
-            },
-          },
-        ],
-      );
-    },
-    [id, reportedNoteIds, showNoteFlash, t],
-  );
-
-  /**
-   * Saves the personal note locally, then flashes a "Saved ✓" confirmation.
-   * When "Make public" is on (or was just flipped on — see the toggle
-   * handler) and there is text to share, the same note is ALSO posted as a
-   * public community note — a 401 surfaces the sign-in prompt on the compose
-   * row while the local save still succeeds.
-   */
-  const onSaveNote = useCallback(
-    async (forcePublic?: boolean) => {
-      try {
-        await saveNote(Number(id), note);
-        setSavedNote(note);
-        setNoteSaveError(null);
-        track("note_saved", { recipe_id: Number(id) });
-        setNoteJustSaved(true);
-        if (noteSavedTimerRef.current) clearTimeout(noteSavedTimerRef.current);
-        noteSavedTimerRef.current = setTimeout(() => {
-          setNoteJustSaved(false);
-        }, 3000);
-        if ((forcePublic ?? notePublic) && note.trim() !== "") {
-          await postPublicNote(note);
-        }
-      } catch {
-        // Local save failed — surface it instead of failing silently.
-        setNoteSaveError(t("detail.noteSaveFailed"));
-      }
-    },
-    [id, note, notePublic, postPublicNote, t],
-  );
-
-  /**
-   * Flipping "Make public" on with text present publishes IMMEDIATELY (no
-   * separate Save needed); with no text the toggle is disabled — there is
-   * nothing to make public.
-   */
-  const onToggleNotePublic = useCallback(
-    (value: boolean) => {
-      if (value && note.trim() === "") return;
-      setNotePublic(value);
-      AsyncStorage.setItem(NOTE_PUBLIC_PREF_KEY, value ? "on" : "off").catch(
-        () => {
-          // Best-effort persistence.
-        },
-      );
-      if (value) {
-        void onSaveNote(true);
-      }
-    },
-    [note, onSaveNote],
-  );
-
-  /**
-   * Submit the quick-time breakdown. Total minutes are required (1..1440);
-   * plates / hands-on / cleanup are optional add-ons. Success collapses the
-   * form back to the trigger row and fades in a one-line "Thanks! Cooks
-   * average ~Xm" caption using the server-recomputed average. A 401 shows the
-   * sign-in CTA instead; any other failure shows an inline error and keeps
-   * the form usable.
-   */
-  const onSubmitQuickTime = useCallback(async () => {
-    const minutes = parseIntOrNull(quickTotal);
-    if (minutes == null || minutes < 1 || minutes > 1440) return;
-    const handsOn = parseIntOrNull(quickHandsOn);
-    if (handsOn != null && handsOn > minutes) return; // Client-side guard.
-    const recipeId = Number(id);
-    if (!Number.isFinite(recipeId)) return;
-    const cleanupMinutes = parseIntOrNull(quickCleanup);
-    const plates = parseIntOrNull(quickPlates);
-    setQuickSubmitting(true);
-    setQuickError(null);
-    setQuickNeedsAuth(false);
-    try {
-      const result = await submitQuickTime(recipeId, {
-        minutes,
-        ...(handsOn != null ? { hands_on_minutes: handsOn } : {}),
-        ...(cleanupMinutes != null ? { cleanup_minutes: cleanupMinutes } : {}),
-        ...(plates != null ? { servings: plates } : {}),
-      });
-      track("quick_time_submitted", { recipe_id: recipeId, minutes });
-      setQuickAvg(result.community_avg_minutes);
-      setQuickCleanupAvg(result.cleanup_avg_minutes);
-      setQuickDone(true);
-      // Collapse the form back to the compact trigger row; the faded-in
-      // one-line thanks caption takes over below it.
-      setQuickOpen(false);
-      // Persist the server-recomputed averages into the cache immediately so
-      // the favorites rail, home rails and the next detail open read the new
-      // figure instead of the stale one; flag the browse list as stale so it
-      // re-syncs its grid on the next focus.
-      if (recipe) {
-        upsertRecipes(
-          [
-            {
-              ...recipe,
-              community_avg_minutes: result.community_avg_minutes,
-              cleanup_avg_minutes: result.cleanup_avg_minutes,
-            },
-          ],
-          { withSteps: false },
-        ).catch(() => {});
-      }
-      AsyncStorage.setItem(QUICK_TIME_STALE_KEY, String(Date.now())).catch(
-        () => {},
-      );
-      quickFadeRef.current.setValue(0);
-      Animated.timing(quickFadeRef.current, {
-        toValue: 1,
-        duration: 350,
-        useNativeDriver: true,
-      }).start();
-    } catch (error) {
-      console.warn("[RecipeReal] quick-time submit failed:", error);
-      if (error instanceof QuickTimeUnauthorizedError) {
-        setQuickNeedsAuth(true);
-        setQuickError(t("quick.signInRequired"));
-      } else if (error instanceof OfflineError) {
-        // Offline (not queued — the queue is cook-sessions-only): the typed
-        // values stay in the form, show the retry message.
-        setQuickError(error.message);
-      } else {
-        setQuickError(t("quick.error"));
-      }
-    } finally {
-      setQuickSubmitting(false);
-    }
-  }, [quickTotal, quickHandsOn, quickCleanup, quickPlates, id, t, recipe]);
-
-  /**
-   * Reveal the inline quick-time form inside the card and focus the required
-   * total-time input. Focus waits one frame so the just-mounted TextInput
-   * exists first.
-   */
   const openQuick = useCallback(() => {
-    setQuickOpen(true);
-    requestAnimationFrame(() => quickInputRef.current?.focus());
+    quickCardRef.current?.open();
   }, []);
 
-  // ---- Quick-time field validation (client-side guards for the submit) ----
-  const quickTotalValue = parseIntOrNull(quickTotal);
-  const quickHandsOnValue = parseIntOrNull(quickHandsOn);
-  const quickPlatesValue = parseIntOrNull(quickPlates);
-  const quickCleanupValue = parseIntOrNull(quickCleanup);
-  const quickTotalValid =
-    quickTotalValue != null && quickTotalValue >= 1 && quickTotalValue <= 1440;
-  const quickHandsOnExceeds =
-    quickTotalValid && quickHandsOnValue != null && quickHandsOnValue > quickTotalValue;
-  const quickValid =
-    quickTotalValid &&
-    !quickHandsOnExceeds &&
-    (quickHandsOnValue == null ||
-      (quickHandsOnValue >= 0 && quickHandsOnValue <= 1440)) &&
-    (quickPlatesValue == null ||
-      (quickPlatesValue >= 1 && quickPlatesValue <= 50)) &&
-    (quickCleanupValue == null ||
-      (quickCleanupValue >= 0 && quickCleanupValue <= 1440));
+  const handleQuickTimeSubmitted = useCallback(
+    (communityAvgMinutes: number | null) => {
+      setQuickSubmittedAvg(communityAvgMinutes);
+    },
+    [],
+  );
 
   const publisher = roundMin(recipe?.publisher_time_minutes);
   const community = roundMin(recipe?.community_avg_minutes);
@@ -1515,7 +2277,10 @@ export default function RecipeDetailScreen() {
   const cooksAvg =
     reality != null
       ? roundMin(reality.minutes)
-      : (community ?? (quickDone ? roundMin(quickAvg) : null));
+      : (community ??
+        (quickSubmittedAvg !== undefined
+          ? roundMin(quickSubmittedAvg)
+          : null));
 
   // "Really takes" big stat: reality copy → community consensus → publisher
   // claim fallback, so the second stat never reads empty on sparse data.
@@ -1729,43 +2494,6 @@ export default function RecipeDetailScreen() {
 
   const ready = state === "ready" && recipe;
 
-  // The note text differs from the last saved baseline -> the Save button is
-  // enabled and styled as primary; otherwise ghost + disabled.
-  const noteDirty = note !== savedNote;
-
-  /**
-   * Renders one labeled numeric field of the quick-time form. Called as a
-   * function (not a nested component) so React never remounts the inputs —
-   * a component defined in render would recreate the TextInput each keystroke
-   * and drop keyboard focus.
-   */
-  const quickField = (
-    label: string,
-    value: string,
-    onChange: (text: string) => void,
-    opts: { optional?: boolean; focusRef?: boolean } = {},
-  ) => (
-    <View style={styles.quickField}>
-      <Text style={styles.quickFieldLabel}>
-        {label}
-        {opts.optional ? (
-          <Text style={styles.quickFieldOptional}>
-            {` · ${t("quick.optional")}`}
-          </Text>
-        ) : null}
-      </Text>
-      <TextInput
-        {...(opts.focusRef ? { ref: quickInputRef } : {})}
-        style={styles.quickInput}
-        value={value}
-        onChangeText={(text) => onChange(text.replace(/[^0-9]/g, ""))}
-        placeholderTextColor={colors.inkFaint}
-        keyboardType="number-pad"
-        maxLength={4}
-      />
-    </View>
-  );
-
   // Fire the timeline analytics event once, when the section first renders.
   const timelineTrackedRef = useRef(false);
   useEffect(() => {
@@ -1775,28 +2503,13 @@ export default function RecipeDetailScreen() {
     track("timeline_viewed", { recipe_id: Number(id) });
   }, [ready, steps.length, id]);
 
-  // Best-effort: load the personal note once the recipe is ready (local-only).
-  useEffect(() => {
-    if (!ready) return;
-    let cancelled = false;
-    getNote(Number(id))
-      .then((stored) => {
-        if (cancelled) return;
-        setSavedNote(stored ?? "");
-        setNote(stored ?? "");
-      })
-      .catch(() => {
-        // Notes are best-effort; never block the detail screen.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [ready, id]);
-
   // Sign-in state for the owner Edit control + note compose row (read once),
-  // plus the persisted "Make public" note toggle default.
+  // plus the persisted "Make public" note toggle default. Profile fetch is
+  // deferred after push interactions and gated on hasToken().
   useEffect(() => {
     let cancelled = false;
+    let profileTask: ReturnType<typeof InteractionManager.runAfterInteractions> | null =
+      null;
     (async () => {
       const [ok, pref] = await Promise.all([
         hasToken(),
@@ -1804,72 +2517,85 @@ export default function RecipeDetailScreen() {
       ]);
       if (cancelled) return;
       setSignedIn(ok);
-      setNotePublic(pref === "on");
-      // The note Delete-vs-Report split needs the signed-in user's id
-      // (same fetchMyProfile pattern as the community feed).
-      if (ok) {
-        fetchMyProfile()
-          .then((me) => {
+      setInitialNotePublic(pref === "on");
+      if (!ok) return;
+      profileTask = InteractionManager.runAfterInteractions(() => {
+        void (async () => {
+          if (cancelled || !(await hasToken())) return;
+          try {
+            const me = await fetchMyProfile();
             if (!cancelled) setMyUserId(me.id);
-          })
-          .catch(() => {
+          } catch {
             // Non-fatal: notes just show the Report action to everyone.
-          });
-      }
+          }
+        })();
+      });
     })();
     return () => {
       cancelled = true;
+      profileTask?.cancel();
     };
   }, []);
 
   // ---- Community notes loading ---------------------------------------------------
+  const notesLoadedForIdRef = useRef<number | null>(null);
+  const notesRequestIdRef = useRef(0);
 
   /** Reset + fetch page 1 of the public notes for the current recipe. */
   const loadNotes = useCallback(async () => {
-    const recipeId = Number(id);
-    if (!Number.isFinite(recipeId)) return;
+    if (!validRecipeId) return;
+    const reqId = ++notesRequestIdRef.current;
+    notesLoadedForIdRef.current = numericId;
     setNotesLoading(true);
     setNotesError(null);
     try {
-      const page = await fetchRecipeNotes(recipeId, 1);
+      const page = await fetchRecipeNotes(numericId, 1);
+      if (!mountedRef.current || reqId !== notesRequestIdRef.current) return;
       setNotes(page.notes);
       setNotesHasMore(page.hasMore);
       setNotesPage(1);
     } catch (error) {
+      if (!mountedRef.current || reqId !== notesRequestIdRef.current) return;
       console.warn("[RecipeReal] notes load failed:", error);
       setNotes([]);
       setNotesHasMore(false);
       setNotesError(t("detail.notesLoadFailed"));
     } finally {
-      setNotesLoading(false);
+      if (mountedRef.current && reqId === notesRequestIdRef.current) {
+        setNotesLoading(false);
+      }
     }
-  }, [id, t]);
+  }, [validRecipeId, numericId, t]);
 
-  // Load the first notes page once the recipe is ready (per recipe id).
+  // Load page 1 immediately keyed on numericId (not gated on `ready`),
+  // guarded so initial mount fires at most once per recipe id.
   useEffect(() => {
-    if (!ready) return;
+    if (!validRecipeId) return;
+    if (notesLoadedForIdRef.current === numericId) return;
     void loadNotes();
-  }, [ready, id, loadNotes]);
+  }, [validRecipeId, numericId, loadNotes]);
 
   // ---- Community tries loading ---------------------------------------------------
+  const triesLoadedForIdRef = useRef<number | null>(null);
+  const triesRequestIdRef = useRef(0);
 
   /**
    * Load page 1 of the community posts attached to this recipe
-   * (GET /api/posts?recipe_id=). Non-blocking: fires once the recipe is
-   * ready alongside the other best-effort loads, and a silent failure keeps
-   * the section hidden instead of erroring an otherwise healthy screen.
+   * (GET /api/posts?recipe_id=). Non-blocking and un-gated from `ready`:
+   * fires once per numericId on mount alongside getRecipe, and a silent
+   * failure keeps the section hidden instead of erroring an otherwise
+   * healthy screen.
    */
   useEffect(() => {
-    if (!ready) return;
-    const recipeId = Number(id);
-    if (!Number.isFinite(recipeId)) return;
-    let cancelled = false;
+    if (!validRecipeId) return;
+    if (triesLoadedForIdRef.current === numericId) return;
+    triesLoadedForIdRef.current = numericId;
+    const reqId = ++triesRequestIdRef.current;
     setTries(null);
     setTriesTotal(0);
-    setTriesExpanded(false);
-    fetchRecipePosts(recipeId, 1)
+    fetchRecipePosts(numericId, 1)
       .then((page) => {
-        if (cancelled) return;
+        if (!mountedRef.current || reqId !== triesRequestIdRef.current) return;
         setTries(page.posts);
         setTriesTotal(page.total ?? page.posts.length);
       })
@@ -1877,10 +2603,7 @@ export default function RecipeDetailScreen() {
         // Silent failure: the section stays hidden (tries === null).
         console.warn("[RecipeReal] community tries load failed:", error);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [ready, id]);
+  }, [validRecipeId, numericId]);
 
   /**
    * A just-published try for THIS recipe ("Share your try" → composer →
@@ -1942,11 +2665,12 @@ export default function RecipeDetailScreen() {
 
   /** Fetch the next notes page and append (deduped by id). */
   const loadMoreNotes = useCallback(async () => {
-    const recipeId = Number(id);
-    if (!Number.isFinite(recipeId) || notesLoading) return;
+    if (!validRecipeId || notesLoading) return;
+    const reqId = ++notesRequestIdRef.current;
     setNotesLoading(true);
     try {
-      const page = await fetchRecipeNotes(recipeId, notesPage + 1);
+      const page = await fetchRecipeNotes(numericId, notesPage + 1);
+      if (!mountedRef.current || reqId !== notesRequestIdRef.current) return;
       setNotes((prev) => {
         const seen = new Set(prev.map((n) => n.id));
         return [...prev, ...page.notes.filter((n) => !seen.has(n.id))];
@@ -1954,17 +2678,23 @@ export default function RecipeDetailScreen() {
       setNotesHasMore(page.hasMore);
       setNotesPage((p) => p + 1);
     } catch (error) {
-      console.warn("[RecipeReal] notes load-more failed:", error);
+      if (mountedRef.current && reqId === notesRequestIdRef.current) {
+        console.warn("[RecipeReal] notes load-more failed:", error);
+      }
     } finally {
-      setNotesLoading(false);
+      if (mountedRef.current && reqId === notesRequestIdRef.current) {
+        setNotesLoading(false);
+      }
     }
-  }, [id, notesPage, notesLoading]);
+  }, [validRecipeId, numericId, notesPage, notesLoading]);
 
-  /** Send button of the compose row: post the draft, clear it on success. */
-  const onSendNote = useCallback(async () => {
-    const ok = await postPublicNote(noteDraft);
-    if (ok) setNoteDraft("");
-  }, [noteDraft, postPublicNote]);
+  const handleNoteCreated = useCallback((created: RecipeNote) => {
+    setNotes((prev) => [created, ...prev.filter((n) => n.id !== created.id)]);
+  }, []);
+
+  const handleNoteDeleted = useCallback((noteId: number) => {
+    setNotes((prev) => prev.filter((n) => n.id !== noteId));
+  }, []);
 
   // Tiny attribution line under the hero title — hostname only, never the
   // full raw URL (long scraper URLs read as noise).
@@ -2161,42 +2891,18 @@ export default function RecipeDetailScreen() {
                     <SectionHeader title={t("detail.ingredients")} />
                     {ingredientLines.length > 0 ? (
                       <View style={styles.bulletList}>
-                        {ingredientLines.map((ingredient, idx) => {
-                          const structured = structuredAligned
-                            ? structuredIngredients[idx]
-                            : undefined;
-                          const qty =
-                            structured?.qty_display ??
-                            (structured?.qty != null
-                              ? String(structured.qty)
-                              : null);
-                          const unit = structured?.unit?.trim() || null;
-                          const itemText = [
-                            structured?.item?.trim(),
-                            structured?.prep?.trim(),
-                          ]
-                            .filter(Boolean)
-                            .join(", ");
-                          const qtyPart = [qty, unit].filter(Boolean).join(" ");
-                          const hasStructure = qtyPart !== "" && itemText !== "";
-                          return (
-                            <View key={`ing-${idx}`} style={styles.bulletRow}>
-                              <Text style={styles.bullet}>•</Text>
-                              {hasStructure ? (
-                                <Text style={styles.bulletText}>
-                                  <Text style={styles.ingredientQty}>
-                                    {qtyPart}
-                                  </Text>
-                                  {` ${itemText}`}
-                                </Text>
-                              ) : (
-                                <Text style={styles.bulletText}>
-                                  {ingredient}
-                                </Text>
-                              )}
-                            </View>
-                          );
-                        })}
+                        {ingredientLines.map((ingredient, idx) => (
+                          <IngredientRow
+                            key={`ing-${idx}`}
+                            ingredient={ingredient}
+                            structured={
+                              structuredAligned
+                                ? structuredIngredients[idx]
+                                : undefined
+                            }
+                            styles={styles}
+                          />
+                        ))}
                       </View>
                     ) : (
                       <Text style={styles.muted}>
@@ -2271,54 +2977,15 @@ export default function RecipeDetailScreen() {
                       </View>
                     ) : null}
                     <View style={styles.timelineList}>
-                      {timelineRows.map(({ step }) => {
-                        const passive = step.step_type === "passive";
-                        const adjusted = adjustedForStep(step);
-                        return (
-                          <View
-                            key={`tl-${step.id}`}
-                            style={[
-                              styles.timelineRow,
-                              passive && styles.timelineRowPassive,
-                            ]}
-                          >
-                            <View
-                              style={[
-                                styles.timelineDot,
-                                passive && styles.timelineDotPassive,
-                              ]}
-                            />
-                            <View style={styles.timelineInfo}>
-                              {/* Full step text — this row IS the step list
-                                  (no separate Steps section below). The step
-                                  number leads the text; hands-off + adjusted
-                                  notes fold into ONE small meta line. */}
-                              <Text style={styles.timelineDesc}>
-                                <Text style={styles.timelineStepNum}>
-                                  {`${t("detail.stepCaption", {
-                                    n: step.step_number,
-                                  })} `}
-                                </Text>
-                                {lr.stepDescription(step)}
-                              </Text>
-                              {passive || adjusted != null ? (
-                                <Text style={styles.timelineMeta}>
-                                  {[
-                                    passive ? t("common.handsOff") : null,
-                                    adjusted != null
-                                      ? t("detail.adjustedForYou", {
-                                          time: fmtMin(adjusted),
-                                        })
-                                      : null,
-                                  ]
-                                    .filter(Boolean)
-                                    .join("  ·  ")}
-                                </Text>
-                              ) : null}
-                            </View>
-                          </View>
-                        );
-                      })}
+                      {timelineRows.map(({ step }) => (
+                        <TimelineStepRow
+                          key={`tl-${step.id}`}
+                          step={step}
+                          adjusted={adjustedForStep(step)}
+                          description={lr.stepDescription(step)}
+                          styles={styles}
+                        />
+                      ))}
                     </View>
                     </Card>
                   </View>
@@ -2375,113 +3042,15 @@ export default function RecipeDetailScreen() {
                     a successful submit the form collapses back to the row
                     with a one-line thanks caption. Unauthenticated submits
                     prompt sign-in. */}
-                <View style={styles.section}>
-                  <Card padding={Space.lg}>
-                  <Pressable
-                    onPress={
-                      quickOpen ? () => setQuickOpen(false) : openQuick
-                    }
-                    onPressIn={() => setQuickPressed(true)}
-                    onPressOut={() => setQuickPressed(false)}
-                    accessibilityRole="button"
-                    accessibilityState={{ expanded: quickOpen }}
-                    hitSlop={Space.xs}
-                    style={[
-                      styles.quickTriggerRow,
-                      quickPressed ? { opacity: 0.7 } : null,
-                    ]}
-                  >
-                    <Ionicons
-                      name="stopwatch-outline"
-                      size={20}
-                      color={colors.accent}
-                    />
-                    <Text style={styles.quickTriggerLabel} numberOfLines={1}>
-                      {t("quick.didYouMake")}
-                    </Text>
-                    <Ionicons
-                      name={quickOpen ? "chevron-up" : "chevron-down"}
-                      size={18}
-                      color={colors.inkFaint}
-                    />
-                  </Pressable>
-                  {quickDone && !quickOpen ? (
-                    <Animated.Text
-                      style={[
-                        styles.quickSuccess,
-                        { opacity: quickFadeRef.current },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {quickAvg != null
-                        ? t("quick.thanksBreakdown", { time: fmtMin(quickAvg) })
-                        : // No server average (offline / sparse data): thank the
-                          // user WITHOUT dressing their own input up as an average.
-                          t("quick.thanksOwnTime")}
-                      {quickCleanupAvg != null
-                        ? ` · ${t("quick.thanksCleanup", {
-                            cleanup: fmtMin(quickCleanupAvg),
-                          })}`
-                        : ""}
-                    </Animated.Text>
-                  ) : null}
-                  {quickOpen ? (
-                    <View style={styles.quickForm}>
-                      {quickField(
-                        t("quick.plates"),
-                        quickPlates,
-                        setQuickPlates,
-                        { optional: true },
-                      )}
-                      {quickField(
-                        t("quick.handsOn"),
-                        quickHandsOn,
-                        setQuickHandsOn,
-                        { optional: true },
-                      )}
-                      {quickField(
-                        t("quick.totalQ"),
-                        quickTotal,
-                        setQuickTotal,
-                        { focusRef: true },
-                      )}
-                      {quickField(
-                        t("quick.cleanupQ"),
-                        quickCleanup,
-                        setQuickCleanup,
-                        { optional: true },
-                      )}
-                      {quickHandsOnExceeds ? (
-                        <Text style={styles.quickError}>
-                          {t("quick.handsOnTooLong")}
-                        </Text>
-                      ) : null}
-                      <Button
-                        title={t("quick.submit")}
-                        variant="primary"
-                        fullWidth
-                        disabled={!quickValid}
-                        loading={quickSubmitting}
-                        onPress={onSubmitQuickTime}
-                      />
-                      {quickError != null ? (
-                        <Text style={styles.quickError}>{quickError}</Text>
-                      ) : null}
-                      {quickNeedsAuth ? (
-                        <Pressable
-                          onPress={() => router.push("/login")}
-                          hitSlop={Space.sm}
-                          style={styles.quickSignIn}
-                        >
-                          <Text style={styles.quickSignIn}>
-                            {t("quick.signIn")}
-                          </Text>
-                        </Pressable>
-                      ) : null}
-                    </View>
-                  ) : null}
-                  </Card>
-                </View>
+                <QuickTimeCard
+                  key={`quick-${numericId}`}
+                  ref={quickCardRef}
+                  recipe={recipe}
+                  numericId={numericId}
+                  onSubmitted={handleQuickTimeSubmitted}
+                  colors={colors}
+                  styles={styles}
+                />
 
                 {/* 5. NOTES — one CARD with a joined two-segment control as
                     its header ("Your note" | "Community" — same segmented
@@ -2489,420 +3058,41 @@ export default function RecipeDetailScreen() {
                     default: saved note (tap to edit) or an "Add a note" row;
                     the textarea/save/make-public stack only mounts while
                     editing. Community tab keeps its list + compose row. */}
-                <View style={styles.section}>
-                  <Card padding={Space.lg}>
-                    <View style={styles.notesSegment}>
-                      {(["personal", "community"] as const).map((tab, index) => (
-                        <Fragment key={tab}>
-                          {index === 1 ? (
-                            <View style={styles.notesSegmentDivider} />
-                          ) : null}
-                          <Pressable
-                            onPress={() => setNotesTab(tab)}
-                            accessibilityRole="button"
-                            accessibilityState={{ selected: notesTab === tab }}
-                            style={[
-                              styles.notesSegmentBtn,
-                              notesTab === tab
-                                ? styles.notesSegmentBtnActive
-                                : null,
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.notesSegmentLabel,
-                                notesTab === tab
-                                  ? styles.notesSegmentLabelActive
-                                  : null,
-                              ]}
-                            >
-                              {tab === "personal"
-                                ? t("detail.notesTabPersonal")
-                                : t("detail.notesTabCommunity")}
-                            </Text>
-                          </Pressable>
-                        </Fragment>
-                      ))}
-                    </View>
-
-                  {notesTab === "personal" ? (
-                    noteEditing ? (
-                      <>
-                        <TextInput
-                          style={styles.noteInput}
-                          value={note}
-                          onChangeText={(text) => {
-                            setNote(text);
-                            if (noteSaveError) setNoteSaveError(null);
-                          }}
-                          placeholder={t("detail.notesPlaceholder")}
-                          placeholderTextColor={colors.inkFaint}
-                          multiline
-                          autoFocus
-                        />
-                        <View style={styles.noteActions}>
-                          {/* Always primary (ghost + disabled renders nearly
-                              invisible); disabled only dims via opacity until
-                              the note is dirty. The "Make public" toggle sits
-                              INLINE at the row's end (not its own line). */}
-                          <Button
-                            variant="primary"
-                            disabled={!noteDirty}
-                            title={t("detail.saveNote")}
-                            onPress={onSaveNote}
-                          />
-                          {noteJustSaved ? (
-                            <Text style={styles.noteSaved}>
-                              {t("detail.saved")}
-                            </Text>
-                          ) : null}
-                          {/* "Make public": flipping it on with text present
-                              publishes the note immediately (save + community
-                              post, no separate Save press); with no text the
-                              toggle is disabled — nothing to make public. */}
-                          <View style={styles.publicToggleInline}>
-                            <Text
-                              style={styles.publicToggleLabel}
-                              numberOfLines={1}
-                            >
-                              {t("detail.notePublicToggle")}
-                            </Text>
-                            <Toggle
-                              value={notePublic}
-                              disabled={note.trim() === ""}
-                              onValueChange={onToggleNotePublic}
-                            />
-                          </View>
-                        </View>
-                        {noteSaveError ? (
-                          <Text style={styles.noteError}>{noteSaveError}</Text>
-                        ) : null}
-                      </>
-                    ) : savedNote.length > 0 ? (
-                      <Pressable
-                        onPress={() => {
-                          setNote(savedNote);
-                          setNoteEditing(true);
-                        }}
-                        hitSlop={Space.xs}
-                        accessibilityRole="button"
-                        style={styles.noteViewRow}
-                      >
-                        <Text style={styles.noteViewText}>{savedNote}</Text>
-                        <Text style={styles.noteEditHint}>
-                          {t("detail.editNote")}
-                        </Text>
-                      </Pressable>
-                    ) : (
-                      <Pressable
-                        onPress={() => {
-                          setNote("");
-                          setNoteEditing(true);
-                        }}
-                        hitSlop={Space.xs}
-                        accessibilityRole="button"
-                        style={styles.noteAddRow}
-                      >
-                        <Ionicons
-                          name="pencil-outline"
-                          size={16}
-                          color={colors.inkFaint}
-                        />
-                        <Text style={styles.noteAddPlaceholder}>
-                          {t("detail.addNote")}
-                        </Text>
-                      </Pressable>
-                    )
-                  ) : (
-                      <>
-                        {notesError != null ? (
-                          <View style={styles.notesCenter}>
-                            <Text style={styles.notesMuted}>{notesError}</Text>
-                            <Button
-                              variant="ghost"
-                              title={t("common.retry")}
-                              onPress={loadNotes}
-                            />
-                          </View>
-                        ) : notesLoading && notes.length === 0 ? (
-                          <View style={styles.notesCenter}>
-                            <ActivityIndicator
-                              color={colors.accent}
-                              size="small"
-                            />
-                          </View>
-                        ) : notes.length === 0 ? (
-                          <View style={styles.emptyBlock}>
-                            <View style={styles.emptyIconWrap}>
-                              <Ionicons
-                                name="chatbox-ellipses-outline"
-                                size={22}
-                                color={colors.accent}
-                              />
-                            </View>
-                            <Text style={styles.emptyText}>
-                              {t("detail.notesEmpty")}
-                            </Text>
-                          </View>
-                        ) : (
-                          <View style={styles.notesList}>
-                            {notes.map((item) => {
-                              const author = noteAuthorName(item.user);
-                              const initial =
-                                author.charAt(0).toUpperCase() || "?";
-                              const rel = relativeDate(t, item.created_at);
-                              const mine =
-                                myUserId != null &&
-                                item.user.id === myUserId;
-                              const reported = reportedNoteIds.has(item.id);
-                              return (
-                                <View
-                                  key={`note-${item.id}`}
-                                  style={styles.noteRow}
-                                >
-                                  <View style={styles.avatar}>
-                                    {item.user.avatar_url ? (
-                                      <Image
-                                        source={{ uri: item.user.avatar_url }}
-                                        style={styles.avatarImage}
-                                        contentFit="cover"
-                                        transition={0}
-                                        cachePolicy="memory-disk"
-                                      />
-                                    ) : (
-                                      <Text style={styles.avatarText}>
-                                        {initial}
-                                      </Text>
-                                    )}
-                                  </View>
-                                  <View style={styles.noteInfo}>
-                                    <View style={styles.noteHeadRow}>
-                                      <Text style={styles.noteAuthor}>
-                                        {author}
-                                      </Text>
-                                      {rel !== "" ? (
-                                        <Text style={styles.noteDate}>{rel}</Text>
-                                      ) : null}
-                                      {mine ? (
-                                        <IconPressable
-                                          onPress={() => onDeleteNote(item)}
-                                          hitSlop={Space.xs}
-                                          style={styles.noteAction}
-                                          accessibilityLabel={t("common.delete")}
-                                        >
-                                          <Ionicons
-                                            name="trash-outline"
-                                            size={16}
-                                            color={colors.inkFaint}
-                                          />
-                                        </IconPressable>
-                                      ) : (
-                                        <IconPressable
-                                          onPress={() => onReportNote(item)}
-                                          hitSlop={Space.xs}
-                                          style={styles.noteAction}
-                                          accessibilityLabel={t(
-                                            "community.reportAction",
-                                          )}
-                                        >
-                                          <Ionicons
-                                            name={
-                                              reported
-                                                ? "checkmark"
-                                                : "flag-outline"
-                                            }
-                                            size={16}
-                                            color={
-                                              reported
-                                                ? colors.success
-                                                : colors.inkFaint
-                                            }
-                                          />
-                                        </IconPressable>
-                                      )}
-                                    </View>
-                                    <Text style={styles.noteBody}>
-                                      {item.body}
-                                    </Text>
-                                  </View>
-                                </View>
-                              );
-                            })}
-                            {noteFlash != null ? (
-                              <Text style={styles.noteFlash}>
-                                {noteFlash}
-                              </Text>
-                            ) : null}
-                            {notesHasMore ? (
-                              <Button
-                                variant="ghost"
-                                title={t("detail.loadMoreNotes")}
-                                loading={notesLoading}
-                                disabled={notesLoading}
-                                onPress={loadMoreNotes}
-                                style={styles.notesLoadMore}
-                              />
-                            ) : null}
-                          </View>
-                        )}
-                        {/* Compose row: signed-in users post a public note
-                            directly; unauthenticated users see a sign-in
-                            prompt instead. */}
-                        {signedIn ? (
-                          <View style={styles.noteCompose}>
-                            <View style={styles.noteComposeRow}>
-                              <TextInput
-                                style={styles.noteComposeInput}
-                                value={noteDraft}
-                                onChangeText={setNoteDraft}
-                                placeholder={t("detail.noteComposePlaceholder")}
-                                placeholderTextColor={colors.inkFaint}
-                                maxLength={1000}
-                                editable={!notePosting}
-                              />
-                              <Button
-                                variant="primary"
-                                title={t("detail.noteSend")}
-                                loading={notePosting}
-                                disabled={
-                                  notePosting || noteDraft.trim().length === 0
-                                }
-                                onPress={onSendNote}
-                              />
-                            </View>
-                            {noteHalalTerms != null ? (
-                              <Text style={styles.noteError}>
-                                {noteHalalTerms.join(", ")}
-                              </Text>
-                            ) : null}
-                            {notePostError != null && noteHalalTerms == null ? (
-                              <Text style={styles.noteError}>
-                                {notePostError}
-                              </Text>
-                            ) : null}
-                            {noteNeedsAuth ? (
-                              <Pressable
-                                onPress={() => router.push("/login")}
-                                hitSlop={Space.sm}
-                              >
-                                <Text style={styles.noteSignIn}>
-                                  {t("detail.notesSignIn")}
-                                </Text>
-                              </Pressable>
-                            ) : null}
-                          </View>
-                        ) : (
-                          <Pressable
-                            onPress={() => router.push("/login")}
-                            hitSlop={Space.sm}
-                            style={styles.noteCompose}
-                          >
-                            <Text style={styles.noteSignIn}>
-                              {t("detail.notesSignIn")}
-                            </Text>
-                          </Pressable>
-                        )}
-                      </>
-                    )}
-                  </Card>
-                </View>
+                <NotesSection
+                  key={`notes-${numericId}`}
+                  numericId={numericId}
+                  signedIn={signedIn}
+                  myUserId={myUserId}
+                  initialNote={initialNote}
+                  initialNotePublic={initialNotePublic}
+                  notes={notes}
+                  notesLoading={notesLoading}
+                  notesHasMore={notesHasMore}
+                  notesError={notesError}
+                  onRetryNotes={loadNotes}
+                  onLoadMoreNotes={loadMoreNotes}
+                  onNoteCreated={handleNoteCreated}
+                  onNoteDeleted={handleNoteDeleted}
+                  colors={colors}
+                  styles={styles}
+                />
 
                 {/* 6. COMMUNITY POSTS — community posts attached to this
                     recipe (GET /api/posts?recipe_id=), loaded non-blocking
-                    once the recipe is ready; a silent failure keeps the
-                    section hidden. Compact vertical rows (avatar + name,
-                    2-line body snippet, up to 3 tiny image squares); at
-                    most 3 rows up front with "Show all" expanding in
-                    place. Tapping a row opens the post. */}
+                    alongside the recipe; a silent failure keeps the section
+                    hidden. Compact vertical rows (avatar + name, 2-line body
+                    snippet, up to 3 tiny image squares); at most 3 rows up
+                    front with "Show all" expanding in place. Tapping a row
+                    opens the post. */}
                 {tries != null ? (
-                  <View style={styles.section}>
-                    <Card padding={Space.lg}>
-                    <SectionHeader
-                      title={
-                        triesTotal > 0
-                          ? t("detail.communityTriesCount", { n: triesTotal })
-                          : t("detail.communityTries")
-                      }
-                    />
-                    {tries.length === 0 ? (
-                      <View style={styles.emptyBlock}>
-                        <View style={styles.emptyIconWrap}>
-                          <Ionicons
-                            name="images-outline"
-                            size={22}
-                            color={colors.accent}
-                          />
-                        </View>
-                        <Text style={styles.emptyText}>
-                          {t("detail.triesEmpty")}
-                        </Text>
-                        <Button
-                          variant="ghost"
-                          title={t("detail.shareYourTry")}
-                          onPress={startShareTry}
-                        />
-                      </View>
-                    ) : (
-                      <View style={styles.triesList}>
-                        {(triesExpanded
-                          ? tries
-                          : tries.slice(0, TRIES_PREVIEW_COUNT)
-                        ).map((item) => {
-                          const author = postAuthorName(item.user);
-                          return (
-                            <IconPressable
-                              key={`try-${item.id}`}
-                              onPress={() => router.push(`/post/${item.id}`)}
-                              style={styles.tryRow}
-                            >
-                              <Avatar
-                                name={author}
-                                uri={item.user.avatar_url}
-                                size={32}
-                              />
-                              <View style={styles.tryMain}>
-                                <Text
-                                  style={styles.tryAuthor}
-                                  numberOfLines={1}
-                                >
-                                  {author}
-                                </Text>
-                                <Text style={styles.tryBody} numberOfLines={2}>
-                                  {item.body}
-                                </Text>
-                                {item.images.length > 0 ? (
-                                  <View style={styles.tryThumbs}>
-                                    {item.images
-                                      .slice(0, 3)
-                                      .map((uri, index) => (
-                                        <Image
-                                          key={`try-${item.id}-img-${index}`}
-                                          source={{ uri }}
-                                          style={styles.tryThumb}
-                                          contentFit="cover"
-                                          transition={0}
-                                          cachePolicy="memory-disk"
-                                          recyclingKey={uri}
-                                        />
-                                      ))}
-                                  </View>
-                                ) : null}
-                              </View>
-                            </IconPressable>
-                          );
-                        })}
-                        {!triesExpanded && tries.length > TRIES_PREVIEW_COUNT ? (
-                          <Button
-                            variant="ghost"
-                            title={t("detail.showAllTries")}
-                            onPress={() => setTriesExpanded(true)}
-                            style={styles.triesShowAll}
-                          />
-                        ) : null}
-                      </View>
-                    )}
-                    </Card>
-                  </View>
+                  <TriesSection
+                    key={`tries-${numericId}`}
+                    tries={tries}
+                    triesTotal={triesTotal}
+                    onShareTry={startShareTry}
+                    accentColor={colors.accent}
+                    styles={styles}
+                  />
                 ) : null}
               </View>
             </>

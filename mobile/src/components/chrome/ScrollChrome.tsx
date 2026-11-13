@@ -203,13 +203,16 @@ export function useScrollChrome(options?: {
     [enabled, handleScroll, existingOnScroll],
   );
 
-  return {
-    hidden,
-    hideChrome,
-    showChrome,
-    onScroll,
-    scrollEventThrottle: 16 as const,
-  };
+  return useMemo(
+    () => ({
+      hidden,
+      hideChrome,
+      showChrome,
+      onScroll,
+      scrollEventThrottle: 16 as const,
+    }),
+    [hidden, hideChrome, showChrome, onScroll],
+  );
 }
 
 // Re-export constants for tests / debugging if needed.

@@ -7,7 +7,22 @@ import { clearAccountData, enqueuePendingCookSession } from "@/db/database";
 import { clearPostPreview } from "@/utils/postPreview";
 import { clearPostCreated } from "@/utils/postCreated";
 import { clearFeedMutations } from "@/utils/feedMutation";
-import { COMMUNITY_FEED_KEY } from "@/utils/communityMirror";
+import {
+  clearMirroredFeedCache,
+  COMMUNITY_FEED_KEY,
+} from "@/utils/communityMirror";
+import {
+  ACTIVE_COOK_POINTER_KEY,
+  resetCookSessionCache,
+} from "@/utils/cookSessionStatus";
+import {
+  clearSwrCache,
+  dedupeInFlight,
+  getCached,
+  invalidateKey,
+  invalidatePrefix,
+  setCached,
+} from "@/api/swrCache";
 import { secureStore } from "@/utils/secureStore";
 import {
   http,
@@ -87,6 +102,7 @@ export async function loginWithGoogle(
     await secureStore.setItemAsync(AUTH_TOKEN_KEY, data.token);
     // Keep the http layer's in-memory mirror in sync (see getAuthToken).
     setAuthTokenCache(data.token);
+    clearSwrCache();
   }
   return data;
 }
@@ -101,10 +117,20 @@ export async function loginWithGoogle(
  * into an error. Device-scoped prefs (sort/tab/theme/lang/nudge, sweep
  * stamp, public categories) are deliberately kept.
  */
+let authEpoch = 0;
+
+export function getAuthEpoch(): number {
+  return authEpoch;
+}
+
 async function clearAccountScopedCaches(): Promise<void> {
+  authEpoch += 1;
+  clearSwrCache();
+  clearMirroredFeedCache();
   clearPostPreview();
   clearPostCreated();
   clearFeedMutations();
+  resetCookSessionCache();
   try {
     const keys = await AsyncStorage.getAllKeys();
     const doomed = keys.filter(
@@ -113,6 +139,7 @@ async function clearAccountScopedCaches(): Promise<void> {
         k === "recipereal.homeRails" ||
         k === "recipereal.postComposerDraft" ||
         k === "recipereal.quickTimeStale" ||
+        k === ACTIVE_COOK_POINTER_KEY ||
         k.startsWith("cook-session:"),
     );
     if (doomed.length > 0) await AsyncStorage.multiRemove(doomed);
@@ -185,15 +212,40 @@ export async function getRecipes(
   return { ...data, data: data.data.map(normalizeRecipe) };
 }
 
+const RECIPE_CACHE_PREFIX = "recipe:";
+const RECIPE_TTL_MS = 30_000;
+
 export async function getRecipe(id: number | string): Promise<Recipe> {
-  const { data } = await api.get<{ data: Recipe }>(`/api/recipes/${id}`);
-  return normalizeRecipe(data.data);
+  const key = `${RECIPE_CACHE_PREFIX}${id}`;
+  const cached = getCached<Recipe>(key, RECIPE_TTL_MS);
+  if (cached !== undefined) {
+    return cached;
+  }
+  return dedupeInFlight(key, async () => {
+    const { data } = await api.get<{ data: Recipe }>(`/api/recipes/${id}`);
+    const recipe = normalizeRecipe(data.data);
+    setCached(key, recipe);
+    return recipe;
+  });
 }
 
 // ---- Server-driven browse & home --------------------------------------------
 
 /** Page size for the server-driven Browse list (server clamps to 1..50). */
 const SEARCH_PER_PAGE = 20;
+const SEARCH_CACHE_PREFIX = "search:";
+const SEARCH_TTL_MS = 30_000;
+
+function searchCacheKey(params: SearchParams): string {
+  return `${SEARCH_CACHE_PREFIX}${JSON.stringify({
+    q: params.q ?? "",
+    category: params.category ?? "",
+    maxTime: params.maxTime ?? null,
+    sort: params.sort ?? "",
+    page: params.page ?? 1,
+    perPage: params.perPage ?? SEARCH_PER_PAGE,
+  })}`;
+}
 
 /**
  * One page of the public search endpoint (GET /api/recipes/search). Empty `q`
@@ -203,18 +255,28 @@ const SEARCH_PER_PAGE = 20;
 export async function searchRecipes(
   params: SearchParams = {},
 ): Promise<RecipePage> {
-  return fetchSearchPage({
-    q: params.q,
-    category: params.category,
-    max_time: params.maxTime,
-    sort: params.sort,
-    page: params.page,
-    per_page: params.perPage ?? SEARCH_PER_PAGE,
+  const key = searchCacheKey(params);
+  const cached = getCached<RecipePage>(key, SEARCH_TTL_MS);
+  if (cached !== undefined) {
+    return cached;
+  }
+  return dedupeInFlight(key, async () => {
+    const page = await fetchSearchPage({
+      q: params.q,
+      category: params.category,
+      max_time: params.maxTime,
+      sort: params.sort,
+      page: params.page,
+      per_page: params.perPage ?? SEARCH_PER_PAGE,
+    });
+    setCached(key, page);
+    return page;
   });
 }
 
 /** AsyncStorage cache key for the category chips (server data, 1h-cached server-side). */
 const CATEGORIES_CACHE_KEY = "recipereal.categories";
+const CATEGORIES_SWR_KEY = "categories";
 /** Local staleness window for the cached category chips. */
 const CATEGORIES_TTL_MS = 60 * 60 * 1000;
 
@@ -246,37 +308,48 @@ function validCategoryRows(rows: unknown): CategoryCount[] {
  * then to an empty array so callers can use their local keyword categories.
  */
 export async function fetchCategories(): Promise<CategoryCount[]> {
-  try {
-    const { data } = await api.get<{ data: unknown }>(
-      "/api/recipes/categories",
-    );
-    const rows = validCategoryRows(data?.data);
-    if (rows.length > 0) {
-      AsyncStorage.setItem(
-        CATEGORIES_CACHE_KEY,
-        JSON.stringify({ savedAt: Date.now(), data: rows } satisfies CachedCategories),
-      ).catch(() => {
-        // Non-fatal: caching is best-effort.
-      });
-      return rows;
-    }
-  } catch {
-    // Offline / server error: the stale cache below is the fallback.
+  const cached = getCached<CategoryCount[]>(CATEGORIES_SWR_KEY, CATEGORIES_TTL_MS);
+  if (cached !== undefined) {
+    return cached;
   }
-  try {
-    const raw = await AsyncStorage.getItem(CATEGORIES_CACHE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as CachedCategories) : null;
-    if (
-      parsed &&
-      Date.now() - (parsed.savedAt ?? 0) < CATEGORIES_TTL_MS &&
-      Array.isArray(parsed.data)
-    ) {
-      return validCategoryRows(parsed.data);
+  return dedupeInFlight(CATEGORIES_SWR_KEY, async () => {
+    try {
+      const raw = await AsyncStorage.getItem(CATEGORIES_CACHE_KEY);
+      const parsed = raw ? (JSON.parse(raw) as CachedCategories) : null;
+      if (
+        parsed &&
+        Date.now() - (parsed.savedAt ?? 0) < CATEGORIES_TTL_MS &&
+        Array.isArray(parsed.data)
+      ) {
+        const rows = validCategoryRows(parsed.data);
+        if (rows.length > 0) {
+          setCached(CATEGORIES_SWR_KEY, rows);
+          return rows;
+        }
+      }
+    } catch {
+      // Non-fatal: fall through to network fetch.
     }
-  } catch {
-    // Non-fatal: fall through to an empty list (caller uses local chips).
-  }
-  return [];
+    try {
+      const { data } = await api.get<{ data: unknown }>(
+        "/api/recipes/categories",
+      );
+      const rows = validCategoryRows(data?.data);
+      if (rows.length > 0) {
+        setCached(CATEGORIES_SWR_KEY, rows);
+        AsyncStorage.setItem(
+          CATEGORIES_CACHE_KEY,
+          JSON.stringify({ savedAt: Date.now(), data: rows } satisfies CachedCategories),
+        ).catch(() => {
+          // Non-fatal: caching is best-effort.
+        });
+        return rows;
+      }
+    } catch {
+      // Offline / server error: return empty list (caller uses local chips).
+    }
+    return [];
+  });
 }
 
 /**
@@ -374,6 +447,8 @@ export async function submitQuickTime(
       `/api/recipes/${recipeId}/quick-time`,
       breakdown,
     );
+    invalidateKey(`${RECIPE_CACHE_PREFIX}${recipeId}`);
+    invalidatePrefix(SEARCH_CACHE_PREFIX);
     return {
       ok: Boolean(data?.ok),
       community_avg_minutes: toNum(data?.community_avg_minutes),
@@ -440,6 +515,9 @@ export async function submitCookSession(
 ): Promise<void> {
   try {
     await postCookSessionRaw(payload);
+    invalidateKey(`${RECIPE_CACHE_PREFIX}${payload.recipe_id}`);
+    invalidatePrefix(SEARCH_CACHE_PREFIX);
+    invalidatePrefix("cook-sessions:");
   } catch (error) {
     // Offline = axios error with no response (e.g. timeout, no network).
     if (isOfflineError(error)) {
@@ -454,6 +532,8 @@ export async function submitCookSession(
 const COOK_SESSIONS_PER_PAGE = 100;
 /** Safety cap for the history loop: 5 pages x 100 = 500 sessions max. */
 const COOK_SESSIONS_MAX_PAGES = 5;
+/** Max concurrent page requests when fetching remaining cook-session pages. */
+const COOK_SESSIONS_BATCH_CONCURRENCY = 3;
 
 /**
  * Optional knobs for getCookSessions. Omitted (the default) keeps today's
@@ -472,11 +552,17 @@ async function fetchCookSessionsPage(
   page: number,
   perPage: number = COOK_SESSIONS_PER_PAGE,
 ): Promise<Paginated<CookSessionSummary>> {
-  const { data } = await api.get<Paginated<CookSessionSummary>>(
-    "/api/cook-sessions",
-    { params: { page, per_page: perPage } },
-  );
-  return data;
+  const fetcher = async () => {
+    const { data } = await api.get<Paginated<CookSessionSummary>>(
+      "/api/cook-sessions",
+      { params: { page, per_page: perPage } },
+    );
+    return data;
+  };
+  if (page === 1) {
+    return dedupeInFlight(`cook-sessions:p1:${perPage}`, fetcher);
+  }
+  return fetcher();
 }
 
 /**
@@ -503,52 +589,62 @@ export async function getCookSessions(
 ): Promise<Paginated<CookSessionSummary>> {
   const perPage = options.perPage ?? COOK_SESSIONS_PER_PAGE;
   const maxPages = options.maxPages ?? COOK_SESSIONS_MAX_PAGES;
-  const merged: CookSessionSummary[] = [];
-  let meta: Paginated<CookSessionSummary>["meta"] | undefined;
 
-  for (let page = 1; page <= maxPages; page++) {
-    let body: Paginated<CookSessionSummary>;
-    try {
-      body = await fetchCookSessionsPage(page, perPage);
-    } catch (error) {
-      if (page === 1) throw error; // Nothing fetched yet: surface it.
-      break; // Partial fetch: return what we already have.
+  return dedupeInFlight(`cook-sessions:${maxPages}:${perPage}`, async () => {
+    const firstBody = await fetchCookSessionsPage(1, perPage);
+    const firstRows = Array.isArray(firstBody?.data) ? firstBody.data : [];
+    const merged: CookSessionSummary[] = firstRows.map(normalizeCookSession);
+
+    const meta: Paginated<CookSessionSummary>["meta"] = firstBody?.meta ?? {
+      current_page: 1,
+      last_page: 1,
+      per_page: perPage,
+      total: merged.length,
+    };
+
+    const currentPage = Number(firstBody?.meta?.current_page) || 1;
+    const lastPage = Number(firstBody?.meta?.last_page) || currentPage;
+    const targetLastPage = Math.min(lastPage, maxPages);
+
+    if (currentPage < targetLastPage && firstRows.length >= perPage) {
+      const remainingPages: number[] = [];
+      for (let p = currentPage + 1; p <= targetLastPage; p++) {
+        remainingPages.push(p);
+      }
+
+      let stop = false;
+      for (
+        let i = 0;
+        i < remainingPages.length && !stop;
+        i += COOK_SESSIONS_BATCH_CONCURRENCY
+      ) {
+        const batch = remainingPages.slice(
+          i,
+          i + COOK_SESSIONS_BATCH_CONCURRENCY,
+        );
+        const results = await Promise.allSettled(
+          batch.map((page) => fetchCookSessionsPage(page, perPage)),
+        );
+        for (const res of results) {
+          if (res.status !== "fulfilled") {
+            stop = true;
+            break;
+          }
+          const rows = Array.isArray(res.value?.data) ? res.value.data : [];
+          merged.push(...rows.map(normalizeCookSession));
+          if (rows.length < perPage) {
+            stop = true;
+            break;
+          }
+        }
+      }
     }
 
-    const rows = Array.isArray(body?.data) ? body.data : [];
-    merged.push(...rows.map(normalizeCookSession));
-
-    if (meta == null) {
-      // Keep the first response's meta (incl. total) for the merged result.
-      meta = body?.meta ?? {
-        current_page: 1,
-        last_page: 1,
-        per_page: perPage,
-        total: merged.length,
-      };
-    }
-
-    const currentPage = Number(body?.meta?.current_page) || page;
-    const lastPage = Number(body?.meta?.last_page) || currentPage;
-    // Done when the paginator says we're on the last page, when a short
-    // page comes back (covers empty pages and backends with a missing/odd
-    // meta, mirroring the heuristic in `@/api/http`), or when the caller's
-    // page cap is reached.
-    if (currentPage >= lastPage || rows.length < perPage) {
-      break;
-    }
-  }
-
-  return {
-    data: merged,
-    meta:
-      meta ?? {
-        current_page: 1,
-        last_page: 1,
-        per_page: perPage,
-        total: merged.length,
-      },
-  };
+    return {
+      data: merged,
+      meta,
+    };
+  });
 }
 
 // ---- Pace calibration ------------------------------------------------------
@@ -669,6 +765,7 @@ export async function createUserRecipe(
 ): Promise<Recipe> {
   return rethrowHalal(async () => {
     const { data } = await api.post("/api/recipes", input);
+    invalidatePrefix(SEARCH_CACHE_PREFIX);
     return unwrapRecipeResource(data);
   });
 }
@@ -680,6 +777,8 @@ export async function updateUserRecipe(
 ): Promise<Recipe> {
   return rethrowHalal(async () => {
     const { data } = await api.patch(`/api/recipes/${id}`, input);
+    invalidateKey(`${RECIPE_CACHE_PREFIX}${id}`);
+    invalidatePrefix(SEARCH_CACHE_PREFIX);
     return unwrapRecipeResource(data);
   });
 }
@@ -687,6 +786,8 @@ export async function updateUserRecipe(
 /** Delete the signed-in user's recipe (DELETE /api/recipes/{id}) → 204. */
 export async function deleteUserRecipe(id: number): Promise<void> {
   await api.delete(`/api/recipes/${id}`);
+  invalidateKey(`${RECIPE_CACHE_PREFIX}${id}`);
+  invalidatePrefix(SEARCH_CACHE_PREFIX);
 }
 
 /** One page of the signed-in user's light recipe rows (GET /api/users/me/recipes). */
@@ -849,7 +950,12 @@ export async function publishRecipeImport(
 ): Promise<Recipe> {
   return rethrowHalal(async () => {
     const { data } = await api.post("/api/recipe-imports/" + id + "/publish", input);
-    return unwrapRecipeResource(data);
+    const recipe = unwrapRecipeResource(data);
+    invalidatePrefix(SEARCH_CACHE_PREFIX);
+    if (recipe?.id) {
+      invalidateKey(`${RECIPE_CACHE_PREFIX}${recipe.id}`);
+    }
+    return recipe;
   });
 }
 
@@ -933,15 +1039,17 @@ export async function fetchRecipeNotes(
   recipeId: number,
   page = 1,
 ): Promise<RecipeNotesPage> {
-  const { data } = await api.get<{ data?: unknown; meta?: {
-    current_page?: unknown;
-    last_page?: unknown;
-  } }>(`/api/recipes/${recipeId}/notes`, { params: { page } });
-  const rows = Array.isArray(data?.data) ? data.data : [];
-  const notes = rows.map(normalizeNote);
-  const current = Number(data?.meta?.current_page) || page;
-  const last = Number(data?.meta?.last_page) || current;
-  return { notes, hasMore: current < last || notes.length >= NOTES_PER_PAGE };
+  return dedupeInFlight(`recipe-notes:${recipeId}:${page}`, async () => {
+    const { data } = await api.get<{ data?: unknown; meta?: {
+      current_page?: unknown;
+      last_page?: unknown;
+    } }>(`/api/recipes/${recipeId}/notes`, { params: { page } });
+    const rows = Array.isArray(data?.data) ? data.data : [];
+    const notes = rows.map(normalizeNote);
+    const current = Number(data?.meta?.current_page) || page;
+    const last = Number(data?.meta?.last_page) || current;
+    return { notes, hasMore: current < last || notes.length >= NOTES_PER_PAGE };
+  });
 }
 
 /**
@@ -1016,17 +1124,28 @@ export async function reportRecipeNote(
  * is why the community composer + header avatars fell back to initials).
  * A flat payload and a `data` envelope are still tolerated.
  */
+const MY_PROFILE_CACHE_KEY = "profile:me";
+const MY_PROFILE_TTL_MS = 60_000;
+
 export async function fetchMyProfile(): Promise<PublicProfile> {
-  const { data } = await api.get("/api/users/me/profile");
-  const body = (data as { data?: unknown } | undefined)?.data ?? data;
-  const u = (body as { user?: Record<string, unknown> } | null)?.user ?? body;
-  return {
-    id: Number((u as { id?: unknown })?.id),
-    name: (u as { name?: string | null })?.name ?? null,
-    display_name: (u as { display_name?: string | null })?.display_name ?? null,
-    avatar_url: (u as { avatar_url?: string | null })?.avatar_url ?? null,
-    bio: (u as { bio?: string | null })?.bio ?? null,
-  };
+  const cached = getCached<PublicProfile>(MY_PROFILE_CACHE_KEY, MY_PROFILE_TTL_MS);
+  if (cached !== undefined) {
+    return cached;
+  }
+  return dedupeInFlight(MY_PROFILE_CACHE_KEY, async () => {
+    const { data } = await api.get("/api/users/me/profile");
+    const body = (data as { data?: unknown } | undefined)?.data ?? data;
+    const u = (body as { user?: Record<string, unknown> } | null)?.user ?? body;
+    const profile: PublicProfile = {
+      id: Number((u as { id?: unknown })?.id),
+      name: (u as { name?: string | null })?.name ?? null,
+      display_name: (u as { display_name?: string | null })?.display_name ?? null,
+      avatar_url: (u as { avatar_url?: string | null })?.avatar_url ?? null,
+      bio: (u as { bio?: string | null })?.bio ?? null,
+    };
+    setCached(MY_PROFILE_CACHE_KEY, profile);
+    return profile;
+  });
 }
 
 export async function updateProfile(patch: {
@@ -1036,6 +1155,7 @@ export async function updateProfile(patch: {
   gender?: "male" | "female" | null;
 }): Promise<void> {
   await api.patch("/api/users/me/profile", patch);
+  invalidatePrefix("profile:");
 }
 
 export async function uploadAvatar(uri: string): Promise<string> {
@@ -1049,6 +1169,7 @@ export async function uploadAvatar(uri: string): Promise<string> {
   });
   const url = (data as any)?.avatar_url ?? (data as any)?.url;
   if (typeof url !== "string" || url.length === 0) throw new Error("Avatar upload failed");
+  invalidatePrefix("profile:");
   return url;
 }
 
@@ -1119,6 +1240,7 @@ export async function updateDisplayName(name: string): Promise<PublicProfile> {
   const { data } = await api.patch("/api/users/me/profile", {
     display_name: name,
   });
+  invalidatePrefix("profile:");
   const body = (data as { data?: PublicProfile } | undefined)?.data ?? data;
   return {
     id: Number(body?.id),
@@ -1257,17 +1379,19 @@ export async function fetchRecipePosts(
   recipeId: number,
   page = 1,
 ): Promise<PostsPage> {
-  const { data } = await api.get<{ data?: unknown; meta?: {
-    total?: unknown;
-  } }>(`/api/posts`, {
-    params: { recipe_id: recipeId, page },
+  return dedupeInFlight(`recipe-posts:${recipeId}:${page}`, async () => {
+    const { data } = await api.get<{ data?: unknown; meta?: {
+      total?: unknown;
+    } }>(`/api/posts`, {
+      params: { recipe_id: recipeId, page },
+    });
+    const rows = Array.isArray(data?.data) ? data.data.map(normalizePost) : [];
+    return {
+      posts: rows,
+      hasMore: morePages(data, page, rows.length),
+      total: toNum(data?.meta?.total) ?? rows.length,
+    };
   });
-  const rows = Array.isArray(data?.data) ? data.data.map(normalizePost) : [];
-  return {
-    posts: rows,
-    hasMore: morePages(data, page, rows.length),
-    total: toNum(data?.meta?.total) ?? rows.length,
-  };
 }
 
 /**
@@ -1624,30 +1748,46 @@ function normalizeNotification(n: any): NotificationRow {
  * prefers the paginator meta, falling back to a full-page heuristic. A 401
  * maps to NotificationUnauthorizedError.
  */
+const NOTIFICATIONS_CACHE_PREFIX = "notifications:";
+const NOTIFICATIONS_PAGE1_TTL_MS = 20_000;
+
 export async function fetchNotifications(page = 1): Promise<NotificationsPage> {
-  let data: any;
-  try {
-    const response = await api.get<{ data?: unknown; meta?: any }>(
-      "/api/notifications",
-      { params: { page } },
-    );
-    data = response.data;
-  } catch (error) {
-    if (axios.isAxiosError(error) && error.response?.status === 401) {
-      throw new NotificationUnauthorizedError();
+  const key = `${NOTIFICATIONS_CACHE_PREFIX}${page}`;
+  if (page === 1) {
+    const cached = getCached<NotificationsPage>(key, NOTIFICATIONS_PAGE1_TTL_MS);
+    if (cached !== undefined) {
+      return cached;
     }
-    throw error;
   }
-  const rows = Array.isArray(data?.data)
-    ? data.data.map(normalizeNotification)
-    : [];
-  const current = Number(data?.meta?.current_page) || page;
-  const last = Number(data?.meta?.last_page) || current;
-  return {
-    items: rows,
-    unreadCount: toNum(data?.meta?.unread_count) ?? 0,
-    hasMore: current < last || rows.length >= NOTIFICATIONS_PER_PAGE,
-  };
+  return dedupeInFlight(key, async () => {
+    let data: any;
+    try {
+      const response = await api.get<{ data?: unknown; meta?: any }>(
+        "/api/notifications",
+        { params: { page } },
+      );
+      data = response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        throw new NotificationUnauthorizedError();
+      }
+      throw error;
+    }
+    const rows = Array.isArray(data?.data)
+      ? data.data.map(normalizeNotification)
+      : [];
+    const current = Number(data?.meta?.current_page) || page;
+    const last = Number(data?.meta?.last_page) || current;
+    const result: NotificationsPage = {
+      items: rows,
+      unreadCount: toNum(data?.meta?.unread_count) ?? 0,
+      hasMore: current < last || rows.length >= NOTIFICATIONS_PER_PAGE,
+    };
+    if (page === 1) {
+      setCached(key, result);
+    }
+    return result;
+  });
 }
 
 /**
@@ -1659,6 +1799,7 @@ export async function fetchNotifications(page = 1): Promise<NotificationsPage> {
 export async function markNotificationsRead(ids?: number[]): Promise<void> {
   try {
     await api.post("/api/notifications/read", ids ? { ids } : {});
+    invalidatePrefix(NOTIFICATIONS_CACHE_PREFIX);
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       throw new NotificationUnauthorizedError();
