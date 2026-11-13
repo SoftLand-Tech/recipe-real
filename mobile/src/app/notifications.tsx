@@ -2,7 +2,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   RefreshControl,
   StyleSheet,
   Text,
@@ -22,7 +21,7 @@ import type { NotificationRow, NotificationType } from "@/types";
 import { useT, type TranslateFn } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
-import { Button, Card, IconPressable } from "@/components/ui";
+import { Button, Card, IconPressable, ScreenFlatList, ScreenView } from "@/components/ui";
 
 type LoadState = "loading" | "ready" | "error" | "signedout";
 
@@ -156,7 +155,6 @@ const NotificationRowView = memo(function NotificationRowView({
   return (
     <Card
       onPress={() => onOpen(row)}
-      padding={Space.md}
       style={unread ? styles.unreadRow : null}
     >
       <View style={styles.row}>
@@ -338,7 +336,6 @@ export default function NotificationsScreen() {
         actionRow: {
           flexDirection: "row",
           justifyContent: "flex-end",
-          paddingHorizontal: Space.lg,
           paddingBottom: Space.xs,
           minHeight: 40,
           alignItems: "center",
@@ -349,7 +346,6 @@ export default function NotificationsScreen() {
           color: colors.accent,
         },
         listContent: {
-          paddingHorizontal: 0,
           gap: Space.md,
           paddingBottom: insets.bottom + Space.xxl,
         },
@@ -359,6 +355,8 @@ export default function NotificationsScreen() {
           justifyContent: "center",
           gap: Space.sm,
           padding: Space.xxl,
+          // Inside the padded list already — no extra horizontal inset.
+          paddingHorizontal: 0,
         },
         errorTitle: { ...Type.h3, color: colors.danger },
         muted: {
@@ -386,7 +384,7 @@ export default function NotificationsScreen() {
 
       {/* Explicit mark-all — never done automatically on mount/focus. */}
       {state === "ready" && unreadCount > 0 ? (
-        <View style={styles.actionRow}>
+        <ScreenView style={styles.actionRow}>
           <IconPressable
             onPress={() => void handleMarkAll()}
             disabled={markingAll}
@@ -397,10 +395,10 @@ export default function NotificationsScreen() {
               {markingAll ? "…" : t("notif.markAllRead")}
             </Text>
           </IconPressable>
-        </View>
+        </ScreenView>
       ) : null}
 
-      <FlatList
+      <ScreenFlatList
         data={state === "ready" ? items : []}
         keyExtractor={(item) => String(item.id)}
         renderItem={({ item }) => (

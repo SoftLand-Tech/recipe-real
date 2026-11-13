@@ -4,7 +4,6 @@ import {
   Alert,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -40,6 +39,7 @@ import {
   Button,
   Card,
   IconPressable,
+  ScreenScrollView,
   TimeChip,
 } from "@/components/ui";
 
@@ -269,7 +269,6 @@ export default function PublicProfileScreen() {
       StyleSheet.create({
         container: { flex: 1, backgroundColor: colors.canvas },
         content: {
-          paddingHorizontal: Space.lg,
           paddingTop: Space.md,
           gap: Space.md,
           paddingBottom: Space.xxl,
@@ -280,6 +279,7 @@ export default function PublicProfileScreen() {
           justifyContent: "center",
           gap: Space.md,
           padding: Space.xxl,
+          paddingHorizontal: Space.lg,
         },
         selfBanner: {
           flexDirection: "row",
@@ -620,7 +620,7 @@ export default function PublicProfileScreen() {
         }
       />
 
-      <ScrollView
+      <ScreenScrollView
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl
@@ -1136,7 +1136,7 @@ export default function PublicProfileScreen() {
             ) : null}
           </View>
         )}
-      </ScrollView>
+      </ScreenScrollView>
 
       {/* Moderation ActionSheets */}
       {sheet === "menu" ? (

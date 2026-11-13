@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { fetchFollowers, fetchFollowing } from "@/api/client";
@@ -7,7 +7,7 @@ import type { PublicProfile } from "@/types";
 import { useLang, useT } from "@/i18n";
 import { Space, Type, useThemeColors } from "@/theme";
 import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
-import { Avatar, Button, Card } from "@/components/ui";
+import { Avatar, Button, Card, ScreenFlatList, ScreenView } from "@/components/ui";
 
 type ListTab = "followers" | "following";
 
@@ -64,7 +64,7 @@ export default function FollowListScreen() {
 
   const styles = useMemo(() => StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.canvas },
-    tabs: { flexDirection: "row", gap: Space.sm, paddingHorizontal: Space.lg, paddingVertical: Space.sm },
+    tabs: { flexDirection: "row", gap: Space.sm, paddingVertical: Space.sm },
     tab: { flex: 1, alignItems: "center", paddingVertical: Space.sm, borderRadius: 999, backgroundColor: colors.surfaceSoft },
     tabActive: { backgroundColor: colors.accent },
     tabText: { ...Type.bodySm, fontWeight: "600", color: colors.inkSecondary },
@@ -72,7 +72,9 @@ export default function FollowListScreen() {
     row: { flexDirection: "row", alignItems: "center", gap: Space.md, padding: Space.md },
     name: { ...Type.title, color: colors.ink, flex: 1 },
     muted: { ...Type.bodySm, color: colors.inkSecondary, textAlign: "center" as const },
-    center: { padding: Space.xxl, alignItems: "center" as const, gap: Space.md },
+    center: { padding: Space.xxl, paddingHorizontal: Space.lg, alignItems: "center" as const, gap: Space.md },
+    // Same block inside the padded list: the screen gutter already applies.
+    centerInList: { paddingHorizontal: 0 },
   }), [colors]);
 
   return (
@@ -81,7 +83,7 @@ export default function FollowListScreen() {
         title={active === "followers" ? t("profile.followersTitle") : t("profile.followingTitle")}
         leading={<BackChevron />}
       />
-      <View style={styles.tabs}>
+      <ScreenView style={styles.tabs}>
         <Pressable
           onPress={() => switchTab("followers")}
           style={[styles.tab, active === "followers" && styles.tabActive]}
@@ -98,17 +100,17 @@ export default function FollowListScreen() {
         >
           <Text style={[styles.tabText, active === "following" && styles.tabTextActive]}>{t("profile.following")}</Text>
         </Pressable>
-      </View>
+      </ScreenView>
       {loading ? <View style={styles.center}><ActivityIndicator color={colors.accent} /></View> : loadFailed ? (
         <View style={styles.center}>
           <Text style={styles.muted}>{t("followList.loadFailed")}</Text>
           <Button title={t("common.retry")} onPress={() => void load(1, true)} />
         </View>
       ) : (
-        <FlatList
+        <ScreenFlatList
           data={users}
           keyExtractor={(u) => String(u.id)}
-          contentContainerStyle={{ paddingHorizontal: Space.lg, paddingBottom: Space.xxl, gap: Space.sm }}
+          contentContainerStyle={{ paddingBottom: Space.xxl, gap: Space.sm }}
           renderItem={({ item }) => (
             <Card padding={0} onPress={() => router.push(`/user/${item.id}`)}>
               <View style={styles.row}>
@@ -122,7 +124,7 @@ export default function FollowListScreen() {
           onEndReached={() => { if (hasMore && !loadingMore && !loadFailed) void load(page + 1, false); }}
           onEndReachedThreshold={0.5}
           ListFooterComponent={loadingMore ? <ActivityIndicator color={colors.accent} /> : null}
-          ListEmptyComponent={<View style={styles.center}><Text style={styles.muted}>{active === "followers" ? t("profile.noFollowers") : t("profile.noFollowing")}</Text></View>}
+          ListEmptyComponent={<View style={[styles.center, styles.centerInList]}><Text style={styles.muted}>{active === "followers" ? t("profile.noFollowers") : t("profile.noFollowing")}</Text></View>}
         />
       )}
     </View>

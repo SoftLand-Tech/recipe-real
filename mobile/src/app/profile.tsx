@@ -44,6 +44,7 @@ import {
   Card,
   GoogleLogo,
   IconPressable,
+  ScreenScrollView,
   SectionHeader,
   TimeChip,
 } from "@/components/ui";
@@ -495,7 +496,6 @@ export default function ProfileScreen() {
         container: { flex: 1, backgroundColor: colors.canvas },
         scroll: { flex: 1 },
         content: {
-          paddingHorizontal: Space.lg,
           paddingTop: Space.md,
           gap: Space.md,
           paddingBottom: Space.xxl,
@@ -885,7 +885,7 @@ export default function ProfileScreen() {
         }
       />
 
-      <ScrollView
+      <ScreenScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
         refreshControl={
@@ -1587,7 +1587,7 @@ export default function ProfileScreen() {
             )}
           </>
         )}
-      </ScrollView>
+      </ScreenScrollView>
 
       {/* Edit Profile Modal */}
       <Modal

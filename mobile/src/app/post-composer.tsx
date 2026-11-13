@@ -52,6 +52,7 @@ import {
   Button,
   ComposeImageGrid,
   IconPressable,
+  ScreenScrollView,
 } from "@/components/ui";
 
 // ---- Constants ---------------------------------------------------------------
@@ -950,7 +951,6 @@ export default function PostComposerScreen() {
           flex: 1,
         },
         scrollContent: {
-          paddingHorizontal: Space.lg,
           paddingTop: Space.lg,
           paddingBottom: Space.xxl,
           gap: Space.md,
@@ -1169,6 +1169,7 @@ export default function PostComposerScreen() {
           justifyContent: "center",
           gap: Space.md,
           padding: Space.xxl,
+          paddingHorizontal: Space.lg,
         },
         authPromptText: {
           ...Type.body,
@@ -1281,7 +1282,7 @@ export default function PostComposerScreen() {
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <ScrollView
+        <ScreenScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
@@ -1515,7 +1516,7 @@ export default function PostComposerScreen() {
               )}
             </View>
           ) : null}
-        </ScrollView>
+        </ScreenScrollView>
 
         {/* Sticky quick attachment action bar */}
         <View style={styles.toolbar}>

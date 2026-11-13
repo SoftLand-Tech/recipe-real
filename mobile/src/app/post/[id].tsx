@@ -2,7 +2,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -52,6 +51,7 @@ import {
   IconPressable,
   ImageViewerModal,
   PostImageGrid,
+  ScreenFlatList,
 } from "@/components/ui";
 import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
 
@@ -753,15 +753,15 @@ export default function PostDetailScreen() {
           justifyContent: "center",
           gap: Space.sm,
           padding: Space.xxl,
+          paddingHorizontal: Space.lg,
         },
         errorTitle: { ...Type.h3, color: colors.danger },
         errorCaption: { ...Type.body, color: colors.inkSecondary, textAlign: "center" },
         listContent: {
-          paddingHorizontal: 0,
           gap: Space.lg,
           paddingBottom: insets.bottom + Space.xxl,
         },
-        card: { gap: Space.sm, padding: Space.md },
+        card: { gap: Space.sm, padding: Space.lg },
         headRow: { flexDirection: "row", alignItems: "center", gap: Space.sm },
         headMain: { flex: 1, gap: 2 },
         author: { ...Type.title, color: colors.ink, flexShrink: 1 },
@@ -832,8 +832,8 @@ export default function PostDetailScreen() {
           borderTopColor: colors.hairline,
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: colors.hairline,
-          marginHorizontal: -Space.md,
-          paddingHorizontal: Space.md,
+          marginHorizontal: -Space.lg,
+          paddingHorizontal: Space.lg,
         },
         action: {
           flex: 1,
@@ -1371,7 +1371,7 @@ export default function PostDetailScreen() {
         style={styles.container}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <FlatList
+        <ScreenFlatList
           data={comments}
           keyExtractor={(c) => String(c.id)}
           renderItem={({ item }) => (

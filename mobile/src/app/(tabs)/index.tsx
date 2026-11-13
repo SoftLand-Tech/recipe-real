@@ -337,7 +337,7 @@ export default function HomeScreen() {
           flexGrow: 1,
           alignItems: "center",
           justifyContent: "center",
-          paddingHorizontal: Space.xxl,
+          paddingHorizontal: Space.lg,
           paddingVertical: Space.huge,
           gap: Space.sm,
         },
@@ -1399,7 +1399,7 @@ const railStyles = StyleSheet.create({
     marginBottom: Space.md,
   },
   sectionHeaderPad: {
-    paddingHorizontal: Space.md,
+    paddingHorizontal: Space.lg,
   },
   railContent: {
     paddingHorizontal: 0,

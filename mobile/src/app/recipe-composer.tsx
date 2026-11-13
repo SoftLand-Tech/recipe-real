@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from "react";
 import {
   ActivityIndicator,
@@ -51,6 +52,7 @@ import {
   Card,
   Chip,
   IconPressable,
+  ScreenScrollView,
   SectionHeader,
 } from "@/components/ui";
 
@@ -283,13 +285,9 @@ export default function RecipeComposerScreen() {
           fontWeight: "700",
         },
         scrollContent: {
-          paddingHorizontal: Space.lg,
           paddingTop: Space.md,
           paddingBottom: Space.mega,
           gap: Space.lg,
-          maxWidth: 720,
-          width: "100%",
-          alignSelf: "center",
         },
         section: {
           gap: Space.sm,
@@ -581,6 +579,7 @@ export default function RecipeComposerScreen() {
           justifyContent: "center",
           gap: Space.sm,
           padding: Space.xxl,
+          paddingHorizontal: Space.lg,
         },
         muted: {
           ...Type.body,
@@ -1560,8 +1559,8 @@ export default function RecipeComposerScreen() {
           </Pressable>,
         ]}
       />
-      <ScrollView
-        ref={scrollRef}
+      <ScreenScrollView
+        scrollViewRef={scrollRef as RefObject<ScrollView>}
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
@@ -2177,7 +2176,7 @@ export default function RecipeComposerScreen() {
             />
           ) : null}
         </View>
-      </ScrollView>
+      </ScreenScrollView>
     </KeyboardAvoidingView>
   );
 }

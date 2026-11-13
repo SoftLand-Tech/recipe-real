@@ -25,7 +25,7 @@ import {
   Type,
   useThemeColors,
 } from "@/theme";
-import { Button, GoogleLogo } from "@/components/ui";
+import { Button, GoogleLogo, ScreenView } from "@/components/ui";
 import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
 
 const GOOGLE_CLIENT_ID_PLACEHOLDER = "REPLACE_WITH_GOOGLE_WEB_CLIENT_ID";
@@ -170,7 +170,6 @@ export default function LoginScreen() {
         body: {
           flex: 1,
           justifyContent: "center",
-          paddingHorizontal: Space.xl,
         },
         column: {
           width: "100%",
@@ -568,7 +567,7 @@ export default function LoginScreen() {
   return (
     <View style={styles.container}>
       <PinnedHeaderBar title={t("stack.signIn")} leading={<BackChevron />} />
-      <View style={styles.body}>
+      <ScreenView style={styles.body}>
         <View style={styles.column}>
           <View style={styles.heading}>
             <Text style={styles.headline}>{t("login.welcome")}</Text>
@@ -601,7 +600,7 @@ export default function LoginScreen() {
             ) : null}
           </View>
         </View>
-      </View>
+      </ScreenView>
     </View>
   );
 }

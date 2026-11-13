@@ -1,6 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  FlatList,
   RefreshControl,
   StyleSheet,
   Text,
@@ -36,6 +35,7 @@ import {
   HeartButton,
   IconPressable,
   NoteBadge,
+  ScreenFlatList,
   SkeletonCard,
   TimeChip,
   useHeaderActionsRights,
@@ -98,7 +98,6 @@ function createStyles(colors: ThemeColors) {
     },
     content: {
       flexGrow: 1,
-      paddingHorizontal: 0,
       gap: Space.lg,
       // Bottom inset handled on the outer container (pinned-header
       // structure) — only list breathing room here.
@@ -141,7 +140,7 @@ function createStyles(colors: ThemeColors) {
       alignItems: "center",
       justifyContent: "center",
       gap: Space.sm,
-      paddingHorizontal: Space.xxl,
+      // Inside the padded list — the screen gutter supplies the inset.
       paddingVertical: 64,
     },
     emptyGlyph: {
@@ -173,7 +172,6 @@ function createStyles(colors: ThemeColors) {
       flexDirection: "row",
       flexWrap: "wrap",
       gap: Space.sm,
-      paddingHorizontal: Space.lg,
       marginBottom: Space.md,
     },
     noteRow: {
@@ -649,7 +647,7 @@ export default function FavoritesScreen() {
   return (
     <View style={styles.container}>
       {state === "ready" && tab === "notes" ? (
-        <FlatList
+        <ScreenFlatList
           key="notes"
           data={visibleNotes}
           keyExtractor={noteKeyExtractor}
@@ -668,7 +666,7 @@ export default function FavoritesScreen() {
           removeClippedSubviews
         />
       ) : (
-        <FlatList
+        <ScreenFlatList
           key={numColumns}
           numColumns={numColumns}
           data={state === "ready" ? favorites : EMPTY_RECIPES}

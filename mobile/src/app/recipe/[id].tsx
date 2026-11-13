@@ -278,7 +278,7 @@ function createDetailStyles(colors: ThemeColors, dir: LangDir) {
           width: "100%",
         },
         heroOverlay: {
-          paddingHorizontal: Space.lg,
+          paddingHorizontal: 0,
         },
         heroTitle: {
           ...Type.h1,
@@ -894,7 +894,7 @@ function createDetailStyles(colors: ThemeColors, dir: LangDir) {
           justifyContent: "center",
           gap: Space.sm,
           paddingVertical: Space.mega,
-          paddingHorizontal: Space.xxl,
+          paddingHorizontal: Space.lg,
         },
         muted: {
           ...Type.body,

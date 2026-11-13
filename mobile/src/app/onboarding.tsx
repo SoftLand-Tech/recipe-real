@@ -1,7 +1,6 @@
 import { Fragment, useCallback, useMemo, useState } from "react";
 import {
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -22,6 +21,7 @@ import {
   Button,
   Card,
   GoogleLogo,
+  ScreenScrollView,
 } from "@/components/ui";
 
 const NAME_MIN = 2;
@@ -116,13 +116,9 @@ export default function OnboardingScreen() {
           paddingBottom: insets.bottom,
         },
         scrollContent: {
-          paddingHorizontal: Space.lg,
           paddingTop: insets.top + Space.lg,
           paddingBottom: Space.xxl,
           gap: Space.lg,
-          maxWidth: 560,
-          width: "100%",
-          alignSelf: "center",
         },
         heading: {
           gap: Space.xs,
@@ -237,7 +233,7 @@ export default function OnboardingScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScreenScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.heading}>
           <Text style={styles.headline}>{t("onboarding.welcome")}</Text>
           <Text style={styles.subtitle}>{t("onboarding.subtitle")}</Text>
@@ -353,7 +349,7 @@ export default function OnboardingScreen() {
           disabled={!canContinue}
           onPress={() => void handleContinue()}
         />
-      </ScrollView>
+      </ScreenScrollView>
     </View>
   );
 }
