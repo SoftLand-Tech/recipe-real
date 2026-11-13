@@ -1506,6 +1506,9 @@ export default function CookModeScreen() {
     return () => {
       setLiveCookHandlers(null);
       // Leaving Cook Mode entirely: drop the notification + armed alarm.
+      // Bump the arm generation (same invalidation as clearArmedAlarm) so an
+      // in-flight armStepAlarm() aborts instead of committing after unmount.
+      armGenRef.current++;
       void stopCookNotification();
       const alarmId = armedAlarmIdRef.current;
       armedAlarmIdRef.current = null;
