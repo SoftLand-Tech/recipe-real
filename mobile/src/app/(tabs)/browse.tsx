@@ -884,6 +884,28 @@ export default function BrowseScreen() {
   const chrome = useScrollChrome();
   const chromeBottomPad = useChromeContentBottomPad();
   const barPad = usePinnedBarPad();
+  // Scroll-guard: a drag that ends over a PhotoCard must not push the detail
+  // route. RN Web can deliver onPress after a scroll gesture; ignore taps
+  // while scrolling / momentum is active.
+  const scrollingRef = useRef(false);
+  const scrollEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const markScrolling = useCallback(() => {
+    scrollingRef.current = true;
+    if (scrollEndTimerRef.current != null) {
+      clearTimeout(scrollEndTimerRef.current);
+    }
+    scrollEndTimerRef.current = setTimeout(() => {
+      scrollEndTimerRef.current = null;
+      scrollingRef.current = false;
+    }, 300);
+  }, []);
+  const handleBrowseScroll = useCallback(
+    (event: any) => {
+      markScrolling();
+      chrome.onScroll(event);
+    },
+    [chrome, markScrolling],
+  );
 
   // ---- Local cache source (offline fallback + favorites) --------------------
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -1104,9 +1126,13 @@ export default function BrowseScreen() {
     setShowFilters((v) => !v);
   }, []);
 
-  const handleOpenRecipe = useCallback((id: number) => {
-    router.push(`/recipe/${id}`);
-  }, []);
+  const handleOpenRecipe = useCallback(
+    (id: number) => {
+      if (scrollingRef.current) return;
+      router.push(`/recipe/${id}`);
+    },
+    [],
+  );
 
   /**
    * Load recipes from the cache, seeding progressively on a cold cache.
@@ -1623,7 +1649,11 @@ export default function BrowseScreen() {
           removeClippedSubviews
           refreshing={refreshing}
           onRefresh={handleRefresh}
-          onScroll={chrome.onScroll}
+          onScroll={handleBrowseScroll}
+          onScrollBeginDrag={markScrolling}
+          onScrollEndDrag={markScrolling}
+          onMomentumScrollBegin={markScrolling}
+          onMomentumScrollEnd={markScrolling}
           scrollEventThrottle={chrome.scrollEventThrottle}
           ListHeaderComponent={headerBlock}
           onEndReached={offline ? undefined : handleEndReached}

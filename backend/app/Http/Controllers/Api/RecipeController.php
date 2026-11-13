@@ -105,7 +105,7 @@ class RecipeController extends Controller
             Log::warning('typesense.search.fallback', ['error' => $e->getMessage()]);
         }
 
-        return RecipeCardResource::collection($this->ftsSearch($request, $perPage, $q));
+        return $this->ftsSearch($request, $perPage, $q);
     }
 
     /**

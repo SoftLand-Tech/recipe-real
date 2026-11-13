@@ -4,7 +4,7 @@ import { Pressable } from "react-native";
 
 export interface IconPressableProps {
   children: ReactNode;
-  onPress?: () => void;
+  onPress?: (e?: any) => void;
   disabled?: boolean;
   accessibilityLabel?: string;
   accessibilityRole?: "button" | "image" | "text";
@@ -40,7 +40,15 @@ export function IconPressable({
   const [hovered, setHovered] = useState(false);
   return (
     <Pressable
-      onPress={disabled ? undefined : onPress}
+      onPress={(e?: any) => {
+        // Nested overlay (e.g. HeartButton inside a Card): don't let the tap
+        // bubble to the outer Card Pressable — otherwise favoriting while
+        // scrolling also pushes the detail route.
+        try {
+          (e as any)?.stopPropagation?.();
+        } catch {}
+        if (!disabled) onPress?.(e);
+      }}
       disabled={disabled}
       accessibilityLabel={accessibilityLabel}
       accessibilityRole={accessibilityRole}

@@ -392,7 +392,7 @@ function normalizePage(
       metaLast ??
       (recipes.length < perPage
         ? page
-        : Math.ceil(recipes.length / perPage)),
+        : page + 1),
     total: metaTotal != null && metaTotal >= 0 ? metaTotal : recipes.length,
   };
 }

@@ -281,6 +281,7 @@ class TypesenseSearchTest extends TestCase
         // FTS5 result set, identical envelope.
         $titles = collect($response->json('data'))->pluck('title')->all();
         $this->assertContains('Butter Chicken', $titles);
+        $response->assertJsonStructure(['data', 'links', 'meta' => ['current_page', 'last_page', 'per_page', 'total']]);
 
         Log::shouldHaveReceived('warning')
             ->once()
@@ -315,6 +316,48 @@ class TypesenseSearchTest extends TestCase
         $this->assertContains('Shakshuka', $titles);
 
         $this->assertCount(0, Http::recorded(), 'no HTTP calls may be attempted while disabled');
+    }
+
+    public function test_fts5_and_browse_search_return_pagination_meta_and_page_two(): void
+    {
+        $r1 = $this->makeRecipe(['title' => 'Herb Pasta One', 'steps_count' => 4]);
+        $r2 = $this->makeRecipe(['title' => 'Herb Pasta Two', 'steps_count' => 4]);
+        $r3 = $this->makeRecipe(['title' => 'Herb Pasta Three', 'steps_count' => 4]);
+
+        // Unfiltered browse path (no `q`)
+        $browsePage1 = $this->getJson('/api/recipes/search?page=1&per_page=2')->assertOk();
+        $browsePage1->assertJsonPath('meta.current_page', 1);
+        $browsePage1->assertJsonPath('meta.last_page', 2);
+        $browsePage1->assertJsonPath('meta.per_page', 2);
+        $browsePage1->assertJsonPath('meta.total', 3);
+        $browsePage1->assertJsonStructure(['data', 'links' => ['first', 'last', 'prev', 'next'], 'meta']);
+        $this->assertCount(2, $browsePage1->json('data'));
+
+        $browsePage2 = $this->getJson('/api/recipes/search?page=2&per_page=2')->assertOk();
+        $browsePage2->assertJsonPath('meta.current_page', 2);
+        $browsePage2->assertJsonPath('meta.last_page', 2);
+        $this->assertCount(1, $browsePage2->json('data'));
+
+        $seenIds = array_merge(
+            collect($browsePage1->json('data'))->pluck('id')->all(),
+            collect($browsePage2->json('data'))->pluck('id')->all(),
+        );
+        sort($seenIds);
+        $expectedIds = [$r1->id, $r2->id, $r3->id];
+        sort($expectedIds);
+        $this->assertSame($expectedIds, $seenIds);
+
+        // FTS5 query path (with `q`)
+        $ftsPage1 = $this->getJson('/api/recipes/search?q=pasta&page=1&per_page=2')->assertOk();
+        $ftsPage1->assertJsonPath('meta.current_page', 1);
+        $ftsPage1->assertJsonPath('meta.last_page', 2);
+        $ftsPage1->assertJsonPath('meta.per_page', 2);
+        $ftsPage1->assertJsonPath('meta.total', 3);
+        $this->assertCount(2, $ftsPage1->json('data'));
+
+        $ftsPage2 = $this->getJson('/api/recipes/search?q=pasta&page=2&per_page=2')->assertOk();
+        $ftsPage2->assertJsonPath('meta.current_page', 2);
+        $this->assertCount(1, $ftsPage2->json('data'));
     }
 
     // ------------------------------------------------------------------

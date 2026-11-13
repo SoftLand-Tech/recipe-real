@@ -16,7 +16,9 @@ Assumptions (no interview available; inferred from the build session record):
 
 ## Facts that must stay true on any surface
 - Library: ~20,089 recipes, 137,644 steps, 26,771 steps carry a parsed time.
-- Halal screening: explicit pork & alcohol rules, product-wide.
+- Halal screening: explicit pork & alcohol rules applied to community content
+  (posts, comments, notes, user recipes) and AI-published imports; the base
+  imported library is not individually screened.
 - Offline: the library downloads to the phone; cooking works with no signal.
 - Cook Mode: full-screen step-by-step stopwatch, step alarms, pause/resume,
   per-step measurement; feeds the Reality calibration.

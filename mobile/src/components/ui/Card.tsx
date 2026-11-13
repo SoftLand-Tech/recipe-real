@@ -7,7 +7,7 @@ import { Radius, Shadow, Space, useThemeColors } from "@/theme";
 export interface CardProps {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
-  onPress?: () => void;
+  onPress?: (e?: any) => void;
   padding?: number;
   shadow?: "card" | "floating" | "none";
 }
