@@ -57,4 +57,7 @@ export { CommentsSheet } from "./CommentsSheet";
 export { Toggle } from "./Toggle";
 export type { ToggleProps } from "./Toggle";
 
+export { ConfirmDialog } from "./ConfirmDialog";
+export type { ConfirmDialogProps } from "./ConfirmDialog";
+
 export { HeaderActions, useHeaderActionsRights } from "./HeaderActions";
