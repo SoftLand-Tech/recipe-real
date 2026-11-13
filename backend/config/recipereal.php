@@ -32,10 +32,12 @@ return [
     |   keystore that signs release/preview builds (served in
     |   /.well-known/assetlinks.json for Android domain verification).
     | android_package: the applicationId of the app.
-    | play_store_url: when set AND the visitor is an Android browser (not a
-    |   link-preview crawler, not desktop/iOS), the share pages /r and /p
-    |   302-redirect here — the store-first fallback for users without the
-    |   app. Empty until the Play listing exists.
+    | play_store_url: the Play listing URL. When set, the "Get the app"
+    |   banner on every share page (/r, /p, /u) links here for ALL
+    |   non-crawler browsers. When empty, ShareBanner::bannerUrl falls
+    |   back per device: Android browsers get the direct APK (/download),
+    |   everything else the landing page. Empty until the Play listing
+    |   exists.
     |
     */
 

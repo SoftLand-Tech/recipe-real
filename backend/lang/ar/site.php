@@ -156,8 +156,16 @@ return [
     'share_cooked' => 'طُبخ مع',
     'share_shared_post' => 'شارك منشوراً على RecipeReal',
     'share_fallback_recipe' => 'وصفة',
-    'banner_tag' => 'حمّل التطبيق — أوقات طهي صادقة ومكتبة دون اتصال',
+    'banner_tag' => 'تحتاج تطبيق RecipeReal لفتح هذا الرابط — حمّله أولاً',
     'banner_go' => 'ثبّت',
+
+    // ---- صفحة مشاركة الملف الشخصي (GET /u/{user}) ----
+    'share_user_fallback_desc' => 'طاهٍ يشارك وصفات صادقة على RecipeReal — أوقات طهي حقيقية بين الادعاء والواقع.',
+    'share_user_stat_recipes' => 'وصفات',
+    'share_user_stat_followers' => 'متابعون',
+    'share_user_stat_following' => 'يتابع',
+    'share_user_recipes_heading' => 'وصفات :name',
+    'share_user_recipe_alt' => 'صورة الوصفة: :title',
 
     // ---- عودة المصادقة ----
     'auth_signing_in' => 'جارٍ إتمام تسجيل الدخول...',
