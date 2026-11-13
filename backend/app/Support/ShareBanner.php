@@ -2,7 +2,9 @@
 
 namespace App\Support;
 
+use App\Models\AppRelease;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Share-page helpers (web routes run under route:cache — closures are
@@ -40,6 +42,55 @@ class ShareBanner
         $ua = strtolower((string) $request->userAgent());
 
         return str_contains($ua, 'android') && str_contains($ua, 'mozilla');
+    }
+
+    /**
+     * The banner link target, decided ONCE for every share page (/r, /p,
+     * /u). The banner itself shows for EVERY non-crawler browser — product
+     * decision: any visitor landing on a share link must be told the app
+     * is the way in ("open the website with a notification that you need
+     * to download the app first"). Only the destination is smart:
+     *
+     *   crawlers            → null (no banner: they must receive the real
+     *                         page, or WhatsApp/Telegram preview cards break);
+     *   PLAY_STORE_URL set  → the store listing, for every browser;
+     *   Android browser     → the direct APK route (/download streams the
+     *                         latest signed build — the store's stand-in
+     *                         while no Play listing exists; guarded below so
+     *                         a fresh deployment with no uploaded release
+     *                         falls back to the landing instead of a 404);
+     *   everyone else       → the landing page, which carries the download
+     *                         badges (desktop/iOS cannot install an APK).
+     */
+    public static function bannerUrl(Request $request): ?string
+    {
+        if (self::isCrawler($request)) {
+            return null;
+        }
+
+        $store = trim((string) config('recipereal.play_store_url', ''));
+        if ($store !== '') {
+            return $store;
+        }
+
+        if (self::isAndroidBrowser($request) && self::hasRelease()) {
+            return route('app.download');
+        }
+
+        return url('/');
+    }
+
+    /**
+     * Whether any APK release is uploaded (the /download route 404s when
+     * none is). Cached 5 minutes — a banner hit is on EVERY share-page
+     * request, and the release table changes only when the operator
+     * publishes or (rarely) deletes a build.
+     */
+    private static function hasRelease(): bool
+    {
+        return Cache::remember('share_banner:has_release', now()->addMinutes(5), function () {
+            return AppRelease::query()->exists();
+        });
     }
 
     /**

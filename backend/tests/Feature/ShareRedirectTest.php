@@ -7,13 +7,16 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * Android App Links + the Facebook-style store banner on the public share
- * pages (/r, /p): Android BROWSERS (no app installed, link not intercepted)
- * see the real page with an injected "Get the app" banner when
- * PLAY_STORE_URL is configured — never a hard redirect; crawlers, desktops
- * and iOS always get the clean page (their WhatsApp preview cards depend
- * on it). The /.well-known/assetlinks.json statement serves every
- * configured signing fingerprint for domain verification.
+ * Android App Links + the "Get the app" banner on the public share pages
+ * (/r, /p, /u). NO hard redirect ever — every visitor sees the real shared
+ * content, and every NON-CRAWLER browser also gets the injected banner
+ * (product decision: a visitor must be told the app is the way in). Only
+ * the banner's LINK is smart: the Play listing when PLAY_STORE_URL is set,
+ * the direct APK (/download) on Android browsers when a release is
+ * uploaded, else the landing page. Crawlers get the clean page with NO
+ * banner (their WhatsApp preview cards depend on it). The
+ * /.well-known/assetlinks.json statement serves every configured signing
+ * fingerprint for domain verification.
  */
 class ShareRedirectTest extends TestCase
 {
@@ -24,6 +27,8 @@ class ShareRedirectTest extends TestCase
     private const WHATSAPP_BOT = 'WhatsApp/2.24.19.78 A';
 
     private const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+
+    private const DESKTOP_FIREFOX = 'Mozilla/5.0 (X11; Linux x86_64) Firefox/127.0';
 
     private function recipe(): Recipe
     {
@@ -49,16 +54,47 @@ class ShareRedirectTest extends TestCase
             ->assertSee('RecipeReal', false);
     }
 
-    public function test_android_browser_gets_the_page_when_store_url_unset(): void
+    /** No store URL yet: Android browsers get the direct APK link. */
+    public function test_android_browser_banner_points_at_apk_when_release_uploaded(): void
+    {
+        config()->set('recipereal.play_store_url', '');
+        \App\Models\AppRelease::create([
+            'version' => '1.2.0',
+            'file_path' => 'apks/test-release.apk',
+            'file_size' => 1024,
+        ]);
+
+        $this->get('/r/'.$this->recipe()->id, ['User-Agent' => self::ANDROID_CHROME])
+            ->assertOk()
+            ->assertSee('rr-store-banner', false)
+            ->assertSee('/download', false);
+    }
+
+    /** No release uploaded either: the banner falls back to the landing
+     * (never a link that 404s — /download aborts with no releases). */
+    public function test_android_browser_banner_falls_back_to_landing_without_release(): void
     {
         config()->set('recipereal.play_store_url', '');
 
         $this->get('/r/'.$this->recipe()->id, ['User-Agent' => self::ANDROID_CHROME])
             ->assertOk()
-            ->assertSee('RecipeReal', false);
+            ->assertSee('rr-store-banner', false);
     }
 
-    public function test_crawlers_desktops_and_ios_never_redirect(): void
+    /** Desktop and iOS also see the banner now, but pointed at the landing
+     * (they cannot install an APK). */
+    public function test_desktop_and_ios_get_banner_pointed_at_landing(): void
+    {
+        config()->set('recipereal.play_store_url', '');
+
+        foreach ([self::IPHONE, self::DESKTOP_FIREFOX] as $ua) {
+            $this->get('/r/'.$this->recipe()->id, ['User-Agent' => $ua])
+                ->assertOk()
+                ->assertSee('rr-store-banner', false);
+        }
+    }
+
+    public function test_crawler_gets_clean_page_without_banner(): void
     {
         config()->set('recipereal.play_store_url', 'https://play.google.com/store/apps/details?id=com.recipereal.app');
         $id = $this->recipe()->id;
@@ -67,8 +103,9 @@ class ShareRedirectTest extends TestCase
             'body' => 'WhatsApp preview guard test',
         ])->id;
 
-        foreach ([self::WHATSAPP_BOT, self::IPHONE, 'Mozilla/5.0 (X11; Linux x86_64) Firefox/127.0'] as $ua) {
-            $this->get('/r/'.$id, ['User-Agent' => $ua])->assertOk();
+        foreach ([self::WHATSAPP_BOT] as $ua) {
+            $response = $this->get('/r/'.$id, ['User-Agent' => $ua])->assertOk();
+            $this->assertStringNotContainsString('rr-store-banner', $response->getContent());
         }
         // Same guard on the post page.
         $this->get('/p/'.$postId, ['User-Agent' => self::WHATSAPP_BOT])->assertOk();

@@ -157,8 +157,16 @@ return [
     'share_cooked' => 'Cooked with',
     'share_shared_post' => 'shared a post on RecipeReal',
     'share_fallback_recipe' => 'Recipe',
-    'banner_tag' => 'Get the app — honest cook times, offline library',
+    'banner_tag' => 'You need the RecipeReal app to open this link — download it first',
     'banner_go' => 'Install',
+
+    // ---- User profile share page (GET /u/{user}) ----
+    'share_user_fallback_desc' => 'Home cook sharing honest recipes on RecipeReal — real claim-vs-reality cook times.',
+    'share_user_stat_recipes' => 'Recipes',
+    'share_user_stat_followers' => 'Followers',
+    'share_user_stat_following' => 'Following',
+    'share_user_recipes_heading' => 'Recipes by :name',
+    'share_user_recipe_alt' => 'Recipe photo: :title',
 
     // ---- Auth callback ----
     'auth_signing_in' => 'Finishing sign-in…',
