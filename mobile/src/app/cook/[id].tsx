@@ -13,10 +13,7 @@ import {
   View,
   type ViewStyle,
 } from "react-native";
-import {
-  KeyboardAvoidingView,
-  KeyboardAwareScrollView,
-} from "react-native-keyboard-controller";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { isAxiosError } from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -1813,24 +1810,20 @@ export default function CookModeScreen() {
     ];
 
     return (
-      <KeyboardAvoidingView
+      // KeyboardAwareScrollView alone handles avoidance (single mechanism —
+      // a KeyboardAvoidingView wrapper here double-counted the keyboard and
+      // left a scrollable empty band at the bottom while typing).
+      <View
         style={[
           styles.fullScreen,
-          // paddingTop only: the lib's animated style always writes
-          // paddingBottom (0 when closed) after the user style, so a static
-          // bottom inset here would be silently dropped — it lives on the
-          // scroll content below instead.
-          { paddingTop: insets.top + Space.md },
+          {
+            paddingTop: insets.top + Space.md,
+            paddingBottom: insets.bottom + Space.md,
+          },
         ]}
-        behavior="padding"
       >
         <KeyboardAwareScrollView
-          contentContainerStyle={[
-            styles.feedbackScroll,
-            // Full previous bottom spacing (scroll paddingVertical + the old
-            // root's bottom inset), kept clear of the KAV override.
-            { paddingBottom: Space.lg + insets.bottom + Space.md },
-          ]}
+          contentContainerStyle={styles.feedbackScroll}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -2110,7 +2103,7 @@ export default function CookModeScreen() {
             ) : null}
           </View>
         </KeyboardAwareScrollView>
-      </KeyboardAvoidingView>
+      </View>
     );
   }
 
