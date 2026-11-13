@@ -32,7 +32,7 @@ import {
   uploadAvatar,
 } from "@/api/client";
 import type { MyProfile, PaceCalibration, Post, Recipe, RecipeImportRecord } from "@/types";
-import { AI_IMPORT_ENABLED } from "@/config";
+import { AI_IMPORT_ENABLED, WEB_BASE_URL } from "@/config";
 import { useLang, useLocalizedRecipe, useT } from "@/i18n";
 import { Radius, Shadow, Space, Type, useThemeColors } from "@/theme";
 import { bestMinutes } from "@/utils/recipeTime";
@@ -406,18 +406,18 @@ export default function ProfileScreen() {
   }, [avatarUploading, profile, t]);
 
   /**
-   * Opens the system share sheet with a link to this profile. The backend
-   * has no public web profile page to point at (only /r/{recipe} and
-   * /p/{post} share pages), so the only URL form that resolves today is the
-   * app deep link — the recipereal:// scheme is registered in app.config.js
-   * and expo-router maps recipereal://user/{id} onto the /user/[id] public
-   * profile screen. On web the RN Share sheet doesn't exist: copy the link
-   * to the clipboard instead and confirm with a caption.
+   * Opens the system share sheet with a link to this profile. We share the
+   * public https URL (https://recipe-real.softland.tech/u/{id}): on devices
+   * with the app installed it opens the app via Android App Links, everyone
+   * else lands on the web profile page with a download banner — unlike the
+   * old recipereal:// deep link, which was a dead end for recipients without
+   * the app. On web the RN Share sheet doesn't exist: copy the link to the
+   * clipboard instead and confirm with a caption.
    */
   const handleShareProfile = useCallback(async () => {
     const me = profileRef.current;
     if (!me) return;
-    const url = `recipereal://user/${me.user.id}`;
+    const url = `${WEB_BASE_URL}/u/${me.user.id}`;
     if (Platform.OS === "web") {
       try {
         await navigator.clipboard.writeText(url);

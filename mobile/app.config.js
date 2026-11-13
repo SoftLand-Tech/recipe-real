@@ -50,6 +50,11 @@ export default {
             host: "recipe-real.softland.tech",
             pathPrefix: "/r",
           },
+          {
+            scheme: "https",
+            host: "recipe-real.softland.tech",
+            pathPrefix: "/u",
+          },
         ],
         category: ["BROWSABLE", "DEFAULT"],
       },

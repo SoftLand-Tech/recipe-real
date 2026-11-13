@@ -725,6 +725,7 @@ export const en: Record<string, string> = {
   "a11y.removePhoto": "Remove photo",
   "a11y.openingPost": "Opening post",
   "a11y.openingRecipe": "Opening recipe",
+  "a11y.openingProfile": "Opening profile",
   "community.editAction": "Edit",
   "community.deleteAction": "Delete",
   "community.reportAction": "Report",
