@@ -107,6 +107,8 @@ export const ar: Record<string, string> = {
   "browse.offlineCaption": "بدون اتصال — عرض الوصفات المحفوظة",
   "browse.loadingMore": "جارٍ تحميل المزيد…",
   "browse.addRecipe": "إضافة وصفة",
+  "browse.filtersActive": "الفلاتر النشطة: {count}",
+  "browse.removeFilter": "إزالة {label}",
 
   // ---- صفحة الوصفة -----------------------------------------------------------
   "detail.freeLimitTitle": "بلغت الحد المجاني",
@@ -488,6 +490,8 @@ export const ar: Record<string, string> = {
     "سيحذف هذا حسابك وأوقات طهيك وسجل وتيرتك نهائيًا. لا يمكن التراجع عن هذا الإجراء.",
   "settings.deleteConfirmBtn": "حذف",
   "settings.deleteFailed": "تعذّر حذف حسابك. حاول من جديد.",
+  "settings.signOutConfirmTitle": "تسجيل الخروج؟",
+  "settings.signOutConfirmMessage": "هل أنت متأكد أنك تريد تسجيل الخروج؟",
   "settings.about": "RecipeReal v{version}",
 
   // ---- تسجيل الدخول -------------------------------------------------------------
@@ -651,6 +655,10 @@ export const ar: Record<string, string> = {
   "profile.paceSummary": "سرعة {x}× · {cooks}",
   "profile.paceTapHint": "عرض المعايرات وسجل الطهي",
   "profile.followingBtn": "متابَع",
+  "profile.shareA11y": "مشاركة الملف الشخصي",
+  "profile.shareMessage": "اطّلع على مطبخي في RecipeReal!",
+  "profile.linkCopied": "تم نسخ رابط الملف الشخصي ✓",
+  "profile.errCopyLink": "تعذّر نسخ الرابط. حاول مجددًا.",
 
   // ---- إضافات صفحة الوصفة (التقليل من العناصر؛ تُضاف في النهاية) -------------
   "detail.statReally": "يستغرق فعليًا",

@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   InteractionManager,
   LayoutAnimation,
@@ -286,6 +287,41 @@ function createStyles(colors: ThemeColors) {
       alignItems: "center",
       justifyContent: "center",
     },
+    // Count bubble on the filter toggle while advanced filters are active.
+    // Accent disc pinned to the physical top-end corner (dir styles below).
+    filterBadge: {
+      position: "absolute",
+      top: Space.xs,
+      minWidth: 16,
+      height: 16,
+      borderRadius: Radius.pill,
+      backgroundColor: colors.accent,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 3,
+    },
+    filterBadgeLtr: {
+      right: Space.xs,
+    },
+    filterBadgeRtl: {
+      left: Space.xs,
+    },
+    filterBadgeText: {
+      fontSize: 10,
+      fontWeight: "700",
+      // Literal white on the accent disc — surface goes dark in dark mode.
+      color: "#FFFFFF",
+    },
+    // The pinned search row sits directly under the title bar in the chrome
+    // block; opaque canvas so scrolled content never shows through.
+    pinnedSearch: {
+      backgroundColor: colors.canvas,
+    },
+    // Hairline closing the chrome block (bar → search → hairline → content).
+    pinnedHairline: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: colors.hairline,
+    },
     searchWrap: {
       flex: 1,
       flexDirection: "row",
@@ -536,6 +572,9 @@ type BrowseStyles = ReturnType<typeof createStyles>;
  * Search input + filter toggle. Memoized so it re-renders only when the
  * search text or the toggle/active-filter state changes — the rest of the
  * screen (chips, favorites, list) is skipped while typing or toggling.
+ * Rendered PINNED in the chrome (above the scroller): it hides on
+ * scroll-down and returns on scroll-up in lockstep with the title bar,
+ * so search/filters stay reachable from any scroll depth.
  */
 interface SearchBarProps {
   search: string;
@@ -543,6 +582,8 @@ interface SearchBarProps {
   showFilters: boolean;
   onToggleFilters: () => void;
   hasAdvancedFilters: boolean;
+  /** Active advanced filters (time/cleanup/sort) — drives the toggle badge. */
+  advancedFilterCount: number;
   /** Opens the recipe composer — the "+" pill at the END of the row. */
   onCreate: () => void;
   /** Attached to the TextInput so `?focus=1` can autofocus it on mount. */
@@ -557,12 +598,14 @@ const SearchBar = memo(function SearchBar({
   showFilters,
   onToggleFilters,
   hasAdvancedFilters,
+  advancedFilterCount,
   onCreate,
   inputRef,
   colors,
   styles,
 }: SearchBarProps) {
   const t = useT();
+  const { dir } = useLang();
   return (
     <View style={styles.searchSection}>
       <View style={styles.searchRow}>
@@ -591,10 +634,16 @@ const SearchBar = memo(function SearchBar({
           ) : null}
         </View>
         {/* Filter toggle beside the search bar — the common pattern. Filled
-            "options" + accent while open so the active state reads clearly. */}
+            "options" + accent while open so the active state reads clearly;
+            an accent count badge marks filters left active while the panel
+            is closed, so the state survives closing the panel. */}
         <IconPressable
           onPress={onToggleFilters}
-          accessibilityLabel={t("browse.toggleFilters")}
+          accessibilityLabel={
+            advancedFilterCount > 0
+              ? t("browse.filtersActive", { count: advancedFilterCount })
+              : t("browse.toggleFilters")
+          }
           style={styles.filterToggle}
         >
           <Ionicons
@@ -606,6 +655,18 @@ const SearchBar = memo(function SearchBar({
                 : colors.inkSecondary
             }
           />
+          {advancedFilterCount > 0 && !showFilters ? (
+            // Physical top-end corner: left/right don't flip in RTL (same
+            // anchoring as HeartButton/NoteBadge).
+            <View
+              style={[
+                styles.filterBadge,
+                dir === "rtl" ? styles.filterBadgeRtl : styles.filterBadgeLtr,
+              ]}
+            >
+              <Text style={styles.filterBadgeText}>{advancedFilterCount}</Text>
+            </View>
+          ) : null}
         </IconPressable>
         {/* Create recipe — completes the row: search, filters, then add. */}
         <IconPressable
@@ -1140,6 +1201,26 @@ export default function BrowseScreen() {
   useEffect(() => {
     showFiltersRef.current = showFilters;
   }, [showFilters]);
+  // The filters dropdown hangs off the pinned chrome; when a scroll-down
+  // hides the chrome (toggle off-screen), close the panel too — an orphaned
+  // panel floating over the grid reads as a glitch. Fire at hide-start
+  // (value begins rising), not at hide-end: mid-animation the panel's static
+  // anchor visually detaches from the moving search row, and a hide
+  // interrupted by an upward scroll never reaches 1, which would leave the
+  // panel open below a half-hidden chrome.
+  useEffect(() => {
+    // hidden starts at 0 on mount; it only rises while scrolling down.
+    let prev = 0;
+    const listenerId = chrome.hidden.addListener(({ value }) => {
+      if (value > prev && value > 0.1 && showFiltersRef.current) {
+        setShowFilters(false);
+      }
+      prev = value;
+    });
+    return () => {
+      chrome.hidden.removeListener(listenerId);
+    };
+  }, [chrome.hidden]);
   useFocusEffect(
     useCallback(() => {
       return () => {
@@ -1206,6 +1287,12 @@ export default function BrowseScreen() {
     setCleanupMax(null);
     setSortMode("default");
   }, []);
+
+  /** Clear EVERYTHING — quick chip + advanced filters (one tap reset). */
+  const handleClearAllFilters = useCallback(() => {
+    setFilter({ kind: "all" });
+    handleClearAdvanced();
+  }, [handleClearAdvanced]);
 
   // Animated open/close: LayoutAnimation animates the panel's mount/unmount
   // and the surrounding layout shift natively instead of a hard jump.
@@ -1646,6 +1733,12 @@ export default function BrowseScreen() {
   const hasAdvancedFilters =
     timeMax != null || cleanupMax != null || sortMode !== "default";
 
+  /** Count of active advanced filters — drives the toggle badge + label. */
+  const advancedFilterCount =
+    (timeMax != null ? 1 : 0) +
+    (cleanupMax != null ? 1 : 0) +
+    (sortMode !== "default" ? 1 : 0);
+
   const hasActiveFilters =
     search.trim().length > 0 ||
     filter.kind !== "all" ||
@@ -1693,8 +1786,18 @@ export default function BrowseScreen() {
         onClear: () => setTimeMax(null),
       });
     }
+    // The sort is a filter too — surface it so an active "Fastest" never
+    // silently reorders the grid.
+    if (sortMode !== "default") {
+      const option = SORT_MODES.find((o) => o.mode === sortMode);
+      out.push({
+        key: "sort",
+        label: option ? t(option.labelKey) : "",
+        onClear: () => setSortMode("default"),
+      });
+    }
     return out;
-  }, [filter, timeMax, t]);
+  }, [filter, timeMax, sortMode, t]);
 
   const showSkeletons =
     (state === "loading" && recipes.length === 0) ||
@@ -1711,6 +1814,39 @@ export default function BrowseScreen() {
     [],
   );
 
+  // Measured height of the PINNED search row. Feeds the list's top padding,
+  // the getItemLayout offsets, and the lockstep chrome translate below.
+  const [searchBarH, setSearchBarH] = useState(0);
+  const handleSearchBarLayout = useCallback(
+    (e: { nativeEvent: { layout: { height: number } } }) => {
+      const h = Math.round(e.nativeEvent.layout.height);
+      setSearchBarH((prev) => (prev === h ? prev : h));
+    },
+    [],
+  );
+  // Scroll content starts below the whole chrome block (title bar pad +
+  // search row) — the block is an overlay, content scrolls under it.
+  const contentTop = barPad + searchBarH;
+  // Facebook-style hide/reveal for the search row: ONE transform on the
+  // whole chrome block (title bar + search row + hairline), driven by the
+  // SAME ScrollChrome `hidden` value that moves the tab bar — so scrolling
+  // down slides the entire chrome away and any upward scroll brings search
+  // back, no matter how deep the list is. Translating the wrapper (instead
+  // of bar and row separately) keeps them glued during the animation.
+  // The +1 covers the closing hairline.
+  const chromeTranslate = useMemo(
+    () =>
+      chrome.hidden.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, -(barPad + searchBarH + 1)],
+      }),
+    [chrome.hidden, barPad, searchBarH],
+  );
+  const chromeBlockStyle = useMemo(
+    () => [{ transform: [{ translateY: chromeTranslate }] }],
+    [chromeTranslate],
+  );
+
   const cellHeight = useMemo(
     () => Math.round(((width - Space.sm) / 2) * (4 / 3)) + Space.sm,
     [width],
@@ -1718,37 +1854,27 @@ export default function BrowseScreen() {
   const getItemLayout = useCallback(
     (_data: ArrayLike<Recipe> | null | undefined, index: number) => ({
       length: cellHeight,
-      offset: barPad + headerHeight + Space.sm + cellHeight * index,
+      offset: contentTop + headerHeight + Space.sm + cellHeight * index,
       index,
     }),
-    [barPad, cellHeight, headerHeight],
+    [contentTop, cellHeight, headerHeight],
   );
 
   const listContentStyle = useMemo(
     () => [
       styles.listContent,
-      { paddingTop: barPad, paddingBottom: chromeBottomPad },
+      { paddingTop: contentTop, paddingBottom: chromeBottomPad },
     ],
-    [styles.listContent, barPad, chromeBottomPad],
+    [styles.listContent, contentTop, chromeBottomPad],
   );
 
-  // Everything below the pinned bar scrolls TOGETHER: big title, search,
-  // category chips, offline banner, active-filter chips. Nothing is pinned
-  // between the bar and the title (v1 put the chips there — felt like a gap).
+  // The search row no longer scrolls with content — it is PINNED in the
+  // chrome block (see the pinned bar wrapper in the JSX) so it hides on
+  // scroll-down and returns on scroll-up. This block keeps scrolling: the
+  // category chips, offline banner, and active-filter chips.
   const headerBlock = useMemo(
     () => (
       <View onLayout={handleHeaderLayout}>
-        <SearchBar
-          search={search}
-          onChangeSearch={setSearch}
-          showFilters={showFilters}
-          onToggleFilters={toggleFilters}
-          hasAdvancedFilters={hasAdvancedFilters}
-          onCreate={handleCreate}
-          inputRef={searchInputRef}
-          colors={colors}
-          styles={styles}
-        />
         {state === "ready" ? (
           <ChipRow
             chips={chips}
@@ -1771,25 +1897,31 @@ export default function BrowseScreen() {
                 </Text>
                 <IconPressable
                   onPress={chip.onClear}
-                  accessibilityLabel={t("filter.clearAll")}
+                  accessibilityLabel={t("browse.removeFilter", {
+                    label: chip.label,
+                  })}
                   hitSlop={6}
                 >
                   <Ionicons name="close" size={14} color={colors.accent} />
                 </IconPressable>
               </View>
             ))}
+            {/* Two or more active filters: one-tap reset right in the row. */}
+            {activeFilterChips.length > 1 ? (
+              <IconPressable
+                onPress={handleClearAllFilters}
+                accessibilityLabel={t("filter.clearAll")}
+                hitSlop={4}
+              >
+                <Chip label={t("filter.clearAll")} size="sm" tone="neutral" />
+              </IconPressable>
+            ) : null}
           </View>
         ) : null}
       </View>
     ),
     [
       handleHeaderLayout,
-      search,
-      showFilters,
-      toggleFilters,
-      hasAdvancedFilters,
-      handleCreate,
-      colors,
       styles,
       state,
       chips,
@@ -1797,7 +1929,9 @@ export default function BrowseScreen() {
       handleSelectFilter,
       offline,
       t,
+      colors,
       activeFilterChips,
+      handleClearAllFilters,
     ],
   );
 
@@ -1848,7 +1982,9 @@ export default function BrowseScreen() {
           data={displayRecipes}
           keyExtractor={recipeKeyExtractor}
           renderItem={renderItem}
-          getItemLayout={headerHeight > 0 ? getItemLayout : undefined}
+          getItemLayout={
+            headerHeight > 0 && searchBarH > 0 ? getItemLayout : undefined
+          }
           numColumns={2}
           style={FLEX_ONE_STYLE}
           contentContainerStyle={listContentStyle}
@@ -1873,7 +2009,7 @@ export default function BrowseScreen() {
           ListEmptyComponent={emptyComponent}
         />
       ) : (
-        <View style={{ flex: 1, paddingTop: barPad }}>
+        <View style={{ flex: 1, paddingTop: contentTop }}>
           {headerBlock}
           {showSkeletons && (
             <View style={styles.listContent}>
@@ -1901,11 +2037,12 @@ export default function BrowseScreen() {
         </View>
       )}
 
-      {/* Filter DROPDOWN: ephemeral overlay hanging below the bar — opening
-          it no longer pushes the grid down. */}
+      {/* Filter DROPDOWN: ephemeral overlay hanging below the pinned search
+          row — opening it no longer pushes the grid down. A scroll-down that
+          hides the chrome auto-closes it (listener above). */}
       {state === "ready" && showFilters ? (
         <View
-          style={[styles.filterPanelWrap, { top: barPad }]}
+          style={[styles.filterPanelWrap, { top: contentTop }]}
           pointerEvents="box-none"
         >
           <FilterPanel
@@ -1920,12 +2057,32 @@ export default function BrowseScreen() {
         </View>
       ) : null}
 
+      {/* Pinned chrome block: title bar + search row as ONE unit, sliding
+          off-screen on scroll-down and back on scroll-up via ScrollChrome's
+          shared `hidden` value (same animation that moves the tab bar).
+          PinnedHeaderBar gets no `hidden` — the wrapper owns the transform,
+          so bar and search row stay glued while animating. This is what
+          keeps search reachable from any scroll depth without permanently
+          pinning a tall block over the grid. */}
       <View style={styles.pinnedBar} pointerEvents="box-none">
-        <PinnedHeaderBar
-          title={t("tabs.browse")}
-          hidden={chrome.hidden}
-          rights={headerRights}
-        />
+        <Animated.View style={chromeBlockStyle} pointerEvents="box-none">
+          <PinnedHeaderBar title={t("tabs.browse")} rights={headerRights} />
+          <View style={styles.pinnedSearch} onLayout={handleSearchBarLayout}>
+            <SearchBar
+              search={search}
+              onChangeSearch={setSearch}
+              showFilters={showFilters}
+              onToggleFilters={toggleFilters}
+              hasAdvancedFilters={hasAdvancedFilters}
+              advancedFilterCount={advancedFilterCount}
+              onCreate={handleCreate}
+              inputRef={searchInputRef}
+              colors={colors}
+              styles={styles}
+            />
+          </View>
+          <View style={styles.pinnedHairline} />
+        </Animated.View>
       </View>
     </View>
   );
