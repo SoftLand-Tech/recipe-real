@@ -651,6 +651,10 @@ export const ar: Record<string, string> = {
   "profile.paceSummary": "سرعة {x}× · {cooks}",
   "profile.paceTapHint": "عرض المعايرات وسجل الطهي",
   "profile.followingBtn": "متابَع",
+  "profile.shareA11y": "مشاركة الملف الشخصي",
+  "profile.shareMessage": "اطّلع على مطبخي في RecipeReal!",
+  "profile.linkCopied": "تم نسخ رابط الملف الشخصي ✓",
+  "profile.errCopyLink": "تعذّر نسخ الرابط. حاول مجددًا.",
 
   // ---- إضافات صفحة الوصفة (التقليل من العناصر؛ تُضاف في النهاية) -------------
   "detail.statReally": "يستغرق فعليًا",

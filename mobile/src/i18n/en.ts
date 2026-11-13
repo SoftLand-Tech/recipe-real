@@ -659,6 +659,10 @@ export const en: Record<string, string> = {
   "profile.paceSummary": "{x}× pace · {cooks}",
   "profile.paceTapHint": "View calibrations & cook history",
   "profile.followingBtn": "Following",
+  "profile.shareA11y": "Share profile",
+  "profile.shareMessage": "Check out my kitchen on RecipeReal!",
+  "profile.linkCopied": "Profile link copied ✓",
+  "profile.errCopyLink": "Couldn't copy the link. Please try again.",
 
   // ---- Recipe detail (declutter additions; appended at the end) -------------
   "detail.statReally": "Really takes",
