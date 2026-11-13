@@ -1,7 +1,6 @@
 import { Fragment, useCallback, useMemo, useState } from "react";
 import {
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -117,12 +116,15 @@ export default function OnboardingScreen() {
         container: {
           flex: 1,
           backgroundColor: colors.canvas,
-          paddingBottom: insets.bottom,
         },
         scrollContent: {
           paddingHorizontal: Space.lg,
           paddingTop: insets.top + Space.lg,
-          paddingBottom: Space.xxl,
+          // Bottom inset lives on the scroll content, NOT on the
+          // KeyboardAvoidingView above: the lib's animated style always
+          // writes paddingBottom (0 when closed) after the user style, so a
+          // static bottom inset on the KAV itself is silently dropped.
+          paddingBottom: Space.xxl + insets.bottom,
           gap: Space.lg,
           maxWidth: 560,
           width: "100%",

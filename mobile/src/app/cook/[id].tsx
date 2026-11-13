@@ -1877,15 +1877,21 @@ export default function CookModeScreen() {
       <KeyboardAvoidingView
         style={[
           styles.fullScreen,
-          {
-            paddingTop: insets.top + Space.md,
-            paddingBottom: insets.bottom + Space.md,
-          },
+          // paddingTop only: the lib's animated style always writes
+          // paddingBottom (0 when closed) after the user style, so a static
+          // bottom inset here would be silently dropped — it lives on the
+          // scroll content below instead.
+          { paddingTop: insets.top + Space.md },
         ]}
         behavior="padding"
       >
         <KeyboardAwareScrollView
-          contentContainerStyle={styles.feedbackScroll}
+          contentContainerStyle={[
+            styles.feedbackScroll,
+            // Full previous bottom spacing (scroll paddingVertical + the old
+            // root's bottom inset), kept clear of the KAV override.
+            { paddingBottom: Space.lg + insets.bottom + Space.md },
+          ]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
