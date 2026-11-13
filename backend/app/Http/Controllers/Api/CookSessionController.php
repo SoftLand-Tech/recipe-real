@@ -136,7 +136,7 @@ class CookSessionController extends Controller
             'source' => 'quick',
         ]);
 
-        $this->absorbTimingWrite($recipe->id);
+        $this->absorbTimingWrite($recipe->id, [], recomputeSteps: false);
 
         $recipe->refresh();
 
@@ -180,18 +180,18 @@ class CookSessionController extends Controller
      *                              pass [] and heal steps that already have
      *                              submissions)
      */
-    private function absorbTimingWrite(int $recipeId, array $stepIds = []): void
+    private function absorbTimingWrite(int $recipeId, array $stepIds = [], bool $recomputeSteps = true): void
     {
         $recipe = Recipe::find($recipeId);
         if ($recipe === null) {
             return;
         }
 
-        $recipe->refreshCommunityTiming($stepIds);
+        $recipe->refreshCommunityTiming($stepIds, $recomputeSteps);
 
         CommunityFeedCache::bumpTiming();
         ShareCache::forgetRecipe($recipe->id);
-        $this->syncSearch($recipe->fresh(), 'upsert');
+        $this->syncSearch($recipe, 'upsert');
     }
 
     /**
@@ -216,7 +216,12 @@ class CookSessionController extends Controller
                 return;
             }
 
-            $typesense->upsertDocs([$typesense->documentFor($recipe)]);
+            $fresh = $recipe->fresh();
+            if ($fresh === null) {
+                return;
+            }
+
+            $typesense->upsertDocs([$typesense->documentFor($fresh)]);
         } catch (Throwable $e) {
             Log::warning('typesense.sync.failed', [
                 'op' => $op,

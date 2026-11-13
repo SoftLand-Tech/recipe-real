@@ -34,7 +34,17 @@ class AppInstallController extends Controller
         if ($user) {
             $install->user_id = $user->id;
         }
-        // Touch last-seen on every heartbeat, even when nothing changed.
+
+        if (
+            $install->exists
+            && ! $install->isDirty(['platform', 'app_version', 'user_id'])
+            && $install->updated_at !== null
+            && $install->updated_at->gt(now()->subHour())
+        ) {
+            return response()->json(null, 204);
+        }
+
+        // Touch last-seen when metadata changed or at most once per hour.
         $install->updated_at = now();
         $install->save();
 

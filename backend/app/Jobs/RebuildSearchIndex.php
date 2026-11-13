@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -19,11 +20,14 @@ use Illuminate\Support\Facades\Artisan;
  * direct single-row INSERT used on create (UserRecipeController::store,
  * new rowid, no old row to replace) and this full rebuild for updates and
  * deletes. On the sync queue connection it runs immediately; on the
- * database/redis queue it runs async via a worker.
+ * database/redis queue it runs async via a worker, with ShouldBeUnique
+ * coalescing rapid updates within 30s.
  */
-class RebuildSearchIndex implements ShouldQueue
+class RebuildSearchIndex implements ShouldQueue, ShouldBeUnique
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public int $uniqueFor = 30;
 
     public function handle(): void
     {

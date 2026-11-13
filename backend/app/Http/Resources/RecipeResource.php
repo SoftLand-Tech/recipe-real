@@ -8,6 +8,50 @@ use Illuminate\Http\Resources\Json\JsonResource;
 class RecipeResource extends JsonResource
 {
     /**
+     * Every column on `recipes` that this resource reads — used by detail
+     * and seed queries to avoid pulling unused metadata/timestamps.
+     *
+     * @var list<string>
+     */
+    public const COLUMNS = [
+        'id',
+        'title',
+        'source_url',
+        'image_url',
+        'title_ar',
+        'ingredients_ar',
+        'steps_ar',
+        'ingredients',
+        'ingredients_structured',
+        'steps',
+        'aggregated_rating',
+        'review_count',
+        'category',
+        'keywords',
+        'description',
+        'calories',
+        'protein_g',
+        'fat_g',
+        'publisher_time_minutes',
+        'servings',
+        'prep_time_minutes',
+        'cook_time_minutes',
+        'community_avg_minutes',
+        'reality_minutes',
+        'reality_source',
+        'reality_samples',
+        'cleanup_avg_minutes',
+        'dish_count',
+        'grease_level',
+        'dishwasher_safe',
+    ];
+
+    /**
+     * Constrained column list for eager-loading `recipeSteps` in seed/show.
+     */
+    public const STEP_COLUMNS = 'id,recipe_id,step_number,description,description_ar,step_type,publisher_minutes,community_avg_minutes,ai_minutes,literal_minutes';
+
+    /**
      * @return array<string, mixed>
      */
     public function toArray(Request $request): array
