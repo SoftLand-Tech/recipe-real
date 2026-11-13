@@ -1,4 +1,13 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  memo,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -53,7 +62,7 @@ import { track } from "@/analytics";
 import { WEB_BASE_URL } from "@/config";
 import type { Post, PostRecipe, PostSort } from "@/types";
 import { useLang, useT, type Lang, type TranslateFn } from "@/i18n";
-import { Radius, Space, Type, useThemeColors } from "@/theme";
+import { Radius, Space, Type, useThemeColors, type ThemeColors } from "@/theme";
 import {
   ActionSheet,
   Avatar,
@@ -118,8 +127,195 @@ const SORT_OPTIONS: { value: FeedSort; labelKey: string }[] = [
 ];
 
 
-/**
- * Safety cap for the pull-to-refresh spinner: it must never outlive ~10s
+const EMPTY_POSTS: Post[] = [];
+const FLEX_ONE_STYLE = { flex: 1 } as const;
+const SKELETON_INDICES = [0, 1, 2] as const;
+const SKELETON_LIST_STYLE = { paddingHorizontal: 0, gap: Space.xs } as const;
+const SKELETON_COL_STYLE = { flex: 1, gap: 6 } as const;
+const SKELETON_W40_STYLE = { width: "40%" } as const;
+const SKELETON_W25_STYLE = { width: "25%", height: 10 } as const;
+const SKELETON_W95_STYLE = { width: "95%" } as const;
+const SKELETON_W80_STYLE = { width: "80%" } as const;
+const BODY_MEASURE_MIN_CHARS = 120;
+
+function postKeyExtractor(item: Post): string {
+  return String(item.id);
+}
+
+function createPostCardStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    card: {
+      gap: Space.sm,
+      padding: Space.md,
+      borderRadius: 0,
+    },
+    headRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Space.sm,
+    },
+    headMain: {
+      flex: 1,
+      gap: 2,
+    },
+    // Facebook-style follow pill on the author row: accent-filled =
+    // "Follow" CTA; quiet soft + hairline = "Following".
+    followBtn: {
+      height: 30,
+      paddingHorizontal: Space.md,
+      borderRadius: Radius.pill,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.accentSoft,
+    },
+    followBtnOn: {
+      backgroundColor: colors.surfaceSoft,
+      borderWidth: 1,
+      borderColor: colors.hairline,
+    },
+    followBtnText: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: colors.accent,
+    },
+    followBtnTextOn: {
+      color: colors.inkSecondary,
+    },
+    menuBtn: {
+      width: 36,
+      height: 36,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    author: {
+      ...Type.title,
+      color: colors.ink,
+      flexShrink: 1,
+    },
+    relRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+    },
+    relTime: {
+      ...Type.caption,
+      color: colors.inkFaint,
+    },
+    globeIcon: {
+      marginTop: 1,
+    },
+    reportedCaption: {
+      ...Type.caption,
+      color: colors.success,
+      marginTop: -Space.xs,
+      marginStart: Space.xs,
+    },
+    body: {
+      ...Type.body,
+      color: colors.ink,
+    },
+    recipeRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Space.sm,
+      padding: Space.sm,
+      borderRadius: Radius.md,
+      backgroundColor: colors.surfaceSoft,
+      alignSelf: "stretch",
+    },
+    recipeThumb: {
+      width: 36,
+      height: 36,
+      borderRadius: Radius.sm,
+      backgroundColor: colors.hairline,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+    },
+    recipeTitle: {
+      ...Type.bodySm,
+      fontWeight: "600",
+      color: colors.ink,
+      flex: 1,
+    },
+    // Facebook counts row — likes left, comments right, hairline top
+    countsRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingTop: Space.xs,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.hairline,
+    },
+    countsLeft: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+    },
+    countsText: {
+      ...Type.caption,
+      color: colors.inkSecondary,
+    },
+    actionsRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.hairline,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
+      marginHorizontal: -Space.md,
+      paddingHorizontal: Space.md,
+    },
+    action: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+      paddingVertical: Space.sm + 2,
+    },
+    actionCount: {
+      ...Type.bodySm,
+      fontWeight: "600",
+      color: colors.inkSecondary,
+    },
+    actionCountActive: {
+      color: colors.accent,
+    },
+    authPrompt: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Space.sm,
+      paddingTop: Space.xs,
+    },
+    authText: {
+      ...Type.bodySm,
+      color: colors.inkSecondary,
+      flex: 1,
+    },
+    seeMore: {
+      ...Type.bodySm,
+      color: colors.inkSecondary,
+      marginTop: 2,
+    },
+  });
+}
+
+const postCardStylesCache = new WeakMap<
+  ThemeColors,
+  ReturnType<typeof createPostCardStyles>
+>();
+
+function getPostCardStyles(colors: ThemeColors) {
+  let cached = postCardStylesCache.get(colors);
+  if (!cached) {
+    cached = createPostCardStyles(colors);
+    postCardStylesCache.set(colors, cached);
+  }
+  return cached;
+}
+
+/** Safety cap for the pull-to-refresh spinner: it must never outlive ~10s
  * whatever the network does (force-cleared by a setTimeout guard).
  */
 const REFRESH_SPINNER_MAX_MS = 10_000;
@@ -337,6 +533,21 @@ const PostCard = memo(function PostCard({
   // ---- Read-more (body clamping) --------------------------------------------
   const [bodyExpanded, setBodyExpanded] = useState(false);
   const [bodyOverflows, setBodyOverflows] = useState(false);
+  const canOverflow = post.body.length > BODY_MEASURE_MIN_CHARS;
+
+  const openDetail = useCallback(() => {
+    // Pass the feed's full Post to the detail screen for an instant
+    // paint; the detail revalidates from the network behind it.
+    setPostPreview(post);
+    router.push(`/post/${post.id}`);
+  }, [post]);
+
+  const handleBodyTextLayout = useCallback(
+    (e: { nativeEvent: { lines: unknown[] } }) => {
+      setBodyOverflows(e.nativeEvent.lines.length > 3);
+    },
+    [],
+  );
 
   // ---- ⋯ menu (own: delete / others: report + block) ------------------------
   const [reported, setReported] = useState(false);
@@ -358,160 +569,7 @@ const PostCard = memo(function PostCard({
     setViewerOpen(true);
   }, []);
 
-  const styles = useMemo(
-    () =>
-      StyleSheet.create({
-        card: {
-          gap: Space.sm,
-          padding: Space.md,
-          borderRadius: 0,
-        },
-        headRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.sm,
-        },
-        headMain: {
-          flex: 1,
-          gap: 2,
-        },
-        // Facebook-style follow pill on the author row: accent-filled =
-        // "Follow" CTA; quiet soft + hairline = "Following".
-        followBtn: {
-          height: 30,
-          paddingHorizontal: Space.md,
-          borderRadius: Radius.pill,
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: colors.accentSoft,
-        },
-        followBtnOn: {
-          backgroundColor: colors.surfaceSoft,
-          borderWidth: 1,
-          borderColor: colors.hairline,
-        },
-        followBtnText: {
-          fontSize: 13,
-          fontWeight: "600",
-          color: colors.accent,
-        },
-        followBtnTextOn: {
-          color: colors.inkSecondary,
-        },
-        author: {
-          ...Type.title,
-          color: colors.ink,
-          flexShrink: 1,
-        },
-        relRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 4,
-        },
-        relTime: {
-          ...Type.caption,
-          color: colors.inkFaint,
-        },
-        globeIcon: {
-          marginTop: 1,
-        },
-        reportedCaption: {
-          ...Type.caption,
-          color: colors.success,
-          marginTop: -Space.xs,
-          marginStart: Space.xs,
-        },
-        body: {
-          ...Type.body,
-          color: colors.ink,
-        },
-        recipeRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.sm,
-          padding: Space.sm,
-          borderRadius: Radius.md,
-          backgroundColor: colors.surfaceSoft,
-          alignSelf: "stretch",
-        },
-        recipeThumb: {
-          width: 36,
-          height: 36,
-          borderRadius: Radius.sm,
-          backgroundColor: colors.hairline,
-          alignItems: "center",
-          justifyContent: "center",
-          overflow: "hidden",
-        },
-        recipeTitle: {
-          ...Type.bodySm,
-          fontWeight: "600",
-          color: colors.ink,
-          flex: 1,
-        },
-        // Facebook counts row — likes left, comments right, hairline top
-        countsRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          paddingTop: Space.xs,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: colors.hairline,
-        },
-        countsLeft: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 4,
-        },
-        countsText: {
-          ...Type.caption,
-          color: colors.inkSecondary,
-        },
-        actionsRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: colors.hairline,
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: colors.hairline,
-          marginHorizontal: -Space.md,
-          paddingHorizontal: Space.md,
-        },
-        action: {
-          flex: 1,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 6,
-          paddingVertical: Space.sm + 2,
-        },
-        actionCount: {
-          ...Type.bodySm,
-          fontWeight: "600",
-          color: colors.inkSecondary,
-        },
-        actionCountActive: {
-          color: colors.accent,
-        },
-        authPrompt: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: Space.sm,
-          paddingTop: Space.xs,
-        },
-        authText: {
-          ...Type.bodySm,
-          color: colors.inkSecondary,
-          flex: 1,
-        },
-        seeMore: {
-          ...Type.bodySm,
-          color: colors.inkSecondary,
-          marginTop: 2,
-        },
-      }),
-    [colors],
-  );
+  const styles = getPostCardStyles(colors);
 
   const rel = relativeDate(t, post.created_at);
   const recipeRel = post.recipe;
@@ -576,7 +634,7 @@ const PostCard = memo(function PostCard({
             accessibilityLabel={t("community.postActions")}
             accessibilityRole="button"
             hitSlop={12}
-            style={{ width: 36, height: 36, alignItems: "center", justifyContent: "center" }}
+            style={styles.menuBtn}
           >
             <Ionicons
               name="ellipsis-horizontal"
@@ -596,25 +654,18 @@ const PostCard = memo(function PostCard({
             only reports clamped lines when numberOfLines is set, so we measure
             separately). The hidden Text has height:0 and pointerEvents="none"
             so it is invisible and non-interactive. */}
-        <IconPressable
-          onPress={() => {
-            // Pass the feed's full Post to the detail screen for an instant
-            // paint; the detail revalidates from the network behind it.
-            setPostPreview(post);
-            router.push(`/post/${post.id}`);
-          }}
-        >
-          {/* Hidden measurement text — no numberOfLines, no height */}
-          <Text
-            style={[styles.body, measureStyle]}
-            numberOfLines={undefined}
-            onTextLayout={(e) => {
-              setBodyOverflows(e.nativeEvent.lines.length > 3);
-            }}
-            aria-hidden
-          >
-            {post.body}
-          </Text>
+        <Pressable onPress={openDetail}>
+          {/* Hidden measurement text — mounted only for bodies long enough to wrap >3 lines */}
+          {canOverflow ? (
+            <Text
+              style={[styles.body, measureStyle]}
+              numberOfLines={undefined}
+              onTextLayout={handleBodyTextLayout}
+              aria-hidden
+            >
+              {post.body}
+            </Text>
+          ) : null}
           {/* Visible clamped text */}
           <Text
             style={styles.body}
@@ -622,7 +673,7 @@ const PostCard = memo(function PostCard({
           >
             {post.body}
           </Text>
-          {bodyOverflows && !bodyExpanded ? (
+          {canOverflow && bodyOverflows && !bodyExpanded ? (
             <IconPressable
               onPress={() => setBodyExpanded(true)}
               hitSlop={Space.xs}
@@ -638,7 +689,7 @@ const PostCard = memo(function PostCard({
               <Text style={styles.seeMore}>{t("community.seeLess")}</Text>
             </IconPressable>
           ) : null}
-        </IconPressable>
+        </Pressable>
 
         {/* Optional multi-image grid (cells are NOT wrapped in the card tappable). */}
         {post.images.length > 0 ? (
@@ -890,6 +941,58 @@ const PostCard = memo(function PostCard({
   );
 });
 
+// ---- Comments sheet controller --------------------------------------------------
+
+interface CommentsControllerHandle {
+  open: (postId: number) => void;
+}
+
+interface CommunityCommentsControllerProps {
+  myAvatar: string | null;
+  myName: string | null;
+  onCommented: (postId: number) => void;
+}
+
+/**
+ * Isolates CommentsSheet visibility/postId state from CommunityScreen so opening
+ * or closing comments does not re-render the FlatList or its PostCards.
+ */
+const CommunityCommentsController = memo(
+  forwardRef<CommentsControllerHandle, CommunityCommentsControllerProps>(
+    function CommunityCommentsController({ myAvatar, myName, onCommented }, ref) {
+      const [postId, setPostId] = useState<number | null>(null);
+
+      useImperativeHandle(
+        ref,
+        () => ({
+          open: (nextPostId: number) => setPostId(nextPostId),
+        }),
+        [],
+      );
+
+      const close = useCallback(() => setPostId(null), []);
+
+      return (
+        <CommentsSheet
+          postId={postId}
+          visible={postId != null}
+          onClose={close}
+          myAvatar={myAvatar}
+          myName={myName}
+          onCommented={onCommented}
+        />
+      );
+    },
+  ),
+);
+
+interface SortCacheEntry {
+  posts: Post[];
+  hasMore: boolean;
+  page: number;
+  fetchedAt: number;
+}
+
 // ---- Screen ----------------------------------------------------------------------
 
 /**
@@ -912,7 +1015,7 @@ export default function CommunityScreen() {
   const [myUserId, setMyUserId] = useState<number | null>(null);
   const [myAvatar, setMyAvatar] = useState<string | null>(null);
   const [myName, setMyName] = useState<string | null>(null);
-  const [commentsPostId, setCommentsPostId] = useState<number | null>(null);
+  const commentsRef = useRef<CommentsControllerHandle>(null);
   // Feed ordering: "suggested" (default) | "latest" | "trending"; persisted.
   const [sort, setSort] = useState<FeedSort>("suggested");
   const [posts, setPosts] = useState<Post[]>([]);
@@ -950,6 +1053,18 @@ export default function CommunityScreen() {
 
   /** Sort of the newest issued fetch (dropping stale responses). */
   const feedKeyRef = useRef("suggested");
+
+  /** Per-sort in-memory cache so switching sort tabs paints immediately. */
+  const sortCacheRef = useRef(new Map<FeedSort, SortCacheEntry>());
+
+  /** Tracks initial focus so mount does not duplicate the cold-mount fetch. */
+  const didMountFocusRef = useRef(false);
+
+  const updateAllSortCaches = useCallback((transform: (rows: Post[]) => Post[]) => {
+    sortCacheRef.current.forEach((entry, key) => {
+      sortCacheRef.current.set(key, { ...entry, posts: transform(entry.posts) });
+    });
+  }, []);
 
   /**
    * In-flight optimistic like toggles: post id → the toggled-to state.
@@ -1001,7 +1116,10 @@ export default function CommunityScreen() {
       const activeSort = sortOverride ?? sortRef.current;
       const feedKey = activeSort;
       feedKeyRef.current = feedKey;
+      const prevRefreshAt = lastFeedRefreshAt;
       if (targetPage === 1) {
+        // Stamp at start so concurrent focus/mount paths don't duplicate page 1.
+        lastFeedRefreshAt = Date.now();
         if (postsRef.current.length === 0) setState("loading");
       } else {
         setLoadingMore(true);
@@ -1012,29 +1130,43 @@ export default function CommunityScreen() {
         if (feedKeyRef.current !== feedKey) return;
         // A refresh landing mid-like must not clobber the optimistic heart.
         const rows = rebasePendingLikes(result.posts);
-        setPosts((prev) =>
-          targetPage === 1
-            ? rows
-            : [
-                ...prev,
-                ...rows.filter((p) => !prev.some((q) => q.id === p.id)),
-              ],
-        );
+        const now = Date.now();
         if (targetPage === 1) {
           postsRef.current = rows;
+          setPosts(rows);
+          lastFeedRefreshAt = now;
+          sortCacheRef.current.set(activeSort, {
+            posts: rows,
+            hasMore: result.hasMore,
+            page: 1,
+            fetchedAt: now,
+          });
+          void writeMirroredFeed(activeSort, rows);
+        } else {
+          setPosts((prev) => {
+            const next = [
+              ...prev,
+              ...rows.filter((p) => !prev.some((q) => q.id === p.id)),
+            ];
+            postsRef.current = next;
+            const prevEntry = sortCacheRef.current.get(activeSort);
+            sortCacheRef.current.set(activeSort, {
+              posts: next,
+              hasMore: result.hasMore,
+              page: targetPage,
+              fetchedAt: prevEntry?.fetchedAt ?? now,
+            });
+            return next;
+          });
         }
         setPage(targetPage);
         setHasMore(result.hasMore);
         setState("ready");
-        if (targetPage === 1) {
-          // Successful page-1 refresh: stamp the focus throttle and refresh
-          // the AsyncStorage mirror so the next cold mount paints instantly
-          // (homeRails pattern). Best-effort on the write.
-          lastFeedRefreshAt = Date.now();
-          void writeMirroredFeed(activeSort, rows);
-        }
       } catch (error) {
         if (feedKeyRef.current !== feedKey) return;
+        if (targetPage === 1 && prevRefreshAt === 0 && postsRef.current.length === 0) {
+          lastFeedRefreshAt = prevRefreshAt;
+        }
         console.warn("[RecipeReal] community feed load failed:", error);
         if (postsRef.current.length === 0) setState("error");
       } finally {
@@ -1044,17 +1176,24 @@ export default function CommunityScreen() {
     [rebasePendingLikes],
   );
 
-  // Restore the persisted sort preference, then load page 1 with it
+  // Restore the persisted sort preference and cached mirror in parallel, then load page 1
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let stored: string | null = null;
-      try {
-        stored = await AsyncStorage.getItem(SORT_PREF_KEY);
-      } catch {
-        // Best-effort: fall through with the default sort.
-      }
+      const [pairs, ok] = await Promise.all([
+        AsyncStorage.multiGet([SORT_PREF_KEY, COMMUNITY_FEED_KEY]).catch(
+          () =>
+            [
+              [SORT_PREF_KEY, null],
+              [COMMUNITY_FEED_KEY, null],
+            ] as [string, string | null][],
+        ),
+        hasToken().catch(() => false),
+      ]);
       if (cancelled) return;
+      const pairMap = new Map(pairs);
+      const stored = pairMap.get(SORT_PREF_KEY) ?? null;
+      const rawMirror = pairMap.get(COMMUNITY_FEED_KEY) ?? null;
       const initial: FeedSort = (stored === "trending" || stored === "suggested") ? (stored as FeedSort) : "suggested";
       sortRef.current = initial;
       setSort(initial);
@@ -1062,25 +1201,25 @@ export default function CommunityScreen() {
       // cold mount with nothing on screen, and only when signed in — the
       // normal refresh right after revalidates. The envelope's sort guards
       // against painting one ordering's rows under another chip.
-      if (postsRef.current.length === 0) {
+      if (postsRef.current.length === 0 && ok && rawMirror) {
         try {
-          const ok = await hasToken();
-          if (!cancelled && ok) {
-            const raw = await AsyncStorage.getItem(COMMUNITY_FEED_KEY);
-            if (!cancelled && postsRef.current.length === 0 && raw) {
-              const parsed = JSON.parse(raw) as Partial<CachedCommunityFeed>;
-              const mirrored = Array.isArray(parsed?.posts) ? parsed.posts : [];
-              if (
-                mirrored.length > 0 &&
-                (parsed.sort == null || parsed.sort === initial)
-              ) {
-                // Update the ref too so the fetch below stays SILENT — it
-                // only flips to "loading" when the visible feed is empty.
-                postsRef.current = mirrored;
-                setPosts(mirrored);
-                setState("ready");
-              }
-            }
+          const parsed = JSON.parse(rawMirror) as Partial<CachedCommunityFeed>;
+          const mirrored = Array.isArray(parsed?.posts) ? parsed.posts : [];
+          if (
+            mirrored.length > 0 &&
+            (parsed.sort == null || parsed.sort === initial)
+          ) {
+            // Update the ref too so the fetch below stays SILENT — it
+            // only flips to "loading" when the visible feed is empty.
+            postsRef.current = mirrored;
+            setPosts(mirrored);
+            setState("ready");
+            sortCacheRef.current.set(initial, {
+              posts: mirrored,
+              hasMore: true,
+              page: 1,
+              fetchedAt: 0,
+            });
           }
         } catch {
           // Corrupt/unreadable mirror — ignore; the fetch is authoritative.
@@ -1155,12 +1294,19 @@ export default function CommunityScreen() {
       // applied to the rows immediately for the same reason — the focus
       // refresh below is throttled, and without the instant paint the write
       // would look undone for up to 60s.
+      const isInitialFocus = !didMountFocusRef.current;
+      didMountFocusRef.current = true;
       const mutations = consumeFeedMutations();
       if (mutations.length > 0) {
-        let rows = postsRef.current;
-        for (const m of mutations) rows = applyMutation(rows, m);
+        const applyAll = (input: Post[]) => {
+          let next = input;
+          for (const m of mutations) next = applyMutation(next, m);
+          return next;
+        };
+        const rows = applyAll(postsRef.current);
         postsRef.current = rows;
         setPosts(rows);
+        updateAllSortCaches(applyAll);
         if (rows.length > 0) setState("ready");
         // Mirror the applied mutations so a restart paints them too.
         void writeMirroredFeed(sortRef.current, rows);
@@ -1175,6 +1321,12 @@ export default function CommunityScreen() {
           postsRef.current = withPost;
           setPosts(withPost);
           setState("ready");
+          sortCacheRef.current.set("latest", {
+            posts: withPost,
+            hasMore: true,
+            page: 1,
+            fetchedAt: Date.now(),
+          });
           void writeMirroredFeed(sortRef.current, withPost);
         }
         setPostedNotice("loading");
@@ -1190,6 +1342,10 @@ export default function CommunityScreen() {
                   : [justPosted, ...prev];
               queueMicrotask(() => {
                 postsRef.current = next;
+                const entry = sortCacheRef.current.get("latest");
+                if (entry) {
+                  sortCacheRef.current.set("latest", { ...entry, posts: next });
+                }
                 void writeMirroredFeed(sortRef.current, next);
               });
               return next;
@@ -1198,8 +1354,9 @@ export default function CommunityScreen() {
           setPostedNotice("done");
         });
       } else if (
-        mutations.length > 0 ||
-        Date.now() - lastFeedRefreshAt >= FEED_REFETCH_THROTTLE_MS
+        !isInitialFocus &&
+        (mutations.length > 0 ||
+          Date.now() - lastFeedRefreshAt >= FEED_REFETCH_THROTTLE_MS)
       ) {
         void fetchPage(1);
       }
@@ -1211,22 +1368,38 @@ export default function CommunityScreen() {
   );
 
   /**
-   * Switch the feed ordering: persists the choice, clears the list and
-   * refetches page 1 with the new sort param.
+   * Switch the feed ordering: persists the choice, paints immediately from
+   * the per-sort cache if available, and refetches page 1 when uncached or stale.
    */
   const changeSort = useCallback(
     (next: FeedSort) => {
-      if (next === sort) return;
+      if (next === sortRef.current) return;
+      sortRef.current = next;
       setSort(next);
       AsyncStorage.setItem(SORT_PREF_KEY, next).catch(() => {
         // Best-effort persistence.
       });
+      const cached = sortCacheRef.current.get(next);
+      if (cached) {
+        feedKeyRef.current = next;
+        postsRef.current = cached.posts;
+        setPosts(cached.posts);
+        setPage(cached.page);
+        setHasMore(cached.hasMore);
+        setState("ready");
+        if (Date.now() - cached.fetchedAt >= FEED_REFETCH_THROTTLE_MS) {
+          void fetchPage(1, next);
+        }
+        return;
+      }
       setPosts([]);
       postsRef.current = [];
+      setPage(1);
+      setHasMore(false);
       setState("loading");
       void fetchPage(1, next);
     },
-    [sort, fetchPage],
+    [fetchPage],
   );
 
   const handleRefresh = useCallback(async () => {
@@ -1245,15 +1418,19 @@ export default function CommunityScreen() {
     void fetchPage(page + 1);
   }, [state, loadingMore, hasMore, page, fetchPage]);
 
-  const bumpCommentCount = useCallback((postId: number) => {
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p,
-      ),
-    );
-    // Mirror the count so a restart paints it (see communityMirror).
-    void incrementMirroredCommentCount(postId);
-  }, []);
+  const bumpCommentCount = useCallback(
+    (postId: number) => {
+      const transform = (rows: Post[]) =>
+        rows.map((p) =>
+          p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p,
+        );
+      setPosts(transform);
+      updateAllSortCaches(transform);
+      // Mirror the count so a restart paints it (see communityMirror).
+      void incrementMirroredCommentCount(postId);
+    },
+    [updateAllSortCaches],
+  );
 
   /** In-flight optimistic like registry passed down to the cards (see ref). */
   const isLikePending = useCallback(
@@ -1276,18 +1453,19 @@ export default function CommunityScreen() {
    */
   const applyLikeState = useCallback(
     (postId: number, liked: boolean, likesCount: number) => {
-      setPosts((prev) =>
-        prev.map((p) =>
+      const transform = (rows: Post[]) =>
+        rows.map((p) =>
           p.id === postId ? { ...p, liked_by_me: liked, likes_count: likesCount } : p,
-        ),
-      );
+        );
+      setPosts(transform);
+      updateAllSortCaches(transform);
       // Mirror the authoritative state so a restart paints it.
       void patchMirroredPost(postId, {
         liked_by_me: liked,
         likes_count: likesCount,
       });
     },
-    [],
+    [updateAllSortCaches],
   );
 
   /**
@@ -1297,24 +1475,30 @@ export default function CommunityScreen() {
    */
   const applyFollowState = useCallback(
     (userId: number, following: boolean) => {
-      setPosts((prev) =>
-        prev.map((p) =>
+      const transform = (rows: Post[]) =>
+        rows.map((p) =>
           p.user.id === userId
             ? { ...p, user: { ...p.user, followed_by_me: following } }
             : p,
-        ),
-      );
+        );
+      setPosts(transform);
+      updateAllSortCaches(transform);
       // Mirror every affected row so a restart paints the pill correctly.
       void patchMirroredFollow(userId, following);
     },
-    [],
+    [updateAllSortCaches],
   );
 
   /** Drops a post from the feed after its own deletion or an author block. */
-  const removePost = useCallback((postId: number) => {
-    setPosts((prev) => prev.filter((p) => p.id !== postId));
-    void removeMirroredPost(postId);
-  }, []);
+  const removePost = useCallback(
+    (postId: number) => {
+      const transform = (rows: Post[]) => rows.filter((p) => p.id !== postId);
+      setPosts(transform);
+      updateAllSortCaches(transform);
+      void removeMirroredPost(postId);
+    },
+    [updateAllSortCaches],
+  );
 
   const startCompose = useCallback(() => {
     if (signedIn === false) {
@@ -1325,12 +1509,12 @@ export default function CommunityScreen() {
   }, [signedIn]);
 
   const openComments = useCallback((postId: number) => {
-    setCommentsPostId(postId);
+    commentsRef.current?.open(postId);
   }, []);
 
-  const closeComments = useCallback(() => {
-    setCommentsPostId(null);
-  }, []);
+  const retryFirstPage = useCallback(() => {
+    void fetchPage(1);
+  }, [fetchPage]);
 
   const styles = useMemo(
     () =>
@@ -1513,49 +1697,238 @@ export default function CommunityScreen() {
     [colors, insets.bottom],
   );
 
-  const filterChips = (
-    <View style={styles.filterRow}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.filterScrollInner}
-            contentContainerStyle={styles.filterScroll}
-          >
-            {SORT_OPTIONS.map(({ value, labelKey }) => (
-              <IconPressable
-                key={value}
-                onPress={() => changeSort(value)}
-                hitSlop={Space.xs}
-              >
-                <Chip
-                  label={t(labelKey)}
-                  tone={sort === value ? "accent" : "neutral"}
-                  size="sm"
-                />
-              </IconPressable>
-            ))}
-          </ScrollView>
-    </View>
+  const filterChips = useMemo(
+    () => (
+      <View style={styles.filterRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterScrollInner}
+          contentContainerStyle={styles.filterScroll}
+        >
+          {SORT_OPTIONS.map(({ value, labelKey }) => (
+            <IconPressable
+              key={value}
+              onPress={() => changeSort(value)}
+              hitSlop={Space.xs}
+            >
+              <Chip
+                label={t(labelKey)}
+                tone={sort === value ? "accent" : "neutral"}
+                size="sm"
+              />
+            </IconPressable>
+          ))}
+        </ScrollView>
+      </View>
+    ),
+    [styles.filterRow, styles.filterScrollInner, styles.filterScroll, sort, changeSort, t],
   );
 
-  const composerCard = (
-    /* Composer entry — Facebook top-of-feed card */
-        <IconPressable onPress={startCompose} style={styles.composerCard} hitSlop={Space.xs}>
-          <Avatar
-            name={myName ?? "?"}
-            uri={myAvatar}
-            size={36}
-          />
-          <View style={styles.composerGhost}>
-            <Text style={styles.composerGhostText} numberOfLines={1}>
-              {signedIn ? t("community.compose") : t("community.signInPrompt")}
+  const composerCard = useMemo(
+    () => (
+      /* Composer entry — Facebook top-of-feed card */
+      <IconPressable onPress={startCompose} style={styles.composerCard} hitSlop={Space.xs}>
+        <Avatar
+          name={myName ?? "?"}
+          uri={myAvatar}
+          size={36}
+        />
+        <View style={styles.composerGhost}>
+          <Text style={styles.composerGhostText} numberOfLines={1}>
+            {signedIn ? t("community.compose") : t("community.signInPrompt")}
+          </Text>
+        </View>
+        <View style={styles.composerPhotoBtn}>
+          <Ionicons name="image-outline" size={20} color={colors.accent} />
+        </View>
+      </IconPressable>
+    ),
+    [
+      startCompose,
+      styles.composerCard,
+      styles.composerGhost,
+      styles.composerGhostText,
+      styles.composerPhotoBtn,
+      myName,
+      myAvatar,
+      signedIn,
+      t,
+      colors.accent,
+    ],
+  );
+
+  const listData = state === "ready" ? posts : EMPTY_POSTS;
+
+  const renderPostItem = useCallback(
+    ({ item }: { item: Post }) => (
+      <PostCard
+        post={item}
+        signedIn={signedIn}
+        lang={lang}
+        onCommented={bumpCommentCount}
+        onOpenComments={openComments}
+        onLiked={applyLikeState}
+        onFollowed={applyFollowState}
+        myUserId={myUserId}
+        onRemove={removePost}
+        isLikePending={isLikePending}
+        markLikePending={markLikePending}
+        clearLikePending={clearLikePending}
+      />
+    ),
+    [
+      signedIn,
+      lang,
+      bumpCommentCount,
+      openComments,
+      applyLikeState,
+      applyFollowState,
+      myUserId,
+      removePost,
+      isLikePending,
+      markLikePending,
+      clearLikePending,
+    ],
+  );
+
+  const listContentStyle = useMemo(
+    () => [
+      styles.listContent,
+      // Clear the ABSOLUTE tab-bar overlay + pinned bar (measured).
+      { paddingTop: barPad, paddingBottom: chromeBottomPad },
+    ],
+    [styles.listContent, barPad, chromeBottomPad],
+  );
+
+  const refreshControl = useMemo(
+    () => (
+      <RefreshControl
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        tintColor={colors.accent}
+        colors={[colors.accent]}
+        progressBackgroundColor={colors.surface}
+      />
+    ),
+    [refreshing, handleRefresh, colors.accent, colors.surface],
+  );
+
+  const listHeader = useMemo(
+    () => (
+      <>
+        {postedNotice !== "idle" ? (
+          <View
+            style={styles.postedBanner}
+            accessibilityLiveRegion="polite"
+          >
+            {postedNotice === "loading" ? (
+              <ActivityIndicator size="small" color={colors.success} />
+            ) : (
+              <Ionicons
+                name="checkmark-circle"
+                size={16}
+                color={colors.success}
+              />
+            )}
+            <Text style={styles.postedBannerText}>
+              {t(
+                postedNotice === "loading"
+                  ? "community.postedLoading"
+                  : "community.postedBanner",
+              )}
             </Text>
           </View>
-          <View style={styles.composerPhotoBtn}>
-            <Ionicons name="image-outline" size={20} color={colors.accent} />
-          </View>
-        </IconPressable>
+        ) : null}
+        {filterChips}
+        {composerCard}
+      </>
+    ),
+    [
+      postedNotice,
+      styles.postedBanner,
+      styles.postedBannerText,
+      colors.success,
+      t,
+      filterChips,
+      composerCard,
+    ],
   );
+
+  const listFooter = useMemo(
+    () =>
+      loadingMore ? (
+        <View style={styles.footer}>
+          <ActivityIndicator color={colors.accent} size="small" />
+        </View>
+      ) : null,
+    [loadingMore, styles.footer, colors.accent],
+  );
+
+  const listEmpty = useMemo(() => {
+    if (state === "loading") {
+      return (
+        <View style={SKELETON_LIST_STYLE}>
+          {SKELETON_INDICES.map((k) => (
+            <View key={k} style={styles.skeletonCard}>
+              <View style={styles.skeletonRow}>
+                <View style={styles.skeletonAvatar} />
+                <View style={SKELETON_COL_STYLE}>
+                  <View style={[styles.skeletonLine, SKELETON_W40_STYLE]} />
+                  <View style={[styles.skeletonLine, SKELETON_W25_STYLE]} />
+                </View>
+              </View>
+              <View style={[styles.skeletonLine, SKELETON_W95_STYLE]} />
+              <View style={[styles.skeletonLine, SKELETON_W80_STYLE]} />
+              <View style={styles.skeletonImage} />
+            </View>
+          ))}
+        </View>
+      );
+    }
+    if (state === "error") {
+      return (
+        <View style={styles.center}>
+          <Text style={styles.errorTitle}>
+            {t("common.somethingWentWrong")}
+          </Text>
+          <Text style={styles.muted}>{t("community.loadFailed")}</Text>
+          <Button
+            title={t("common.retry")}
+            onPress={retryFirstPage}
+            style={styles.cta}
+          />
+        </View>
+      );
+    }
+    return (
+      <View style={styles.center}>
+        <Text style={styles.emptyGlyph}>💬</Text>
+        <Text style={styles.emptyTitle}>{t("community.emptyTitle")}</Text>
+        <Button
+          title={t("community.emptyBeFirst")}
+          onPress={startCompose}
+          style={styles.cta}
+        />
+      </View>
+    );
+  }, [
+    state,
+    styles.skeletonCard,
+    styles.skeletonRow,
+    styles.skeletonAvatar,
+    styles.skeletonLine,
+    styles.skeletonImage,
+    styles.center,
+    styles.errorTitle,
+    styles.muted,
+    styles.cta,
+    styles.emptyGlyph,
+    styles.emptyTitle,
+    t,
+    retryFirstPage,
+    startCompose,
+  ]);
 
   // Shared trailing actions: ride the big title's row at the top, and the
   // bar's row once scrolled (two instances of the same nodes).
@@ -1605,125 +1978,23 @@ export default function CommunityScreen() {
   return (
     <View style={styles.container}>
       <FlatList
-        data={state === "ready" ? posts : []}
-        keyExtractor={(item) => String(item.id)}
-        renderItem={({ item }) => (
-          <PostCard
-            post={item}
-            signedIn={signedIn}
-            lang={lang}
-            onCommented={bumpCommentCount}
-            onOpenComments={openComments}
-            onLiked={applyLikeState}
-            onFollowed={applyFollowState}
-            myUserId={myUserId}
-            onRemove={removePost}
-            isLikePending={isLikePending}
-            markLikePending={markLikePending}
-            clearLikePending={clearLikePending}
-          />
-        )}
-        style={{ flex: 1 }}
-        contentContainerStyle={[
-          styles.listContent,
-          // Clear the ABSOLUTE tab-bar overlay + pinned bar (measured).
-          { paddingTop: barPad, paddingBottom: chromeBottomPad },
-        ]}
+        data={listData}
+        keyExtractor={postKeyExtractor}
+        renderItem={renderPostItem}
+        style={FLEX_ONE_STYLE}
+        contentContainerStyle={listContentStyle}
         onScroll={chrome.onScroll}
         scrollEventThrottle={chrome.scrollEventThrottle}
         // Heavy photo cells: render small batches (browse pattern).
         initialNumToRender={3}
         maxToRenderPerBatch={3}
         windowSize={5}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={colors.accent}
-            colors={[colors.accent]}
-            progressBackgroundColor={colors.surface}
-          />
-        }
+        refreshControl={refreshControl}
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
-        ListHeaderComponent={
-          <>
-            {postedNotice !== "idle" ? (
-              <View
-                style={styles.postedBanner}
-                accessibilityLiveRegion="polite"
-              >
-                {postedNotice === "loading" ? (
-                  <ActivityIndicator size="small" color={colors.success} />
-                ) : (
-                  <Ionicons
-                    name="checkmark-circle"
-                    size={16}
-                    color={colors.success}
-                  />
-                )}
-                <Text style={styles.postedBannerText}>
-                  {t(
-                    postedNotice === "loading"
-                      ? "community.postedLoading"
-                      : "community.postedBanner",
-                  )}
-                </Text>
-              </View>
-            ) : null}
-            {filterChips}
-            {composerCard}
-          </>
-        }
-        ListFooterComponent={
-          loadingMore ? (
-            <View style={styles.footer}>
-              <ActivityIndicator color={colors.accent} size="small" />
-            </View>
-          ) : null
-        }
-        ListEmptyComponent={
-          state === "loading" ? (
-            <View style={{ paddingHorizontal: 0, gap: Space.xs }}>
-              {[0, 1, 2].map((k) => (
-                <View key={k} style={styles.skeletonCard}>
-                  <View style={styles.skeletonRow}>
-                    <View style={styles.skeletonAvatar} />
-                    <View style={{ flex: 1, gap: 6 }}>
-                      <View style={[styles.skeletonLine, { width: "40%" }]} />
-                      <View style={[styles.skeletonLine, { width: "25%", height: 10 }]} />
-                    </View>
-                  </View>
-                  <View style={[styles.skeletonLine, { width: "95%" }]} />
-                  <View style={[styles.skeletonLine, { width: "80%" }]} />
-                  <View style={styles.skeletonImage} />
-                </View>
-              ))}
-            </View>
-          ) : state === "error" ? (
-            <View style={styles.center}>
-              <Text style={styles.errorTitle}>
-                {t("common.somethingWentWrong")}
-              </Text>
-              <Text style={styles.muted}>{t("community.loadFailed")}</Text>
-              <Button
-                title={t("common.retry")}
-                onPress={() => void fetchPage(1)}
-                style={styles.cta}
-              />
-            </View>
-          ) : (
-            <View style={styles.center}>
-              <Text style={styles.emptyGlyph}>💬</Text>
-              <Text style={styles.emptyTitle}>{t("community.emptyTitle")}</Text>
-              <Button
-                title={t("community.emptyBeFirst")}
-                onPress={startCompose}
-                style={styles.cta}
-              />
-            </View>
-          )
-        }
+        ListHeaderComponent={listHeader}
+        ListFooterComponent={listFooter}
+        ListEmptyComponent={listEmpty}
       />
       <View style={styles.pinnedBar} pointerEvents="box-none">
         <PinnedHeaderBar
@@ -1733,10 +2004,8 @@ export default function CommunityScreen() {
         />
       </View>
 
-      <CommentsSheet
-        postId={commentsPostId}
-        visible={commentsPostId != null}
-        onClose={closeComments}
+      <CommunityCommentsController
+        ref={commentsRef}
         myAvatar={myAvatar}
         myName={myName}
         onCommented={bumpCommentCount}

@@ -91,19 +91,22 @@ export function PinnedHeaderBar({ title, titleContent, hidden, leading, rights }
   );
 
   // Slide the whole bar (incl. hairline) off-screen when the chrome hides.
-  const barStyle =
-    hidden != null
-      ? {
-          transform: [
-            {
-              translateY: hidden.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, -(insets.top + PINNED_BAR_ROW + 1)],
-              }),
-            },
-          ],
-        }
-      : undefined;
+  const barStyle = useMemo(
+    () =>
+      hidden != null
+        ? {
+            transform: [
+              {
+                translateY: hidden.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, -(insets.top + PINNED_BAR_ROW + 1)],
+                }),
+              },
+            ],
+          }
+        : undefined,
+    [hidden, insets.top],
+  );
 
   return (
     <Animated.View style={[styles.bar, barStyle]} pointerEvents="box-none" accessibilityLabel={title}>

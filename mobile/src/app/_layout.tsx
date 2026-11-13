@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { router, Stack } from "expo-router";
 import {
   DarkTheme,
@@ -8,6 +8,7 @@ import {
 } from "expo-router";
 import {
   I18nManager,
+  InteractionManager,
   StyleSheet,
   Text,
   View,
@@ -18,7 +19,6 @@ import {
 } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import "@/global.css";
 import { AI_IMPORT_ENABLED } from "@/config";
@@ -37,7 +37,6 @@ import {
   DarkColors,
   LightColors,
   ThemePrefProvider,
-  LANG_STORAGE_KEY,
   useThemePrefs,
 } from "@/theme";
 
@@ -110,29 +109,29 @@ const ebStyles = StyleSheet.create({
  */
 export default function RootLayout() {
   useEffect(() => {
-    // Apply the stored language's RTL flags while the splash overlay still
-    // covers the UI — the provider's own state load covers strings.
-    (async () => {
-      try {
-        const stored = await AsyncStorage.getItem(LANG_STORAGE_KEY);
-        const isAr = stored === "ar";
-        I18nManager.allowRTL(true);
-        I18nManager.forceRTL(isAr);
-      } catch {
-        // Preference unreadable — boot as-is.
-      }
-    })();
     initDatabase().catch((error) => {
       // Cache failures are non-fatal: screens fall back to the network.
       console.warn("[RecipeReal] initDatabase failed:", error);
     });
-    // Fire-and-forget install heartbeat + analytics — but ONLY when the user
-    // opted in on first run. FirstRunConsent (mounted below) calls back into
-    // reportAppLaunch() right after Accept, so the very first session is
-    // still counted.
-    void hasAnalyticsConsent().then((accepted) => {
-      if (accepted) reportAppLaunch();
+    // Defer the fire-and-forget install heartbeat + analytics until after
+    // interactions settle + a short delay so it never competes with initial
+    // Home requests, and ONLY when the user opted in on first run.
+    let cancelled = false;
+    let launchTimer: ReturnType<typeof setTimeout> | null = null;
+    const interactionTask = InteractionManager.runAfterInteractions(() => {
+      if (cancelled) return;
+      launchTimer = setTimeout(() => {
+        if (cancelled) return;
+        void hasAnalyticsConsent().then((accepted) => {
+          if (!cancelled && accepted) void reportAppLaunch();
+        });
+      }, 1500);
     });
+    return () => {
+      cancelled = true;
+      interactionTask.cancel();
+      if (launchTimer != null) clearTimeout(launchTimer);
+    };
   }, []);
 
   return (
@@ -181,33 +180,36 @@ function RtlDirection() {
 
 /** Maps the resolved scheme onto warm navigation themes + the Stack. */
 function NavigationFrame() {
-  const { scheme, colors } = useThemePrefs();
+  const { scheme } = useThemePrefs();
   const t = useT();
 
-  const navigationTheme: Theme =
-    scheme === "dark"
-      ? {
-          ...DarkTheme,
-          colors: {
-            ...DarkTheme.colors,
-            background: DarkColors.canvas,
-            card: DarkColors.surface,
-            primary: DarkColors.accent,
-            text: DarkColors.ink,
-            border: DarkColors.hairline,
+  const navigationTheme: Theme = useMemo(
+    () =>
+      scheme === "dark"
+        ? {
+            ...DarkTheme,
+            colors: {
+              ...DarkTheme.colors,
+              background: DarkColors.canvas,
+              card: DarkColors.surface,
+              primary: DarkColors.accent,
+              text: DarkColors.ink,
+              border: DarkColors.hairline,
+            },
+          }
+        : {
+            ...DefaultTheme,
+            colors: {
+              ...DefaultTheme.colors,
+              background: LightColors.canvas,
+              card: LightColors.surface,
+              primary: LightColors.accent,
+              text: LightColors.ink,
+              border: LightColors.hairline,
+            },
           },
-        }
-      : {
-          ...DefaultTheme,
-          colors: {
-            ...DefaultTheme.colors,
-            background: LightColors.canvas,
-            card: LightColors.surface,
-            primary: LightColors.accent,
-            text: LightColors.ink,
-            border: LightColors.hairline,
-          },
-        };
+    [scheme],
+  );
 
   return (
     <ThemeProvider value={navigationTheme}>
@@ -220,7 +222,7 @@ function NavigationFrame() {
         */}
         <NotificationSetup />
         <ActiveCookBanner />
-        <Stack screenOptions={{ headerShown: true }}>
+        <Stack screenOptions={{ headerShown: true, freezeOnBlur: true }}>
           {/*
             The (tabs) group provides bottom-tab navigation for the five
             top-level destinations. Its own screens manage headers: home and

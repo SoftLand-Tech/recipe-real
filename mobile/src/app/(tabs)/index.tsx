@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   Image,
@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Text,
   View,
+  type ListRenderItem,
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -24,12 +25,13 @@ import {
   fetchHomeRails,
   fetchRealityRail,
   getCookSessions,
+  hasToken,
 } from "@/api/client";
 import { track } from "@/analytics";
 import {
   countCachedRecipes,
   flushPendingCookSessions,
-  getCachedRecipes,
+  getCachedRecipeSummaries,
   getFavoriteIds,
   getNotedRecipeIds,
   refreshPaceCalibrations,
@@ -123,6 +125,14 @@ const RAILS_DEADLINE_MS = 2500;
  * cook-session fetch out of the first-paint burst entirely.
  */
 const DEFERRED_AUTH_DATA_DELAY_MS = 800;
+
+function setMatchesIds(prev: Set<number>, ids: number[]): boolean {
+  if (prev.size !== ids.length) return false;
+  for (let i = 0; i < ids.length; i++) {
+    if (!prev.has(ids[i])) return false;
+  }
+  return true;
+}
 
 /**
  * Cheap content fingerprint of a recipe list. Background reloads from the
@@ -247,7 +257,8 @@ export default function HomeScreen() {
 
   const reloadNoteIds = useCallback(async () => {
     try {
-      setNoteIds(new Set(await getNotedRecipeIds()));
+      const ids = await getNotedRecipeIds();
+      setNoteIds((prev) => (setMatchesIds(prev, ids) ? prev : new Set(ids)));
     } catch (error) {
       console.warn("[RecipeReal] home noted ids load failed:", error);
     }
@@ -255,7 +266,8 @@ export default function HomeScreen() {
 
   const reloadFavoriteIds = useCallback(async () => {
     try {
-      setFavoriteIds(new Set(await getFavoriteIds()));
+      const ids = await getFavoriteIds();
+      setFavoriteIds((prev) => (setMatchesIds(prev, ids) ? prev : new Set(ids)));
     } catch (error) {
       console.warn("[RecipeReal] home favorites load failed:", error);
     }
@@ -263,21 +275,29 @@ export default function HomeScreen() {
 
   // "Recently cooked" data (cheap 10-row page). Extracted so both the
   // deferred mount load below and the focus effect share it.
-  const reloadRecentSessions = useCallback(() => {
-    getCookSessions({ maxPages: 1, perPage: 10 })
-      .then((page) => {
-        setRecentSessions(page.data);
-      })
-      .catch(() => {
-        setRecentSessions(null);
-      });
+  const reloadRecentSessions = useCallback(async () => {
+    if (!(await hasToken())) {
+      setRecentSessions((prev) => (prev === null ? prev : null));
+      return;
+    }
+    try {
+      const page = await getCookSessions({ maxPages: 1, perPage: 10 });
+      setRecentSessions(page.data);
+    } catch {
+      setRecentSessions(null);
+    }
   }, []);
 
+  const didMountFocusRef = useRef(false);
   useFocusEffect(
     useCallback(() => {
       reloadNoteIds();
       reloadFavoriteIds();
-      // Reload on every focus so a cook finished (or an offline queue
+      if (!didMountFocusRef.current) {
+        didMountFocusRef.current = true;
+        return;
+      }
+      // Reload on subsequent focuses so a cook finished (or an offline queue
       // flushed) while Home was in the background appears in the rail on
       // return — mount-only left it invisible until a restart.
       void reloadRecentSessions();
@@ -350,11 +370,21 @@ export default function HomeScreen() {
     [colors],
   );
 
+  const serverRailsRef = useRef<HomeRails | null>(null);
+  const initialRailsSettledRef = useRef(false);
+  const recipesRef = useRef<Recipe[]>([]);
+  useEffect(() => {
+    serverRailsRef.current = serverRails;
+    initialRailsSettledRef.current = initialRailsSettled;
+    recipesRef.current = recipes;
+  }, [serverRails, initialRailsSettled, recipes]);
+
   // ---- Curated rails (computed client-side over the cached recipes) --------
 
   // Deterministic daily rotation: the pseudo-random key shifts by one day at
   // a time, so the same library yields a different-but-stable top 10 per day.
   const topPicks = useMemo(() => {
+    if (serverRails != null) return [];
     if (recipes.length === 0) return [];
     const todayIndex = Math.floor(Date.now() / 86_400_000);
     return [...recipes]
@@ -365,7 +395,7 @@ export default function HomeScreen() {
           ((b.id * 31 + todayIndex) % recipes.length),
       )
       .slice(0, RAIL_SIZE);
-  }, [recipes]);
+  }, [serverRails, recipes]);
 
   // Featured recipe of the day: deterministic pick (dayOfYear % length) from
   // the reality "most underestimated" rail, falling back to "Top rated", and
@@ -428,7 +458,9 @@ export default function HomeScreen() {
   const continueSeedInBackground = useCallback(async () => {
     try {
       await seedCacheRemainingPages({ pages: AUTO_SEED_PAGES });
-      setRecipesIfChanged(await getCachedRecipes());
+      if (serverRailsRef.current == null) {
+        setRecipesIfChanged(await getCachedRecipeSummaries(20));
+      }
     } catch (error) {
       console.warn("[RecipeReal] home background seed continuation failed:", error);
     }
@@ -440,7 +472,9 @@ export default function HomeScreen() {
   const refreshInBackground = useCallback(async () => {
     try {
       await maybeSweepCache();
-      setRecipesIfChanged(await getCachedRecipes());
+      if (serverRailsRef.current == null) {
+        setRecipesIfChanged(await getCachedRecipeSummaries(20));
+      }
     } catch (error) {
       // Background refresh failures are non-fatal.
       console.warn("[RecipeReal] home background refresh failed:", error);
@@ -448,41 +482,49 @@ export default function HomeScreen() {
   }, [setRecipesIfChanged]);
 
   /**
-   * Load the curated rails: the last server payload from
-   * AsyncStorage paints instantly (identical content to what the refresh
-   * will bring), then GET /api/home revalidates while GET /api/reality
-   * (mode=under) fills the "Most underestimated" rail in parallel — a reality
-   * fetch failure simply leaves that rail empty (hidden). On failure/empty
+   * Load the curated rails: starts GET /api/home + GET /api/reality (mode=under)
+   * immediately in parallel with AsyncStorage.getItem(HOME_RAILS_KEY) — cached
+   * rails paint first only if the network hasn't resolved yet. On failure/empty
    * payload the SAVED rails stay; only when nothing was ever saved do the
    * client-side cached rails render (offline cold start).
    */
   const loadRails = useCallback(async () => {
-    // 1. Instant paint from the saved payload.
-    try {
-      const saved = await AsyncStorage.getItem(HOME_RAILS_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved) as Partial<HomeRails>;
-        const any =
-          parsed.top_rated?.length ||
-          parsed.easy_wins?.length ||
-          parsed.most_loved?.length ||
-          parsed.hands_off?.length ||
-          parsed.most_underestimated?.length;
-        if (any) {
-          setServerRails(railsWithDefaults(parsed));
-          setInitialRailsSettled(true);
-          track("home_rails_loaded", { source: "saved" });
+    let networkResolved = false;
+    const networkPromise = Promise.all([
+      fetchHomeRails(),
+      fetchRealityRail(),
+    ]);
+    const savedPromise = AsyncStorage.getItem(HOME_RAILS_KEY)
+      .then((saved) => {
+        if (networkResolved || !saved) return;
+        try {
+          const parsed = JSON.parse(saved) as Partial<HomeRails>;
+          const any =
+            parsed.top_rated?.length ||
+            parsed.easy_wins?.length ||
+            parsed.most_loved?.length ||
+            parsed.hands_off?.length ||
+            parsed.most_underestimated?.length;
+          if (any) {
+            const nextRails = railsWithDefaults(parsed);
+            serverRailsRef.current = nextRails;
+            initialRailsSettledRef.current = true;
+            setServerRails(nextRails);
+            setInitialRailsSettled(true);
+            track("home_rails_loaded", { source: "saved" });
+          }
+        } catch {
+          // Corrupt/unreadable mirror — ignore, fetch fresh below.
         }
-      }
-    } catch {
-      // Corrupt/unreadable mirror — ignore, fetch fresh below.
-    }
+      })
+      .catch(() => {
+        // Corrupt/unreadable mirror — ignore.
+      });
+
     // 2. Revalidate from the server (+ the reality rail in parallel).
     try {
-      const [fetched, mostUnderestimated] = await Promise.all([
-        fetchHomeRails(),
-        fetchRealityRail(),
-      ]);
+      const [fetched, mostUnderestimated] = await networkPromise;
+      networkResolved = true;
       const rails: HomeRails = { ...fetched, most_underestimated: mostUnderestimated };
       // Anything the user saw on Home is openable offline: mirror every rail
       // recipe into the local cache (light, no steps). This runs AFTER the
@@ -512,6 +554,8 @@ export default function HomeScreen() {
         rails.hands_off.length > 0 ||
         rails.most_underestimated.length > 0;
       if (any) {
+        serverRailsRef.current = rails;
+        initialRailsSettledRef.current = true;
         // No-op guard: when the payload carries the same recipe ids per
         // rail as what's on screen (saved mirror), skip the state update —
         // re-setting identical-looking objects still re-renders every card
@@ -532,14 +576,19 @@ export default function HomeScreen() {
         return;
       }
     } catch (error) {
+      networkResolved = true;
+      await savedPromise;
       // Offline / server error: keep whatever is on screen (saved rails
       // or the cached-recipe rails).
       console.warn("[RecipeReal] home rails fetch failed:", error);
+      initialRailsSettledRef.current = true;
       setInitialRailsSettled(true);
       return;
     }
     // Server answered with an all-empty payload (no data yet anywhere):
     // clear to the cached rails.
+    serverRailsRef.current = null;
+    initialRailsSettledRef.current = true;
     setServerRails(null);
     setInitialRailsSettled(true);
     track("home_rails_loaded", { source: "cache" });
@@ -567,7 +616,7 @@ export default function HomeScreen() {
   const loadFromCache = useCallback(async (): Promise<boolean> => {
     // Stale-while-revalidate: keep the current rails on screen during a
     // reload; skeletons are only for a true cold start (nothing to show).
-    if (recipes.length === 0) setState("loading");
+    if (recipesRef.current.length === 0) setState("loading");
     setErrorMessage(null);
     try {
       const count = await countCachedRecipes();
@@ -575,12 +624,16 @@ export default function HomeScreen() {
         // Cold cache: seed just the first page so the rails render quickly;
         // the remaining pages arrive in the background.
         const first = await seedCacheFirstPage();
-        setRecipes(first);
+        if (serverRailsRef.current == null) {
+          setRecipes(first);
+        }
         setState("ready");
         continueSeedInBackground();
         return false;
       }
-      setRecipesIfChanged(await getCachedRecipes());
+      if (serverRailsRef.current == null && initialRailsSettledRef.current) {
+        setRecipesIfChanged(await getCachedRecipeSummaries(20));
+      }
       setState("ready");
       return true;
     } catch (error) {
@@ -591,13 +644,35 @@ export default function HomeScreen() {
       setState("error");
       return false;
     }
-  }, [continueSeedInBackground, recipes, setRecipesIfChanged, t]);
+  }, [continueSeedInBackground, setRecipesIfChanged, t]);
+
+  // Fallback summaries load: only runs if server rails settled as null (offline
+  // or empty server payload) and recipes haven't been loaded yet.
+  useEffect(() => {
+    if (
+      serverRails == null &&
+      initialRailsSettled &&
+      recipesRef.current.length === 0
+    ) {
+      getCachedRecipeSummaries(20)
+        .then((rows) => {
+          if (serverRailsRef.current == null) {
+            setRecipesIfChanged(rows);
+            setState("ready");
+          }
+        })
+        .catch(() => {
+          // Best-effort offline fallback.
+        });
+    }
+  }, [serverRails, initialRailsSettled, setRecipesIfChanged]);
 
   useEffect(() => {
     track("home_viewed");
 
     // Race initial server rails fetch against a short deadline to prevent hanging on skeletons.
     const deadlineTimer = setTimeout(() => {
+      initialRailsSettledRef.current = true;
       setInitialRailsSettled(true);
     }, RAILS_DEADLINE_MS);
 
@@ -609,6 +684,7 @@ export default function HomeScreen() {
       })
       .finally(() => {
         clearTimeout(deadlineTimer);
+        initialRailsSettledRef.current = true;
         setInitialRailsSettled(true);
       });
 
@@ -623,7 +699,9 @@ export default function HomeScreen() {
         repairCachedStepsIfNeeded()
           .then(async (repaired) => {
             if (repaired) {
-              setRecipesIfChanged(await getCachedRecipes());
+              if (serverRailsRef.current == null) {
+                setRecipesIfChanged(await getCachedRecipeSummaries(20));
+              }
             } else {
               await refreshInBackground();
             }
@@ -683,7 +761,15 @@ export default function HomeScreen() {
     let cancelled = false;
     let delayTimer: ReturnType<typeof setTimeout> | null = null;
     const task = InteractionManager.runAfterInteractions(() => {
-      delayTimer = setTimeout(() => {
+      delayTimer = setTimeout(async () => {
+        if (cancelled) return;
+        if (!(await hasToken())) {
+          if (!cancelled) {
+            setHasPace(false);
+            setRecentSessions(null);
+          }
+          return;
+        }
         if (cancelled) return;
         refreshPaceCalibrations()
           .then((items) => {
@@ -763,6 +849,11 @@ export default function HomeScreen() {
     serverRails == null &&
     (!initialRailsSettled || (state === "loading" && recipes.length === 0));
 
+  const getRecentCaption = useCallback(
+    (item: Recipe) => recentItems.captions.get(item.id),
+    [recentItems.captions],
+  );
+
   // "Recently cooked" rail: shared by both the server-rails and offline
   // layouts (it is auth-backed, not rails-backed), hidden when empty.
   const recentlyCookedRail =
@@ -771,7 +862,7 @@ export default function HomeScreen() {
         title={t("home.recentlyCooked")}
         items={recentItems.items}
         noteIds={noteIds}
-        captionFor={(item) => recentItems.captions.get(item.id)}
+        captionFor={getRecentCaption}
       />
     ) : null;
 
@@ -906,7 +997,7 @@ export default function HomeScreen() {
  * Browse with the field focused. The bar carries the brand title, bell and
  * avatar, so this is the ONLY header-ish element left in the content.
  */
-function HomeSearchEntry() {
+const HomeSearchEntry = memo(function HomeSearchEntry() {
   const colors = useThemeColors();
   const t = useT();
   const styles = useMemo(
@@ -952,7 +1043,7 @@ function HomeSearchEntry() {
       </Pressable>
     </View>
   );
-}
+});
 
 /**
  * Featured recipe of the day — the centerpiece card. A deterministic daily
@@ -963,7 +1054,7 @@ function HomeSearchEntry() {
  * caption, and a "Start cooking" CTA. The whole card and the CTA both land
  * on the recipe detail screen (which owns the jump into Cook Mode).
  */
-function FeaturedHero({
+const FeaturedHero = memo(function FeaturedHero({
   recipe,
   favorited,
   onToggleFavorite,
@@ -1102,14 +1193,14 @@ function FeaturedHero({
       </View>
     </Card>
   );
-}
+});
 
 /**
  * "See all" header action for each rail: a quiet caption-toned pressable that
  * jumps to the Browse tab. Static style only (no function styles on
  * Pressables — see Android paint rules).
  */
-function SeeAllAction() {
+const SeeAllAction = memo(function SeeAllAction() {
   const colors = useThemeColors();
   const { dir } = useLang();
   const t = useT();
@@ -1141,10 +1232,10 @@ function SeeAllAction() {
       <Text style={styles.label}>{t("common.seeAll")}</Text>
     </Pressable>
   );
-}
+});
 
 /** Compact rail card: hero image, 2-line title, time + rating chips. */
-function HomeCard({
+const HomeCard = memo(function HomeCard({
   item,
   hasNote,
   caption,
@@ -1248,10 +1339,41 @@ function HomeCard({
       </View>
     </Card>
   );
-}
+});
+
+const railKeyExtractor = (item: Recipe) => String(item.id);
+const getRailItemLayout = (
+  _data: ArrayLike<Recipe> | null | undefined,
+  index: number,
+) => ({
+  length: 160,
+  offset: 172 * index,
+  index,
+});
+
+const railStyles = StyleSheet.create({
+  section: {
+    marginBottom: Space.md,
+  },
+  sectionHeaderPad: {
+    paddingHorizontal: Space.md,
+  },
+  railContent: {
+    paddingHorizontal: 0,
+    gap: Space.md,
+  },
+  categoryContent: {
+    paddingHorizontal: 0,
+    gap: Space.sm,
+    alignItems: "center",
+  },
+  skeletonCard: {
+    width: 160,
+  },
+});
 
 /** One curated rail: section header ("See all" → Browse) + horizontal cards. */
-function HomeRail({
+const HomeRail = memo(function HomeRail({
   title,
   subtitle,
   items,
@@ -1265,26 +1387,21 @@ function HomeRail({
   /** Per-card muted caption (e.g. the "cooked when" line). */
   captionFor?: (item: Recipe) => string | undefined;
 }) {
-  const styles = useMemo(
-    () =>
-      StyleSheet.create({
-        section: {
-          marginBottom: Space.md,
-        },
-        sectionHeaderPad: {
-          paddingHorizontal: Space.md,
-        },
-        railContent: {
-          paddingHorizontal: 0,
-          gap: Space.md,
-        },
-      }),
-    [],
+  const renderItem: ListRenderItem<Recipe> = useCallback(
+    ({ item }) => (
+      <HomeCard
+        item={item}
+        hasNote={noteIds.has(item.id)}
+        caption={captionFor?.(item)}
+      />
+    ),
+    [noteIds, captionFor],
   );
+
   if (items.length === 0) return null;
   return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeaderPad}>
+    <View style={railStyles.section}>
+      <View style={railStyles.sectionHeaderPad}>
         <SectionHeader title={title} subtitle={subtitle} action={<SeeAllAction />} />
       </View>
       <FlatList
@@ -1294,20 +1411,15 @@ function HomeRail({
         windowSize={5}
         removeClippedSubviews
         data={items}
-        keyExtractor={(item) => String(item.id)}
-        renderItem={({ item }) => (
-          <HomeCard
-            item={item}
-            hasNote={noteIds.has(item.id)}
-            caption={captionFor?.(item)}
-          />
-        )}
+        keyExtractor={railKeyExtractor}
+        getItemLayout={getRailItemLayout}
+        renderItem={renderItem}
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.railContent}
+        contentContainerStyle={railStyles.railContent}
       />
     </View>
   );
-}
+});
 
 /**
  * Category chips row — every craving is one tap away in Browse. The chips are
@@ -1315,7 +1427,7 @@ function HomeRail({
  * CRAVING_CHIP_LIMIT by the parent); the local keyword categories render as
  * the offline fallback.
  */
-function CategoryRail({
+const CategoryRail = memo(function CategoryRail({
   chips,
   onCategoryPress,
 }: {
@@ -1324,32 +1436,15 @@ function CategoryRail({
 }) {
   const t = useT();
   const { lang } = useLang();
-  const styles = useMemo(
-    () =>
-      StyleSheet.create({
-        section: {
-          marginBottom: Space.md,
-        },
-        sectionHeaderPad: {
-          paddingHorizontal: Space.md,
-        },
-        railContent: {
-          paddingHorizontal: 0,
-          gap: Space.sm,
-          alignItems: "center",
-        },
-      }),
-    [],
-  );
   return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeaderPad}>
+    <View style={railStyles.section}>
+      <View style={railStyles.sectionHeaderPad}>
         <SectionHeader title={t("home.browseByCraving")} />
       </View>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.railContent}
+        contentContainerStyle={railStyles.categoryContent}
       >
         {chips.map((chip) => (
           <Pressable
@@ -1364,33 +1459,22 @@ function CategoryRail({
       </ScrollView>
     </View>
   );
-}
+});
+
+const SKELETON_ITEMS = [0, 1, 2, 3];
+const skeletonKeyExtractor = (item: number) => `skel-${item}`;
+const renderSkeletonItem = () => (
+  <View style={railStyles.skeletonCard}>
+    <SkeletonCard hasImage />
+  </View>
+);
 
 /** Loading placeholder: four skeleton cards in a rail shape. */
-function SkeletonRail() {
+const SkeletonRail = memo(function SkeletonRail() {
   const t = useT();
-  const styles = useMemo(
-    () =>
-      StyleSheet.create({
-        section: {
-          marginBottom: Space.md,
-        },
-        sectionHeaderPad: {
-          paddingHorizontal: Space.md,
-        },
-        railContent: {
-          paddingHorizontal: 0,
-          gap: Space.md,
-        },
-        card: {
-          width: 160,
-        },
-      }),
-    [],
-  );
   return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeaderPad}>
+    <View style={railStyles.section}>
+      <View style={railStyles.sectionHeaderPad}>
         <SectionHeader title={t("home.topPicks")} />
       </View>
       <FlatList
@@ -1399,17 +1483,13 @@ function SkeletonRail() {
         maxToRenderPerBatch={4}
         windowSize={5}
         removeClippedSubviews
-        data={[0, 1, 2, 3]}
-        keyExtractor={(item) => `skel-${item}`}
-        renderItem={() => (
-          <View style={styles.card}>
-            <SkeletonCard hasImage />
-          </View>
-        )}
+        data={SKELETON_ITEMS}
+        keyExtractor={skeletonKeyExtractor}
+        renderItem={renderSkeletonItem}
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.railContent}
+        contentContainerStyle={railStyles.railContent}
         scrollEnabled={false}
       />
     </View>
   );
-}
+});

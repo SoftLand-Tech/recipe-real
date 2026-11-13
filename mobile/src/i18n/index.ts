@@ -13,8 +13,15 @@ import {
   type LangPref,
 } from "@/theme/ThemeProvider";
 
-import { ar } from "./ar";
 import { en } from "./en";
+
+let arDict: Record<string, string> | null = null;
+function getAr(): Record<string, string> {
+  if (!arDict) {
+    arDict = (require("./ar") as typeof import("./ar")).ar;
+  }
+  return arDict;
+}
 
 export type { Lang, LangDir, LangPref };
 
@@ -38,7 +45,7 @@ function interpolate(template: string, params: TParams): string {
  * missing from both (never crashes on a typo'd key).
  */
 export function translate(lang: Lang, key: string, params?: TParams): string {
-  const raw = (lang === "ar" ? ar[key] : undefined) ?? en[key] ?? key;
+  const raw = (lang === "ar" ? getAr()[key] : undefined) ?? en[key] ?? key;
   return params ? interpolate(raw, params) : raw;
 }
 

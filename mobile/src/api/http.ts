@@ -3,6 +3,13 @@ import axios, { type AxiosInstance } from "axios";
 import { API_BASE_URL, AUTH_TOKEN_KEY } from "@/config";
 import { clearAccountScopedCaches } from "@/db/database";
 import { secureStore } from "@/utils/secureStore";
+import {
+  clearSwrCache,
+  dedupeInFlight,
+  getCached,
+  invalidatePrefix,
+  setCached,
+} from "@/api/swrCache";
 import type {
   CleanupFactors,
   PaceCalibration,
@@ -44,18 +51,36 @@ let cooldownUntil = 0;
  * old raw read did, and the next call retries the keystore.
  */
 let authToken: string | null | undefined;
+let authTokenInFlight: Promise<string | null> | null = null;
 
 /** The bearer token, read from SecureStore at most once per session. */
 export async function getAuthToken(): Promise<string | null> {
-  if (authToken === undefined) {
-    authToken = await secureStore.getItemAsync(AUTH_TOKEN_KEY);
+  if (authToken !== undefined) {
+    return authToken;
   }
-  return authToken;
+  if (!authTokenInFlight) {
+    const inFlight = secureStore
+      .getItemAsync(AUTH_TOKEN_KEY)
+      .then((token) => {
+        if (authTokenInFlight === inFlight) {
+          authToken = token;
+        }
+        return authToken !== undefined ? authToken : token;
+      })
+      .finally(() => {
+        if (authTokenInFlight === inFlight) {
+          authTokenInFlight = null;
+        }
+      });
+    authTokenInFlight = inFlight;
+  }
+  return authTokenInFlight;
 }
 
 /** Update (or clear) the in-memory token mirror after a keystore write. */
 export function setAuthTokenCache(token: string | null): void {
   authToken = token;
+  authTokenInFlight = null;
 }
 
 /** Attach the bearer token from SecureStore to every request, if present. */
@@ -130,6 +155,7 @@ http.interceptors.response.use(
       // The token is dead either way — reset the in-memory mirror too so
       // subsequent requests don't re-attach it.
       setAuthTokenCache(null);
+      clearSwrCache();
       // The cache holds account-scoped rows (favorites/notes/pace) that died
       // with the token — wipe them fire-and-forget so a shared device never
       // shows the previous user's private data. A wipe failure must not
@@ -198,8 +224,12 @@ export class OfflineError extends Error {
  * `flushPendingCookSessions` (in the db layer) so the flush doesn't re-trigger
  * the offline fallback (which would re-enqueue and loop).
  */
+const PACE_CACHE_KEY = "pace-calibrations";
+const PACE_TTL_MS = 60_000;
+
 export async function postCookSessionRaw(payload: unknown): Promise<void> {
   await http.post("/api/cook-sessions", payload);
+  invalidatePrefix(PACE_CACHE_KEY);
 }
 
 // ---- Normalizers & seed/pace fetchers --------------------------------------
@@ -238,14 +268,17 @@ function parseArArray(raw: unknown): string[] | null {
   if (Array.isArray(raw)) {
     return raw.every((x) => typeof x === "string") ? raw : null;
   }
-  if (typeof raw === "string" && raw.trim()) {
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) && parsed.every((x) => typeof x === "string")
-        ? parsed
-        : null;
-    } catch {
-      return null;
+  if (typeof raw === "string") {
+    const trimmed = raw.trimStart();
+    if (trimmed.charCodeAt(0) === 91 /* '[' */) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return Array.isArray(parsed) && parsed.every((x) => typeof x === "string")
+          ? parsed
+          : null;
+      } catch {
+        return null;
+      }
     }
   }
   return null;
@@ -462,19 +495,27 @@ export async function fetchSeedPage(
  * returns an empty array instead of throwing so callers can degrade silently.
  */
 export async function getPaceCalibrations(): Promise<PaceCalibration[]> {
-  try {
-    const { data } = await http.get<{ data: PaceCalibration[] }>(
-      "/api/pace-calibrations",
-    );
-    return Array.isArray(data?.data)
-      ? data.data.map(normalizePaceCalibration)
-      : [];
-  } catch (error) {
-    // A 401 (e.g. token cleared) degrades silently to an empty list; a 402
-    // paywall is rethrown so callers can surface the upgrade CTA.
-    if (axios.isAxiosError(error) && error.response?.status === 401) {
-      return [];
-    }
-    throw error;
+  const cached = getCached<PaceCalibration[]>(PACE_CACHE_KEY, PACE_TTL_MS);
+  if (cached !== undefined) {
+    return cached;
   }
+  return dedupeInFlight(PACE_CACHE_KEY, async () => {
+    try {
+      const { data } = await http.get<{ data: PaceCalibration[] }>(
+        "/api/pace-calibrations",
+      );
+      const items = Array.isArray(data?.data)
+        ? data.data.map(normalizePaceCalibration)
+        : [];
+      setCached(PACE_CACHE_KEY, items);
+      return items;
+    } catch (error) {
+      // A 401 (e.g. token cleared) degrades silently to an empty list; a 402
+      // paywall is rethrown so callers can surface the upgrade CTA.
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        return [];
+      }
+      throw error;
+    }
+  });
 }

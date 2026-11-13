@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -13,6 +13,7 @@ import {
   formatActiveSessionElapsed,
   readActiveCookSession,
   type ActiveCookSession,
+  type ReadActiveCookSessionOptions,
 } from "@/utils/cookSessionStatus";
 
 /**
@@ -37,6 +38,9 @@ export function ActiveCookBanner() {
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [ending, setEnding] = useState(false);
   const mountedRef = useRef(true);
+  const sessionRef = useRef<ActiveCookSession | null>(null);
+  const prevPathnameRef = useRef<string | null>(null);
+  sessionRef.current = session;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -45,8 +49,8 @@ export function ActiveCookBanner() {
     };
   }, []);
 
-  const rescan = useCallback(() => {
-    readActiveCookSession()
+  const rescan = useCallback((opts?: ReadActiveCookSessionOptions) => {
+    readActiveCookSession(opts)
       .then((found) => {
         if (mountedRef.current) setSession(found);
       })
@@ -55,14 +59,29 @@ export function ActiveCookBanner() {
       });
   }, []);
 
-  // Rescan on mount, on every navigation (finish/discard elsewhere must
-  // drop the banner without waiting), and when returning from background.
+  // Sync on mount, when leaving a /cook screen (forced single-key refresh),
+  // and on normal navigations (served from in-memory cache).
   useEffect(() => {
+    const prev = prevPathnameRef.current;
+    prevPathnameRef.current = pathname;
+    if (pathname.startsWith("/cook")) return;
+
+    if (prev != null && prev.startsWith("/cook")) {
+      const match = prev.match(/^\/cook\/(\d+)/);
+      const hintRecipeId = match ? Number(match[1]) : undefined;
+      rescan({ force: true, hintRecipeId });
+      return;
+    }
     rescan();
   }, [rescan, pathname]);
+
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") rescan();
+      if (state !== "active") return;
+      const active = sessionRef.current;
+      if (active) {
+        rescan({ force: true, hintRecipeId: active.recipeId });
+      }
     });
     return () => sub.remove();
   }, [rescan]);
@@ -100,57 +119,61 @@ export function ActiveCookBanner() {
     }
   }, [session, ending]);
 
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        bar: {
+          backgroundColor: colors.surface,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.hairline,
+          paddingTop: insets.top + Space.xs,
+          paddingBottom: Space.xs,
+          paddingHorizontal: Space.lg,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.sm,
+        },
+        iconDot: {
+          width: 34,
+          height: 34,
+          borderRadius: 17,
+          backgroundColor: colors.accentSoft,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        middle: {
+          flex: 1,
+          gap: 1,
+        },
+        title: {
+          ...Type.bodySm,
+          fontWeight: "700",
+          color: colors.ink,
+        },
+        caption: {
+          ...Type.caption,
+          color: colors.inkSecondary,
+          fontVariant: ["tabular-nums"],
+        },
+        openBtn: {
+          paddingVertical: Space.xs,
+          paddingHorizontal: Space.md,
+          borderRadius: Radius.pill,
+        },
+        endBtn: {
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          backgroundColor: colors.surfaceSoft,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+      }),
+    [colors, insets.top],
+  );
+
   // No live session, or already cooking on screen — no banner.
   if (!session || pathname.startsWith("/cook")) return null;
-
-  const styles = StyleSheet.create({
-    bar: {
-      backgroundColor: colors.surface,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.hairline,
-      paddingTop: insets.top + Space.xs,
-      paddingBottom: Space.xs,
-      paddingHorizontal: Space.lg,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: Space.sm,
-    },
-    iconDot: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
-      backgroundColor: colors.accentSoft,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    middle: {
-      flex: 1,
-      gap: 1,
-    },
-    title: {
-      ...Type.bodySm,
-      fontWeight: "700",
-      color: colors.ink,
-    },
-    caption: {
-      ...Type.caption,
-      color: colors.inkSecondary,
-      fontVariant: ["tabular-nums"],
-    },
-    openBtn: {
-      paddingVertical: Space.xs,
-      paddingHorizontal: Space.md,
-      borderRadius: Radius.pill,
-    },
-    endBtn: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      backgroundColor: colors.surfaceSoft,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-  });
 
   return (
     <View style={styles.bar}>

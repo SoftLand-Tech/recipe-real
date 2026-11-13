@@ -203,8 +203,10 @@ interface StepPaceBarProps {
   running: boolean;
   /** Pause-adjusted elapsed to show while NOT running (fresh at pause). */
   frozenMs: number;
-  /** Pause-adjusted elapsed for the live tick (stable callback over refs). */
-  getElapsedMs: (now: number) => number;
+  /** Step number being timed (primitive so memoization holds). */
+  stepNumber: number;
+  /** Stable ref-backed helper returning pause-adjusted elapsed ms for a step. */
+  stepVisitElapsedMs: (stepNumber: number, at: number) => number;
   expectedMs: number;
   wrapStyle: ViewStyle;
   trackStyle: ViewStyle;
@@ -219,7 +221,8 @@ interface StepPaceBarProps {
 const StepPaceBar = memo(function StepPaceBar({
   running,
   frozenMs,
-  getElapsedMs,
+  stepNumber,
+  stepVisitElapsedMs,
   expectedMs,
   wrapStyle,
   trackStyle,
@@ -237,7 +240,7 @@ const StepPaceBar = memo(function StepPaceBar({
     const handle = setInterval(() => setNow(Date.now()), TICK_MS);
     return () => clearInterval(handle);
   }, [running]);
-  const elapsedMs = running ? getElapsedMs(now) : frozenMs;
+  const elapsedMs = running ? stepVisitElapsedMs(stepNumber, now) : frozenMs;
   const overMin =
     elapsedMs > expectedMs
       ? Math.max(1, Math.round((elapsedMs - expectedMs) / 60_000))
@@ -1916,8 +1919,8 @@ export default function CookModeScreen() {
         />
       </View>
 
-      {/* Single-step body (remounts on index change) */}
-      <View key={currentIndex} style={styles.stepBody}>
+      {/* Single-step body (updates in place on index change) */}
+      <View style={styles.stepBody}>
         <View style={styles.stepMetaRow}>
           <Badge
             label={stepTypeLabel(t, step.step_type || "active")}
@@ -2015,10 +2018,9 @@ export default function CookModeScreen() {
         {stepExpectedMs != null && status !== "idle" ? (
           <StepPaceBar
             running={status === "running"}
-            frozenMs={stepFrozenMs}
-            getElapsedMs={(nowMs) =>
-              stepVisitElapsedMs(step.step_number, nowMs)
-            }
+            frozenMs={status === "running" ? 0 : stepFrozenMs}
+            stepNumber={step.step_number}
+            stepVisitElapsedMs={stepVisitElapsedMs}
             expectedMs={stepExpectedMs}
             wrapStyle={styles.stepPaceWrap}
             trackStyle={styles.stepTrack}

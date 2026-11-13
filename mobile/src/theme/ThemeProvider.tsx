@@ -12,8 +12,6 @@ import {
 } from "react";
 import { Alert, I18nManager, useColorScheme } from "react-native";
 
-import { ar } from "@/i18n/ar";
-import { en } from "@/i18n/en";
 import { DarkColors, LightColors, type ThemeColors } from "./colors";
 
 /** User-facing theme preference. "system" follows the OS color scheme. */
@@ -79,7 +77,12 @@ function resolveSystemLang(): Lang {
  */
 function reloadForDirectionChange(nextLang: Lang): void {
   Updates.reloadAsync().catch(() => {
-    const dict = nextLang === "ar" ? ar : en;
+    // Lazy-require dictionaries only on the rare Expo Go fallback path so
+    // ThemeProvider doesn't eagerly pull both translations at boot.
+    const dict: Record<string, string> =
+      nextLang === "ar"
+        ? (require("@/i18n/ar") as typeof import("@/i18n/ar")).ar
+        : (require("@/i18n/en") as typeof import("@/i18n/en")).en;
     Alert.alert(dict["restart.manualTitle"], dict["restart.manualMessage"]);
   });
 }
@@ -97,27 +100,33 @@ export function ThemePrefProvider({ children }: { children: ReactNode }) {
   // The device locale is stable for a session; read it once.
   const systemLang = useMemo(resolveSystemLang, []);
 
-  // Load the stored preferences once on mount. Read failures (e.g. storage
-  // unavailable) are non-fatal: we keep the "system" defaults.
+  // Load the stored preferences once on mount in a single multiGet batch.
+  // Read failures (e.g. storage unavailable) are non-fatal: keep "system".
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then((stored) => {
-        if (stored === "system" || stored === "light" || stored === "dark") {
-          setPrefState(stored);
+    let cancelled = false;
+    AsyncStorage.multiGet([STORAGE_KEY, LANG_STORAGE_KEY])
+      .then((entries) => {
+        if (cancelled) return;
+        for (const [key, stored] of entries) {
+          if (
+            key === STORAGE_KEY &&
+            (stored === "system" || stored === "light" || stored === "dark")
+          ) {
+            setPrefState(stored);
+          } else if (
+            key === LANG_STORAGE_KEY &&
+            (stored === "system" || stored === "en" || stored === "ar")
+          ) {
+            setLangPrefState(stored);
+          }
         }
       })
       .catch(() => {
         // Ignore; fall back to "system".
       });
-    AsyncStorage.getItem(LANG_STORAGE_KEY)
-      .then((stored) => {
-        if (stored === "system" || stored === "en" || stored === "ar") {
-          setLangPrefState(stored);
-        }
-      })
-      .catch(() => {
-        // Ignore; fall back to "system".
-      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const setPref = useCallback((next: ThemePref) => {

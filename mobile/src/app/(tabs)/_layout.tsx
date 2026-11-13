@@ -1,6 +1,6 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { Tabs } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Animated, StyleSheet } from "react-native";
 import { BottomTabBar } from "expo-router/build/react-navigation/bottom-tabs/views/BottomTabBar";
 import type { BottomTabBarProps } from "expo-router/build/react-navigation/bottom-tabs/types";
@@ -50,10 +50,21 @@ function ChromeTabBar(props: BottomTabBarProps) {
   // long idle period: the provider's show is idempotent, so we can nudge it.
   // (No extra effect needed — spec says one-line follow-up.)
 
-  const translateY = hidden.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, barHeight],
-  });
+  const translateY = useMemo(
+    () =>
+      hidden.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, barHeight],
+      }),
+    [hidden, barHeight],
+  );
+
+  const transformStyle = useMemo(
+    () => ({
+      transform: [{ translateY }],
+    }),
+    [translateY],
+  );
 
   return (
     <Animated.View
@@ -62,12 +73,7 @@ function ChromeTabBar(props: BottomTabBarProps) {
       accessible={isHidden ? false : undefined}
       accessibilityElementsHidden={isHidden}
       importantForAccessibility={isHidden ? "no-hide-descendants" : "auto"}
-      style={[
-        styles.tabBarWrap,
-        {
-          transform: [{ translateY }],
-        },
-      ]}
+      style={[styles.tabBarWrap, transformStyle]}
     >
       {/* BottomTabBar handles safe-area insets itself — keep props flowing. */}
       <BottomTabBar {...props} />
@@ -106,18 +112,29 @@ export default function TabsLayout() {
   const colors = useThemeColors();
   const t = useT();
 
+  const renderTabBar = useCallback(
+    (props: BottomTabBarProps) => <ChromeTabBar {...props} />,
+    [],
+  );
+
+  const screenOptions = useMemo(
+    () => ({
+      freezeOnBlur: true,
+      tabBarActiveTintColor: colors.accent,
+      tabBarInactiveTintColor: colors.inkFaint,
+      tabBarStyle: {
+        backgroundColor: colors.surface,
+        borderTopColor: colors.hairline,
+      },
+    }),
+    [colors],
+  );
+
   return (
     <ScrollChromeProvider>
       <Tabs
-        tabBar={(props) => <ChromeTabBar {...props} />}
-        screenOptions={{
-          tabBarActiveTintColor: colors.accent,
-          tabBarInactiveTintColor: colors.inkFaint,
-          tabBarStyle: {
-            backgroundColor: colors.surface,
-            borderTopColor: colors.hairline,
-          },
-        }}
+        tabBar={renderTabBar}
+        screenOptions={screenOptions}
       >
       <Tabs.Screen
         name="index"

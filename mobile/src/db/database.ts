@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import * as SQLite from "expo-sqlite";
 
@@ -20,8 +21,20 @@ import type {
 
 const DB_NAME = "recipereal.db";
 
-/** Current version of the local cache schema. Bump when columns/tables change. */
-const CACHE_SCHEMA_VERSION = 7;
+/** AsyncStorage key shared with `cacheSweep.ts` to skip redundant sweeps right after seeding. */
+export const CACHE_SWEPT_AT_KEY = "recipereal.cacheSweptAt";
+
+/** Current version of the local cache schema. Bump when columns/tables/indexes change. */
+const CACHE_SCHEMA_VERSION = 8;
+
+const OPEN_PRAGMAS = [
+  "PRAGMA journal_mode = WAL;",
+  "PRAGMA synchronous = NORMAL;",
+  "PRAGMA temp_store = MEMORY;",
+  "PRAGMA cache_size = -8000;",
+  "PRAGMA foreign_keys = ON;",
+  "PRAGMA busy_timeout = 5000;",
+] as const;
 
 /**
  * Memoized ready-promise for the single DB connection.
@@ -65,15 +78,12 @@ function getDb(): Promise<SQLite.SQLiteDatabase> {
   if (!dbReady) {
     dbReady = (async () => {
       const db = await SQLite.openDatabaseAsync(DB_NAME);
-      try {
-        await db.execAsync("PRAGMA journal_mode = WAL;");
-      } catch {
-        // Non-fatal: a PRAGMA failure must never break the connection.
-      }
-      try {
-        await db.execAsync("PRAGMA foreign_keys = ON;");
-      } catch {
-        // Non-fatal: a PRAGMA failure must never break the connection.
+      for (const pragma of OPEN_PRAGMAS) {
+        try {
+          await db.execAsync(pragma);
+        } catch {
+          // Non-fatal: a PRAGMA failure must never break the connection.
+        }
       }
       await ensureSchema(db);
       return db;
@@ -125,6 +135,11 @@ const RECIPE_STEPS_DDL = `
 const RECIPE_STEPS_INDEX_DDL = `
   CREATE INDEX IF NOT EXISTS idx_recipe_steps_recipe_id
     ON recipe_steps(recipe_id);
+`;
+
+const RECIPES_PHOTO_TITLE_INDEX_DDL = `
+  CREATE INDEX IF NOT EXISTS idx_recipes_photo_title
+    ON recipes((image_url IS NULL), title COLLATE NOCASE);
 `;
 
 /** Local favorites (offline): one row per favorited recipe, newest first. */
@@ -180,6 +195,23 @@ const PACE_CALIBRATIONS_DDL = `
  * statements into one string can fail silently on some drivers.
  */
 async function ensureSchema(db: SQLite.SQLiteDatabase): Promise<void> {
+  // Fast warm-boot path: check meta.schema_version first and return immediately
+  // when already at CACHE_SCHEMA_VERSION, skipping all redundant DDL calls.
+  try {
+    const fastRow = await db.getFirstAsync<{ value: string | null }>(
+      `SELECT value FROM meta WHERE key = 'schema_version';`,
+    );
+    const fastRecorded = fastRow?.value ? Number(fastRow.value) : 0;
+    if (
+      Number.isFinite(fastRecorded) &&
+      fastRecorded === CACHE_SCHEMA_VERSION
+    ) {
+      return;
+    }
+  } catch {
+    // `meta` table doesn't exist yet (first launch) — fall through to setup.
+  }
+
   // Always ensure the meta + non-recipe tables exist.
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS meta (
@@ -195,17 +227,15 @@ async function ensureSchema(db: SQLite.SQLiteDatabase): Promise<void> {
     `SELECT value FROM meta WHERE key = 'schema_version';`,
   );
   const recorded = metaRow?.value ? Number(metaRow.value) : 0;
-  const needsBump =
-    !Number.isFinite(recorded) || recorded < CACHE_SCHEMA_VERSION;
+  if (Number.isFinite(recorded) && recorded === CACHE_SCHEMA_VERSION) {
+    return;
+  }
 
-  if (needsBump) {
-    // Drop the recipe cache tables so they get recreated at the current shape.
-    // Favorites and notes are INTENTIONALLY kept (IF NOT EXISTS below): with
-    // foreign keys ON, SQLite's DROP TABLE runs an implicit DELETE FROM on
-    // recipes, which would CASCADE-delete every favorite and every saved note
-    // (both reference recipes(id) ON DELETE CASCADE). The FK toggle follows
-    // the same OFF/ON pattern clearRecipeCache uses; orphaned favorite/note
-    // rows re-link when the deterministic re-seed restores the recipe ids.
+  if (!Number.isFinite(recorded) || recorded < 7) {
+    // Pre-v7 or fresh install: drop any legacy recipe cache tables so they get
+    // recreated at the current shape. Favorites and notes are INTENTIONALLY
+    // kept: with foreign keys ON, SQLite's DROP TABLE runs an implicit DELETE
+    // FROM on recipes, which would CASCADE-delete every favorite and note.
     await db.execAsync("PRAGMA foreign_keys = OFF;");
     try {
       await db.execAsync("DROP TABLE IF EXISTS recipe_steps;");
@@ -213,23 +243,23 @@ async function ensureSchema(db: SQLite.SQLiteDatabase): Promise<void> {
     } finally {
       await db.execAsync("PRAGMA foreign_keys = ON;");
     }
-    await db.execAsync(RECIPES_DDL);
-    await db.execAsync(RECIPE_STEPS_DDL);
-    await db.execAsync(RECIPE_STEPS_INDEX_DDL);
-    await db.execAsync(FAVORITES_DDL);
-    await db.execAsync(NOTES_DDL);
+  }
+
+  // Ensure tables + indexes exist (v7 -> v8 adds idx_recipes_photo_title
+  // non-destructively without wiping existing cached recipes).
+  await db.execAsync(RECIPES_DDL);
+  await db.execAsync(RECIPE_STEPS_DDL);
+  await db.execAsync(RECIPE_STEPS_INDEX_DDL);
+  await db.execAsync(RECIPES_PHOTO_TITLE_INDEX_DDL);
+  await db.execAsync(FAVORITES_DDL);
+  await db.execAsync(NOTES_DDL);
+
+  if (!Number.isFinite(recorded) || recorded < CACHE_SCHEMA_VERSION) {
     await db.runAsync(
       `INSERT INTO meta (key, value) VALUES ('schema_version', ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value;`,
       [String(CACHE_SCHEMA_VERSION)],
     );
-  } else {
-    // Already at the current version: just ensure tables exist (idempotent).
-    await db.execAsync(RECIPES_DDL);
-    await db.execAsync(RECIPE_STEPS_DDL);
-    await db.execAsync(RECIPE_STEPS_INDEX_DDL);
-    await db.execAsync(FAVORITES_DDL);
-    await db.execAsync(NOTES_DDL);
   }
 }
 
@@ -291,33 +321,35 @@ function parseJsonStringArray(raw: string | null): string[] | null {
   return null;
 }
 
-function parseRecipe(row: RecipeRow): Recipe {
-  let ingredients: string[] = [];
-  try {
-    const parsed = JSON.parse(row.ingredients);
-    if (Array.isArray(parsed)) ingredients = parsed;
-  } catch {
-    ingredients = row.ingredients ? [row.ingredients] : [];
-  }
+/** Summary columns for card/list rendering (excludes JSON text blobs). */
+const RECIPE_SUMMARY_COLUMNS = `
+  id, title, source_url, image_url, title_ar,
+  publisher_time_minutes, community_avg_minutes,
+  cleanup_avg_minutes, cleanup_estimate_minutes,
+  dish_count, grease_level, dishwasher_safe,
+  reality_minutes, reality_source, reality_samples
+`;
 
-  let steps: string[] = [];
-  try {
-    const parsed = JSON.parse(row.steps);
-    if (Array.isArray(parsed)) steps = parsed;
-  } catch {
-    steps = row.steps ? [row.steps] : [];
-  }
+type RecipeSummaryRow = Omit<
+  RecipeRow,
+  "ingredients" | "steps" | "ingredients_ar" | "steps_ar"
+>;
 
+/** Shared mapper for both full cached rows and JSON-free summary rows. */
+function buildRecipeBase(
+  row: RecipeSummaryRow,
+  arrays: Pick<Recipe, "ingredients" | "steps" | "ingredients_ar" | "steps_ar">,
+): Recipe {
   const recipe: Recipe = {
     id: row.id,
     title: row.title,
     source_url: row.source_url,
     image_url: row.image_url ?? null,
-    ingredients,
-    steps,
+    ingredients: arrays.ingredients,
+    steps: arrays.steps,
     title_ar: row.title_ar ?? null,
-    ingredients_ar: parseJsonStringArray(row.ingredients_ar),
-    steps_ar: parseJsonStringArray(row.steps_ar),
+    ingredients_ar: arrays.ingredients_ar,
+    steps_ar: arrays.steps_ar,
     publisher_time_minutes: row.publisher_time_minutes,
     community_avg_minutes: row.community_avg_minutes,
     cleanup_avg_minutes: row.cleanup_avg_minutes,
@@ -363,6 +395,31 @@ function parseRecipe(row: RecipeRow): Recipe {
   }
 
   return recipe;
+}
+
+function parseRecipe(row: RecipeRow): Recipe {
+  let ingredients: string[] = [];
+  try {
+    const parsed = JSON.parse(row.ingredients);
+    if (Array.isArray(parsed)) ingredients = parsed;
+  } catch {
+    ingredients = row.ingredients ? [row.ingredients] : [];
+  }
+
+  let steps: string[] = [];
+  try {
+    const parsed = JSON.parse(row.steps);
+    if (Array.isArray(parsed)) steps = parsed;
+  } catch {
+    steps = row.steps ? [row.steps] : [];
+  }
+
+  return buildRecipeBase(row, {
+    ingredients,
+    steps,
+    ingredients_ar: parseJsonStringArray(row.ingredients_ar),
+    steps_ar: parseJsonStringArray(row.steps_ar),
+  });
 }
 
 function parseStep(row: RecipeStepRow): RecipeStep {
@@ -544,6 +601,94 @@ const REFRESH_MAX_PAGES = 250;
  */
 export const AUTO_SEED_PAGES = 20;
 
+/** Bounded concurrency for paginated cache seed/refresh network fetches. */
+const PAGE_FETCH_CONCURRENCY = 3;
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+async function stampCacheSwept(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(CACHE_SWEPT_AT_KEY, String(Date.now()));
+  } catch {
+    // Non-fatal: worst case the next sweep runs normally.
+  }
+}
+
+async function syncPaginatedPages(opts: {
+  startPage: number;
+  maxPage: number;
+  perPage: number;
+  withSteps: boolean;
+  fetchPage: (page: number, perPage: number) => Promise<{
+    recipes: Recipe[];
+    currentPage: number;
+    lastPage: number;
+  }>;
+  stampOnUpsert?: boolean;
+}): Promise<void> {
+  const {
+    startPage,
+    maxPage,
+    perPage,
+    withSteps,
+    fetchPage,
+    stampOnUpsert,
+  } = opts;
+  if (startPage > maxPage) return;
+
+  // Fetch the first page in range to discover `lastPage` before launching
+  // concurrent batches, avoiding wasted requests past the end of the dataset.
+  const first = await fetchPage(startPage, perPage);
+  if (first.recipes.length === 0) return;
+  await upsertRecipes(first.recipes, { withSteps });
+  if (stampOnUpsert) await stampCacheSwept();
+  if (first.currentPage >= first.lastPage) return;
+
+  const effectiveMax = Math.min(maxPage, first.lastPage);
+  for (
+    let batchStart = startPage + 1;
+    batchStart <= effectiveMax;
+    batchStart += PAGE_FETCH_CONCURRENCY
+  ) {
+    const batchEnd = Math.min(
+      batchStart + PAGE_FETCH_CONCURRENCY - 1,
+      effectiveMax,
+    );
+    const batchPages: number[] = [];
+    for (let p = batchStart; p <= batchEnd; p++) {
+      batchPages.push(p);
+    }
+
+    const results = await Promise.all(
+      batchPages.map((p) => fetchPage(p, perPage)),
+    );
+
+    const batchRecipes: Recipe[] = [];
+    let reachedEnd = false;
+    for (const res of results) {
+      if (res.recipes.length === 0) {
+        reachedEnd = true;
+        break;
+      }
+      batchRecipes.push(...res.recipes);
+      if (res.currentPage >= res.lastPage) {
+        reachedEnd = true;
+        break;
+      }
+    }
+
+    if (batchRecipes.length > 0) {
+      await yieldToEventLoop();
+      await upsertRecipes(batchRecipes, { withSteps });
+      if (stampOnUpsert) await stampCacheSwept();
+    }
+    if (reachedEnd) break;
+    await yieldToEventLoop();
+  }
+}
+
 /**
  * Cold-cache seed, first page only: fetches one seed page (with steps) and
  * upserts it, returning the inserted recipes so the UI can render after ~¼
@@ -552,6 +697,7 @@ export const AUTO_SEED_PAGES = 20;
 export async function seedCacheFirstPage(): Promise<Recipe[]> {
   const page = await fetchSeedPage(1, SEED_PAGE_SIZE);
   await upsertRecipes(page.recipes, { withSteps: true });
+  await stampCacheSwept();
   return page.recipes;
 }
 
@@ -570,12 +716,14 @@ export async function seedCacheRemainingPages(
     opts.pages != null
       ? Math.min(start + opts.pages - 1, SEED_MAX_PAGES)
       : SEED_MAX_PAGES;
-  for (let page = start; page <= cap; page++) {
-    const result = await fetchSeedPage(page, SEED_PAGE_SIZE);
-    if (result.recipes.length === 0) break;
-    await upsertRecipes(result.recipes, { withSteps: true });
-    if (result.currentPage >= result.lastPage) break;
-  }
+  await syncPaginatedPages({
+    startPage: start,
+    maxPage: cap,
+    perPage: SEED_PAGE_SIZE,
+    withSteps: true,
+    fetchPage: fetchSeedPage,
+    stampOnUpsert: true,
+  });
 }
 
 /**
@@ -639,12 +787,46 @@ export async function clearAccountScopedCaches(): Promise<void> {
  * payloads) and upsert them, leaving the cached step library untouched.
  */
 export async function refreshCacheLight(): Promise<void> {
-  for (let page = 1; page <= REFRESH_MAX_PAGES; page++) {
-    const result = await fetchRecipePage(page, 100);
-    if (result.recipes.length === 0) break;
-    await upsertRecipes(result.recipes, { withSteps: false });
-    if (result.currentPage >= result.lastPage) break;
-  }
+  await syncPaginatedPages({
+    startPage: 1,
+    maxPage: REFRESH_MAX_PAGES,
+    perPage: 100,
+    withSteps: false,
+    fetchPage: fetchRecipePage,
+  });
+}
+
+/**
+ * Return lightweight cached recipe summaries for card/list rendering.
+ * Selects only non-JSON columns (zero `JSON.parse()` calls), returning empty
+ * `ingredients`/`steps` arrays and null `*_ar` arrays.
+ */
+export async function getCachedRecipeSummaries(
+  limit?: number,
+): Promise<Recipe[]> {
+  const db = await getDb();
+  const hasLimit =
+    typeof limit === "number" && Number.isFinite(limit) && limit >= 0;
+  const rows = hasLimit
+    ? await db.getAllAsync<RecipeSummaryRow>(
+        `SELECT ${RECIPE_SUMMARY_COLUMNS} FROM recipes
+         ORDER BY image_url IS NULL, title COLLATE NOCASE ASC
+         LIMIT ?;`,
+        Math.floor(limit),
+      )
+    : await db.getAllAsync<RecipeSummaryRow>(
+        `SELECT ${RECIPE_SUMMARY_COLUMNS} FROM recipes
+         ORDER BY image_url IS NULL, title COLLATE NOCASE ASC;`,
+      );
+
+  return rows.map((row) =>
+    buildRecipeBase(row, {
+      ingredients: [],
+      steps: [],
+      ingredients_ar: null,
+      steps_ar: null,
+    }),
+  );
 }
 
 /**
@@ -1095,7 +1277,7 @@ function parsePaceCalibration(row: PaceCalibrationRow): PaceCalibration {
 
 /**
  * Bulk-replace the cached pace calibrations. Runs within a single transaction:
- * clears all rows, then inserts each calibration keyed by step_type.
+ * clears all rows, then inserts calibrations in a multi-row INSERT OR REPLACE.
  */
 export async function cachePaceCalibrations(
   items: PaceCalibration[],
@@ -1103,19 +1285,24 @@ export async function cachePaceCalibrations(
   const db = await getDb();
   await runSerialized(() => db.withTransactionAsync(async () => {
     await db.execAsync("DELETE FROM pace_calibrations;");
-    for (const item of items) {
-      await db.runAsync(
-        `INSERT OR REPLACE INTO pace_calibrations
-          (step_type, personal_avg_minutes, community_avg_minutes,
-           multiplier, confidence)
-         VALUES (?, ?, ?, ?, ?);`,
-        [
+    for (const batch of chunked(items, INSERT_CHUNK_SIZE)) {
+      const placeholders = batch.map(() => "(?, ?, ?, ?, ?)").join(", ");
+      const params: (string | number | null)[] = [];
+      for (const item of batch) {
+        params.push(
           item.step_type,
           item.personal_avg_minutes,
           item.community_avg_minutes,
           item.multiplier,
           item.confidence,
-        ],
+        );
+      }
+      await db.runAsync(
+        `INSERT OR REPLACE INTO pace_calibrations
+          (step_type, personal_avg_minutes, community_avg_minutes,
+           multiplier, confidence)
+         VALUES ${placeholders};`,
+        params,
       );
     }
   }));

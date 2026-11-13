@@ -11,16 +11,17 @@ import {
   ActivityIndicator,
   FlatList,
   LayoutAnimation,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
+  useWindowDimensions,
   type ListRenderItem,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import {
@@ -41,7 +42,7 @@ import { track } from "@/analytics";
 import {
   countCachedRecipes,
   flushPendingCookSessions,
-  getCachedRecipes,
+  getCachedRecipeSummaries,
   getFavoriteIds,
   getNotedRecipeIds,
   repairCachedStepsIfNeeded,
@@ -167,31 +168,20 @@ function sortAscNullsLast<T>(
   });
 }
 
-/**
- * Local (offline-fallback) category matching. When the chip is a known local
- * keyword category, keep the regex-based categorizeTitle behavior; server
- * category strings match the recipe's own `category` column or a title
- * substring (cached rows don't carry the metadata column).
- */
-function matchesCategory(
-  recipe: Recipe,
-  filter: { id: string; label: string },
-): boolean {
-  const local = CATEGORIES.find((c) => c.id === filter.id);
-  if (local && categorizeTitle(recipe.title) === local.id) return true;
-  const label = filter.label.toLowerCase();
-  if (recipe.category != null && recipe.category.toLowerCase() === label) {
-    return true;
+function setMatchesIds(prev: Set<number>, ids: number[]): boolean {
+  if (prev.size !== ids.length) return false;
+  for (let i = 0; i < ids.length; i++) {
+    if (!prev.has(ids[i])) return false;
   }
-  return recipe.title.toLowerCase().includes(label);
+  return true;
 }
 
 /**
  * The OFFLINE fallback filter pipeline (server-driven mode is handled by the
- * search effect): search → category/quick → total time → cleanup, then sort.
- * Time filters and the fastest sort use the community average with the
- * publisher claim as fallback (`recipeMinutes`), so a sparse community
- * dataset never empties the list.
+ * search effect): single-pass filter (search + category/quick + total time +
+ * cleanup), then sort. Time filters and the fastest sort use the community
+ * average with the publisher claim as fallback (`recipeMinutes`), so a sparse
+ * community dataset never empties the list.
  */
 function computeVisibleRecipes(
   source: Recipe[],
@@ -202,35 +192,51 @@ function computeVisibleRecipes(
   sortMode: SortMode,
 ): Recipe[] {
   const q = search.trim().toLowerCase();
-  let out = source;
-  if (q) {
-    // Match the English title OR the Arabic title (Arabic search input).
-    out = out.filter(
-      (r) =>
-        r.title.toLowerCase().includes(q) ||
-        (r.title_ar != null && r.title_ar.toLowerCase().includes(q)),
-    );
-  }
-  if (filter.kind === "quick") {
-    out = out.filter((r) => {
-      const m = recipeMinutes(r);
-      return m != null && m <= 30;
-    });
-  } else if (filter.kind === "category") {
-    out = out.filter((r) => matchesCategory(r, filter));
-  }
-  if (timeMax != null) {
-    out = out.filter((r) => {
-      const m = recipeMinutes(r);
-      return m != null && m <= timeMax;
-    });
-  }
-  if (cleanupMax != null) {
-    out = out.filter(
-      (r) =>
-        r.cleanup_avg_minutes != null && r.cleanup_avg_minutes <= cleanupMax,
-    );
-  }
+  const isQuick = filter.kind === "quick";
+  const isCat = filter.kind === "category";
+  const catLocalId = isCat
+    ? (CATEGORIES.find((c) => c.id === filter.id)?.id ?? null)
+    : null;
+  const catLabelLower = isCat ? filter.label.toLowerCase() : "";
+
+  const hasFilter =
+    q.length > 0 || isQuick || isCat || timeMax != null || cleanupMax != null;
+
+  const out = hasFilter
+    ? source.filter((r) => {
+        if (q) {
+          // Match the English title OR the Arabic title (Arabic search input).
+          const matchesEn = r.title.toLowerCase().includes(q);
+          const matchesAr =
+            r.title_ar != null && r.title_ar.toLowerCase().includes(q);
+          if (!matchesEn && !matchesAr) return false;
+        }
+        if (isQuick) {
+          const m = recipeMinutes(r);
+          if (m == null || m > 30) return false;
+        } else if (isCat) {
+          const matched =
+            (catLocalId != null && categorizeTitle(r.title) === catLocalId) ||
+            (r.category != null && r.category.toLowerCase() === catLabelLower) ||
+            r.title.toLowerCase().includes(catLabelLower);
+          if (!matched) return false;
+        }
+        if (timeMax != null) {
+          const m = recipeMinutes(r);
+          if (m == null || m > timeMax) return false;
+        }
+        if (cleanupMax != null) {
+          if (
+            r.cleanup_avg_minutes == null ||
+            r.cleanup_avg_minutes > cleanupMax
+          ) {
+            return false;
+          }
+        }
+        return true;
+      })
+    : source;
+
   if (sortMode === "fastest") {
     return sortAscNullsLast(out, recipeMinutes);
   }
@@ -874,8 +880,14 @@ const PhotoCard = memo(function PhotoCard({
   );
 });
 
+const COLUMN_WRAPPER_STYLE = { gap: Space.sm } as const;
+const FLEX_ONE_STYLE = { flex: 1 } as const;
+const SKELETON_ROW_STYLE = { flexDirection: "row", gap: Space.sm } as const;
+const SKELETON_ROWS = [0, 1, 2] as const;
+const recipeKeyExtractor = (item: Recipe) => String(item.id);
+
 export default function BrowseScreen() {
-  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const colors = useThemeColors();
   const t = useT();
   const headerRights = useHeaderActionsRights();
@@ -886,8 +898,10 @@ export default function BrowseScreen() {
   const barPad = usePinnedBarPad();
   // Scroll-guard: a drag that ends over a PhotoCard must not push the detail
   // route. RN Web can deliver onPress after a scroll gesture; ignore taps
-  // while scrolling / momentum is active.
+  // while scrolling / momentum is active. Track last scroll timestamp in
+  // onScroll with zero timers; keep timer only on drag/momentum endpoints.
   const scrollingRef = useRef(false);
+  const lastScrollTsRef = useRef(0);
   const scrollEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const markScrolling = useCallback(() => {
     scrollingRef.current = true;
@@ -899,12 +913,19 @@ export default function BrowseScreen() {
       scrollingRef.current = false;
     }, 300);
   }, []);
+  useEffect(() => {
+    return () => {
+      if (scrollEndTimerRef.current != null) {
+        clearTimeout(scrollEndTimerRef.current);
+      }
+    };
+  }, []);
   const handleBrowseScroll = useCallback(
-    (event: any) => {
-      markScrolling();
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      lastScrollTsRef.current = Date.now();
       chrome.onScroll(event);
     },
-    [chrome, markScrolling],
+    [chrome],
   );
 
   // ---- Local cache source (offline fallback + favorites) --------------------
@@ -926,6 +947,10 @@ export default function BrowseScreen() {
   // Offline fallback active: the list renders the LOCAL cached pipeline and
   // the "Offline — showing saved recipes" caption chip shows.
   const [offline, setOffline] = useState(false);
+  const offlineRef = useRef(false);
+  useEffect(() => {
+    offlineRef.current = offline;
+  }, [offline]);
   // Server category chips (null until loaded → local keyword chips render).
   const [serverChips, setServerChips] = useState<{
     id: string;
@@ -993,24 +1018,28 @@ export default function BrowseScreen() {
   }, []);
 
   // Background continuation after a cold first-page seed: stream the remaining
-  // seed pages into the cache, then reload the list. Non-blocking on purpose —
-  // if it fails mid-way we keep showing whatever already loaded.
+  // seed pages into the cache, then reload the list if offline. Non-blocking on
+  // purpose — if it fails mid-way we keep showing whatever already loaded.
   const continueSeedInBackground = useCallback(async () => {
     try {
       await seedCacheRemainingPages();
-      applyRecipes(await getCachedRecipes());
+      if (offlineRef.current) {
+        applyRecipes(await getCachedRecipeSummaries());
+      }
     } catch (error) {
       console.warn("[RecipeReal] background seed continuation failed:", error);
     }
   }, [applyRecipes]);
 
-  // Background refresh: light upsert (no step re-download) + reload from cache.
-  // The sweep runs through maybeSweepCache()'s single-flight/hourly guard so
-  // Home and Browse never fire duplicate multi-page sweeps at startup.
+  // Background refresh: light upsert (no step re-download) + reload from cache
+  // when offline. The sweep runs through maybeSweepCache()'s single-flight/hourly
+  // guard so Home and Browse never fire duplicate multi-page sweeps at startup.
   const refreshInBackground = useCallback(async () => {
     try {
       await maybeSweepCache();
-      applyRecipes(await getCachedRecipes());
+      if (offlineRef.current) {
+        applyRecipes(await getCachedRecipeSummaries());
+      }
     } catch (error) {
       // Background refresh failures are non-fatal.
       console.warn("[RecipeReal] background refresh failed:", error);
@@ -1024,7 +1053,8 @@ export default function BrowseScreen() {
     try {
       // Ids only — the hearts on cards. Full favorite rows live on the
       // Favorites tab ("Cook again" rail removed from Browse by request).
-      setFavoriteIds(new Set(await getFavoriteIds()));
+      const ids = await getFavoriteIds();
+      setFavoriteIds((prev) => (setMatchesIds(prev, ids) ? prev : new Set(ids)));
     } catch (error) {
       console.warn("[RecipeReal] loading favorites failed:", error);
     }
@@ -1035,7 +1065,8 @@ export default function BrowseScreen() {
   // reflected in the card badges as soon as the user returns. Best-effort.
   const reloadNoteIds = useCallback(async () => {
     try {
-      setNoteIds(new Set(await getNotedRecipeIds()));
+      const ids = await getNotedRecipeIds();
+      setNoteIds((prev) => (setMatchesIds(prev, ids) ? prev : new Set(ids)));
     } catch (error) {
       console.warn("[RecipeReal] loading noted recipe ids failed:", error);
     }
@@ -1054,10 +1085,16 @@ export default function BrowseScreen() {
 
   // Leaving the screen closes the filters panel, so it never re-opens on
   // return (tab screens stay mounted while navigating elsewhere).
+  const showFiltersRef = useRef(showFilters);
+  useEffect(() => {
+    showFiltersRef.current = showFilters;
+  }, [showFilters]);
   useFocusEffect(
     useCallback(() => {
       return () => {
-        setShowFilters(false);
+        if (showFiltersRef.current) {
+          setShowFilters(false);
+        }
       };
     }, []),
   );
@@ -1126,13 +1163,12 @@ export default function BrowseScreen() {
     setShowFilters((v) => !v);
   }, []);
 
-  const handleOpenRecipe = useCallback(
-    (id: number) => {
-      if (scrollingRef.current) return;
-      router.push(`/recipe/${id}`);
-    },
-    [],
-  );
+  const handleOpenRecipe = useCallback((id: number) => {
+    if (scrollingRef.current || Date.now() - lastScrollTsRef.current < 300) {
+      return;
+    }
+    router.push(`/recipe/${id}`);
+  }, []);
 
   /**
    * Load recipes from the cache, seeding progressively on a cold cache.
@@ -1150,12 +1186,16 @@ export default function BrowseScreen() {
         // Cold cache: seed just the first page (a fraction of the dataset) so
         // the fallback library exists quickly; the rest arrives in background.
         const first = await seedCacheFirstPage();
-        applyRecipes(first);
+        if (offlineRef.current) {
+          applyRecipes(first);
+        }
         setState("ready");
         continueSeedInBackground();
         return false;
       }
-      applyRecipes(await getCachedRecipes());
+      if (offlineRef.current) {
+        applyRecipes(await getCachedRecipeSummaries());
+      }
       setState("ready");
       return true;
     } catch (error) {
@@ -1186,6 +1226,10 @@ export default function BrowseScreen() {
     }),
     [search, filter, timeMax, sortMode],
   );
+  const buildSearchParamsRef = useRef(buildSearchParams);
+  useEffect(() => {
+    buildSearchParamsRef.current = buildSearchParams;
+  }, [buildSearchParams]);
 
   // Monotonic request id: only the LATEST search/scroll request may commit
   // state, so out-of-order responses never clobber newer results.
@@ -1201,7 +1245,10 @@ export default function BrowseScreen() {
   const runSearch = useCallback(async () => {
     const requestId = ++searchRequestIdRef.current;
     try {
-      const result = await searchRecipes({ ...buildSearchParams(), page: 1 });
+      const result = await searchRecipes({
+        ...buildSearchParamsRef.current(),
+        page: 1,
+      });
       if (requestId !== searchRequestIdRef.current) return;
       commitServerItems(result.recipes);
       setServerMeta({ current: result.currentPage, last: result.lastPage });
@@ -1216,7 +1263,7 @@ export default function BrowseScreen() {
       if (isOfflineError(error)) {
         // Offline WITH a usable cache: local pipeline + banner chip.
         try {
-          const cached = await getCachedRecipes();
+          const cached = await getCachedRecipeSummaries();
           if (cached.length > 0) {
             applyRecipes(cached);
             setOffline(true);
@@ -1236,17 +1283,17 @@ export default function BrowseScreen() {
         setState("error");
       }
     }
-  }, [buildSearchParams, commitServerItems, applyRecipes, t]);
+  }, [commitServerItems, applyRecipes, t]);
 
   /**
-   * Server-driven search: q / category / max_time / sort changes debounce
-   * 350ms, then page 1 replaces the list. Chip-style filter changes flash
-   * the skeleton immediately (instant visual acknowledgment); typing keeps
-   * the current results until the new page lands. Leaving offline mode
-   * (e.g. after a successful pull-to-refresh) re-runs the search silently.
+   * Server-driven search: initial mount and discrete chip/filter/sort taps
+   * fire immediately; only typing in `search` debounces 350ms. Chip-style
+   * filter changes flash the skeleton immediately (instant visual
+   * acknowledgment); typing keeps the current results until the new page lands.
    */
   const serverFilterKey = `${filter.kind === "category" ? `cat:${filter.id}` : filter.kind}|${timeMax ?? ""}|${sortMode}`;
   const prevServerFilterKeyRef = useRef<string | null>(null);
+  const prevSearchRef = useRef<string>(search);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (offline) return; // Local pipeline owns the screen while offline.
@@ -1257,15 +1304,28 @@ export default function BrowseScreen() {
       setApplying(true);
     }
     prevServerFilterKeyRef.current = serverFilterKey;
+
+    const searchChanged = search !== prevSearchRef.current;
+    prevSearchRef.current = search;
+
     if (searchDebounceRef.current != null) {
       clearTimeout(searchDebounceRef.current);
-    }
-    searchDebounceRef.current = setTimeout(() => {
       searchDebounceRef.current = null;
+    }
+
+    if (searchChanged) {
+      searchDebounceRef.current = setTimeout(() => {
+        searchDebounceRef.current = null;
+        runSearch().catch((error) => {
+          console.warn("[RecipeReal] search effect failed:", error);
+        });
+      }, SEARCH_DEBOUNCE_MS);
+    } else {
       runSearch().catch((error) => {
         console.warn("[RecipeReal] search effect failed:", error);
       });
-    }, SEARCH_DEBOUNCE_MS);
+    }
+
     return () => {
       if (searchDebounceRef.current != null) {
         clearTimeout(searchDebounceRef.current);
@@ -1287,7 +1347,10 @@ export default function BrowseScreen() {
     loadingMoreRef.current = true;
     setLoadingMore(true);
     const requestId = ++searchRequestIdRef.current;
-    searchRecipes({ ...buildSearchParams(), page: serverMeta.current + 1 })
+    searchRecipes({
+      ...buildSearchParamsRef.current(),
+      page: serverMeta.current + 1,
+    })
       .then((result) => {
         if (requestId !== searchRequestIdRef.current) return;
         setServerItems((prev) => {
@@ -1309,7 +1372,7 @@ export default function BrowseScreen() {
         loadingMoreRef.current = false;
         setLoadingMore(false);
       });
-  }, [offline, serverMeta, buildSearchParams]);
+  }, [offline, serverMeta]);
 
   // Category chips from the server (cached in AsyncStorage by the client;
   // empty/offline → local keyword categories). Loaded once per mount.
@@ -1355,7 +1418,9 @@ export default function BrowseScreen() {
         repairCachedStepsIfNeeded()
           .then(async (repaired) => {
             if (repaired) {
-              applyRecipes(await getCachedRecipes());
+              if (offlineRef.current) {
+                applyRecipes(await getCachedRecipeSummaries());
+              }
             } else {
               await refreshInBackground();
             }
@@ -1381,46 +1446,24 @@ export default function BrowseScreen() {
       clearTimeout(guard);
       setRefreshing(false);
     };
-    // Is there an ACTIVE query for the server list? (Mirrors buildSearchParams:
-    // search text, category/quick chip, time cap, or fastest sort.)
-    const hasActiveQuery =
-      search.trim().length > 0 ||
-      filter.kind !== "all" ||
-      timeMax != null ||
-      sortMode !== "default";
     try {
-      if (!offline && hasActiveQuery) {
+      if (!offline) {
         // FAST: one API request re-running the CURRENT query.
         await runSearch();
       } else {
         // INSTANT: reload the local fallback source from SQLite.
-        applyRecipes(await getCachedRecipes());
+        applyRecipes(await getCachedRecipeSummaries());
       }
     } catch (error) {
       console.warn("[RecipeReal] pull-to-refresh failed:", error);
     } finally {
       spinnerDone();
     }
-    // The SLOW multi-page light cache sweep continues WITHOUT the spinner; in
-    // the default (unfiltered) online view the server list re-syncs silently.
+    // The SLOW multi-page light cache sweep continues WITHOUT the spinner.
     refreshInBackground().catch(() => {
       // Best-effort background work.
     });
-    if (!offline && !hasActiveQuery) {
-      runSearch().catch(() => {
-        // Best-effort background work.
-      });
-    }
-  }, [
-    offline,
-    search,
-    filter,
-    timeMax,
-    sortMode,
-    runSearch,
-    refreshInBackground,
-    applyRecipes,
-  ]);
+  }, [offline, runSearch, refreshInBackground, applyRecipes]);
 
   const handleRetry = useCallback(async () => {
     // Error state: retry the cache pipeline; the debounced search effect
@@ -1535,92 +1578,174 @@ export default function BrowseScreen() {
     [favoriteIds, noteIds, handleOpenRecipe, handleToggleFavorite, styles],
   );
 
-  // Dismissible summary chips for the active discrete filters (i18n FROZEN:
-  // reuses the existing chip/panel labels; the search text already has its
-  // own clear button inside the field, so it is not duplicated here).
-  const activeFilterChips: {
-    key: string;
-    label: string;
-    onClear: () => void;
-  }[] = [];
-  if (filter.kind === "category") {
-    activeFilterChips.push({
-      key: "cat",
-      label: filter.label,
-      onClear: () => setFilter({ kind: "all" }),
-    });
-  } else if (filter.kind === "quick") {
-    activeFilterChips.push({
-      key: "quick",
-      label: t("filter.under30"),
-      onClear: () => setFilter({ kind: "all" }),
-    });
-  }
-  if (timeMax != null) {
-    const option = TIME_FILTERS.find((o) => o.max === timeMax);
-    activeFilterChips.push({
-      key: "time",
-      label: option ? t(option.labelKey) : fmtMinutes(timeMax),
-      onClear: () => setTimeMax(null),
-    });
-  }
+  const activeFilterChips = useMemo(() => {
+    const out: {
+      key: string;
+      label: string;
+      onClear: () => void;
+    }[] = [];
+    if (filter.kind === "category") {
+      out.push({
+        key: "cat",
+        label: filter.label,
+        onClear: () => setFilter({ kind: "all" }),
+      });
+    } else if (filter.kind === "quick") {
+      out.push({
+        key: "quick",
+        label: t("filter.under30"),
+        onClear: () => setFilter({ kind: "all" }),
+      });
+    }
+    if (timeMax != null) {
+      const option = TIME_FILTERS.find((o) => o.max === timeMax);
+      out.push({
+        key: "time",
+        label: option ? t(option.labelKey) : fmtMinutes(timeMax),
+        onClear: () => setTimeMax(null),
+      });
+    }
+    return out;
+  }, [filter, timeMax, t]);
 
   const showSkeletons =
     (state === "loading" && recipes.length === 0) ||
     (state === "ready" && applying);
 
+  const handleCreate = useCallback(() => router.push("/recipe-composer"), []);
+
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const handleHeaderLayout = useCallback(
+    (e: { nativeEvent: { layout: { height: number } } }) => {
+      const h = Math.round(e.nativeEvent.layout.height);
+      setHeaderHeight((prev) => (prev === h ? prev : h));
+    },
+    [],
+  );
+
+  const cellHeight = useMemo(
+    () => Math.round(((width - Space.sm) / 2) * (4 / 3)) + Space.sm,
+    [width],
+  );
+  const getItemLayout = useCallback(
+    (_data: ArrayLike<Recipe> | null | undefined, index: number) => ({
+      length: cellHeight,
+      offset: headerHeight + cellHeight * index,
+      index,
+    }),
+    [cellHeight, headerHeight],
+  );
+
+  const listContentStyle = useMemo(
+    () => [
+      styles.listContent,
+      { paddingTop: barPad, paddingBottom: chromeBottomPad },
+    ],
+    [styles.listContent, barPad, chromeBottomPad],
+  );
+
   // Everything below the pinned bar scrolls TOGETHER: big title, search,
   // category chips, offline banner, active-filter chips. Nothing is pinned
   // between the bar and the title (v1 put the chips there — felt like a gap).
-  const offlineBanner = (
-    <View style={styles.offlineBannerWrap}>
-      <Chip tone="amber" size="sm" label={t("browse.offlineCaption")} />
-    </View>
-  );
-
-  const activeChipsRow = (
-    <View style={styles.activeChipRow}>
-      {activeFilterChips.map((chip) => (
-        <View key={chip.key} style={styles.activeChip}>
-          <Text style={styles.activeChipText} numberOfLines={1}>
-            {chip.label}
-          </Text>
-          <IconPressable
-            onPress={chip.onClear}
-            accessibilityLabel={t("filter.clearAll")}
-            hitSlop={6}
-          >
-            <Ionicons name="close" size={14} color={colors.accent} />
-          </IconPressable>
-        </View>
-      ))}
-    </View>
-  );
-
-  const headerBlock = (
-    <>
-      <SearchBar
-        search={search}
-        onChangeSearch={setSearch}
-        showFilters={showFilters}
-        onToggleFilters={toggleFilters}
-        hasAdvancedFilters={hasAdvancedFilters}
-        onCreate={() => router.push("/recipe-composer")}
-        inputRef={searchInputRef}
-        colors={colors}
-        styles={styles}
-      />
-      {state === "ready" ? (
-        <ChipRow
-          chips={chips}
-          filter={filter}
-          onSelect={handleSelectFilter}
+  const headerBlock = useMemo(
+    () => (
+      <View onLayout={handleHeaderLayout}>
+        <SearchBar
+          search={search}
+          onChangeSearch={setSearch}
+          showFilters={showFilters}
+          onToggleFilters={toggleFilters}
+          hasAdvancedFilters={hasAdvancedFilters}
+          onCreate={handleCreate}
+          inputRef={searchInputRef}
+          colors={colors}
           styles={styles}
         />
-      ) : null}
-      {state === "ready" && offline ? offlineBanner : null}
-      {state === "ready" && activeFilterChips.length > 0 ? activeChipsRow : null}
-    </>
+        {state === "ready" ? (
+          <ChipRow
+            chips={chips}
+            filter={filter}
+            onSelect={handleSelectFilter}
+            styles={styles}
+          />
+        ) : null}
+        {state === "ready" && offline ? (
+          <View style={styles.offlineBannerWrap}>
+            <Chip tone="amber" size="sm" label={t("browse.offlineCaption")} />
+          </View>
+        ) : null}
+        {state === "ready" && activeFilterChips.length > 0 ? (
+          <View style={styles.activeChipRow}>
+            {activeFilterChips.map((chip) => (
+              <View key={chip.key} style={styles.activeChip}>
+                <Text style={styles.activeChipText} numberOfLines={1}>
+                  {chip.label}
+                </Text>
+                <IconPressable
+                  onPress={chip.onClear}
+                  accessibilityLabel={t("filter.clearAll")}
+                  hitSlop={6}
+                >
+                  <Ionicons name="close" size={14} color={colors.accent} />
+                </IconPressable>
+              </View>
+            ))}
+          </View>
+        ) : null}
+      </View>
+    ),
+    [
+      handleHeaderLayout,
+      search,
+      showFilters,
+      toggleFilters,
+      hasAdvancedFilters,
+      handleCreate,
+      colors,
+      styles,
+      state,
+      chips,
+      filter,
+      handleSelectFilter,
+      offline,
+      t,
+      activeFilterChips,
+    ],
+  );
+
+  const emptyComponent = useMemo(
+    () => (
+      <View style={styles.center}>
+        <Text style={styles.emptyGlyph}>🍳</Text>
+        {hasActiveFilters ? (
+          <>
+            <Text style={styles.muted}>
+              {search.trim().length > 0
+                ? t("browse.noResultsFor", { query: search.trim() })
+                : t("browse.noMatch")}
+            </Text>
+            <Text style={styles.emptyCount}>
+              {t("browse.countOf", {
+                shown: displayRecipes.length,
+                total: offline ? recipes.length : serverTotal,
+              })}
+            </Text>
+          </>
+        ) : (
+          <Text style={styles.muted}>{t("common.emptyRecipes")}</Text>
+        )}
+      </View>
+    ),
+    [
+      styles,
+      hasActiveFilters,
+      search,
+      t,
+      displayRecipes.length,
+      offline,
+      recipes.length,
+      serverTotal,
+    ],
   );
 
   return (
@@ -1633,15 +1758,13 @@ export default function BrowseScreen() {
       {state === "ready" && !applying ? (
         <FlatList
           data={displayRecipes}
-          keyExtractor={(item) => String(item.id)}
+          keyExtractor={recipeKeyExtractor}
           renderItem={renderItem}
+          getItemLayout={getItemLayout}
           numColumns={2}
-          style={{ flex: 1 }}
-          contentContainerStyle={[
-            styles.listContent,
-            { paddingTop: barPad, paddingBottom: chromeBottomPad },
-          ]}
-          columnWrapperStyle={{ gap: Space.sm }}
+          style={FLEX_ONE_STYLE}
+          contentContainerStyle={listContentStyle}
+          columnWrapperStyle={COLUMN_WRAPPER_STYLE}
           initialNumToRender={6}
           maxToRenderPerBatch={6}
           windowSize={5}
@@ -1659,42 +1782,20 @@ export default function BrowseScreen() {
           onEndReached={offline ? undefined : handleEndReached}
           onEndReachedThreshold={0.5}
           ListFooterComponent={offline ? null : ListFooter}
-          ListEmptyComponent={
-            <View style={styles.center}>
-              <Text style={styles.emptyGlyph}>🍳</Text>
-              {hasActiveFilters ? (
-                <>
-                  <Text style={styles.muted}>
-                    {search.trim().length > 0
-                      ? t("browse.noResultsFor", { query: search.trim() })
-                      : t("browse.noMatch")}
-                  </Text>
-                  <Text style={styles.emptyCount}>
-                    {t("browse.countOf", {
-                      shown: displayRecipes.length,
-                      total: offline ? recipes.length : serverTotal,
-                    })}
-                  </Text>
-                </>
-              ) : (
-                <Text style={styles.muted}>{t("common.emptyRecipes")}</Text>
-              )}
-            </View>
-          }
+          ListEmptyComponent={emptyComponent}
         />
       ) : (
         <View style={{ flex: 1, paddingTop: barPad }}>
           {headerBlock}
           {showSkeletons && (
-            <FlatList
-              data={[0, 1, 2, 3, 4, 5]}
-              keyExtractor={(item) => `skel-${item}`}
-              numColumns={2}
-              renderItem={() => <View style={styles.skeletonBlock} />}
-              contentContainerStyle={styles.listContent}
-              columnWrapperStyle={{ gap: Space.sm }}
-              scrollEnabled={false}
-            />
+            <View style={styles.listContent}>
+              {SKELETON_ROWS.map((row) => (
+                <View key={`skel-row-${row}`} style={SKELETON_ROW_STYLE}>
+                  <View style={styles.skeletonBlock} />
+                  <View style={styles.skeletonBlock} />
+                </View>
+              ))}
+            </View>
           )}
 
           {state === "error" && (

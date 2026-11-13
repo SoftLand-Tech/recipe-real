@@ -10,27 +10,20 @@ import {
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { grantAnalyticsConsent } from "@/analytics";
+import {
+  CONSENT_STORAGE_KEY,
+  hasAnalyticsConsent,
+  setAnalyticsConsentCache,
+  shouldPromptAnalyticsConsent,
+} from "@/analytics";
 import { useT } from "@/i18n";
 import { Radius, Shadow, Space, Type, useThemeColors } from "@/theme";
 import { Button } from "@/components/ui";
 
-const CONSENT_KEY = "consent.v1";
 const PRIVACY_URL = "https://recipe-real.softland.tech/privacy";
 const TERMS_URL = "https://recipe-real.softland.tech/terms";
 
-/**
- * Whether the user opted INTO analytics sharing: true only for the stored
- * value 'accepted'. Anything else — 'essential', unset, or an unreadable
- * store — reports false so callers treat sharing as OFF by default.
- */
-export async function hasAnalyticsConsent(): Promise<boolean> {
-  try {
-    return (await AsyncStorage.getItem(CONSENT_KEY)) === "accepted";
-  } catch {
-    return false;
-  }
-}
+export { hasAnalyticsConsent };
 
 export interface FirstRunConsentProps {
   /** Fired after Accept persists 'accepted' (the root layout re-reports). */
@@ -93,9 +86,9 @@ export function FirstRunConsent({ onAccepted }: FirstRunConsentProps) {
   // modal hidden (the essentials-only default) instead of nagging forever.
   useEffect(() => {
     let cancelled = false;
-    AsyncStorage.getItem(CONSENT_KEY)
-      .then((stored) => {
-        if (!cancelled && stored == null) setVisible(true);
+    shouldPromptAnalyticsConsent()
+      .then((shouldPrompt) => {
+        if (!cancelled && shouldPrompt) setVisible(true);
       })
       .catch(() => {
         // Unreadable storage — stay hidden, analytics stays off.
@@ -108,12 +101,12 @@ export function FirstRunConsent({ onAccepted }: FirstRunConsentProps) {
   /** Persist the choice, close, and (on accept) notify the caller. */
   const decide = useCallback(
     async (value: "accepted" | "essential") => {
-      await AsyncStorage.setItem(CONSENT_KEY, value).catch(() => {
+      await AsyncStorage.setItem(CONSENT_STORAGE_KEY, value).catch(() => {
         // Best-effort: close regardless so the app is never blocked.
       });
-      // Analytics.ts caches its consent read per session — flip it here so
-      // track() events flow immediately on Accept, not on the next launch.
-      if (value === "accepted") grantAnalyticsConsent();
+      // Share the updated decision in the session cache so track() and
+      // subsequent checks reflect it immediately without re-reading storage.
+      setAnalyticsConsentCache(value);
       setVisible(false);
       if (value === "accepted") onAccepted?.();
     },

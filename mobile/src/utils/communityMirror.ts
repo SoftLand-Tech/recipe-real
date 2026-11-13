@@ -23,13 +23,40 @@ interface CommunityFeedEnvelope {
   posts?: unknown;
 }
 
-async function readEnvelope(): Promise<{ sort: unknown; posts: Post[] } | null> {
+interface ParsedEnvelope {
+  sort: unknown;
+  posts: Post[];
+}
+
+/**
+ * In-memory mirror of the AsyncStorage feed envelope so consecutive
+ * mutations (like/comment/follow) don't re-read and JSON.parse 20 full
+ * posts on every tap. `undefined` = unread, `null` = confirmed absent.
+ */
+let cachedEnvelope: ParsedEnvelope | null | undefined;
+
+/** Clear the in-memory envelope copy (e.g. on sign-out / 401 cache wipe). */
+export function clearMirroredFeedCache(): void {
+  cachedEnvelope = undefined;
+}
+
+async function readEnvelope(): Promise<ParsedEnvelope | null> {
+  if (cachedEnvelope !== undefined) {
+    return cachedEnvelope;
+  }
   try {
     const raw = await AsyncStorage.getItem(COMMUNITY_FEED_KEY);
-    if (!raw) return null;
+    if (!raw) {
+      cachedEnvelope = null;
+      return null;
+    }
     const parsed = JSON.parse(raw) as CommunityFeedEnvelope;
-    if (!parsed || !Array.isArray(parsed.posts)) return null;
-    return { sort: parsed.sort, posts: parsed.posts as Post[] };
+    if (!parsed || !Array.isArray(parsed.posts)) {
+      cachedEnvelope = null;
+      return null;
+    }
+    cachedEnvelope = { sort: parsed.sort, posts: parsed.posts as Post[] };
+    return cachedEnvelope;
   } catch {
     return null;
   }
@@ -37,6 +64,7 @@ async function readEnvelope(): Promise<{ sort: unknown; posts: Post[] } | null> 
 
 /** Overwrite the mirror (used by the feed fetch + the just-posted pin). */
 export async function writeMirroredFeed(sort: unknown, posts: Post[]): Promise<void> {
+  cachedEnvelope = { sort, posts };
   try {
     await AsyncStorage.setItem(
       COMMUNITY_FEED_KEY,

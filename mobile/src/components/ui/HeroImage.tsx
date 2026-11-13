@@ -1,10 +1,63 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { memo, useCallback, useState, type ReactNode } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { Platform, StyleSheet, Text, View } from "react-native";
 
-import { Radius, Space, useThemeColors } from "@/theme";
+import { Radius, Space, useThemeColors, type ThemeColors } from "@/theme";
+
+let SymbolViewComponent: typeof import("expo-symbols").SymbolView | null = null;
+if (Platform.OS === "ios" || Platform.OS === "android") {
+  try {
+    SymbolViewComponent = require("expo-symbols").SymbolView ?? null;
+  } catch {
+    SymbolViewComponent = null;
+  }
+}
+
+const FALLBACK_SYMBOL_NAME = {
+  ios: "fork.knife",
+  android: "restaurant",
+  web: "restaurant",
+} as const;
+const FALLBACK_EMOJI_STYLE = { fontSize: 44 } as const;
+const SCRIM_COLORS = ["rgba(0,0,0,0)", "rgba(0,0,0,0.3)", "rgba(0,0,0,0.82)"] as const;
+const SCRIM_LOCATIONS = [0, 0.3, 1] as const;
+
+function createHeroStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      width: "100%",
+      overflow: "hidden",
+      // Loading tint: expo-image's placeholder prop only accepts an image
+      // source (no plain color object), so the container background serves
+      // as the themed placeholder while the bitmap decodes.
+      backgroundColor: colors.surfaceSoft,
+    },
+    fallback: {
+      ...StyleSheet.absoluteFill,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.accentSoft,
+    },
+    children: {
+      ...StyleSheet.absoluteFill,
+      justifyContent: "flex-end",
+      padding: Space.lg,
+    },
+  });
+}
+
+const stylesByTheme = new WeakMap<ThemeColors, ReturnType<typeof createHeroStyles>>();
+
+function getHeroStyles(colors: ThemeColors) {
+  let cached = stylesByTheme.get(colors);
+  if (!cached) {
+    cached = createHeroStyles(colors);
+    stylesByTheme.set(colors, cached);
+  }
+  return cached;
+}
 
 export interface HeroImageProps {
   uri?: string | null;
@@ -19,7 +72,7 @@ export interface HeroImageProps {
  * Full-bleed recipe hero image with a graceful fallback and an optional
  * legibility scrim behind overlaid children (title etc.).
  */
-export function HeroImage({
+export const HeroImage = memo(function HeroImage({
   uri,
   height,
   withScrim = false,
@@ -31,30 +84,8 @@ export function HeroImage({
   // Remote food photos 404/expire over time; without this the failed URI
   // renders as a blank tinted box instead of the placeholder glyph.
   const [failed, setFailed] = useState(false);
-  const styles = useMemo(
-    () =>
-      StyleSheet.create({
-        container: {
-          width: "100%",
-          overflow: "hidden",
-          // Loading tint: expo-image's placeholder prop only accepts an image
-          // source (no plain color object), so the container background serves
-          // as the themed placeholder while the bitmap decodes.
-          backgroundColor: colors.surfaceSoft,
-        },
-        fallback: {
-          ...StyleSheet.absoluteFill,
-          alignItems: "center",
-          justifyContent: "center",
-        },
-        children: {
-          ...StyleSheet.absoluteFill,
-          justifyContent: "flex-end",
-          padding: Space.lg,
-        },
-      }),
-    [colors],
-  );
+  const styles = getHeroStyles(colors);
+  const handleError = useCallback(() => setFailed(true), []);
 
   const hasUri = typeof uri === "string" && uri.trim().length > 0;
   const showFallback = !hasUri || failed;
@@ -68,7 +99,7 @@ export function HeroImage({
       ]}
     >
       {showFallback ? (
-        <View style={[styles.fallback, { backgroundColor: colors.accentSoft }]}>
+        <View style={styles.fallback}>
           <FallbackGlyph tintColor={colors.accent} />
         </View>
       ) : (
@@ -81,7 +112,7 @@ export function HeroImage({
           transition={0}
           cachePolicy="memory-disk"
           placeholder={null}
-          onError={() => setFailed(true)}
+          onError={handleError}
           // Keeps recycled cells (FlatList rails) from reloading the image.
           recyclingKey={uri as string}
         />
@@ -98,7 +129,7 @@ export function HeroImage({
       ) : null}
     </View>
   );
-}
+});
 
 /**
  * Smooth bottom legibility gradient behind overlaid text. A real linear
@@ -112,10 +143,10 @@ function Scrim() {
   return (
     <LinearGradient
       style={StyleSheet.absoluteFill}
-      colors={["rgba(0,0,0,0)", "rgba(0,0,0,0.3)", "rgba(0,0,0,0.82)"]}
+      colors={SCRIM_COLORS}
       // Transparent over the top ~30%, then a smooth ramp to a strong dark
       // bottom edge (0.82) that anchors the overlaid title/meta.
-      locations={[0, 0.3, 1]}
+      locations={SCRIM_LOCATIONS}
       pointerEvents="none"
     />
   );
@@ -123,26 +154,15 @@ function Scrim() {
 
 /** Utensil glyph on native (expo-symbols), emoji fallback elsewhere. */
 function FallbackGlyph({ tintColor }: { tintColor: string }) {
-  const glyphStyle = {};
-  if (Platform.OS === "ios" || Platform.OS === "android") {
-    try {
-      const { SymbolView } = require("expo-symbols");
-      return (
-        <SymbolView
-          name={{
-            ios: "fork.knife",
-            android: "restaurant",
-            web: "restaurant",
-          }}
-          size={48}
-          weight="semibold"
-          tintColor={tintColor}
-          style={glyphStyle}
-        />
-      );
-    } catch {
-      // Fall through to the emoji fallback below.
-    }
+  if (SymbolViewComponent) {
+    return (
+      <SymbolViewComponent
+        name={FALLBACK_SYMBOL_NAME}
+        size={48}
+        weight="semibold"
+        tintColor={tintColor}
+      />
+    );
   }
-  return <Text style={[glyphStyle, { fontSize: 44 }]}>🍳</Text>;
+  return <Text style={FALLBACK_EMOJI_STYLE}>🍳</Text>;
 }

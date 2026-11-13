@@ -22,7 +22,16 @@ import type { TranslateFn } from "@/i18n";
  */
 
 const COOK_SESSION_PREFIX = "cook-session:";
+const ACTIVE_COOK_POINTER_KEY = "recipereal.activeCookRecipeId";
 const MAX_SNAPSHOT_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * In-memory cache + in-flight dedupe for the active cook session so
+ * navigation changes in ActiveCookBanner don't re-scan AsyncStorage.
+ * `undefined` = not loaded yet; `null` = confirmed no active session.
+ */
+let cachedSession: ActiveCookSession | null | undefined = undefined;
+let inFlightRead: Promise<ActiveCookSession | null> | null = null;
 
 export interface ActiveCookSession {
   recipeId: number;
@@ -66,63 +75,162 @@ function isActiveSnapshot(value: unknown): value is ActiveCookSession & {
   );
 }
 
-/**
- * The most recently started live session, if any. Title resolves from the
- * snapshot itself (v2+) with an offline recipe-cache lookup fallback (v1).
- * Never throws — null means "no banner".
- */
-export async function readActiveCookSession(): Promise<ActiveCookSession | null> {
+async function parseCookSessionRaw(raw: string): Promise<ActiveCookSession | null> {
+  const parsed: unknown = JSON.parse(raw);
+  if (!isActiveSnapshot(parsed)) return null;
+  const snapshotTitle =
+    typeof (parsed as { title?: unknown }).title === "string" &&
+    (parsed as { title: string }).title !== ""
+      ? (parsed as { title: string }).title
+      : null;
+  let session: ActiveCookSession = {
+    recipeId: parsed.recipeId,
+    title: snapshotTitle,
+    cookStartAt: parsed.cookStartAt,
+    pausedAt: typeof parsed.pausedAt === "number" ? parsed.pausedAt : null,
+    pausedMsTotal:
+      typeof parsed.pausedMsTotal === "number" ? parsed.pausedMsTotal : 0,
+    status: parsed.status,
+    armedAlarmId:
+      typeof parsed.armedAlarmId === "string" ? parsed.armedAlarmId : null,
+  };
+  if (!session.title) {
+    // v1 snapshot (no embedded title): resolve offline, else untitled.
+    try {
+      const cached = await getCachedRecipe(session.recipeId);
+      if (cached) session = { ...session, title: cached.title };
+    } catch {
+      // Offline cache unreadable — banner still shows, untitled.
+    }
+  }
+  return session;
+}
+
+async function readSessionByRecipeId(
+  recipeId: number,
+): Promise<ActiveCookSession | null> {
   try {
-    const keys = await AsyncStorage.getAllKeys();
-    let best: ActiveCookSession | null = null;
-    let bestStart = -1;
-    for (const key of keys) {
-      if (!key.startsWith(COOK_SESSION_PREFIX)) continue;
-      try {
-        const raw = await AsyncStorage.getItem(key);
-        if (raw == null) continue;
-        const parsed: unknown = JSON.parse(raw);
-        if (!isActiveSnapshot(parsed)) continue;
-        if (parsed.cookStartAt <= bestStart) continue;
-        bestStart = parsed.cookStartAt;
-        const snapshotTitle =
-          typeof (parsed as { title?: unknown }).title === "string" &&
-          ((parsed as { title: string }).title !== "")
-            ? ((parsed as { title: string }).title)
-            : null;
-        best = {
-          recipeId: parsed.recipeId,
-          title: snapshotTitle,
-          cookStartAt: parsed.cookStartAt,
-          pausedAt:
-            typeof parsed.pausedAt === "number" ? parsed.pausedAt : null,
-          pausedMsTotal:
-            typeof parsed.pausedMsTotal === "number"
-              ? parsed.pausedMsTotal
-              : 0,
-          status: parsed.status,
-          armedAlarmId:
-            typeof parsed.armedAlarmId === "string"
-              ? parsed.armedAlarmId
-              : null,
-        };
-      } catch {
-        // Corrupt snapshot — the cook screen drops it on mount.
-      }
-    }
-    if (best && !best.title) {
-      // v1 snapshot (no embedded title): resolve offline, else untitled.
-      try {
-        const cached = await getCachedRecipe(best.recipeId);
-        if (cached) best = { ...best, title: cached.title };
-      } catch {
-        // Offline cache unreadable — banner still shows, untitled.
-      }
-    }
-    return best;
+    const raw = await AsyncStorage.getItem(`${COOK_SESSION_PREFIX}${recipeId}`);
+    if (raw == null) return null;
+    return await parseCookSessionRaw(raw);
   } catch {
     return null;
   }
+}
+
+export interface ReadActiveCookSessionOptions {
+  /** Bypass the in-memory cache (e.g. after returning from a cook screen). */
+  force?: boolean;
+  /** Optional recipeId hint (avoids `getAllKeys()` when the pointer isn't set yet). */
+  hintRecipeId?: number;
+}
+
+/**
+ * The most recently started live session, if any. Uses an in-memory cache
+ * and the `recipereal.activeCookRecipeId` pointer so navigations avoid
+ * scanning `AsyncStorage.getAllKeys()`, falling back to `cook-session:*`
+ * discovery only when the pointer is absent. Title resolves from the
+ * snapshot itself (v2+) with an offline recipe-cache lookup fallback (v1).
+ * Never throws — null means "no banner".
+ */
+export async function readActiveCookSession(
+  opts?: ReadActiveCookSessionOptions,
+): Promise<ActiveCookSession | null> {
+  const force = opts?.force === true;
+  if (!force && cachedSession !== undefined) {
+    return cachedSession;
+  }
+  if (!force && inFlightRead) {
+    return inFlightRead;
+  }
+
+  const run = (async (): Promise<ActiveCookSession | null> => {
+    try {
+      const pointerRaw = await AsyncStorage.getItem(ACTIVE_COOK_POINTER_KEY);
+      if (pointerRaw != null) {
+        const pointerId = Number(pointerRaw);
+        if (Number.isFinite(pointerId) && pointerId > 0) {
+          const pointed = await readSessionByRecipeId(pointerId);
+          if (pointed) {
+            cachedSession = pointed;
+            return pointed;
+          }
+          // Pointer is stale (session expired or cleared directly on cook screen).
+          void AsyncStorage.removeItem(ACTIVE_COOK_POINTER_KEY).catch(() => {});
+          if (
+            opts?.hintRecipeId != null &&
+            Number.isFinite(opts.hintRecipeId) &&
+            opts.hintRecipeId !== pointerId
+          ) {
+            const hinted = await readSessionByRecipeId(opts.hintRecipeId);
+            if (hinted) {
+              void AsyncStorage.setItem(
+                ACTIVE_COOK_POINTER_KEY,
+                String(hinted.recipeId),
+              ).catch(() => {});
+              cachedSession = hinted;
+              return hinted;
+            }
+          }
+          cachedSession = null;
+          return null;
+        }
+      }
+
+      if (opts?.hintRecipeId != null && Number.isFinite(opts.hintRecipeId)) {
+        const hinted = await readSessionByRecipeId(opts.hintRecipeId);
+        if (hinted) {
+          void AsyncStorage.setItem(
+            ACTIVE_COOK_POINTER_KEY,
+            String(hinted.recipeId),
+          ).catch(() => {});
+          cachedSession = hinted;
+          return hinted;
+        }
+        cachedSession = null;
+        return null;
+      }
+
+      // Pointer absent (e.g. legacy cook-session:* key): scan once and promote.
+      const keys = await AsyncStorage.getAllKeys();
+      const cookKeys = keys.filter((k) => k.startsWith(COOK_SESSION_PREFIX));
+      if (cookKeys.length === 0) {
+        cachedSession = null;
+        return null;
+      }
+      const entries = await AsyncStorage.multiGet(cookKeys);
+      let bestRaw: string | null = null;
+      let bestStart = -1;
+      for (const [, raw] of entries) {
+        if (raw == null) continue;
+        try {
+          const parsed: unknown = JSON.parse(raw);
+          if (!isActiveSnapshot(parsed)) continue;
+          if (parsed.cookStartAt <= bestStart) continue;
+          bestStart = parsed.cookStartAt;
+          bestRaw = raw;
+        } catch {
+          // Corrupt snapshot — the cook screen drops it on mount.
+        }
+      }
+      const best = bestRaw != null ? await parseCookSessionRaw(bestRaw) : null;
+      if (best) {
+        void AsyncStorage.setItem(
+          ACTIVE_COOK_POINTER_KEY,
+          String(best.recipeId),
+        ).catch(() => {});
+      }
+      cachedSession = best;
+      return best;
+    } catch {
+      return null;
+    }
+  })().finally(() => {
+    if (inFlightRead === run) inFlightRead = null;
+  });
+
+  inFlightRead = run;
+  return run;
 }
 
 /**
@@ -134,6 +242,7 @@ export async function readActiveCookSession(): Promise<ActiveCookSession | null>
 export async function discardActiveCookSession(
   session: Pick<ActiveCookSession, "recipeId" | "armedAlarmId">,
 ): Promise<void> {
+  cachedSession = null;
   try {
     await cancelStepAlarm(session.armedAlarmId);
   } catch {
@@ -145,9 +254,10 @@ export async function discardActiveCookSession(
     // Best-effort.
   }
   try {
-    await AsyncStorage.removeItem(
+    await AsyncStorage.multiRemove([
       `${COOK_SESSION_PREFIX}${session.recipeId}`,
-    );
+      ACTIVE_COOK_POINTER_KEY,
+    ]);
   } catch {
     // Best-effort.
   }
