@@ -5,15 +5,14 @@ import {
   Dimensions,
   Easing,
   FlatList,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 
@@ -315,7 +314,7 @@ export function CommentsSheet({ postId, visible, onClose, myAvatar, myName, onCo
             </IconPressable>
           </View>
 
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+          <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
             <FlatList
               data={comments}
               keyExtractor={(c) => String(c.id)}

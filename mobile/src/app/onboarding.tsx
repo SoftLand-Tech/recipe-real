@@ -1,12 +1,15 @@
 import { Fragment, useCallback, useMemo, useState } from "react";
 import {
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import {
+  KeyboardAvoidingView,
+  KeyboardAwareScrollView,
+} from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -113,12 +116,15 @@ export default function OnboardingScreen() {
         container: {
           flex: 1,
           backgroundColor: colors.canvas,
-          paddingBottom: insets.bottom,
         },
         scrollContent: {
           paddingHorizontal: Space.lg,
           paddingTop: insets.top + Space.lg,
-          paddingBottom: Space.xxl,
+          // Bottom inset lives on the scroll content, NOT on the
+          // KeyboardAvoidingView above: the lib's animated style always
+          // writes paddingBottom (0 when closed) after the user style, so a
+          // static bottom inset on the KAV itself is silently dropped.
+          paddingBottom: Space.xxl + insets.bottom,
           gap: Space.lg,
           maxWidth: 560,
           width: "100%",
@@ -236,8 +242,8 @@ export default function OnboardingScreen() {
   );
 
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+    <KeyboardAvoidingView style={styles.container} behavior="padding">
+      <KeyboardAwareScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.heading}>
           <Text style={styles.headline}>{t("onboarding.welcome")}</Text>
           <Text style={styles.subtitle}>{t("onboarding.subtitle")}</Text>
@@ -353,7 +359,7 @@ export default function OnboardingScreen() {
           disabled={!canContinue}
           onPress={() => void handleContinue()}
         />
-      </ScrollView>
-    </View>
+      </KeyboardAwareScrollView>
+    </KeyboardAvoidingView>
   );
 }

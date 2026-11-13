@@ -17,12 +17,15 @@ import {
   Animated,
   InteractionManager,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import {
+  KeyboardAvoidingView,
+  KeyboardAwareScrollView,
+} from "react-native-keyboard-controller";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -2713,8 +2716,11 @@ export default function RecipeDetailScreen() {
       : null;
 
   return (
-    <View style={styles.screen}>
-      <ScrollView
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior="padding"
+    >
+      <KeyboardAwareScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.content, { paddingBottom: 120 }]}
       >
@@ -3098,7 +3104,7 @@ export default function RecipeDetailScreen() {
             </>
           )}
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {/* Pinned footer: Cook Mode button stays visible regardless of scroll.
           Disabled (dimmed, no-press) while the loaded recipe has no
@@ -3120,6 +3126,6 @@ export default function RecipeDetailScreen() {
           />
         </View>
       )}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
