@@ -229,9 +229,12 @@ export default function PublicProfileScreen() {
       return;
     }
     try {
-      if (posts.length > 0) {
-        await reportPost(posts[0].id, "Reported from user profile");
+      if (posts.length === 0) {
+        setSheet(null);
+        return;
       }
+      await reportPost(posts[0].id, "Reported from user profile");
+      setSheet(null);
       setReportedUser(true);
     } catch (err) {
       if (err instanceof PostUnauthorizedError) {
