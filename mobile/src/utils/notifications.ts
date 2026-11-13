@@ -9,6 +9,14 @@
  */
 import type * as NotificationsTypes from "expo-notifications";
 
+import {
+  getLastOsNotifGranted,
+  getRawNudgePref,
+  setLastOsNotifGranted,
+  setNudgePref,
+  type NudgePref,
+} from "@/utils/prefs";
+
 type NotificationsApi = typeof NotificationsTypes;
 
 let apiPromise: Promise<NotificationsApi | null> | null = null;
@@ -41,12 +49,24 @@ export async function setupNotificationHandler(): Promise<void> {
   });
 }
 
+function isPermissionGranted(
+  status: NotificationsTypes.NotificationPermissionsStatus,
+  api: NotificationsApi,
+): boolean {
+  if (status.granted) return true;
+  const iosStatus = status.ios?.status;
+  return (
+    iosStatus === api.IosAuthorizationStatus?.PROVISIONAL ||
+    iosStatus === api.IosAuthorizationStatus?.EPHEMERAL
+  );
+}
+
 /** Current permission status; false when the API is unavailable. */
 export async function notificationsGranted(): Promise<boolean> {
   const api = await notificationsApi();
   if (!api) return false;
   try {
-    return (await api.getPermissionsAsync()).granted;
+    return isPermissionGranted(await api.getPermissionsAsync(), api);
   } catch {
     return false;
   }
@@ -54,6 +74,8 @@ export async function notificationsGranted(): Promise<boolean> {
 
 /**
  * Ensure permission, prompting the user when needed.
+ * Persists `nudgePref = "on"` whenever permission is granted so Settings
+ * reflects the active permission immediately.
  * Returns false when unavailable, blocked or denied.
  */
 export async function requestNotificationsPermission(): Promise<boolean> {
@@ -61,12 +83,73 @@ export async function requestNotificationsPermission(): Promise<boolean> {
   if (!api) return false;
   try {
     const current = await api.getPermissionsAsync();
-    if (current.granted) return true;
-    if (!current.canAskAgain) return false;
-    return (await api.requestPermissionsAsync()).granted;
+    if (isPermissionGranted(current, api)) {
+      await setNudgePref("on");
+      await setLastOsNotifGranted(true);
+      return true;
+    }
+    if (!current.canAskAgain) {
+      await setLastOsNotifGranted(false);
+      return false;
+    }
+    const next = await api.requestPermissionsAsync();
+    const granted = isPermissionGranted(next, api);
+    if (granted) {
+      await setNudgePref("on");
+      await setLastOsNotifGranted(true);
+    } else {
+      await setLastOsNotifGranted(false);
+    }
+    return granted;
   } catch {
     return false;
   }
+}
+
+let syncChain: Promise<NudgePref> = Promise.resolve("off");
+
+async function runSyncNudgePrefWithPermission(): Promise<NudgePref> {
+  const [raw, lastOsGranted, granted] = await Promise.all([
+    getRawNudgePref(),
+    getLastOsNotifGranted(),
+    notificationsGranted(),
+  ]);
+
+  if (granted) {
+    // Auto-enable when never explicitly turned off (raw === null) or when OS
+    // permission transitioned from denied -> granted (e.g. via OS Settings).
+    if (raw === null || (lastOsGranted === false && raw !== "on")) {
+      await setNudgePref("on");
+      await setLastOsNotifGranted(true);
+      return "on";
+    }
+    if (lastOsGranted !== true) {
+      await setLastOsNotifGranted(true);
+    }
+    return raw === "on" ? "on" : "off";
+  }
+
+  if (lastOsGranted !== false) {
+    await setLastOsNotifGranted(false);
+  }
+  if (raw === "on") {
+    await setNudgePref("off");
+  }
+  return "off";
+}
+
+/**
+ * Reconcile the saved nudge preference with the current OS notification
+ * permission. Serialized to prevent concurrent mount/focus/AppState calls
+ * from racing AsyncStorage reads and writes.
+ */
+export function syncNudgePrefWithPermission(): Promise<NudgePref> {
+  const next = syncChain.then(
+    () => runSyncNudgePrefWithPermission(),
+    () => runSyncNudgePrefWithPermission(),
+  );
+  syncChain = next;
+  return next;
 }
 
 /** Schedule a notification `minutes` from now; returns the id, or null when

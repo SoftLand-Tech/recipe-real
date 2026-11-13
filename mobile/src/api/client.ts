@@ -62,6 +62,7 @@ import type {
   CategoryCount,
   CookSessionPayload,
   CookSessionSummary,
+  FetchPostsParams,
   GetRecipesParams,
   HomeRails,
   MyProfile,
@@ -845,6 +846,21 @@ export async function fetchMyRecipes(
   };
 }
 
+/** One page of a user's public recipe cards (GET /api/users/{id}/recipes). */
+export async function fetchUserRecipes(
+  userId: number,
+  page = 1,
+): Promise<Paginated<Recipe>> {
+  const { data } = await api.get<Paginated<Recipe>>(
+    `/api/users/${userId}/recipes`,
+    { params: { page } },
+  );
+  return {
+    ...data,
+    data: Array.isArray(data?.data) ? data.data.map(normalizeRecipe) : [],
+  };
+}
+
 export interface RecipeImportMediaInput {
   uri: string;
   mimeType?: string | null;
@@ -1204,7 +1220,15 @@ export async function uploadAvatar(uri: string): Promise<string> {
   const type = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
   const name = `avatar.${ext === "png" || ext === "webp" ? ext : "jpg"}`;
   const form = new FormData();
-  form.append("image", { uri, name, type } as unknown as Blob);
+  if (Platform.OS === "web") {
+    const blob = await (await fetch(uri)).blob();
+    const realType = blob.type || type;
+    const realExt =
+      realType === "image/png" ? "png" : realType === "image/webp" ? "webp" : "jpg";
+    form.append("image", blob, `avatar.${realExt}`);
+  } else {
+    form.append("image", { uri, name, type } as unknown as Blob);
+  }
   const { data } = await api.post<{ avatar_url?: string; url?: string }>("/api/users/me/avatar", form, {
     headers: { "Content-Type": "multipart/form-data" },
   });
@@ -1396,17 +1420,31 @@ function morePages(body: any, page: number, rows: number): boolean {
  * catalog fallback when the window is empty).
  */
 export async function fetchPosts(
-  page = 1,
+  pageOrParams: number | FetchPostsParams = 1,
   sort?: PostSort,
 ): Promise<PostsPage> {
-  const { data } = await api.get<{ data?: unknown }>(`/api/posts`, {
-    params: {
-      ...(sort && sort !== "latest" ? { sort } : {}),
-      page,
+  const params =
+    typeof pageOrParams === "number"
+      ? { page: pageOrParams, sort }
+      : pageOrParams;
+  const page = params.page ?? 1;
+  const { data } = await api.get<{ data?: unknown; meta?: { total?: unknown } }>(
+    `/api/posts`,
+    {
+      params: {
+        ...(params.sort && params.sort !== "latest" ? { sort: params.sort } : {}),
+        ...(params.user_id != null ? { user_id: params.user_id } : {}),
+        ...(params.recipe_id != null ? { recipe_id: params.recipe_id } : {}),
+        page,
+      },
     },
-  });
+  );
   const rows = Array.isArray(data?.data) ? data.data.map(normalizePost) : [];
-  return { posts: rows, hasMore: morePages(data, page, rows.length) };
+  return {
+    posts: rows,
+    hasMore: morePages(data, page, rows.length),
+    total: toNum(data?.meta?.total) ?? rows.length,
+  };
 }
 
 /**
@@ -1717,6 +1755,7 @@ export async function fetchMyProfileFull(): Promise<MyProfile> {
       id: Number(body?.user?.id),
       display_name: body?.user?.display_name ?? null,
       name: body?.user?.display_name ?? body?.user?.name ?? null,
+      email: typeof body?.user?.email === "string" ? body.user.email : null,
       avatar_url: body?.user?.avatar_url ?? null,
       bio: body?.user?.bio ?? null,
       gender:

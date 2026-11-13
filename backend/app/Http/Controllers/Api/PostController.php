@@ -64,12 +64,18 @@ class PostController extends Controller
             $query->where('recipe_id', $request->integer('recipe_id'));
         }
 
+        if ($request->filled('user_id')) {
+            $query->where('user_id', $request->integer('user_id'));
+        }
+
         $user = $request->user('sanctum');
         $sort = (string) $request->string('sort');
 
         // Feed cache gate: page 1 of the expensive sorts only. Keyed per
         // user AND per recipe_id filter so a filtered feed never leaks
-        // into the unfiltered one's bucket. The key carries the user's feed
+        // into the unfiltered one's bucket. Skip cache when user_id is
+        // provided so user-filtered profile feeds never collide with global
+        // feed cache buckets. The key carries the user's feed
         // version (see CommunityFeedCache): any of their own writes bumps
         // it, so the author's own write is never hidden behind a stale
         // payload while other readers keep the 60s tolerance.
@@ -77,6 +83,7 @@ class PostController extends Controller
         if (
             in_array($sort, CommunityFeedCache::SORTS, true)
             && (int) $request->query('page', 1) <= 1
+            && ! $request->filled('user_id')
         ) {
             $recipeId = $request->filled('recipe_id') ? $request->integer('recipe_id') : 0;
             $cacheKey = CommunityFeedCache::cacheKey(

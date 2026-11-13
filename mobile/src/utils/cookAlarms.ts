@@ -17,6 +17,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { translate, type TranslateFn } from "@/i18n";
 import {
+  getRawNudgePref,
+  setLastOsNotifGranted,
+  setNudgePref,
+} from "@/utils/prefs";
+import {
   navigateNotificationTarget,
   notificationDataToHref,
   type NotificationHref,
@@ -81,7 +86,17 @@ export async function requestAlarmPermission(): Promise<boolean> {
   try {
     const settings = await api.requestPermission();
     // > 0 covers AUTHORIZED and PROVISIONAL (see notifee docs).
-    return settings.authorizationStatus > 0;
+    const granted = settings.authorizationStatus > 0;
+    if (granted) {
+      await setNudgePref("on");
+      await setLastOsNotifGranted(true);
+    } else {
+      await setLastOsNotifGranted(false);
+      if ((await getRawNudgePref()) === "on") {
+        await setNudgePref("off");
+      }
+    }
+    return granted;
   } catch {
     return false;
   }

@@ -378,6 +378,14 @@ export interface RecipeNotesPage {
 /** Feed sort orders served by GET /api/posts?sort= (default: latest). */
 export type PostSort = "latest" | "trending" | "suggested";
 
+/** Query params for GET /api/posts. */
+export interface FetchPostsParams {
+  page?: number;
+  sort?: PostSort;
+  user_id?: number;
+  recipe_id?: number;
+}
+
 /** Author block attached to each community post / comment. */
 export interface PostUser {
   id: number;
@@ -485,6 +493,7 @@ export interface MyProfile {
     id: number;
     display_name: string | null;
     name: string | null;
+    email?: string | null;
     avatar_url: string | null;
     bio?: string | null;
     /** Self-reported gender from onboarding; null when unset (optional). */
