@@ -7,13 +7,13 @@ use App\Http\Resources\RecipeCardResource;
 use App\Http\Resources\RecipeResource;
 use App\Jobs\RecordRecipeView;
 use App\Models\Recipe;
+use App\Support\CommunityFeedCache;
 use App\Support\TypesenseSearch;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -34,9 +34,30 @@ class RecipeController extends Controller
     /**
      * Paginated, filterable list of recipes (per_page clamped to 1..100, default 15).
      */
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection|JsonResponse
     {
         $perPage = max(1, min(100, $request->integer('per_page', 15)));
+        $page = max(1, $request->integer('page', 1));
+
+        $isUnfilteredDefaultPage1 = ! $request->filled('search')
+            && ! $request->filled('max_time')
+            && $page === 1;
+
+        if ($isUnfilteredDefaultPage1) {
+            $cacheKey = CommunityFeedCache::timingCacheKey("recipes:index:p1:pp{$perPage}");
+
+            $payload = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($perPage, $request) {
+                $recipes = Recipe::query()
+                    ->qualityTier()
+                    ->select(RecipeCardResource::COLUMNS)
+                    ->orderBy('id')
+                    ->paginate($perPage);
+
+                return RecipeCardResource::collection($recipes)->toResponse($request)->getData(true);
+            });
+
+            return response()->json($payload);
+        }
 
         // Quality tier: the default Browse feed leads with the good stuff
         // (image + rating >= 4 + review_count >= 5, see Recipe::scopeQualityTier).
@@ -56,9 +77,9 @@ class RecipeController extends Controller
                 // skip the multi-KB steps/ingredients_structured/keywords/
                 // description payloads the detail/seed resource ships.
                 ->select(RecipeCardResource::COLUMNS)
-                // Recipes with an image first, then stable id order within
-                // each group (imported rows without photos sink to the end).
-                ->orderByRaw('image_url IS NOT NULL DESC, id ASC')
+                // scopeQualityTier() already guarantees a non-empty image_url,
+                // so ordering by id unlocks the partial quality-tier index.
+                ->orderBy('id')
                 ->paginate($perPage)
         );
     }
@@ -78,34 +99,93 @@ class RecipeController extends Controller
      * default 20). The response shape is identical on both engines:
      * RecipeCardResource rows in a standard paginator meta envelope.
      */
-    public function search(Request $request): AnonymousResourceCollection
+    public function search(Request $request): AnonymousResourceCollection|JsonResponse
     {
         $perPage = max(1, min(50, $request->integer('per_page', 20)));
         $q = trim((string) $request->string('q'));
+        $category = trim((string) $request->string('category'));
+        $hasMaxTime = $request->filled('max_time');
+        $sort = (string) $request->string('sort');
+        $page = max(1, $request->integer('page', 1));
 
+        $typesense = app(TypesenseSearch::class);
+        $isUnfilteredDefaultPage1 = $q === ''
+            && $category === ''
+            && ! $hasMaxTime
+            && ($sort === '' || $sort === 'top_rated')
+            && $page === 1;
+
+        if ($isUnfilteredDefaultPage1) {
+            $tsFlag = $typesense->enabled() ? 1 : 0;
+            $sortKey = $sort === '' ? 'default' : $sort;
+            $cacheKey = CommunityFeedCache::timingCacheKey("recipes:search:p1:pp{$perPage}:s{$sortKey}:ts{$tsFlag}");
+
+            $cached = Cache::get($cacheKey);
+            if (is_array($cached)) {
+                return response()->json($cached);
+            }
+
+            [$collection, $usedTypesense] = $this->resolveSearchCollection(
+                $request,
+                $typesense,
+                $perPage,
+                $q,
+                $category,
+                $hasMaxTime,
+                $sort,
+                $page
+            );
+            $payload = $collection->toResponse($request)->getData(true);
+
+            // Never pin a transient FTS fallback response under the :ts1 key.
+            if (! $typesense->enabled() || $usedTypesense) {
+                Cache::put($cacheKey, $payload, now()->addMinutes(5));
+            }
+
+            return response()->json($payload);
+        }
+
+        [$collection] = $this->resolveSearchCollection($request, $typesense, $perPage, $q, $category, $hasMaxTime, $sort, $page);
+
+        return $collection;
+    }
+
+    /**
+     * @return array{0: AnonymousResourceCollection, 1: bool} [collection, usedTypesense]
+     */
+    private function resolveSearchCollection(
+        Request $request,
+        TypesenseSearch $typesense,
+        int $perPage,
+        string $q,
+        string $category,
+        bool $hasMaxTime,
+        string $sort,
+        int $page,
+    ): array {
         // Preferred engine: Typesense when enabled AND reachable. Any error,
         // timeout or disabled state degrades to the FTS5 path below — search
         // must never 500 because of the daemon.
         try {
-            $typesenseResult = app(TypesenseSearch::class)->searchRecipes(
+            $typesenseResult = $typesense->searchRecipes(
                 q: $q !== '' ? $q : '*',
-                category: trim((string) $request->string('category')),
-                timeMax: $request->filled('max_time') ? $request->integer('max_time') : null,
-                sort: (string) $request->string('sort'),
-                page: max(1, $request->integer('page', 1)),
+                category: $category,
+                timeMax: $hasMaxTime ? $request->integer('max_time') : null,
+                sort: $sort,
+                page: $page,
                 perPage: $perPage
             );
 
             if ($typesenseResult !== null) {
                 // Card shape (the hit-id hydration itself lives in
                 // TypesenseSearch::searchRecipes, owned by another batch).
-                return RecipeCardResource::collection($typesenseResult);
+                return [RecipeCardResource::collection($typesenseResult), true];
             }
         } catch (Throwable $e) {
             Log::warning('typesense.search.fallback', ['error' => $e->getMessage()]);
         }
 
-        return $this->ftsSearch($request, $perPage, $q);
+        return [$this->ftsSearch($request, $perPage, $q), false];
     }
 
     /**
@@ -169,7 +249,7 @@ class RecipeController extends Controller
     /**
      * Top real recipe categories (by recipe count), cached for an hour.
      */
-    public function categories(): JsonResponse
+    public function categories(Request $request): JsonResponse
     {
         // Plain arrays only: this app's cache forbids unserializing classes
         // (cache.serializable_classes = false).
@@ -186,7 +266,16 @@ class RecipeController extends Controller
                 ->all();
         });
 
-        return response()->json(['data' => $categories]);
+        $response = response()->json(['data' => $categories]);
+        $response->setEtag(sha1(json_encode($categories) ?: ''));
+        $response->setCache([
+            'public' => true,
+            'max_age' => 300,
+            'stale_while_revalidate' => 600,
+        ]);
+        $response->isNotModified($request);
+
+        return $response;
     }
 
     /**
@@ -287,10 +376,12 @@ class RecipeController extends Controller
      * a capped 1000-recipe dump is returned for backward compatibility (the
      * full 520k-row unpaged dump is a footgun — use paged mode for bulk).
      */
-    public function seed(Request $request): AnonymousResourceCollection
+    public function seed(Request $request): AnonymousResourceCollection|JsonResponse
     {
         if ($request->filled('page')) {
             $perPage = max(1, min(100, $request->integer('per_page', 50)));
+            $page = max(1, $request->integer('page', 1));
+            $cacheKey = CommunityFeedCache::timingCacheKey("recipes:seed:v2:p{$page}:pp{$perPage}");
 
             // Paged mode: the ENTIRE library (photos ordered first) — the
             // offline cache mirrors what Browse/search serve online. This
@@ -298,15 +389,37 @@ class RecipeController extends Controller
             // reviews ≈ 2.5k of 20k), which capped every device's "full"
             // sync at the curated subset; the tier remains a SORT input
             // (photos first), not an inclusion rule.
-            $recipes = Recipe::with('recipeSteps')
-                ->orderByRaw('image_url IS NOT NULL DESC, id ASC')
-                ->paginate($perPage);
-        } else {
-            $recipes = Recipe::with('recipeSteps')
-                ->orderByRaw('image_url IS NOT NULL DESC, id ASC')
-                ->limit(1000)
-                ->get();
+            $cached = Cache::remember($cacheKey, now()->addMinutes(15), function () use ($cacheKey, $perPage, $request) {
+                $recipes = Recipe::select(RecipeResource::COLUMNS)
+                    ->with('recipeSteps:'.RecipeResource::STEP_COLUMNS)
+                    ->orderByRaw('image_url IS NOT NULL DESC, id ASC')
+                    ->paginate($perPage);
+
+                $payload = RecipeResource::collection($recipes)->toResponse($request)->getData(true);
+
+                return [
+                    'payload' => $payload,
+                    'etag' => sha1($cacheKey.'|'.$request->fullUrl().'|'.(json_encode($payload) ?: '')),
+                ];
+            });
+
+            $response = response()->json($cached['payload']);
+            $response->setEtag($cached['etag']);
+            $response->setCache([
+                'public' => true,
+                'max_age' => 60,
+                'stale_while_revalidate' => 300,
+            ]);
+            $response->isNotModified($request);
+
+            return $response;
         }
+
+        $recipes = Recipe::select(RecipeResource::COLUMNS)
+            ->with('recipeSteps:'.RecipeResource::STEP_COLUMNS)
+            ->orderByRaw('image_url IS NOT NULL DESC, id ASC')
+            ->limit(1000)
+            ->get();
 
         return RecipeResource::collection($recipes);
     }
@@ -319,10 +432,8 @@ class RecipeController extends Controller
      * recorded in the monthly ledger so usage stats stay accurate if the
      * limit is ever re-enabled.
      */
-    public function show(Request $request, Recipe $recipe): RecipeResource
+    public function show(Request $request, Recipe $recipe): JsonResponse
     {
-        $recipe->load('recipeSteps');
-
         // Recipes are public for browsing, so resolve the user from the
         // sanctum guard explicitly (no auth:sanctum middleware on this route).
         $user = $request->user('sanctum');
@@ -335,6 +446,18 @@ class RecipeController extends Controller
             RecordRecipeView::dispatch($user->id, $recipe->id, now()->format('Y-m'));
         }
 
-        return new RecipeResource($recipe);
+        // RecipeResource does not vary by user, so the resolved detail payload
+        // can be cached across readers keyed by recipe id, timingVersion, and
+        // updated_at while still recording views for authed callers above.
+        $updatedAt = $recipe->updated_at?->format('U.u') ?? '0';
+        $cacheKey = CommunityFeedCache::timingCacheKey("recipes:show:{$recipe->id}:u{$updatedAt}");
+
+        $payload = Cache::remember($cacheKey, now()->addMinutes(15), function () use ($recipe, $request) {
+            $recipe->load('recipeSteps:'.RecipeResource::STEP_COLUMNS);
+
+            return (new RecipeResource($recipe))->toResponse($request)->getData(true);
+        });
+
+        return response()->json($payload);
     }
 }

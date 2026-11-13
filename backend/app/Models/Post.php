@@ -56,13 +56,13 @@ class Post extends Model
     }
 
     /**
-     * The newest comment on this post (hasOne ordered by id desc). Eager-
+     * The newest comment on this post (hasOne via latestOfMany on id). Eager-
      * loaded by PostController::index/show so feed rows can embed a
      * latest-comment preview in ONE extra query per page instead of an
      * N+1 of per-post comment fetches on the client.
      */
     public function latestComment(): HasOne
     {
-        return $this->hasOne(PostComment::class)->latest('id');
+        return $this->hasOne(PostComment::class)->latestOfMany('id');
     }
 }

@@ -128,7 +128,7 @@ class Recipe extends Model
      * Saves the model when anything changed (recalculateReality persists
      * when the reality columns moved; the averages are saved explicitly).
      */
-    public function refreshCommunityTiming(array $stepIds = []): void
+    public function refreshCommunityTiming(array $stepIds = [], bool $recomputeSteps = true): void
     {
         // Anti-poisoning: fetch the last 100 contributing rows (same window
         // as before), then cap every user at their 5 most recent rows before
@@ -161,37 +161,39 @@ class Recipe extends Model
             $this->cleanup_avg_minutes = round($cleanupAvg, 2);
         }
 
-        if ($stepIds === []) {
-            $stepIds = TimingSubmission::query()
-                ->join('recipe_steps', 'recipe_steps.id', '=', 'timing_submissions.recipe_step_id')
-                ->where('recipe_steps.recipe_id', $this->id)
-                ->distinct()
-                ->pluck('timing_submissions.recipe_step_id')
-                ->all();
-        }
+        if ($recomputeSteps) {
+            if ($stepIds === []) {
+                $stepIds = TimingSubmission::query()
+                    ->join('recipe_steps', 'recipe_steps.id', '=', 'timing_submissions.recipe_step_id')
+                    ->where('recipe_steps.recipe_id', $this->id)
+                    ->distinct()
+                    ->pluck('timing_submissions.recipe_step_id')
+                    ->all();
+            }
 
-        if ($stepIds !== []) {
-            $ownedStepIds = RecipeStep::query()
-                ->where('recipe_id', $this->id)
-                ->whereIn('id', $stepIds)
-                ->pluck('id');
+            if ($stepIds !== []) {
+                $ownedStepIds = RecipeStep::query()
+                    ->where('recipe_id', $this->id)
+                    ->whereIn('id', $stepIds)
+                    ->pluck('id');
 
-            foreach ($ownedStepIds as $stepId) {
-                // Same anti-poisoning cap per step: last 100 submissions,
-                // at most 5 per user before averaging.
-                $stepAvg = $this->cappedPerUserAverage(
-                    TimingSubmission::query()
-                        ->where('recipe_step_id', $stepId)
-                        ->latest('id')
-                        ->limit(100)
-                        ->get(['user_id', 'actual_minutes']),
-                    'actual_minutes',
-                );
+                foreach ($ownedStepIds as $stepId) {
+                    // Same anti-poisoning cap per step: last 100 submissions,
+                    // at most 5 per user before averaging.
+                    $stepAvg = $this->cappedPerUserAverage(
+                        TimingSubmission::query()
+                            ->where('recipe_step_id', $stepId)
+                            ->latest('id')
+                            ->limit(100)
+                            ->get(['user_id', 'actual_minutes']),
+                        'actual_minutes',
+                    );
 
-                if ($stepAvg !== null) {
-                    RecipeStep::query()
-                        ->where('id', $stepId)
-                        ->update(['community_avg_minutes' => round($stepAvg, 2)]);
+                    if ($stepAvg !== null) {
+                        RecipeStep::query()
+                            ->where('id', $stepId)
+                            ->update(['community_avg_minutes' => round($stepAvg, 2)]);
+                    }
                 }
             }
         }

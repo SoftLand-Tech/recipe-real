@@ -110,29 +110,33 @@ class PostController extends Controller
         // Mark liked_by_me on the page's models (one extra query instead
         // of N+1 through the resource).
         if ($user !== null && $posts->isNotEmpty()) {
-            $likedIds = DB::table('post_likes')
-                ->where('user_id', $user->id)
-                ->whereIn('post_id', $posts->getCollection()->modelKeys())
-                ->pluck('post_id')
-                ->all();
+            $likedSet = array_flip(
+                DB::table('post_likes')
+                    ->where('user_id', $user->id)
+                    ->whereIn('post_id', $posts->getCollection()->modelKeys())
+                    ->pluck('post_id')
+                    ->all()
+            );
 
             $posts->getCollection()->each(
-                fn (Post $post) => $post->liked_by_me = in_array($post->id, $likedIds)
+                fn (Post $post) => $post->liked_by_me = isset($likedSet[$post->id])
             );
         }
 
         // Mark user.followed_by_me the same way (drives the feed's
         // Facebook-style Follow/Following pill; false for guests).
         if ($user !== null && $posts->isNotEmpty()) {
-            $followedIds = DB::table('follows')
-                ->where('follower_id', $user->id)
-                ->whereIn('followed_id', $posts->getCollection()->pluck('user_id')->unique()->values()->all())
-                ->pluck('followed_id')
-                ->all();
+            $followedSet = array_flip(
+                DB::table('follows')
+                    ->where('follower_id', $user->id)
+                    ->whereIn('followed_id', $posts->getCollection()->pluck('user_id')->unique()->values()->all())
+                    ->pluck('followed_id')
+                    ->all()
+            );
 
-            $posts->getCollection()->each(function (Post $post) use ($followedIds): void {
+            $posts->getCollection()->each(function (Post $post) use ($followedSet): void {
                 if ($post->user !== null) {
-                    $post->user->followed_by_me = in_array($post->user_id, $followedIds);
+                    $post->user->followed_by_me = isset($followedSet[$post->user_id]);
                 }
             });
         }
