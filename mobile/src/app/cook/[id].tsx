@@ -835,6 +835,12 @@ export default function CookModeScreen() {
 
   /** Armed step alarm: id in a ref (event handlers), step number for render. */
   const armedAlarmIdRef = useRef<string | null>(null);
+  /**
+   * False once Cook Mode unmounts. The generation claim in armStepAlarm()
+   * happens after its leading await, so an unmount bump alone can be adopted
+   * by an arm suspended in that window — this flag makes the abort absolute.
+   */
+  const mountedRef = useRef(true);
   // Step the user manually DISARMED — auto-arm must not fight them on the
   // same step (re-arms only after leaving and re-entering it).
   const lastAutoArmStepRef = useRef<number | null>(null);
@@ -1217,7 +1223,7 @@ export default function CookModeScreen() {
         const gen = armGenRef.current + 1;
         armGenRef.current = gen;
         if (!(await ensureAlarmPermissionOrExplain(t))) return false;
-        if (gen !== armGenRef.current) return false;
+        if (!mountedRef.current || gen !== armGenRef.current) return false;
         const { id, exactAlarmDenied } = await scheduleStepAlarm({
           recipeTitle: lr.title(recipe),
           recipeId: recipe.id,
@@ -1225,9 +1231,10 @@ export default function CookModeScreen() {
           minutes,
           t,
         });
-        if (gen !== armGenRef.current) {
-          // Superseded while the schedule await was in flight: cancel the
-          // orphan so a stale alarm can't fire on the wrong step.
+        if (!mountedRef.current || gen !== armGenRef.current) {
+          // Superseded (unmount or a newer arm) while the schedule await was
+          // in flight: cancel the orphan so a stale alarm can't fire on the
+          // wrong step.
           if (id) await cancelStepAlarm(id);
           return false;
         }
@@ -1508,6 +1515,10 @@ export default function CookModeScreen() {
       // Leaving Cook Mode entirely: drop the notification + armed alarm.
       // Bump the arm generation (same invalidation as clearArmedAlarm) so an
       // in-flight armStepAlarm() aborts instead of committing after unmount.
+      // The mounted flag is the airtight backstop: the generation claim in
+      // armStepAlarm() runs after its leading await, so a bump alone could be
+      // adopted by an arm suspended there.
+      mountedRef.current = false;
       armGenRef.current++;
       void stopCookNotification();
       const alarmId = armedAlarmIdRef.current;
