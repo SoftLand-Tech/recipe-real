@@ -10,15 +10,17 @@ import {
   ActivityIndicator,
   Alert,
   Keyboard,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import {
+  KeyboardAvoidingView,
+  KeyboardAwareScrollView,
+  type KeyboardAwareScrollViewRef,
+} from "react-native-keyboard-controller";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -229,7 +231,7 @@ export default function RecipeComposerScreen() {
   const [needsAuth, setNeedsAuth] = useState(false);
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
 
-  const scrollRef = useRef<ScrollView | null>(null);
+  const scrollRef = useRef<KeyboardAwareScrollViewRef | null>(null);
   const ingredientInputRefs = useRef<Array<TextInput | null>>([]);
 
   // ---- Auth gate --------------------------------------------------------------
@@ -1523,7 +1525,7 @@ export default function RecipeComposerScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior="padding"
     >
       {/* Top bar: BackChevron on start, centered title, prominent Save pill on end */}
       <PinnedHeaderBar
@@ -1560,7 +1562,7 @@ export default function RecipeComposerScreen() {
           </Pressable>,
         ]}
       />
-      <ScrollView
+      <KeyboardAwareScrollView
         ref={scrollRef}
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
@@ -2177,7 +2179,7 @@ export default function RecipeComposerScreen() {
             />
           ) : null}
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </KeyboardAvoidingView>
   );
 }

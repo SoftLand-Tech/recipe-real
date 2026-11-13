@@ -7,6 +7,10 @@ import {
   TextInput,
   View,
 } from "react-native";
+import {
+  KeyboardAvoidingView,
+  KeyboardAwareScrollView,
+} from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -236,8 +240,8 @@ export default function OnboardingScreen() {
   );
 
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+    <KeyboardAvoidingView style={styles.container} behavior="padding">
+      <KeyboardAwareScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.heading}>
           <Text style={styles.headline}>{t("onboarding.welcome")}</Text>
           <Text style={styles.subtitle}>{t("onboarding.subtitle")}</Text>
@@ -353,7 +357,7 @@ export default function OnboardingScreen() {
           disabled={!canContinue}
           onPress={() => void handleContinue()}
         />
-      </ScrollView>
-    </View>
+      </KeyboardAwareScrollView>
+    </KeyboardAvoidingView>
   );
 }

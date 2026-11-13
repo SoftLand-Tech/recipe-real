@@ -19,6 +19,7 @@ import {
 } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import "@/global.css";
 import { AI_IMPORT_ENABLED } from "@/config";
@@ -135,21 +136,28 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <ThemePrefProvider>
-      <RtlDirection />
-      <NavigationFrame />
-      {/*
-        Animated splash reveal, above everything. Mirrors the native splash's
-        first frame, plays the lines → splash → logo sequence, fades out and
-        unmounts itself once per cold start.
-      */}
-      <AnimatedSplash />
-      {/*
-        First-run analytics consent (AsyncStorage 'consent.v1'). Renders
-        nothing once an answer is stored; Accept re-runs the launch report.
-      */}
-      <FirstRunConsent onAccepted={() => void reportAppLaunch()} />
-    </ThemePrefProvider>
+    // Keyboard handling lives at the very top: with edge-to-edge on Android
+    // the window no longer resizes for the keyboard, so screens must avoid
+    // it themselves — this provider feeds accurate keyboard metrics to the
+    // KeyboardAvoidingView / KeyboardAwareScrollView wrappers on every
+    // screen, on both platforms (and inside RN Modals).
+    <KeyboardProvider>
+      <ThemePrefProvider>
+        <RtlDirection />
+        <NavigationFrame />
+        {/*
+          Animated splash reveal, above everything. Mirrors the native splash's
+          first frame, plays the lines → splash → logo sequence, fades out and
+          unmounts itself once per cold start.
+        */}
+        <AnimatedSplash />
+        {/*
+          First-run analytics consent (AsyncStorage 'consent.v1'). Renders
+          nothing once an answer is stored; Accept re-runs the launch report.
+        */}
+        <FirstRunConsent onAccepted={() => void reportAppLaunch()} />
+      </ThemePrefProvider>
+    </KeyboardProvider>
   );
 }
 

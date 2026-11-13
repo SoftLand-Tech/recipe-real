@@ -6,7 +6,6 @@ import {
   BackHandler,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -14,6 +13,10 @@ import {
   View,
   type ViewStyle,
 } from "react-native";
+import {
+  KeyboardAvoidingView,
+  KeyboardAwareScrollView,
+} from "react-native-keyboard-controller";
 import { isAxiosError } from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -1871,7 +1874,7 @@ export default function CookModeScreen() {
     ];
 
     return (
-      <View
+      <KeyboardAvoidingView
         style={[
           styles.fullScreen,
           {
@@ -1879,8 +1882,9 @@ export default function CookModeScreen() {
             paddingBottom: insets.bottom + Space.md,
           },
         ]}
+        behavior="padding"
       >
-        <ScrollView
+        <KeyboardAwareScrollView
           contentContainerStyle={styles.feedbackScroll}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -2160,8 +2164,8 @@ export default function CookModeScreen() {
               />
             ) : null}
           </View>
-        </ScrollView>
-      </View>
+        </KeyboardAwareScrollView>
+      </KeyboardAvoidingView>
     );
   }
 
