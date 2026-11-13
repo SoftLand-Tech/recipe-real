@@ -38,6 +38,7 @@ import { Radius, Shadow, Space, Type, useThemeColors } from "@/theme";
 import { bestMinutes } from "@/utils/recipeTime";
 import { memberSince, relativeDate } from "@/utils/format";
 import { setPostPreview } from "@/utils/postPreview";
+import { shareLink } from "@/utils/share";
 import {
   Avatar,
   Button,
@@ -164,6 +165,8 @@ export default function ProfileScreen() {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  // Web fallback confirmation (Share sheet is unavailable on web).
+  const [linkCopied, setLinkCopied] = useState(false);
 
   // Stat & tab pressed states (avoid Pressable style callbacks)
   const [pressedStat, setPressedStat] = useState<string | null>(null);
@@ -326,6 +329,12 @@ export default function ProfileScreen() {
     return () => clearTimeout(timer);
   }, [saved]);
 
+  useEffect(() => {
+    if (!linkCopied) return;
+    const timer = setTimeout(() => setLinkCopied(false), SAVED_CAPTION_MS);
+    return () => clearTimeout(timer);
+  }, [linkCopied]);
+
   const loadMoreRecipes = useCallback(async () => {
     if (loadingRecipes || !recipesHasMore || signedIn !== true) return;
     setLoadingRecipes(true);
@@ -395,6 +404,36 @@ export default function ProfileScreen() {
       setAvatarUploading(false);
     }
   }, [avatarUploading, profile, t]);
+
+  /**
+   * Opens the system share sheet with a link to this profile. The backend
+   * has no public web profile page to point at (only /r/{recipe} and
+   * /p/{post} share pages), so the only URL form that resolves today is the
+   * app deep link — the recipereal:// scheme is registered in app.config.js
+   * and expo-router maps recipereal://user/{id} onto the /user/[id] public
+   * profile screen. On web the RN Share sheet doesn't exist: copy the link
+   * to the clipboard instead and confirm with a caption.
+   */
+  const handleShareProfile = useCallback(async () => {
+    const me = profileRef.current;
+    if (!me) return;
+    const url = `recipereal://user/${me.user.id}`;
+    if (Platform.OS === "web") {
+      try {
+        await navigator.clipboard.writeText(url);
+        setLinkCopied(true);
+      } catch (err) {
+        console.warn("[RecipeReal] profile link copy failed:", err);
+        setError(t("profile.errCopyLink"));
+      }
+      return;
+    }
+    try {
+      await shareLink(url, t("profile.shareMessage"));
+    } catch {
+      // The user dismissed the sheet (or the platform errored) — best-effort.
+    }
+  }, [t]);
 
   const enterEdit = useCallback(() => {
     if (!profile) return;
@@ -872,6 +911,20 @@ export default function ProfileScreen() {
         rights={
           signedIn === true
             ? [
+                profile != null ? (
+                  <IconPressable
+                    key="share"
+                    onPress={() => void handleShareProfile()}
+                    hitSlop={Space.xs}
+                    accessibilityLabel={t("profile.shareA11y")}
+                  >
+                    <Ionicons
+                      name="arrow-redo-outline"
+                      size={22}
+                      color={colors.ink}
+                    />
+                  </IconPressable>
+                ) : null,
                 <IconPressable
                   key="settings"
                   onPress={() => router.push("/settings")}
@@ -1083,6 +1136,9 @@ export default function ProfileScreen() {
               </View>
 
               {saved ? <Text style={styles.savedCaption}>{t("profile.nameSaved")}</Text> : null}
+              {linkCopied ? (
+                <Text style={styles.savedCaption}>{t("profile.linkCopied")}</Text>
+              ) : null}
               {error && !isEditing ? (
                 <Text style={styles.errorCaption}>{error}</Text>
               ) : null}
