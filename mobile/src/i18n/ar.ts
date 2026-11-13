@@ -488,6 +488,8 @@ export const ar: Record<string, string> = {
     "سيحذف هذا حسابك وأوقات طهيك وسجل وتيرتك نهائيًا. لا يمكن التراجع عن هذا الإجراء.",
   "settings.deleteConfirmBtn": "حذف",
   "settings.deleteFailed": "تعذّر حذف حسابك. حاول من جديد.",
+  "settings.signOutConfirmTitle": "تسجيل الخروج؟",
+  "settings.signOutConfirmMessage": "هل أنت متأكد أنك تريد تسجيل الخروج؟",
   "settings.about": "RecipeReal v{version}",
 
   // ---- تسجيل الدخول -------------------------------------------------------------

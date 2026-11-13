@@ -490,6 +490,8 @@ export const en: Record<string, string> = {
     "This permanently deletes your account, cook times, and pace history. This cannot be undone.",
   "settings.deleteConfirmBtn": "Delete",
   "settings.deleteFailed": "Couldn't delete your account. Please try again.",
+  "settings.signOutConfirmTitle": "Sign out?",
+  "settings.signOutConfirmMessage": "Are you sure you want to sign out?",
   "settings.about": "RecipeReal v{version}",
 
   // ---- Login ----------------------------------------------------------------
