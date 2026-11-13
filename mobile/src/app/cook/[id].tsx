@@ -28,6 +28,10 @@ import {
   startCookNotification,
   stopCookNotification,
 } from "@/utils/cookAlarms";
+import {
+  clearCookSessionPointer,
+  markCookSessionActive,
+} from "@/utils/cookSessionStatus";
 import { stepMinutes } from "@/utils/recipeTime";
 
 import { getRecipe, hasToken, submitCookSession } from "@/api/client";
@@ -748,8 +752,9 @@ export default function CookModeScreen() {
   // not that it is immune to clock edits.
   const sessionKey = `cook-session:${String(id)}`;
   const clearPersistedSession = useCallback(() => {
+    clearCookSessionPointer(Number(id));
     void AsyncStorage.removeItem(sessionKey).catch(() => {});
-  }, [sessionKey]);
+  }, [id, sessionKey]);
 
   // Restore once, when the recipe is ready. Stale (>24h) or foreign-recipe
   // snapshots are discarded; the armed alarm id is restored too so an alarm
@@ -771,6 +776,7 @@ export default function CookModeScreen() {
             typeof saved.cookStartAt === "number" &&
             Date.now() - saved.cookStartAt < MAX_RESTORE_AGE_MS;
           if (!fresh) {
+            clearCookSessionPointer(recipe.id);
             await AsyncStorage.removeItem(sessionKey).catch(() => {});
           } else if (statusRef.current === "idle") {
             pausesRef.current = Array.isArray(saved.pauses)
@@ -847,7 +853,8 @@ export default function CookModeScreen() {
   // and skipped after finish (finishCooking clears the key explicitly).
   useEffect(() => {
     if (!hydrated || phase !== "cooking" || status === "finished") return;
-    if (cookStartAt == null) {
+    if (cookStartAt == null || (status !== "running" && status !== "paused")) {
+      clearCookSessionPointer(recipe?.id ?? Number(id));
       void AsyncStorage.removeItem(sessionKey).catch(() => {});
       return;
     }
@@ -866,6 +873,15 @@ export default function CookModeScreen() {
       armedAlarmId: armedAlarmIdRef.current,
       armedStep,
     };
+    markCookSessionActive({
+      recipeId: payload.recipeId,
+      title: payload.title ?? null,
+      cookStartAt: payload.cookStartAt,
+      pausedAt: payload.pausedAt,
+      pausedMsTotal: payload.pausedMsTotal,
+      status,
+      armedAlarmId: payload.armedAlarmId,
+    });
     void AsyncStorage.setItem(sessionKey, JSON.stringify(payload)).catch(
       () => {},
     );

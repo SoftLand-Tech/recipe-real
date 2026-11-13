@@ -1630,10 +1630,10 @@ export default function BrowseScreen() {
   const getItemLayout = useCallback(
     (_data: ArrayLike<Recipe> | null | undefined, index: number) => ({
       length: cellHeight,
-      offset: headerHeight + cellHeight * index,
+      offset: barPad + headerHeight + Space.sm + cellHeight * index,
       index,
     }),
-    [cellHeight, headerHeight],
+    [barPad, cellHeight, headerHeight],
   );
 
   const listContentStyle = useMemo(
@@ -1760,7 +1760,7 @@ export default function BrowseScreen() {
           data={displayRecipes}
           keyExtractor={recipeKeyExtractor}
           renderItem={renderItem}
-          getItemLayout={getItemLayout}
+          getItemLayout={headerHeight > 0 ? getItemLayout : undefined}
           numColumns={2}
           style={FLEX_ONE_STYLE}
           contentContainerStyle={listContentStyle}

@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 
-import { fetchNotifications, hasToken } from "@/api/client";
+import { fetchNotifications, getAuthEpoch, hasToken } from "@/api/client";
 import { useT } from "@/i18n";
 import { Space, useThemeColors } from "@/theme";
 import { IconPressable } from "./IconPressable";
@@ -12,6 +12,7 @@ const UNREAD_COOLDOWN_MS = 20_000;
 
 let sharedUnread = 0;
 let lastFetchedAt = 0;
+let lastAuthEpoch = -1;
 let refreshInFlight: Promise<void> | null = null;
 const listeners = new Set<() => void>();
 
@@ -35,26 +36,42 @@ function getUnreadSnapshot(): number {
 }
 
 async function refreshSharedUnread(): Promise<void> {
+  const epoch = getAuthEpoch();
   if (!(await hasToken())) {
+    lastAuthEpoch = epoch;
     lastFetchedAt = 0;
+    refreshInFlight = null;
     setSharedUnread(0);
     return;
   }
-  if (Date.now() - lastFetchedAt < UNREAD_COOLDOWN_MS) {
+  if (epoch !== lastAuthEpoch) {
+    lastFetchedAt = 0;
+    refreshInFlight = null;
+  }
+  if (
+    epoch === lastAuthEpoch &&
+    Date.now() - lastFetchedAt < UNREAD_COOLDOWN_MS
+  ) {
     return;
   }
   if (!refreshInFlight) {
-    refreshInFlight = (async () => {
+    let run: Promise<void> | null = null;
+    run = (async () => {
       try {
         const inbox = await fetchNotifications(1);
+        if (getAuthEpoch() !== epoch) return;
+        lastAuthEpoch = epoch;
         lastFetchedAt = Date.now();
         setSharedUnread(inbox.unreadCount ?? 0);
       } catch {
         // Silent: badge hides on failure (stays at last value or 0).
       } finally {
-        refreshInFlight = null;
+        if (refreshInFlight === run) {
+          refreshInFlight = null;
+        }
       }
     })();
+    refreshInFlight = run;
   }
   await refreshInFlight;
 }

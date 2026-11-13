@@ -2095,6 +2095,9 @@ export default function RecipeDetailScreen() {
   const loadRecipe = useCallback(async () => {
     const requestId = ++loadRequestIdRef.current;
     setErrorMessage(null);
+    setRecipe((prev) => (prev && prev.id === numericId ? prev : null));
+    timelineTrackedRef.current = false;
+    notesTrackedRef.current = false;
     // Reset planner + quick-time override + note seed for the (new) recipe;
     // any notifications armed for the previous recipe are cancelled.
     cancelPlannedNotifications(planIdsRef.current).catch(() => {});
@@ -2663,10 +2666,11 @@ export default function RecipeDetailScreen() {
   /** Fetch the next notes page and append (deduped by id). */
   const loadMoreNotes = useCallback(async () => {
     if (!validRecipeId || notesLoading) return;
+    const reqId = ++notesRequestIdRef.current;
     setNotesLoading(true);
     try {
       const page = await fetchRecipeNotes(numericId, notesPage + 1);
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || reqId !== notesRequestIdRef.current) return;
       setNotes((prev) => {
         const seen = new Set(prev.map((n) => n.id));
         return [...prev, ...page.notes.filter((n) => !seen.has(n.id))];
@@ -2674,9 +2678,13 @@ export default function RecipeDetailScreen() {
       setNotesHasMore(page.hasMore);
       setNotesPage((p) => p + 1);
     } catch (error) {
-      console.warn("[RecipeReal] notes load-more failed:", error);
+      if (mountedRef.current && reqId === notesRequestIdRef.current) {
+        console.warn("[RecipeReal] notes load-more failed:", error);
+      }
     } finally {
-      if (mountedRef.current) setNotesLoading(false);
+      if (mountedRef.current && reqId === notesRequestIdRef.current) {
+        setNotesLoading(false);
+      }
     }
   }, [validRecipeId, numericId, notesPage, notesLoading]);
 

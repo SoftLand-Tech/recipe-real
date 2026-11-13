@@ -22,7 +22,7 @@ import type { TranslateFn } from "@/i18n";
  */
 
 const COOK_SESSION_PREFIX = "cook-session:";
-const ACTIVE_COOK_POINTER_KEY = "recipereal.activeCookRecipeId";
+export const ACTIVE_COOK_POINTER_KEY = "recipereal.activeCookRecipeId";
 const MAX_SNAPSHOT_AGE_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -32,6 +32,7 @@ const MAX_SNAPSHOT_AGE_MS = 24 * 60 * 60 * 1000;
  */
 let cachedSession: ActiveCookSession | null | undefined = undefined;
 let inFlightRead: Promise<ActiveCookSession | null> | null = null;
+let cacheEpoch = 0;
 
 export interface ActiveCookSession {
   recipeId: number;
@@ -144,58 +145,57 @@ export async function readActiveCookSession(
     return inFlightRead;
   }
 
+  const startEpoch = cacheEpoch;
   const run = (async (): Promise<ActiveCookSession | null> => {
-    try {
-      const pointerRaw = await AsyncStorage.getItem(ACTIVE_COOK_POINTER_KEY);
-      if (pointerRaw != null) {
-        const pointerId = Number(pointerRaw);
-        if (Number.isFinite(pointerId) && pointerId > 0) {
-          const pointed = await readSessionByRecipeId(pointerId);
-          if (pointed) {
-            cachedSession = pointed;
-            return pointed;
-          }
-          // Pointer is stale (session expired or cleared directly on cook screen).
-          void AsyncStorage.removeItem(ACTIVE_COOK_POINTER_KEY).catch(() => {});
-          if (
-            opts?.hintRecipeId != null &&
-            Number.isFinite(opts.hintRecipeId) &&
-            opts.hintRecipeId !== pointerId
-          ) {
-            const hinted = await readSessionByRecipeId(opts.hintRecipeId);
-            if (hinted) {
-              void AsyncStorage.setItem(
-                ACTIVE_COOK_POINTER_KEY,
-                String(hinted.recipeId),
-              ).catch(() => {});
-              cachedSession = hinted;
-              return hinted;
-            }
-          }
-          cachedSession = null;
-          return null;
-        }
+    const commitCache = (value: ActiveCookSession | null) => {
+      if (cacheEpoch === startEpoch) {
+        cachedSession = value;
       }
+    };
 
-      if (opts?.hintRecipeId != null && Number.isFinite(opts.hintRecipeId)) {
-        const hinted = await readSessionByRecipeId(opts.hintRecipeId);
+    try {
+      const hintId =
+        opts?.hintRecipeId != null &&
+        Number.isFinite(opts.hintRecipeId) &&
+        opts.hintRecipeId > 0
+          ? opts.hintRecipeId
+          : null;
+
+      if (hintId != null) {
+        const hinted = await readSessionByRecipeId(hintId);
         if (hinted) {
           void AsyncStorage.setItem(
             ACTIVE_COOK_POINTER_KEY,
             String(hinted.recipeId),
           ).catch(() => {});
-          cachedSession = hinted;
+          commitCache(hinted);
           return hinted;
         }
-        cachedSession = null;
-        return null;
       }
 
-      // Pointer absent (e.g. legacy cook-session:* key): scan once and promote.
+      const pointerRaw = await AsyncStorage.getItem(ACTIVE_COOK_POINTER_KEY);
+      if (pointerRaw != null) {
+        const pointerId = Number(pointerRaw);
+        if (
+          Number.isFinite(pointerId) &&
+          pointerId > 0 &&
+          pointerId !== hintId
+        ) {
+          const pointed = await readSessionByRecipeId(pointerId);
+          if (pointed) {
+            commitCache(pointed);
+            return pointed;
+          }
+          // Pointer is stale (session expired or cleared): remove and fall through to scan.
+          void AsyncStorage.removeItem(ACTIVE_COOK_POINTER_KEY).catch(() => {});
+        }
+      }
+
+      // Pointer absent or stale: scan cook-session:* keys and promote newest.
       const keys = await AsyncStorage.getAllKeys();
       const cookKeys = keys.filter((k) => k.startsWith(COOK_SESSION_PREFIX));
       if (cookKeys.length === 0) {
-        cachedSession = null;
+        commitCache(null);
         return null;
       }
       const entries = await AsyncStorage.multiGet(cookKeys);
@@ -220,7 +220,7 @@ export async function readActiveCookSession(
           String(best.recipeId),
         ).catch(() => {});
       }
-      cachedSession = best;
+      commitCache(best);
       return best;
     } catch {
       return null;
@@ -233,6 +233,32 @@ export async function readActiveCookSession(
   return run;
 }
 
+/** Update the active-cook pointer & in-memory cache when cook screen persists a snapshot. */
+export function markCookSessionActive(session: ActiveCookSession): void {
+  cacheEpoch += 1;
+  cachedSession = session;
+  void AsyncStorage.setItem(
+    ACTIVE_COOK_POINTER_KEY,
+    String(session.recipeId),
+  ).catch(() => {});
+}
+
+/** Clear cached pointer when cook screen discards or finishes a recipe's session. */
+export function clearCookSessionPointer(recipeId?: number): void {
+  cacheEpoch += 1;
+  if (recipeId == null || cachedSession?.recipeId === recipeId) {
+    cachedSession = undefined;
+  }
+  void AsyncStorage.removeItem(ACTIVE_COOK_POINTER_KEY).catch(() => {});
+}
+
+/** Drop in-memory cook session cache (e.g. on sign-out / account reset). */
+export function resetCookSessionCache(): void {
+  cacheEpoch += 1;
+  cachedSession = undefined;
+  inFlightRead = null;
+}
+
 /**
  * Discard a live session from OUTSIDE the cook screen (the banner's End
  * action): cancel its armed step alarm, drop the sticky notification and
@@ -242,6 +268,7 @@ export async function readActiveCookSession(
 export async function discardActiveCookSession(
   session: Pick<ActiveCookSession, "recipeId" | "armedAlarmId">,
 ): Promise<void> {
+  cacheEpoch += 1;
   cachedSession = null;
   try {
     await cancelStepAlarm(session.armedAlarmId);

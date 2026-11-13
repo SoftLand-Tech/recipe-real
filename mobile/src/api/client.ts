@@ -12,6 +12,10 @@ import {
   COMMUNITY_FEED_KEY,
 } from "@/utils/communityMirror";
 import {
+  ACTIVE_COOK_POINTER_KEY,
+  resetCookSessionCache,
+} from "@/utils/cookSessionStatus";
+import {
   clearSwrCache,
   dedupeInFlight,
   getCached,
@@ -113,12 +117,20 @@ export async function loginWithGoogle(
  * into an error. Device-scoped prefs (sort/tab/theme/lang/nudge, sweep
  * stamp, public categories) are deliberately kept.
  */
+let authEpoch = 0;
+
+export function getAuthEpoch(): number {
+  return authEpoch;
+}
+
 async function clearAccountScopedCaches(): Promise<void> {
+  authEpoch += 1;
   clearSwrCache();
   clearMirroredFeedCache();
   clearPostPreview();
   clearPostCreated();
   clearFeedMutations();
+  resetCookSessionCache();
   try {
     const keys = await AsyncStorage.getAllKeys();
     const doomed = keys.filter(
@@ -127,6 +139,7 @@ async function clearAccountScopedCaches(): Promise<void> {
         k === "recipereal.homeRails" ||
         k === "recipereal.postComposerDraft" ||
         k === "recipereal.quickTimeStale" ||
+        k === ACTIVE_COOK_POINTER_KEY ||
         k.startsWith("cook-session:"),
     );
     if (doomed.length > 0) await AsyncStorage.multiRemove(doomed);

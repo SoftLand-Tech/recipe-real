@@ -37,6 +37,7 @@ import {
   fetchNotifications,
   fetchPosts,
   followUser,
+  getAuthEpoch,
   hasToken,
   PostUnauthorizedError,
   reportPost,
@@ -1056,6 +1057,7 @@ export default function CommunityScreen() {
 
   /** Per-sort in-memory cache so switching sort tabs paints immediately. */
   const sortCacheRef = useRef(new Map<FeedSort, SortCacheEntry>());
+  const authEpochRef = useRef(getAuthEpoch());
 
   /** Tracks initial focus so mount does not duplicate the cold-mount fetch. */
   const didMountFocusRef = useRef(false);
@@ -1194,7 +1196,10 @@ export default function CommunityScreen() {
       const pairMap = new Map(pairs);
       const stored = pairMap.get(SORT_PREF_KEY) ?? null;
       const rawMirror = pairMap.get(COMMUNITY_FEED_KEY) ?? null;
-      const initial: FeedSort = (stored === "trending" || stored === "suggested") ? (stored as FeedSort) : "suggested";
+      const initial: FeedSort =
+        stored === "trending" || stored === "suggested" || stored === "latest"
+          ? stored
+          : "suggested";
       sortRef.current = initial;
       setSort(initial);
       // Instant paint from the feed mirror (homeRails pattern): only on a
@@ -1294,6 +1299,12 @@ export default function CommunityScreen() {
       // applied to the rows immediately for the same reason — the focus
       // refresh below is throttled, and without the instant paint the write
       // would look undone for up to 60s.
+      const currentAuthEpoch = getAuthEpoch();
+      const authChanged = currentAuthEpoch !== authEpochRef.current;
+      if (authChanged) {
+        authEpochRef.current = currentAuthEpoch;
+        sortCacheRef.current.clear();
+      }
       const isInitialFocus = !didMountFocusRef.current;
       didMountFocusRef.current = true;
       const mutations = consumeFeedMutations();
@@ -1328,6 +1339,8 @@ export default function CommunityScreen() {
             fetchedAt: Date.now(),
           });
           void writeMirroredFeed(sortRef.current, withPost);
+        } else {
+          sortCacheRef.current.delete("latest");
         }
         setPostedNotice("loading");
         void fetchPage(1).finally(() => {
@@ -1354,9 +1367,10 @@ export default function CommunityScreen() {
           setPostedNotice("done");
         });
       } else if (
-        !isInitialFocus &&
-        (mutations.length > 0 ||
-          Date.now() - lastFeedRefreshAt >= FEED_REFETCH_THROTTLE_MS)
+        authChanged ||
+        (!isInitialFocus &&
+          (mutations.length > 0 ||
+            Date.now() - lastFeedRefreshAt >= FEED_REFETCH_THROTTLE_MS))
       ) {
         void fetchPage(1);
       }
