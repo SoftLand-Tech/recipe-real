@@ -717,6 +717,7 @@ export const ar: Record<string, string> = {
   "a11y.removePhoto": "إزالة الصورة",
   "a11y.openingPost": "جارٍ فتح المنشور",
   "a11y.openingRecipe": "جارٍ فتح الوصفة",
+  "a11y.openingProfile": "جارٍ فتح الملف الشخصي",
   "community.editAction": "تعديل",
   "community.deleteAction": "حذف",
   "community.reportAction": "إبلاغ",
