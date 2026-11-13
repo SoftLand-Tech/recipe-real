@@ -29,19 +29,23 @@ class HomeController extends Controller
         // The key carries the global timing version: any timing write
         // (cook sessions, quick-time logs, backfills) bumps it, so rails
         // never replay pre-write averages/rankings.
-        $cacheKey = CommunityFeedCache::timingCacheKey('home:rails');
-        $etag = sha1($cacheKey.'|'.$request->fullUrl());
+        $cacheKey = CommunityFeedCache::timingCacheKey('home:rails:v2');
 
-        $rails = Cache::remember(
+        $cached = Cache::remember(
             $cacheKey,
             now()->addMinutes(30),
-            fn () => $this->buildRails()
+            function () use ($cacheKey, $request) {
+                $payload = ['data' => $this->buildRails()];
+
+                return [
+                    'payload' => $payload,
+                    'etag' => sha1($cacheKey.'|'.$request->fullUrl().'|'.(json_encode($payload) ?: '')),
+                ];
+            }
         );
 
-        $response = response()->json([
-            'data' => $rails,
-        ]);
-        $response->setEtag($etag);
+        $response = response()->json($cached['payload']);
+        $response->setEtag($cached['etag']);
         $response->setCache([
             'public' => true,
             'max_age' => 60,

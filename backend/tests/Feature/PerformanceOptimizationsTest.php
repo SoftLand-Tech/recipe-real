@@ -11,8 +11,12 @@ use App\Models\RecipeStep;
 use App\Models\TimingSubmission;
 use App\Models\User;
 use App\Support\CommunityFeedCache;
-use Illuminate\Contracts\Queue\ShouldBeUnique;
+use App\Support\TypesenseSearch;
+use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -294,8 +298,74 @@ class PerformanceOptimizationsTest extends TestCase
     {
         $job = new RebuildSearchIndex();
 
-        $this->assertInstanceOf(ShouldBeUnique::class, $job);
-        $this->assertSame(30, $job->uniqueFor);
+        $this->assertInstanceOf(ShouldBeUniqueUntilProcessing::class, $job);
+        $this->assertSame(120, $job->uniqueFor);
+
+        $middleware = $job->middleware();
+        $this->assertCount(1, $middleware);
+        $this->assertInstanceOf(WithoutOverlapping::class, $middleware[0]);
+    }
+
+    public function test_search_cache_key_distinguishes_default_sort_and_top_rated_sort(): void
+    {
+        $first = $this->createQualityRecipe(['title' => 'Alpha Dish']);
+        $second = $this->createQualityRecipe(['title' => 'Beta Dish', 'aggregated_rating' => 4.2]);
+
+        $fake = new class($first, $second) extends TypesenseSearch {
+            /** @var list<string> */
+            public array $capturedSorts = [];
+
+            public function __construct(private Recipe $first, private Recipe $second)
+            {
+            }
+
+            public function enabled(): bool
+            {
+                return true;
+            }
+
+            public function searchRecipes(
+                string $q,
+                string $category = '',
+                ?int $timeMax = null,
+                string $sort = '',
+                int $page = 1,
+                int $perPage = 20
+            ): ?LengthAwarePaginator {
+                $this->capturedSorts[] = $sort;
+                $items = $sort === 'top_rated' ? [$this->second, $this->first] : [$this->first, $this->second];
+
+                return new LengthAwarePaginator($items, 2, $perPage, $page);
+            }
+        };
+
+        $this->app->instance(TypesenseSearch::class, $fake);
+
+        $defaultRes = $this->getJson('/api/recipes/search?per_page=10')->assertOk();
+        $topRatedRes = $this->getJson('/api/recipes/search?per_page=10&sort=top_rated')->assertOk();
+
+        $this->assertSame($first->id, $defaultRes->json('data.0.id'));
+        $this->assertSame($second->id, $topRatedRes->json('data.0.id'));
+        $this->assertSame(['', 'top_rated'], $fake->capturedSorts);
+    }
+
+    public function test_seed_and_home_etags_change_when_payload_changes_after_cache_clear(): void
+    {
+        $this->createQualityRecipe(['title' => 'First Dish', 'review_count' => 25]);
+
+        $homeBefore = $this->getJson('/api/home')->assertOk();
+        $seedBefore = $this->getJson('/api/recipes/seed?page=1&per_page=10')->assertOk();
+        $homeEtagBefore = $homeBefore->headers->get('ETag');
+        $seedEtagBefore = $seedBefore->headers->get('ETag');
+
+        $this->createQualityRecipe(['title' => 'Second Dish', 'review_count' => 25]);
+        Cache::flush();
+
+        $homeAfter = $this->getJson('/api/home', ['If-None-Match' => $homeEtagBefore])->assertOk();
+        $seedAfter = $this->getJson('/api/recipes/seed?page=1&per_page=10', ['If-None-Match' => $seedEtagBefore])->assertOk();
+
+        $this->assertNotSame($homeEtagBefore, $homeAfter->headers->get('ETag'));
+        $this->assertNotSame($seedEtagBefore, $seedAfter->headers->get('ETag'));
     }
 
     public function test_performance_indexes_migration_rolls_back_and_reapplies_cleanly(): void

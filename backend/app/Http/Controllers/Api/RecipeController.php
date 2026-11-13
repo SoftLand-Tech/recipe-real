@@ -117,22 +117,42 @@ class RecipeController extends Controller
 
         if ($isUnfilteredDefaultPage1) {
             $tsFlag = $typesense->enabled() ? 1 : 0;
-            $cacheKey = CommunityFeedCache::timingCacheKey("recipes:search:p1:pp{$perPage}:ts{$tsFlag}");
+            $sortKey = $sort === '' ? 'default' : $sort;
+            $cacheKey = CommunityFeedCache::timingCacheKey("recipes:search:p1:pp{$perPage}:s{$sortKey}:ts{$tsFlag}");
 
-            $payload = Cache::remember(
-                $cacheKey,
-                now()->addMinutes(5),
-                fn () => $this->resolveSearchCollection($request, $typesense, $perPage, $q, $category, $hasMaxTime, $sort, $page)
-                    ->toResponse($request)
-                    ->getData(true)
+            $cached = Cache::get($cacheKey);
+            if (is_array($cached)) {
+                return response()->json($cached);
+            }
+
+            [$collection, $usedTypesense] = $this->resolveSearchCollection(
+                $request,
+                $typesense,
+                $perPage,
+                $q,
+                $category,
+                $hasMaxTime,
+                $sort,
+                $page
             );
+            $payload = $collection->toResponse($request)->getData(true);
+
+            // Never pin a transient FTS fallback response under the :ts1 key.
+            if (! $typesense->enabled() || $usedTypesense) {
+                Cache::put($cacheKey, $payload, now()->addMinutes(5));
+            }
 
             return response()->json($payload);
         }
 
-        return $this->resolveSearchCollection($request, $typesense, $perPage, $q, $category, $hasMaxTime, $sort, $page);
+        [$collection] = $this->resolveSearchCollection($request, $typesense, $perPage, $q, $category, $hasMaxTime, $sort, $page);
+
+        return $collection;
     }
 
+    /**
+     * @return array{0: AnonymousResourceCollection, 1: bool} [collection, usedTypesense]
+     */
     private function resolveSearchCollection(
         Request $request,
         TypesenseSearch $typesense,
@@ -142,7 +162,7 @@ class RecipeController extends Controller
         bool $hasMaxTime,
         string $sort,
         int $page,
-    ): AnonymousResourceCollection {
+    ): array {
         // Preferred engine: Typesense when enabled AND reachable. Any error,
         // timeout or disabled state degrades to the FTS5 path below — search
         // must never 500 because of the daemon.
@@ -159,13 +179,13 @@ class RecipeController extends Controller
             if ($typesenseResult !== null) {
                 // Card shape (the hit-id hydration itself lives in
                 // TypesenseSearch::searchRecipes, owned by another batch).
-                return RecipeCardResource::collection($typesenseResult);
+                return [RecipeCardResource::collection($typesenseResult), true];
             }
         } catch (Throwable $e) {
             Log::warning('typesense.search.fallback', ['error' => $e->getMessage()]);
         }
 
-        return $this->ftsSearch($request, $perPage, $q);
+        return [$this->ftsSearch($request, $perPage, $q), false];
     }
 
     /**
@@ -361,8 +381,7 @@ class RecipeController extends Controller
         if ($request->filled('page')) {
             $perPage = max(1, min(100, $request->integer('per_page', 50)));
             $page = max(1, $request->integer('page', 1));
-            $cacheKey = CommunityFeedCache::timingCacheKey("recipes:seed:p{$page}:pp{$perPage}");
-            $etag = sha1($cacheKey.'|'.$request->fullUrl());
+            $cacheKey = CommunityFeedCache::timingCacheKey("recipes:seed:v2:p{$page}:pp{$perPage}");
 
             // Paged mode: the ENTIRE library (photos ordered first) — the
             // offline cache mirrors what Browse/search serve online. This
@@ -370,17 +389,22 @@ class RecipeController extends Controller
             // reviews ≈ 2.5k of 20k), which capped every device's "full"
             // sync at the curated subset; the tier remains a SORT input
             // (photos first), not an inclusion rule.
-            $payload = Cache::remember($cacheKey, now()->addMinutes(15), function () use ($perPage, $request) {
+            $cached = Cache::remember($cacheKey, now()->addMinutes(15), function () use ($cacheKey, $perPage, $request) {
                 $recipes = Recipe::select(RecipeResource::COLUMNS)
                     ->with('recipeSteps:'.RecipeResource::STEP_COLUMNS)
                     ->orderByRaw('image_url IS NOT NULL DESC, id ASC')
                     ->paginate($perPage);
 
-                return RecipeResource::collection($recipes)->toResponse($request)->getData(true);
+                $payload = RecipeResource::collection($recipes)->toResponse($request)->getData(true);
+
+                return [
+                    'payload' => $payload,
+                    'etag' => sha1($cacheKey.'|'.$request->fullUrl().'|'.(json_encode($payload) ?: '')),
+                ];
             });
 
-            $response = response()->json($payload);
-            $response->setEtag($etag);
+            $response = response()->json($cached['payload']);
+            $response->setEtag($cached['etag']);
             $response->setCache([
                 'public' => true,
                 'max_age' => 60,

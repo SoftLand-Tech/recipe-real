@@ -48,19 +48,23 @@ class RealityController extends Controller
         // (cache.serializable_classes = false forbids object unserialization),
         // skipping Recipe::hydrate() and resource mapping on cache hits —
         // same pattern as the home rails.
-        $cacheKey = CommunityFeedCache::timingCacheKey("reality:{$mode}:{$take}");
-        $etag = sha1($cacheKey.'|'.$request->fullUrl());
+        $cacheKey = CommunityFeedCache::timingCacheKey("reality:v2:{$mode}:{$take}");
 
-        $rows = Cache::remember(
+        $cached = Cache::remember(
             $cacheKey,
             now()->addMinutes(15),
-            fn () => $this->buildRows($mode, $take)
+            function () use ($cacheKey, $mode, $take, $request) {
+                $payload = ['data' => $this->buildRows($mode, $take)];
+
+                return [
+                    'payload' => $payload,
+                    'etag' => sha1($cacheKey.'|'.$request->fullUrl().'|'.(json_encode($payload) ?: '')),
+                ];
+            }
         );
 
-        $response = response()->json([
-            'data' => $rows,
-        ]);
-        $response->setEtag($etag);
+        $response = response()->json($cached['payload']);
+        $response->setEtag($cached['etag']);
         $response->setCache([
             'public' => true,
             'max_age' => 60,
