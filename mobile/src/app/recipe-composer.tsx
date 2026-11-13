@@ -17,7 +17,6 @@ import {
   View,
 } from "react-native";
 import {
-  KeyboardAvoidingView,
   KeyboardAwareScrollView,
   type KeyboardAwareScrollViewRef,
 } from "react-native-keyboard-controller";
@@ -1523,10 +1522,12 @@ export default function RecipeComposerScreen() {
   const setSecondaryTitleValue = isArabicPrimary ? setTitle : setTitleAr;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior="padding"
-    >
+    // KeyboardAwareScrollView alone handles avoidance (single mechanism —
+    // a KeyboardAvoidingView wrapper here double-counted the keyboard and
+    // left a scrollable empty band at the bottom while typing). The Save
+    // pill lives in the header, so nothing pinned needs to ride the
+    // keyboard.
+    <View style={styles.container}>
       {/* Top bar: BackChevron on start, centered title, prominent Save pill on end */}
       <PinnedHeaderBar
         title={headerTitle}
@@ -2180,6 +2181,6 @@ export default function RecipeComposerScreen() {
           ) : null}
         </View>
       </KeyboardAwareScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
