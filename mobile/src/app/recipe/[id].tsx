@@ -48,6 +48,7 @@ import {
 import { WEB_BASE_URL } from "@/config";
 import { track } from "@/analytics";
 import {
+  getCachedPaceCalibrations,
   getCachedRecipe,
   getNote,
   isFavorite,
@@ -106,6 +107,7 @@ import {
 } from "@/utils/notifications";
 import { shareLink } from "@/utils/share";
 import { peekPostCreated } from "@/utils/postCreated";
+import { addShoppingListItems } from "@/utils/shoppingList";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
@@ -256,6 +258,189 @@ function parseStructuredIngredients(value: unknown): StructuredIngredient[] {
     (entry): entry is StructuredIngredient =>
       entry != null && typeof entry === "object",
   );
+}
+
+const SCALE_MULTIPLIERS = [1, 2, 3] as const;
+const CHECKED_ING_KEY_PREFIX = "recipereal.checkedIng.";
+
+const UNICODE_FRACTIONS: Record<string, number> = {
+  "½": 0.5,
+  "⅓": 1 / 3,
+  "⅔": 2 / 3,
+  "¼": 0.25,
+  "¾": 0.75,
+  "⅛": 0.125,
+  "⅜": 0.375,
+  "⅝": 0.625,
+  "⅞": 0.875,
+};
+
+const KITCHEN_FRACTIONS: readonly (readonly [number, string])[] = [
+  [0.25, "¼"],
+  [1 / 3, "⅓"],
+  [0.5, "½"],
+  [2 / 3, "⅔"],
+  [0.75, "¾"],
+];
+
+const FRACTION_TOLERANCE = 0.025;
+
+/**
+ * Format a scaled ingredient number cleanly, snapping values close to common
+ * kitchen fractions (`¼, ⅓, ½, ⅔, ¾`) and otherwise formatting whole or
+ * single-decimal values.
+ */
+function formatScaledNumber(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return String(value);
+  const whole = Math.floor(value);
+  const frac = value - whole;
+
+  if (frac < FRACTION_TOLERANCE) {
+    if (whole > 0) return String(whole);
+    const rounded = Math.round(value * 10) / 10;
+    return String(rounded || Number(value.toFixed(2)));
+  }
+  if (frac > 1 - FRACTION_TOLERANCE) {
+    return String(whole + 1);
+  }
+
+  for (const [target, symbol] of KITCHEN_FRACTIONS) {
+    if (Math.abs(frac - target) < FRACTION_TOLERANCE) {
+      return whole > 0 ? `${whole} ${symbol}` : symbol;
+    }
+  }
+
+  const rounded = Math.round(value * 10) / 10;
+  return String(rounded);
+}
+
+/** Parse a numeric or fraction quantity (e.g. `1.5`, `"1/2"`, `"1 1/2"`, `"½"`). */
+function parseQuantityValue(
+  raw: number | string | null | undefined,
+): number | null {
+  if (typeof raw === "number") {
+    return Number.isFinite(raw) && raw > 0 ? raw : null;
+  }
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const mixedAscii = /^(\d+)\s+(\d+)\s*\/\s*(\d+)$/.exec(trimmed);
+  if (mixedAscii) {
+    const whole = Number(mixedAscii[1]);
+    const num = Number(mixedAscii[2]);
+    const den = Number(mixedAscii[3]);
+    return den > 0 ? whole + num / den : null;
+  }
+
+  const mixedUnicode = /^(\d+)\s*([½⅓⅔¼¾⅛⅜⅝⅞])$/.exec(trimmed);
+  if (mixedUnicode) {
+    const whole = Number(mixedUnicode[1]);
+    const frac = UNICODE_FRACTIONS[mixedUnicode[2]];
+    return frac != null ? whole + frac : null;
+  }
+
+  const asciiFrac = /^(\d+)\s*\/\s*(\d+)$/.exec(trimmed);
+  if (asciiFrac) {
+    const num = Number(asciiFrac[1]);
+    const den = Number(asciiFrac[2]);
+    return den > 0 ? num / den : null;
+  }
+
+  if (UNICODE_FRACTIONS[trimmed] != null) {
+    return UNICODE_FRACTIONS[trimmed];
+  }
+
+  if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+    const num = Number(trimmed);
+    return Number.isFinite(num) && num > 0 ? num : null;
+  }
+
+  return null;
+}
+
+const QTY_PATTERN =
+  "(?:\\d+\\s+\\d+\\s*/\\s*\\d+|\\d+\\s*[½⅓⅔¼¾⅛⅜⅝⅞]|\\d+\\s*/\\s*\\d+|[½⅓⅔¼¾⅛⅜⅝⅞]|\\d+(?:\\.\\d+)?)";
+
+const LEADING_RANGE_RE = new RegExp(
+  `^(\\s*)(${QTY_PATTERN})(\\s*[-–]\\s*)(${QTY_PATTERN})(?!\\s*[-–/.\\d])([\\s\\S]*)$`,
+);
+
+const LEADING_SINGLE_RE = new RegExp(
+  `^(\\s*)(${QTY_PATTERN})(?!\\s*[-–/.\\d])([\\s\\S]*)$`,
+);
+
+/**
+ * Scale a leading integer, decimal, fraction, or mixed number on a raw
+ * ingredient line when `mult !== 1`.
+ */
+function scaleRawIngredientLine(raw: string, mult: number): string {
+  if (mult === 1 || !Number.isFinite(mult) || mult <= 0) return raw;
+
+  const rangeMatch = LEADING_RANGE_RE.exec(raw);
+  if (rangeMatch) {
+    const [, lead, firstToken, sep, secondToken, rest] = rangeMatch;
+    const q1 = parseQuantityValue(firstToken);
+    const q2 = parseQuantityValue(secondToken);
+    if (q1 != null && q2 != null) {
+      return `${lead}${formatScaledNumber(q1 * mult)}${sep}${formatScaledNumber(q2 * mult)}${rest}`;
+    }
+  }
+
+  const singleMatch = LEADING_SINGLE_RE.exec(raw);
+  if (singleMatch) {
+    const [, lead, token, rest] = singleMatch;
+    const q = parseQuantityValue(token);
+    if (q != null) {
+      return `${lead}${formatScaledNumber(q * mult)}${rest}`;
+    }
+  }
+
+  return raw;
+}
+
+function formatIngredientDisplay(
+  ingredient: string,
+  structured: StructuredIngredient | undefined,
+  scaleMultiplier: number,
+): {
+  hasStructure: boolean;
+  qtyPart: string;
+  itemText: string;
+  fullText: string;
+} {
+  const rawQty =
+    structured?.qty_display ??
+    (structured?.qty != null ? String(structured.qty) : null);
+  let qty = rawQty;
+  if (scaleMultiplier !== 1) {
+    const parsedQty = parseQuantityValue(
+      structured?.qty != null ? structured.qty : structured?.qty_display,
+    );
+    if (parsedQty != null) {
+      qty = formatScaledNumber(parsedQty * scaleMultiplier);
+    }
+  }
+  const unit = structured?.unit?.trim() || null;
+  const itemText = [structured?.item?.trim(), structured?.prep?.trim()]
+    .filter(Boolean)
+    .join(", ");
+  const qtyPart = [qty, unit].filter(Boolean).join(" ");
+  const hasStructure = qtyPart !== "" && itemText !== "";
+  if (hasStructure) {
+    return {
+      hasStructure: true,
+      qtyPart,
+      itemText,
+      fullText: `${qtyPart} ${itemText}`,
+    };
+  }
+  return {
+    hasStructure: false,
+    qtyPart: "",
+    itemText: "",
+    fullText: scaleRawIngredientLine(ingredient, scaleMultiplier),
+  };
 }
 
 function createDetailStyles(colors: ThemeColors, dir: LangDir) {
@@ -579,6 +764,42 @@ function createDetailStyles(colors: ThemeColors, dir: LangDir) {
         ingredientQty: {
           fontWeight: "700",
           color: colors.ink,
+        },
+        scaleChipsRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: Space.xs,
+        },
+        ingredientRow: {
+          flexDirection: "row",
+          alignItems: "flex-start",
+          gap: Space.sm,
+          paddingVertical: Space.xs,
+          alignSelf: "stretch",
+        },
+        ingredientCheckbox: {
+          marginTop: 1,
+        },
+        bulletTextChecked: {
+          color: colors.inkFaint,
+          textDecorationLine: "line-through",
+        },
+        ingredientsFooter: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: Space.sm,
+          marginTop: Space.md,
+        },
+        clearCheckedBtn: {
+          paddingVertical: Space.xs,
+          paddingHorizontal: Space.sm,
+        },
+        clearCheckedText: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+          fontWeight: "600",
         },
         stepList: {
           gap: Space.md,
@@ -936,37 +1157,78 @@ function createDetailStyles(colors: ThemeColors, dir: LangDir) {
 type DetailStyles = ReturnType<typeof createDetailStyles>;
 
 interface IngredientRowProps {
+  index: number;
   ingredient: string;
   structured?: StructuredIngredient;
+  scaleMultiplier: number;
+  checked: boolean;
+  onToggle: (index: number) => void;
+  accentColor: string;
+  inkFaintColor: string;
   styles: DetailStyles;
 }
 
 const IngredientRow = memo(function IngredientRow({
+  index,
   ingredient,
   structured,
+  scaleMultiplier,
+  checked,
+  onToggle,
+  accentColor,
+  inkFaintColor,
   styles,
 }: IngredientRowProps) {
-  const qty =
-    structured?.qty_display ??
-    (structured?.qty != null ? String(structured.qty) : null);
-  const unit = structured?.unit?.trim() || null;
-  const itemText = [structured?.item?.trim(), structured?.prep?.trim()]
-    .filter(Boolean)
-    .join(", ");
-  const qtyPart = [qty, unit].filter(Boolean).join(" ");
-  const hasStructure = qtyPart !== "" && itemText !== "";
+  const { hasStructure, qtyPart, itemText, fullText } = formatIngredientDisplay(
+    ingredient,
+    structured,
+    scaleMultiplier,
+  );
+  const handlePress = useCallback(() => {
+    onToggle(index);
+  }, [onToggle, index]);
+
   return (
-    <View style={styles.bulletRow}>
-      <Text style={styles.bullet}>•</Text>
+    <IconPressable
+      onPress={handlePress}
+      accessibilityRole="button"
+      accessibilityLabel={fullText}
+      style={styles.ingredientRow}
+    >
+      <Ionicons
+        name={checked ? "checkbox" : "square-outline"}
+        size={20}
+        color={checked ? accentColor : inkFaintColor}
+        style={styles.ingredientCheckbox}
+      />
       {hasStructure ? (
-        <Text style={styles.bulletText}>
-          <Text style={styles.ingredientQty}>{qtyPart}</Text>
+        <Text
+          style={[
+            styles.bulletText,
+            checked ? styles.bulletTextChecked : null,
+          ]}
+        >
+          <Text
+            style={[
+              styles.ingredientQty,
+              checked ? styles.bulletTextChecked : null,
+            ]}
+          >
+            {qtyPart}
+          </Text>
           {` ${itemText}`}
         </Text>
       ) : (
-        <Text style={styles.bulletText}>{ingredient}</Text>
+        <Text
+          style={[
+            styles.bulletText,
+            checked ? styles.bulletTextChecked : null,
+          ]}
+        >
+          {fullText}
+        </Text>
       )}
-    </View>
+    </IconPressable>
   );
 });
 
@@ -2009,6 +2271,34 @@ export default function RecipeDetailScreen() {
   const [stepsPending, setStepsPending] = useState(false);
   const [calibrations, setCalibrations] = useState<PaceCalibration[]>([]);
   const [favorited, setFavorited] = useState(false);
+  const [scaleState, setScaleState] = useState<{
+    recipeId: number;
+    mult: number;
+  }>({ recipeId: numericId, mult: 1 });
+  const scaleMultiplier =
+    scaleState.recipeId === numericId ? scaleState.mult : 1;
+  const [checkedState, setCheckedState] = useState<{
+    recipeId: number;
+    indices: Set<number>;
+  }>(() => ({ recipeId: numericId, indices: new Set() }));
+  const checkedIngredients = useMemo(
+    () =>
+      checkedState.recipeId === numericId
+        ? checkedState.indices
+        : new Set<number>(),
+    [checkedState, numericId],
+  );
+  const checkedByRecipeRef = useRef<Map<number, Set<number>>>(new Map());
+  // Tracks recipes toggled or cleared before AsyncStorage hydration finishes so
+  // an in-flight read never clobbers early user taps.
+  const checkedMutatedRecipesRef = useRef<Set<number>>(new Set());
+  const [addedShoppingRecipeId, setAddedShoppingRecipeId] = useState<
+    number | null
+  >(null);
+  const addedToShopping = addedShoppingRecipeId === numericId;
+  const addedShoppingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const [initialNote, setInitialNote] = useState<{
     recipeId: number;
     text: string;
@@ -2065,14 +2355,52 @@ export default function RecipeDetailScreen() {
     };
   }, []);
 
-  // Cancel any scheduled plan notifications when the screen unmounts.
+  // Cancel any scheduled plan notifications and shopping timer when unmounting.
   useEffect(() => {
     return () => {
+      if (addedShoppingTimerRef.current) {
+        clearTimeout(addedShoppingTimerRef.current);
+      }
       cancelPlannedNotifications(planIdsRef.current).catch(() => {
         // Best-effort cleanup.
       });
     };
   }, []);
+
+  // Hydrate checked ingredients per recipe from AsyncStorage.
+  useEffect(() => {
+    let cancelled = false;
+    if (!validRecipeId) return;
+
+    AsyncStorage.getItem(`${CHECKED_ING_KEY_PREFIX}${numericId}`)
+      .then((raw) => {
+        if (cancelled || checkedMutatedRecipesRef.current.has(numericId)) {
+          return;
+        }
+        if (!raw) {
+          const empty = new Set<number>();
+          checkedByRecipeRef.current.set(numericId, empty);
+          setCheckedState({ recipeId: numericId, indices: empty });
+          return;
+        }
+        const parsed: unknown = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return;
+        const indices = parsed.filter(
+          (n): n is number =>
+            typeof n === "number" && Number.isInteger(n) && n >= 0,
+        );
+        const hydrated = new Set(indices);
+        checkedByRecipeRef.current.set(numericId, hydrated);
+        setCheckedState({ recipeId: numericId, indices: hydrated });
+      })
+      .catch(() => {
+        // Best-effort restore.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [numericId, validRecipeId]);
 
   const styles = useMemo(
     () => createDetailStyles(colors, dir),
@@ -2197,13 +2525,19 @@ export default function RecipeDetailScreen() {
   }, [loadRecipe]);
 
   // Best-effort: load personalized pace multipliers after navigation push
-  // transitions complete. Only when authenticated; never blocks the recipe view.
+  // transitions complete. Signed-in users refresh from the server; signed-out
+  // users still load locally cached calibrations.
   useEffect(() => {
     let cancelled = false;
     const task = InteractionManager.runAfterInteractions(() => {
       void (async () => {
-        if (cancelled || !(await hasToken())) return;
+        if (cancelled) return;
         try {
+          if (!(await hasToken())) {
+            const cached = await getCachedPaceCalibrations();
+            if (!cancelled && cached.length > 0) setCalibrations(cached);
+            return;
+          }
           const items = await refreshPaceCalibrations();
           if (!cancelled) setCalibrations(items);
         } catch (error) {
@@ -2304,7 +2638,10 @@ export default function RecipeDetailScreen() {
   const steps: RecipeStep[] = useMemo(() => recipe?.recipe_steps ?? [], [recipe]);
 
   // Localized ingredient text list, paired by index with the structured rows.
-  const ingredientLines = recipe ? lr.ingredients(recipe) : [];
+  const ingredientLines = useMemo(
+    () => (recipe ? lr.ingredients(recipe) : []),
+    [recipe, lr],
+  );
   const structuredIngredients = useMemo(
     () =>
       parseStructuredIngredients(
@@ -2318,6 +2655,123 @@ export default function RecipeDetailScreen() {
   const structuredAligned =
     ingredientLines.length > 0 &&
     structuredIngredients.length === ingredientLines.length;
+
+  const onToggleIngredient = useCallback(
+    (index: number) => {
+      checkedMutatedRecipesRef.current.add(numericId);
+      const prev =
+        checkedByRecipeRef.current.get(numericId) ?? new Set<number>();
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      checkedByRecipeRef.current.set(numericId, next);
+      setCheckedState({ recipeId: numericId, indices: next });
+      if (validRecipeId) {
+        AsyncStorage.setItem(
+          `${CHECKED_ING_KEY_PREFIX}${numericId}`,
+          JSON.stringify(Array.from(next)),
+        ).catch(() => {
+          // Best-effort persistence.
+        });
+      }
+    },
+    [numericId, validRecipeId],
+  );
+
+  const onClearCheckedIngredients = useCallback(() => {
+    checkedMutatedRecipesRef.current.add(numericId);
+    const empty = new Set<number>();
+    checkedByRecipeRef.current.set(numericId, empty);
+    setCheckedState({ recipeId: numericId, indices: empty });
+    if (validRecipeId) {
+      AsyncStorage.removeItem(`${CHECKED_ING_KEY_PREFIX}${numericId}`).catch(
+        () => {
+          // Best-effort clear.
+        },
+      );
+    }
+  }, [numericId, validRecipeId]);
+
+  const onSelectScale = useCallback(
+    (mult: number) => {
+      setScaleState({ recipeId: numericId, mult });
+      setAddedShoppingRecipeId(null);
+    },
+    [numericId],
+  );
+
+  const validCheckedCount = useMemo(() => {
+    let count = 0;
+    checkedIngredients.forEach((idx) => {
+      if (idx >= 0 && idx < ingredientLines.length) count++;
+    });
+    return count;
+  }, [checkedIngredients, ingredientLines.length]);
+
+  const hasPartialChecked =
+    validCheckedCount > 0 && validCheckedCount < ingredientLines.length;
+  const shoppingTargetCount = hasPartialChecked
+    ? ingredientLines.length - validCheckedCount
+    : ingredientLines.length;
+
+  const onAddToShopping = useCallback(async () => {
+    if (!recipe || ingredientLines.length === 0) return;
+    const recipeTitle = lr.title(recipe).trim() || null;
+    const checkedSet = checkedByRecipeRef.current.get(numericId);
+    const itemsToAdd: {
+      text: string;
+      recipeId: number;
+      recipeTitle: string | null;
+    }[] = [];
+    for (let idx = 0; idx < ingredientLines.length; idx++) {
+      if (hasPartialChecked && checkedSet?.has(idx)) {
+        continue;
+      }
+      const formatted = formatIngredientDisplay(
+        ingredientLines[idx],
+        structuredAligned ? structuredIngredients[idx] : undefined,
+        scaleMultiplier,
+      );
+      if (formatted.fullText.trim()) {
+        itemsToAdd.push({
+          text: formatted.fullText,
+          recipeId: recipe.id,
+          recipeTitle,
+        });
+      }
+    }
+    if (itemsToAdd.length === 0) return;
+    try {
+      await addShoppingListItems(itemsToAdd);
+      if (!mountedRef.current) return;
+      const targetId = recipe.id;
+      setAddedShoppingRecipeId(targetId);
+      if (addedShoppingTimerRef.current) {
+        clearTimeout(addedShoppingTimerRef.current);
+      }
+      addedShoppingTimerRef.current = setTimeout(() => {
+        if (mountedRef.current) {
+          setAddedShoppingRecipeId((curr) =>
+            curr === targetId ? null : curr,
+          );
+        }
+      }, 2500);
+    } catch (error) {
+      console.warn("[RecipeReal] add to shopping list failed:", error);
+    }
+  }, [
+    recipe,
+    numericId,
+    ingredientLines,
+    hasPartialChecked,
+    lr,
+    structuredAligned,
+    structuredIngredients,
+    scaleMultiplier,
+  ]);
 
   // Anchor the clock walk once per recipe (not per render) so re-renders —
   // heart toggles, quick-time keystrokes — never shift the displayed times.
@@ -2892,25 +3346,105 @@ export default function RecipeDetailScreen() {
 
                 {/* 2. INGREDIENTS — card section: structured "½ cup | brown
                     sugar, packed" rows when the parsed data lines up, plain
-                    bullets otherwise. */}
+                    bullets otherwise, with serving scaler, interactive
+                    checkboxes, and shopping list export. */}
                 <View style={styles.section}>
                   <Card padding={Space.lg}>
-                    <SectionHeader title={t("detail.ingredients")} />
+                    <SectionHeader
+                      title={t("detail.ingredients")}
+                      subtitle={
+                        recipe.servings != null && recipe.servings > 0
+                          ? t("detail.servingsScaled", {
+                              n: Math.round(recipe.servings * scaleMultiplier),
+                            })
+                          : undefined
+                      }
+                      action={
+                        ingredientLines.length > 0 ? (
+                          <View style={styles.scaleChipsRow}>
+                            {SCALE_MULTIPLIERS.map((mult) => (
+                              <IconPressable
+                                key={mult}
+                                onPress={() => onSelectScale(mult)}
+                                accessibilityRole="button"
+                                accessibilityLabel={t(
+                                  "detail.scaleMultiplierA11y",
+                                  { n: mult },
+                                )}
+                                hitSlop={Space.xs}
+                              >
+                                <Chip
+                                  size="sm"
+                                  tone={
+                                    scaleMultiplier === mult
+                                      ? "accent"
+                                      : "neutral"
+                                  }
+                                  label={`${mult}×`}
+                                />
+                              </IconPressable>
+                            ))}
+                          </View>
+                        ) : undefined
+                      }
+                    />
                     {ingredientLines.length > 0 ? (
-                      <View style={styles.bulletList}>
-                        {ingredientLines.map((ingredient, idx) => (
-                          <IngredientRow
-                            key={`ing-${idx}`}
-                            ingredient={ingredient}
-                            structured={
-                              structuredAligned
-                                ? structuredIngredients[idx]
-                                : undefined
+                      <>
+                        <View style={styles.bulletList}>
+                          {ingredientLines.map((ingredient, idx) => (
+                            <IngredientRow
+                              key={`ing-${idx}`}
+                              index={idx}
+                              ingredient={ingredient}
+                              structured={
+                                structuredAligned
+                                  ? structuredIngredients[idx]
+                                  : undefined
+                              }
+                              scaleMultiplier={scaleMultiplier}
+                              checked={checkedIngredients.has(idx)}
+                              onToggle={onToggleIngredient}
+                              accentColor={colors.accent}
+                              inkFaintColor={colors.inkFaint}
+                              styles={styles}
+                            />
+                          ))}
+                        </View>
+                        <View style={styles.ingredientsFooter}>
+                          <Button
+                            variant="secondary"
+                            icon={
+                              addedToShopping
+                                ? "checkmark-circle-outline"
+                                : "cart-outline"
                             }
-                            styles={styles}
+                            title={
+                              addedToShopping
+                                ? t("detail.addedToShopping")
+                                : hasPartialChecked
+                                  ? t("detail.addUncheckedToShopping", {
+                                      n: shoppingTargetCount,
+                                    })
+                                  : t("detail.addAllToShopping", {
+                                      n: shoppingTargetCount,
+                                    })
+                            }
+                            onPress={onAddToShopping}
                           />
-                        ))}
-                      </View>
+                          {validCheckedCount > 0 ? (
+                            <IconPressable
+                              onPress={onClearCheckedIngredients}
+                              accessibilityRole="button"
+                              hitSlop={Space.xs}
+                              style={styles.clearCheckedBtn}
+                            >
+                              <Text style={styles.clearCheckedText}>
+                                {t("detail.clearChecked")}
+                              </Text>
+                            </IconPressable>
+                          ) : null}
+                        </View>
+                      </>
                     ) : (
                       <Text style={styles.muted}>
                         {t("detail.noIngredients")}
