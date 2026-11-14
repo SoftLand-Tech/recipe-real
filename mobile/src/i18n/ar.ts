@@ -92,6 +92,19 @@ export const ar: Record<string, string> = {
   "filter.totalTime": "الوقت الكلي",
   "filter.cleanup": "التنظيف",
   "filter.sort": "الترتيب",
+  "filter.fridgeTitle": "اطبخ بما في ثلاجتك",
+  "filter.fridgePlaceholder": "أضف مكوّنًا (مثل: ثوم)…",
+  "filter.fridgeAdd": "إضافة مكوّن",
+  "filter.fridgeCount": "{count}/{max}",
+  "filter.fridgeLimit": "بحد أقصى {max} مكوّنات",
+  "filter.ingChicken": "دجاج",
+  "filter.ingRice": "أرز",
+  "filter.ingBeef": "لحم",
+  "filter.ingEggs": "بيض",
+  "filter.ingPasta": "معكرونة",
+  "filter.ingPotato": "بطاطس",
+  "filter.ingTomato": "طماطم",
+  "filter.ingLentils": "عدس",
   "filter.clearAll": "مسح الكل",
 
   // ---- الاستعراض ------------------------------------------------------------
@@ -109,6 +122,7 @@ export const ar: Record<string, string> = {
   "browse.addRecipe": "إضافة وصفة",
   "browse.filtersActive": "الفلاتر النشطة: {count}",
   "browse.removeFilter": "إزالة {label}",
+  "browse.fridgeChip": "في الثلاجة: {item}",
 
   // ---- صفحة الوصفة -----------------------------------------------------------
   "detail.freeLimitTitle": "بلغت الحد المجاني",
