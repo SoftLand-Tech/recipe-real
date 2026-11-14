@@ -226,7 +226,7 @@ Route::get('/r/{recipe}', function (Recipe $recipe, Request $request) {
 
     return response(str_replace(
         '</body>',
-        \App\Support\ShareBanner::bannerHtml($bannerUrl).'</body>',
+        \App\Support\ShareBanner::bannerHtml($request, $bannerUrl).'</body>',
         Cache::remember(
             "recipe:share:{$recipe->id}:".app()->getLocale(),
             now()->addMinutes(5),
@@ -252,7 +252,7 @@ Route::get('/p/{post}', function (Post $post, Request $request) {
 
     return response(str_replace(
         '</body>',
-        \App\Support\ShareBanner::bannerHtml($bannerUrl).'</body>',
+        \App\Support\ShareBanner::bannerHtml($request, $bannerUrl).'</body>',
         Cache::remember(
             "post:share:{$post->id}:".app()->getLocale(),
             now()->addMinutes(5),
@@ -283,7 +283,7 @@ Route::get('/u/{user}', function (User $user, Request $request) {
 
     return response(str_replace(
         '</body>',
-        \App\Support\ShareBanner::bannerHtml($bannerUrl).'</body>',
+        \App\Support\ShareBanner::bannerHtml($request, $bannerUrl).'</body>',
         Cache::remember(
             "user:share:{$user->id}:".app()->getLocale(),
             now()->addMinutes(5),

@@ -157,6 +157,7 @@ return [
     'share_shared_post' => 'شارك منشوراً على RecipeReal',
     'share_fallback_recipe' => 'وصفة',
     'banner_tag' => 'تحتاج تطبيق RecipeReal لفتح هذا الرابط — حمّله أولاً',
+    'banner_open' => 'افتح التطبيق',
     'banner_go' => 'ثبّت',
 
     // ---- صفحة مشاركة الملف الشخصي (GET /u/{user}) ----
