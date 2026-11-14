@@ -1,0 +1,27 @@
+# GitHub Linguist: keep language stats honest + diffs reviewable.
+# Vendor, lockfiles, generated assets, and bulk seeders are not "code" for stats purposes.
+
+# Dependencies / generated — not counted, collapsed in diffs
+backend/vendor/** linguist-vendored=true
+mobile/node_modules/** linguist-vendored=true
+**/node_modules/** linguist-vendored=true
+backend/public/build/** linguist-generated=true
+backend/public/css/** linguist-generated=true
+backend/public/js/** linguist-generated=true
+mobile/dist/** linguist-generated=true
+mobile/.expo/** linguist-generated=true
+store/screenshots/captures/** linguist-vendored=true
+
+# Lockfiles — keep diffs collapsed
+backend/composer.lock linguist-generated=true
+backend/package-lock.json linguist-generated=true
+mobile/package-lock.json linguist-generated=true
+remotion-ads/package-lock.json linguist-generated=true
+
+# Bulk data / seeders — real files, but they skew language stats
+backend/database/seeders/RecipeSeeder.php linguist-generated=true
+output.json linguist-generated=true
+docs/screens-preview.* linguist-generated=true
+
+# Docs are docs
+*.md linguist-documentation=true

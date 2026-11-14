@@ -1,0 +1,28 @@
+name: ✨ Feature request
+description: A cook-time, cooking, or community improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Which cook's problem is this?
+      description: Who hits it, when, and what does it cost them (in minutes)?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should change? API, screens, and data involved.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: checklist
+    attributes:
+      options:
+        - label: This respects the facts-only rule (no invented numbers)
+        - label: This considers EN/AR + RTL if user-facing

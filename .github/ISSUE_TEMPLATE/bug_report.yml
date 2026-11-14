@@ -1,0 +1,38 @@
+name: 🐞 Bug report
+description: Something is broken in the app, API, or site
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: App / build
+      description: e.g. Android APK 1.1.0, backend main @ abc1234
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you saw vs. what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots / logs
+      description: Paste screenshots, screen recordings, or relevant log lines.
+  - type: checkboxes
+    id: checklist
+    attributes:
+      options:
+        - label: I checked this is not a duplicate issue
