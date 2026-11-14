@@ -5,17 +5,36 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # Laravel first-party packages move together; review as one PR.
+      laravel:
+        patterns: ["laravel/*"]
+
   - package-ecosystem: npm
     directory: /mobile
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # Expo SDK packages must upgrade as a set — never merge one alone.
+      expo-sdk:
+        patterns: ["expo", "expo-*", "@expo/*", "react-native*"]
+      dev-dependencies:
+        dependency-type: development
+
   - package-ecosystem: npm
     directory: /backend
     schedule:
       interval: monthly
     open-pull-requests-limit: 3
+    groups:
+      frontend-build:
+        patterns: ["*"]
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
