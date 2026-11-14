@@ -528,7 +528,7 @@ function createStyles(colors: ThemeColors) {
       flex: 1,
       alignItems: "center",
       justifyContent: "center",
-      paddingHorizontal: Space.lg,
+      paddingHorizontal: Space.xxl,
       gap: Space.sm,
     },
     emptyGlyph: {

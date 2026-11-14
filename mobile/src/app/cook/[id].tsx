@@ -315,7 +315,7 @@ export default function CookModeScreen() {
           alignItems: "center",
           justifyContent: "center",
           gap: Space.sm,
-          paddingHorizontal: Space.lg,
+          paddingHorizontal: Space.xxl,
         },
         muted: {
           ...Type.bodySm,
@@ -367,7 +367,7 @@ export default function CookModeScreen() {
           flex: 1,
           alignItems: "center",
           justifyContent: "center",
-          paddingHorizontal: Space.lg,
+          paddingHorizontal: Space.xl,
           paddingVertical: Space.lg,
           gap: Space.lg,
         },
@@ -500,7 +500,7 @@ export default function CookModeScreen() {
         feedbackScroll: {
           flexGrow: 1,
           justifyContent: "center",
-          paddingHorizontal: Space.lg,
+          paddingHorizontal: Space.xl,
           paddingVertical: Space.lg,
         },
         feedbackWrap: {

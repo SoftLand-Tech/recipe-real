@@ -155,6 +155,7 @@ const NotificationRowView = memo(function NotificationRowView({
   return (
     <Card
       onPress={() => onOpen(row)}
+      padding={Space.md}
       style={unread ? styles.unreadRow : null}
     >
       <View style={styles.row}>

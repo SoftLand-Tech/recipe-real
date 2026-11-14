@@ -8,7 +8,6 @@ export {
   SCREEN_CONTENT_STYLE,
 } from "./Screen";
 export type {
-  ScreenGutterProps,
   ScreenViewProps,
   ScreenScrollViewProps,
   ScreenFlatListProps,

@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -18,7 +19,7 @@ import {
   Type,
   useThemeColors,
 } from "@/theme";
-import { Button, Card, Chip, ScreenScrollView, ScreenView } from "@/components/ui";
+import { Button, Card, Chip } from "@/components/ui";
 import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
 
 /**
@@ -67,6 +68,9 @@ export default function UpgradeScreen() {
         },
         scroll: {
           flex: 1,
+        },
+        content: {
+          paddingHorizontal: Space.lg,
         },
         columnWrap: {
           width: "100%",
@@ -173,9 +177,9 @@ export default function UpgradeScreen() {
   if (authed === null) {
     return (
       <View style={styles.container}>
-        <ScreenView style={styles.center}>
+        <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.accent} />
-        </ScreenView>
+        </View>
       </View>
     );
   }
@@ -183,12 +187,12 @@ export default function UpgradeScreen() {
   return (
     <View style={styles.container}>
       <PinnedHeaderBar title={t("stack.premium")} leading={<BackChevron />} />
-      <ScreenScrollView
+      <ScrollView
         style={styles.scroll}
-        contentContainerStyle={{
-          paddingTop: Space.lg,
-          paddingBottom: insets.bottom + 32,
-        }}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: Space.lg, paddingBottom: insets.bottom + 32 },
+        ]}
       >
       <View style={styles.columnWrap}>
         <Text style={styles.title}>{t("upgrade.headline")}</Text>
@@ -248,7 +252,7 @@ export default function UpgradeScreen() {
           fullWidth
         />
       </View>
-      </ScreenScrollView>
+      </ScrollView>
     </View>
   );
 }

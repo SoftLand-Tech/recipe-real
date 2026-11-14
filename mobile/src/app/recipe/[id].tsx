@@ -281,7 +281,7 @@ function createDetailStyles(colors: ThemeColors, dir: LangDir) {
           width: "100%",
         },
         heroOverlay: {
-          paddingHorizontal: 0,
+          paddingHorizontal: Space.lg,
         },
         heroTitle: {
           ...Type.h1,

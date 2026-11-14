@@ -12,11 +12,11 @@
  *   <ScreenFlatList data={...} contentContainerStyle={styles.list} ... />
  *   <ScreenView style={styles.container}> ... </ScreenView>
  *
- * Pass `bleed` only for surfaces that are intentionally edge-to-edge (full-
- * bleed photo grids, social feeds with square cards, grouped settings rows,
- * horizontal carousels). `bleed` removes both the gutter and the max width.
+ * Deliberate full-bleed surfaces (photo grids, square-card social feeds,
+ * grouped settings rows, horizontal carousels) keep using a plain
+ * View/ScrollView/FlatList directly — there is no opt-out prop to misuse.
  */
-import { memo } from "react";
+import { forwardRef, memo } from "react";
 import {
   FlatList,
   ScrollView,
@@ -27,12 +27,6 @@ import {
 } from "react-native";
 
 import { MaxContentWidth, Space } from "@/theme";
-
-/** Shared props for every Screen* container. */
-export interface ScreenGutterProps {
-  /** Opt out of the 16px gutter + 720px column for deliberate full-bleed layouts. */
-  bleed?: boolean;
-}
 
 /**
  * Content gutter: 16px sides, 720px max width, centered on wide viewports.
@@ -45,51 +39,39 @@ export const SCREEN_CONTENT_STYLE = {
   alignSelf: "center",
 } as const;
 
-/** Full-bleed content: no gutter, no width cap. */
-const BLEED_STYLE = { width: "100%" } as const;
-
-export interface ScreenViewProps extends ViewProps, ScreenGutterProps {}
+export type ScreenViewProps = ViewProps;
 
 /** Padded View for non-scrolling screen layouts. */
 export const ScreenView = memo(function ScreenView({
-  bleed,
   style,
   ...rest
 }: ScreenViewProps) {
-  return <View {...rest} style={[bleed ? BLEED_STYLE : SCREEN_CONTENT_STYLE, style]} />;
+  return <View {...rest} style={[SCREEN_CONTENT_STYLE, style]} />;
 });
 
-export interface ScreenScrollViewProps extends ScrollViewProps, ScreenGutterProps {}
+export type ScreenScrollViewProps = ScrollViewProps;
 
 /**
  * ScrollView whose content is gutter-padded. Screen-provided
  * `contentContainerStyle` is merged on top, so vertical paddings/gaps stay
  * with the screen; do not re-add horizontal padding here.
  */
-export const ScreenScrollView = memo(function ScreenScrollView({
-  bleed,
-  contentContainerStyle,
-  scrollViewRef,
-  ...rest
-}: ScreenScrollViewProps) {
-  return (
-    <ScrollView
-      {...rest}
-      // Forward through `ref`: `scrollViewRef` is native-only (react-native-web
-      // does not implement it), while `ref` works on both platforms and exposes
-      // the same public instance (scrollTo, etc.).
-      ref={scrollViewRef}
-      contentContainerStyle={[
-        bleed ? BLEED_STYLE : SCREEN_CONTENT_STYLE,
-        contentContainerStyle,
-      ]}
-    />
-  );
-});
+export const ScreenScrollView = memo(
+  forwardRef<ScrollView, ScreenScrollViewProps>(function ScreenScrollView(
+    { contentContainerStyle, ...rest },
+    ref,
+  ) {
+    return (
+      <ScrollView
+        {...rest}
+        ref={ref}
+        contentContainerStyle={[SCREEN_CONTENT_STYLE, contentContainerStyle]}
+      />
+    );
+  }),
+);
 
-export interface ScreenFlatListProps<ItemT>
-  extends FlatListProps<ItemT>,
-    ScreenGutterProps {}
+export type ScreenFlatListProps<ItemT> = FlatListProps<ItemT>;
 
 /**
  * FlatList whose content is gutter-padded. Same merge contract as
@@ -97,17 +79,13 @@ export interface ScreenFlatListProps<ItemT>
  * gaps) is applied after the shared gutter.
  */
 export function ScreenFlatList<ItemT>({
-  bleed,
   contentContainerStyle,
   ...rest
 }: ScreenFlatListProps<ItemT>) {
   return (
     <FlatList<ItemT>
       {...rest}
-      contentContainerStyle={[
-        bleed ? BLEED_STYLE : SCREEN_CONTENT_STYLE,
-        contentContainerStyle,
-      ]}
+      contentContainerStyle={[SCREEN_CONTENT_STYLE, contentContainerStyle]}
     />
   );
 }
