@@ -13,7 +13,11 @@ import {
   hasToken,
 } from "@/api/client";
 import { track } from "@/analytics";
-import { refreshPaceCalibrations } from "@/db/database";
+import {
+  cachePaceCalibrations,
+  getCachedPaceCalibrations,
+  refreshPaceCalibrations,
+} from "@/db/database";
 import type { CookSessionSummary, PaceCalibration } from "@/types";
 import { stepTypeLabel, useFmtMinutes, useT, type TranslateFn } from "@/i18n";
 import { Space, Type, useThemeColors } from "@/theme";
@@ -31,6 +35,13 @@ import {
   PinnedHeaderBar,
   ScreenCaption,
 } from "@/components/chrome";
+import {
+  getKitchenProfile,
+  syncKitchenProfileToLocalPace,
+  type KitchenEnvPref,
+  type KitchenProfile,
+  type PrepSpeedPref,
+} from "@/utils/prefs";
 import { computeStreak, summarizeHistory } from "@/utils/streaks";
 
 type LoadState = "loading" | "ready" | "error";
@@ -57,6 +68,7 @@ const REFRESH_SPINNER_MAX_MS = 10_000;
 let lastCalibrations: PaceCalibration[] | null = null;
 let lastCookCount: number | null = null;
 let lastSessions: CookSessionSummary[] | null = null;
+let lastKitchenProfile: KitchenProfile | null = null;
 let lastCalibrationsFp = "";
 let lastSessionsFp = "";
 
@@ -70,6 +82,7 @@ export function clearPaceCache(): void {
   lastCalibrations = null;
   lastCookCount = null;
   lastSessions = null;
+  lastKitchenProfile = null;
   lastCalibrationsFp = "";
   lastSessionsFp = "";
 }
@@ -117,14 +130,41 @@ function deltaChip(
   return { label: t("pace.onPace"), tone: "neutral" };
 }
 
+function prepSpeedLabel(t: TranslateFn, prepSpeed: PrepSpeedPref): string {
+  switch (prepSpeed) {
+    case "relaxed":
+      return t("settings.prepRelaxed");
+    case "fast":
+      return t("settings.prepFast");
+    default:
+      return t("settings.prepSteady");
+  }
+}
+
+function kitchenEnvLabel(t: TranslateFn, kitchenEnv: KitchenEnvPref): string {
+  switch (kitchenEnv) {
+    case "busy":
+      return t("settings.envBusy");
+    case "hectic":
+      return t("settings.envHectic");
+    default:
+      return t("settings.envFocused");
+  }
+}
+
 export default function PaceScreen() {
   const colors = useThemeColors();
   const t = useT();
   const fmtMin = useFmtMinutes();
   const [state, setState] = useState<LoadState>(() =>
-    lastCalibrations != null || lastSessions != null ? "ready" : "loading",
+    lastCalibrations != null || lastSessions != null || lastKitchenProfile != null
+      ? "ready"
+      : "loading",
   );
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [kitchenProfile, setKitchenProfile] = useState<KitchenProfile | null>(
+    () => lastKitchenProfile,
+  );
   const [calibrations, setCalibrations] = useState<PaceCalibration[]>(
     () => lastCalibrations ?? [],
   );
@@ -165,20 +205,77 @@ export default function PaceScreen() {
       cb?.();
     };
     try {
-      const authed = await hasToken();
+      const [authed, profile] = await Promise.all([
+        hasToken(),
+        getKitchenProfile(),
+      ]);
+      lastKitchenProfile = profile;
+      setKitchenProfile(profile);
       setAuthenticated(authed);
       if (!authed) {
+        const localCalibs = await getCachedPaceCalibrations();
+        const calibFp = calibrationsFingerprint(localCalibs);
+        if (calibFp !== lastCalibrationsFp) {
+          lastCalibrationsFp = calibFp;
+          setCalibrations(localCalibs);
+        }
+        lastCalibrations = localCalibs;
+        setCookCount(null);
+        setCookSessions([]);
+        lastCookCount = null;
+        lastSessions = null;
+        lastSessionsFp = "";
         setState("ready");
+        if (firstLoadRef.current) {
+          track("pace_viewed");
+        }
+        coreLoaded();
         return;
       }
 
       // The cook-session history paginates (up to 5 pages) — start it now in
       // parallel, but DON'T let it gate the UI below.
       const sessionsPromise = getCookSessions().catch(() => null);
+      const localBefore = await getCachedPaceCalibrations().catch(() => []);
 
       // FAST path: the auth check + pace calibrations land first and unblock
       // any pull-to-refresh spinner.
-      const paceResult = await refreshPaceCalibrations();
+      let paceResult = await refreshPaceCalibrations();
+      const stillAuthed = await hasToken();
+      if (!stillAuthed) {
+        // Re-check auth after network call: a 401 wipes account caches via the
+        // interceptor, so never resurrect `localBefore` after session expiry.
+        setAuthenticated(false);
+        const localAfterWipe = await getCachedPaceCalibrations().catch(
+          () => [],
+        );
+        const wipedFp = calibrationsFingerprint(localAfterWipe);
+        if (wipedFp !== lastCalibrationsFp) {
+          lastCalibrationsFp = wipedFp;
+          setCalibrations(localAfterWipe);
+        }
+        lastCalibrations = localAfterWipe;
+        setCookCount(null);
+        setCookSessions([]);
+        lastCookCount = null;
+        lastSessions = null;
+        lastSessionsFp = "";
+        setState("ready");
+        if (firstLoadRef.current) {
+          track("pace_viewed");
+        }
+        coreLoaded();
+        return;
+      }
+      if (paceResult.length === 0) {
+        if (localBefore.length > 0) {
+          await cachePaceCalibrations(localBefore).catch(() => {});
+          paceResult = localBefore;
+        } else {
+          await syncKitchenProfileToLocalPace(profile);
+          paceResult = await getCachedPaceCalibrations().catch(() => []);
+        }
+      }
       const calibFp = calibrationsFingerprint(paceResult);
       if (calibFp !== lastCalibrationsFp) {
         lastCalibrationsFp = calibFp;
@@ -281,11 +378,46 @@ export default function PaceScreen() {
         content: {
           paddingBottom: 40,
         },
+        body: {
+          gap: Space.md,
+        },
         list: {
           gap: Space.md,
         },
         card: {
           gap: Space.sm,
+        },
+        profileSub: {
+          ...Type.bodySm,
+          color: colors.inkSecondary,
+        },
+        profilePillsRow: {
+          flexDirection: "row",
+          flexWrap: "wrap",
+          gap: Space.lg,
+          marginTop: Space.xs,
+        },
+        profilePillCol: {
+          flex: 1,
+          minWidth: 120,
+        },
+        adjustProfileBtn: {
+          alignSelf: "flex-start",
+          marginTop: Space.xs,
+        },
+        emptyCard: {
+          alignItems: "center",
+          paddingVertical: Space.xl,
+        },
+        syncCard: {
+          alignItems: "center",
+          gap: Space.sm,
+          marginTop: Space.xs,
+        },
+        syncTitle: {
+          ...Type.h3,
+          color: colors.ink,
+          textAlign: "center",
         },
         cardHeader: {
           flexDirection: "row",
@@ -382,25 +514,6 @@ export default function PaceScreen() {
   // Stack-screen back affordance: chevron pops back (platform convention
   // for pushed screens — X is for modals).
 
-  // Not authenticated: friendly sign-in prompt.
-  if (state === "ready" && authenticated === false) {
-    return (
-      <View style={styles.container}>
-        <PinnedHeaderBar title={t("tabs.pace")} leading={<BackChevron />} />
-        <View style={styles.center}>
-          <Text style={styles.signInTitle}>{t("pace.trackTitle")}</Text>
-          <Text style={styles.muted}>{t("pace.signInPrompt")}</Text>
-          <Button
-            title={t("common.signIn")}
-            size="lg"
-            onPress={() => router.push("/login")}
-            style={styles.cta}
-          />
-        </View>
-      </View>
-    );
-  }
-
   if (state === "loading") {
     return (
       <View style={styles.container}>
@@ -448,14 +561,57 @@ export default function PaceScreen() {
             ? cookCount === 1
               ? t("pace.cooksOne", { n: cookCount })
               : t("pace.cooksMany", { n: cookCount })
-            : t("pace.cooksLabel")
+            : authenticated === false
+              ? t("pace.localBadge")
+              : t("pace.cooksLabel")
         }
       />
 
+      <View style={styles.body}>
+      {kitchenProfile ? (
+        <Card style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>
+              {t("pace.kitchenProfileTitle")}
+            </Text>
+            {authenticated === false ? (
+              <Chip
+                label={t("pace.localBadge")}
+                tone="neutral"
+                size="sm"
+              />
+            ) : null}
+          </View>
+          <Text style={styles.profileSub}>{t("pace.kitchenProfileSub")}</Text>
+          <View style={styles.profilePillsRow}>
+            <View style={styles.profilePillCol}>
+              <StatPill
+                label={t("settings.prepSpeed")}
+                value={prepSpeedLabel(t, kitchenProfile.prepSpeed)}
+              />
+            </View>
+            <View style={styles.profilePillCol}>
+              <StatPill
+                label={t("settings.kitchenEnv")}
+                value={kitchenEnvLabel(t, kitchenProfile.kitchenEnv)}
+              />
+            </View>
+          </View>
+          <Button
+            title={t("pace.adjustInSettings")}
+            variant="ghost"
+            size="md"
+            icon="options-outline"
+            onPress={() => router.push("/settings")}
+            style={styles.adjustProfileBtn}
+          />
+        </Card>
+      ) : null}
+
       {calibrations.length === 0 ? (
-        <View style={[styles.center, styles.centerInList]}>
+        <Card style={styles.emptyCard}>
           <Text style={styles.muted}>{t("pace.emptyCalibrations")}</Text>
-        </View>
+        </Card>
       ) : (
         <View style={styles.list}>
           {calibrations.map((c) => {
@@ -547,6 +703,19 @@ export default function PaceScreen() {
           </View>
         </View>
       ) : null}
+      {authenticated === false ? (
+        <Card style={styles.syncCard}>
+          <Text style={styles.syncTitle}>{t("pace.trackTitle")}</Text>
+          <Text style={styles.muted}>{t("pace.signInSyncPrompt")}</Text>
+          <Button
+            title={t("common.signIn")}
+            size="lg"
+            onPress={() => router.push("/login")}
+            style={styles.cta}
+          />
+        </Card>
+      ) : null}
+      </View>
     </ScreenScrollView>
     </View>
   );

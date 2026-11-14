@@ -1325,6 +1325,11 @@ export async function getCachedPaceCalibrations(): Promise<PaceCalibration[]> {
 export async function refreshPaceCalibrations(): Promise<PaceCalibration[]> {
   try {
     const items = await getPaceCalibrations();
+    // Preserve local Kitchen Profile / offline cook calibrations when a newly
+    // signed-in account has no server calibrations yet.
+    if (items.length === 0) {
+      return getCachedPaceCalibrations();
+    }
     await cachePaceCalibrations(items);
     return items;
   } catch (error) {
