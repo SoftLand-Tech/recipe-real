@@ -1,5 +1,6 @@
 {{-- Topbar shortcuts: the three jobs that used to mean leaving the panel. --}}
 <div class="rr-top-actions">
+    <livewire:agy-sessions-badge />
     <a href="{{ url('/') }}" target="_blank" rel="noopener" class="rr-top-action" title="Open the live landing page">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="9"/>
