@@ -28,6 +28,9 @@ jobs:
         working-directory: backend
         run: |
           cp .env.example .env
+          # The example enables the dangerous agy flag for local docs; CI must
+          # see the shipped default (absent => false) that the lockdown test asserts.
+          sed -i '/^RECIPE_AI_CLI_DANGEROUSLY_SKIP_PERMISSIONS=/d' .env
           php artisan key:generate
 
       - name: Setup Node
