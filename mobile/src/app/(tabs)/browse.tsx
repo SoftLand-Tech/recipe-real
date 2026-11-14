@@ -12,6 +12,7 @@ import {
   Animated,
   FlatList,
   InteractionManager,
+  Keyboard,
   LayoutAnimation,
   Pressable,
   ScrollView,
@@ -118,6 +119,78 @@ const SORT_MODES = [
   { mode: "cleanup", labelKey: "filter.sortLeastCleanup" },
 ] as const;
 
+/** Bilingual pantry/fridge staples for quick ingredient filtering. */
+const FRIDGE_STAPLES = [
+  { id: "chicken", en: "chicken", ar: "دجاج", labelKey: "filter.ingChicken" },
+  { id: "rice", en: "rice", ar: "أرز", labelKey: "filter.ingRice" },
+  { id: "beef", en: "beef", ar: "لحم", labelKey: "filter.ingBeef" },
+  { id: "eggs", en: "egg", ar: "بيض", labelKey: "filter.ingEggs" },
+  { id: "pasta", en: "pasta", ar: "معكرونة", labelKey: "filter.ingPasta" },
+  { id: "potato", en: "potato", ar: "بطاطس", labelKey: "filter.ingPotato" },
+  { id: "tomato", en: "tomato", ar: "طماطم", labelKey: "filter.ingTomato" },
+  { id: "lentils", en: "lentil", ar: "عدس", labelKey: "filter.ingLentils" },
+] as const;
+
+const MAX_FRIDGE_ITEMS = 5;
+
+type FridgeStaple = (typeof FRIDGE_STAPLES)[number];
+const FRIDGE_STAPLE_MAP = new Map<string, FridgeStaple>(
+  FRIDGE_STAPLES.map((s) => [s.id, s]),
+);
+
+function normalizeFridgeText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, "")
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Map fridge filter entries to search tokens: staple IDs resolve to their
+ * singular English stem (matching `recipes_fts` prefix queries for every
+ * recipe), while custom items pass through verbatim.
+ */
+function resolveFridgeSearchTokens(items: string[]): string[] {
+  return items
+    .map((item) => FRIDGE_STAPLE_MAP.get(item)?.en ?? item.trim())
+    .filter((token) => token.length > 0);
+}
+
+/**
+ * Offline / local matcher for fridge ingredients: checks title + ingredients
+ * (English and Arabic), falling back to title-only when cached summaries ship
+ * empty ingredient arrays.
+ */
+function matchesFridgeItems(recipe: Recipe, items: string[]): boolean {
+  if (items.length === 0) return true;
+  const ingredients = recipe.ingredients ?? [];
+  const ingredientsAr = recipe.ingredients_ar ?? [];
+  const parts =
+    ingredients.length === 0 && ingredientsAr.length === 0
+      ? [recipe.title ?? "", recipe.title_ar ?? ""]
+      : [
+          recipe.title ?? "",
+          recipe.title_ar ?? "",
+          ...ingredients,
+          ...ingredientsAr,
+        ];
+  const searchable = normalizeFridgeText(parts.join(" "));
+  return items.every((item) => {
+    const staple = FRIDGE_STAPLE_MAP.get(item);
+    if (staple) {
+      return (
+        searchable.includes(staple.en) ||
+        searchable.includes(normalizeFridgeText(staple.ar))
+      );
+    }
+    return searchable.includes(normalizeFridgeText(item));
+  });
+}
+
 /** Visible category chips (DECLUTTERED: capped so the row stays one glance). */
 const CATEGORY_CHIP_LIMIT = 8;
 
@@ -193,6 +266,7 @@ function computeVisibleRecipes(
   timeMax: number | null,
   cleanupMax: number | null,
   sortMode: SortMode,
+  fridgeItems: string[],
 ): Recipe[] {
   const q = search.trim().toLowerCase();
   const isQuick = filter.kind === "quick";
@@ -203,7 +277,12 @@ function computeVisibleRecipes(
   const catLabelLower = isCat ? filter.label.toLowerCase() : "";
 
   const hasFilter =
-    q.length > 0 || isQuick || isCat || timeMax != null || cleanupMax != null;
+    q.length > 0 ||
+    isQuick ||
+    isCat ||
+    timeMax != null ||
+    cleanupMax != null ||
+    fridgeItems.length > 0;
 
   const out = hasFilter
     ? source.filter((r) => {
@@ -213,6 +292,9 @@ function computeVisibleRecipes(
           const matchesAr =
             r.title_ar != null && r.title_ar.toLowerCase().includes(q);
           if (!matchesEn && !matchesAr) return false;
+        }
+        if (fridgeItems.length > 0 && !matchesFridgeItems(r, fridgeItems)) {
+          return false;
         }
         if (isQuick) {
           const m = recipeMinutes(r);
@@ -451,6 +533,7 @@ function createStyles(colors: ThemeColors) {
       flexDirection: "row",
       alignItems: "center",
       gap: Space.xs,
+      maxWidth: "100%",
       backgroundColor: colors.accentSoft,
       borderRadius: Radius.pill,
       paddingVertical: Space.xs,
@@ -460,6 +543,7 @@ function createStyles(colors: ThemeColors) {
       ...Type.caption,
       fontWeight: "600",
       color: colors.accent,
+      flexShrink: 1,
     },
     filterRow: {
       flexShrink: 0,
@@ -504,6 +588,70 @@ function createStyles(colors: ThemeColors) {
       flexDirection: "row",
       flexWrap: "wrap",
       gap: Space.xs,
+    },
+    panelScroll: {
+      flexGrow: 0,
+      flexShrink: 1,
+    },
+    panelBody: {
+      gap: Space.md,
+    },
+    panelLabelRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: Space.sm,
+    },
+    fridgeCount: {
+      ...Type.caption,
+      fontWeight: "600",
+      color: colors.inkSecondary,
+    },
+    fridgeCountMax: {
+      color: colors.accent,
+    },
+    fridgeChipDisabled: {
+      opacity: 0.45,
+    },
+    fridgeInputRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Space.xs,
+      marginTop: Space.xs,
+    },
+    fridgeInput: {
+      flex: 1,
+      backgroundColor: colors.surfaceSoft,
+      borderWidth: 1,
+      borderColor: colors.hairline,
+      borderRadius: Radius.pill,
+      paddingHorizontal: Space.md,
+      paddingVertical: Space.xs + 2,
+      fontSize: Type.bodySm.fontSize,
+      color: colors.ink,
+    },
+    fridgeInputLtr: {
+      textAlign: "left",
+    },
+    fridgeInputRtl: {
+      textAlign: "right",
+    },
+    fridgeAddBtn: {
+      width: 34,
+      height: 34,
+      borderRadius: Radius.pill,
+      backgroundColor: colors.accent,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    fridgeAddBtnDisabled: {
+      backgroundColor: colors.surfaceSoft,
+      borderWidth: 1,
+      borderColor: colors.hairline,
+    },
+    fridgeLimitHint: {
+      ...Type.caption,
+      color: colors.inkFaint,
     },
     offlineBannerWrap: {
       marginHorizontal: Space.lg,
@@ -762,8 +910,12 @@ interface FilterPanelProps {
   onTimeMaxChange: (max: number | null) => void;
   sortMode: SortMode;
   onSortModeChange: (mode: SortMode) => void;
+  fridgeItems: string[];
+  onToggleFridgeItem: (item: string) => void;
+  onAddCustomFridgeItem: (item: string) => void;
   onClearAll: () => void;
   onClose: () => void;
+  maxHeight: number;
   styles: BrowseStyles;
 }
 
@@ -772,15 +924,68 @@ const FilterPanel = memo(function FilterPanel({
   onTimeMaxChange,
   sortMode,
   onSortModeChange,
+  fridgeItems,
+  onToggleFridgeItem,
+  onAddCustomFridgeItem,
   onClearAll,
   onClose,
+  maxHeight,
   styles,
 }: FilterPanelProps) {
   const t = useT();
+  const { dir } = useLang();
   const colors = useThemeColors();
-  const hasActive = timeMax != null || sortMode !== "default";
+  const [customInput, setCustomInput] = useState("");
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const panelScrollRef = useRef<ScrollView | null>(null);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardDidShow", (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+      panelScrollRef.current?.scrollToEnd({ animated: true });
+    });
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const customFridgeItems = useMemo(
+    () => fridgeItems.filter((item) => !FRIDGE_STAPLE_MAP.has(item)),
+    [fridgeItems],
+  );
+  const atFridgeLimit = fridgeItems.length >= MAX_FRIDGE_ITEMS;
+  const canAddCustom = !atFridgeLimit && customInput.trim().length > 0;
+  const hasActive =
+    timeMax != null || sortMode !== "default" || fridgeItems.length > 0;
+
+  const effectiveMaxHeight = Math.max(
+    180,
+    maxHeight - (keyboardHeight > 0 ? keyboardHeight + Space.md : 0),
+  );
+  const panelStyle = useMemo(
+    () => [styles.filterPanel, { maxHeight: effectiveMaxHeight }],
+    [styles.filterPanel, effectiveMaxHeight],
+  );
+
+  const handleSubmitCustom = useCallback(() => {
+    if (atFridgeLimit) return;
+    const trimmed = customInput.trim();
+    if (!trimmed) return;
+    onAddCustomFridgeItem(trimmed);
+    setCustomInput("");
+  }, [atFridgeLimit, customInput, onAddCustomFridgeItem]);
+
+  const handleClearAll = useCallback(() => {
+    setCustomInput("");
+    onClearAll();
+  }, [onClearAll]);
+
   return (
-    <Card style={styles.filterPanel}>
+    <Card style={panelStyle}>
       <View style={styles.panelHeader}>
         <Text style={styles.panelTitle}>{t("browse.filtersTitle")}</Text>
         <IconPressable
@@ -791,48 +996,149 @@ const FilterPanel = memo(function FilterPanel({
           <Ionicons name="close" size={20} color={colors.ink} />
         </IconPressable>
       </View>
-      <View style={styles.panelGroup}>
-        <Text style={styles.panelLabel}>{t("filter.totalTime")}</Text>
-        <View style={styles.panelChips}>
-          {TIME_FILTERS.map((option) => (
+      <ScrollView
+        ref={panelScrollRef}
+        style={styles.panelScroll}
+        contentContainerStyle={styles.panelBody}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        <View style={styles.panelGroup}>
+          <Text style={styles.panelLabel}>{t("filter.totalTime")}</Text>
+          <View style={styles.panelChips}>
+            {TIME_FILTERS.map((option) => (
+              <IconPressable
+                key={`time-${option.max ?? "any"}`}
+                onPress={() => onTimeMaxChange(option.max)}
+              >
+                <Chip
+                  label={t(option.labelKey)}
+                  size="sm"
+                  tone={timeMax === option.max ? "accent" : "neutral"}
+                />
+              </IconPressable>
+            ))}
+          </View>
+        </View>
+        <View style={styles.panelGroup}>
+          <Text style={styles.panelLabel}>{t("filter.sort")}</Text>
+          <View style={styles.panelChips}>
+            {SORT_MODES.map((option) => (
+              <IconPressable
+                key={option.mode}
+                onPress={() => onSortModeChange(option.mode)}
+              >
+                <Chip
+                  label={t(option.labelKey)}
+                  size="sm"
+                  tone={sortMode === option.mode ? "accent" : "neutral"}
+                />
+              </IconPressable>
+            ))}
+          </View>
+        </View>
+        <View style={styles.panelGroup}>
+          <View style={styles.panelLabelRow}>
+            <Text style={styles.panelLabel}>{t("filter.fridgeTitle")}</Text>
+            {fridgeItems.length > 0 ? (
+              <Text
+                style={[
+                  styles.fridgeCount,
+                  atFridgeLimit ? styles.fridgeCountMax : null,
+                ]}
+              >
+                {t("filter.fridgeCount", {
+                  count: fridgeItems.length,
+                  max: MAX_FRIDGE_ITEMS,
+                })}
+              </Text>
+            ) : null}
+          </View>
+          <View style={styles.panelChips}>
+            {FRIDGE_STAPLES.map((staple) => {
+              const selected = fridgeItems.includes(staple.id);
+              const disabled = atFridgeLimit && !selected;
+              return (
+                <IconPressable
+                  key={`staple-${staple.id}`}
+                  onPress={() => onToggleFridgeItem(staple.id)}
+                  disabled={disabled}
+                  style={disabled ? styles.fridgeChipDisabled : undefined}
+                >
+                  <Chip
+                    label={t(staple.labelKey)}
+                    size="sm"
+                    tone={selected ? "accent" : "neutral"}
+                  />
+                </IconPressable>
+              );
+            })}
+            {customFridgeItems.map((item) => (
+              <IconPressable
+                key={`custom-${item}`}
+                onPress={() => onToggleFridgeItem(item)}
+                accessibilityLabel={t("browse.removeFilter", { label: item })}
+              >
+                <Chip
+                  label={item}
+                  size="sm"
+                  tone="accent"
+                  icon={<Ionicons name="close" size={12} color={colors.accent} />}
+                />
+              </IconPressable>
+            ))}
+          </View>
+          <View style={styles.fridgeInputRow}>
+            <TextInput
+              style={[
+                styles.fridgeInput,
+                dir === "rtl" ? styles.fridgeInputRtl : styles.fridgeInputLtr,
+              ]}
+              value={customInput}
+              onChangeText={setCustomInput}
+              placeholder={t("filter.fridgePlaceholder")}
+              placeholderTextColor={colors.inkFaint}
+              autoCapitalize="none"
+              autoCorrect={false}
+              maxLength={40}
+              returnKeyType="done"
+              editable={!atFridgeLimit}
+              onFocus={() => panelScrollRef.current?.scrollToEnd({ animated: true })}
+              onSubmitEditing={handleSubmitCustom}
+            />
             <IconPressable
-              key={`time-${option.max ?? "any"}`}
-              onPress={() => onTimeMaxChange(option.max)}
+              onPress={handleSubmitCustom}
+              disabled={!canAddCustom}
+              accessibilityLabel={t("filter.fridgeAdd")}
+              hitSlop={6}
+              style={[
+                styles.fridgeAddBtn,
+                !canAddCustom ? styles.fridgeAddBtnDisabled : null,
+              ]}
             >
-              <Chip
-                label={t(option.labelKey)}
-                size="sm"
-                tone={timeMax === option.max ? "accent" : "neutral"}
+              <Ionicons
+                name="add"
+                size={18}
+                color={canAddCustom ? "#FFFFFF" : colors.inkFaint}
               />
             </IconPressable>
-          ))}
+          </View>
+          {atFridgeLimit ? (
+            <Text style={styles.fridgeLimitHint}>
+              {t("filter.fridgeLimit", { max: MAX_FRIDGE_ITEMS })}
+            </Text>
+          ) : null}
         </View>
-      </View>
-      <View style={styles.panelGroup}>
-        <Text style={styles.panelLabel}>{t("filter.sort")}</Text>
-        <View style={styles.panelChips}>
-          {SORT_MODES.map((option) => (
-            <IconPressable
-              key={option.mode}
-              onPress={() => onSortModeChange(option.mode)}
-            >
-              <Chip
-                label={t(option.labelKey)}
-                size="sm"
-                tone={sortMode === option.mode ? "accent" : "neutral"}
-              />
-            </IconPressable>
-          ))}
-        </View>
-      </View>
-      {hasActive ? (
-        <Button
-          title={t("filter.clearAll")}
-          variant="ghost"
-          onPress={onClearAll}
-          fullWidth
-        />
-      ) : null}
+        {hasActive ? (
+          <Button
+            title={t("filter.clearAll")}
+            variant="ghost"
+            onPress={handleClearAll}
+            fullWidth
+          />
+        ) : null}
+      </ScrollView>
     </Card>
   );
 });
@@ -950,7 +1256,7 @@ const SKELETON_ROWS = [0, 1, 2] as const;
 const recipeKeyExtractor = (item: Recipe) => String(item.id);
 
 export default function BrowseScreen() {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const colors = useThemeColors();
   const t = useT();
   const headerRights = useHeaderActionsRights();
@@ -1056,6 +1362,7 @@ export default function BrowseScreen() {
   const [timeMax, setTimeMax] = useState<number | null>(null);
   const [cleanupMax, setCleanupMax] = useState<number | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("default");
+  const [fridgeItems, setFridgeItems] = useState<string[]>([]);
 
   // Deferred-apply pipeline state (offline/local path): chip taps update the
   // chip + show the skeleton immediately, the recomputed list lands a tick
@@ -1282,10 +1589,47 @@ export default function BrowseScreen() {
     }
   }, []);
 
+  const handleToggleFridgeItem = useCallback((item: string) => {
+    const cleaned = item.trim().replace(/\s+/g, " ").toLowerCase();
+    const normalizedKey = normalizeFridgeText(cleaned);
+    if (!normalizedKey) return;
+    setFridgeItems((prev) => {
+      const idx = prev.findIndex((x) => normalizeFridgeText(x) === normalizedKey);
+      if (idx !== -1) {
+        return prev.filter((_, i) => i !== idx);
+      }
+      if (prev.length >= MAX_FRIDGE_ITEMS) return prev;
+      return [...prev, cleaned];
+    });
+  }, []);
+
+  const handleAddCustomFridgeItem = useCallback((raw: string) => {
+    const cleaned = raw.trim().replace(/\s+/g, " ");
+    if (!cleaned) return;
+    const normalized = cleaned.toLowerCase();
+    const normalizedAr = normalizeFridgeText(cleaned);
+    const matchedStaple = FRIDGE_STAPLES.find(
+      (s) =>
+        s.id === normalized ||
+        s.en === normalized ||
+        normalizeFridgeText(s.ar) === normalizedAr,
+    );
+    const nextItem = matchedStaple ? matchedStaple.id : normalized;
+    const nextKey = normalizeFridgeText(nextItem);
+    setFridgeItems((prev) => {
+      if (prev.some((x) => normalizeFridgeText(x) === nextKey)) {
+        return prev;
+      }
+      if (prev.length >= MAX_FRIDGE_ITEMS) return prev;
+      return [...prev, nextItem];
+    });
+  }, []);
+
   const handleClearAdvanced = useCallback(() => {
     setTimeMax(null);
     setCleanupMax(null);
     setSortMode("default");
+    setFridgeItems([]);
   }, []);
 
   /** Clear EVERYTHING — quick chip + advanced filters (one tap reset). */
@@ -1362,27 +1706,31 @@ export default function BrowseScreen() {
   // Map the current UI state to search-endpoint params. "quick" = under 30
   // minutes door-to-door (tightened further by a stricter panel cap); the
   // cleanup sort has no server equivalent and stays client-side.
-  const buildSearchParams = useCallback(
-    (): SearchParams => ({
-      q: search.trim() || undefined,
+  const buildSearchParams = useCallback((): SearchParams => {
+    const qParts = [
+      search.trim(),
+      ...resolveFridgeSearchTokens(fridgeItems),
+    ].filter((part) => part.length > 0);
+    return {
+      q: qParts.length > 0 ? qParts.join(" ") : undefined,
       category: filter.kind === "category" ? filter.label : undefined,
       maxTime:
         filter.kind === "quick"
           ? Math.min(30, timeMax ?? 30)
           : (timeMax ?? undefined),
       sort: sortMode === "fastest" ? "fastest" : undefined,
-    }),
-    [search, filter, timeMax, sortMode],
-  );
+    };
+  }, [search, fridgeItems, filter, timeMax, sortMode]);
   const buildSearchParamsRef = useRef(buildSearchParams);
   useEffect(() => {
     buildSearchParamsRef.current = buildSearchParams;
     hasServerQueryOrFilterRef.current =
       search.trim().length > 0 ||
+      fridgeItems.length > 0 ||
       filter.kind !== "all" ||
       timeMax != null ||
       sortMode !== "default";
-  }, [buildSearchParams, search, filter.kind, timeMax, sortMode]);
+  }, [buildSearchParams, search, fridgeItems, filter.kind, timeMax, sortMode]);
 
   // Monotonic request id: only the LATEST search/scroll request may commit
   // state, so out-of-order responses never clobber newer results.
@@ -1456,7 +1804,8 @@ export default function BrowseScreen() {
    * filter changes flash the skeleton immediately (instant visual
    * acknowledgment); typing keeps the current results until the new page lands.
    */
-  const serverFilterKey = `${filter.kind === "category" ? `cat:${filter.id}` : filter.kind}|${timeMax ?? ""}|${sortMode}`;
+  const fridgeKey = fridgeItems.join(",");
+  const serverFilterKey = `${filter.kind === "category" ? `cat:${filter.id}` : filter.kind}|${timeMax ?? ""}|${sortMode}|${fridgeKey}`;
   const prevServerFilterKeyRef = useRef<string | null>(null);
   const prevSearchRef = useRef<string>(search);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1674,7 +2023,7 @@ export default function BrowseScreen() {
   // tone) updates synchronously in the press handler; this effect then flags
   // `applying` (skeleton paints) and recomputes the list one timeout later.
   // In server mode this is a no-op — the search effect owns applying.
-  const chipKey = `${filter.kind === "category" ? `cat:${filter.id}` : filter.kind}|${timeMax ?? ""}|${cleanupMax ?? ""}|${sortMode}`;
+  const chipKey = `${filter.kind === "category" ? `cat:${filter.id}` : filter.kind}|${timeMax ?? ""}|${cleanupMax ?? ""}|${sortMode}|${fridgeKey}`;
   const prevChipKeyRef = useRef(chipKey);
   const applyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -1697,6 +2046,7 @@ export default function BrowseScreen() {
           timeMax,
           cleanupMax,
           sortMode,
+          fridgeItems,
         ),
       );
       setApplying(false);
@@ -1707,7 +2057,17 @@ export default function BrowseScreen() {
         applyTimerRef.current = null;
       }
     };
-  }, [recipes, search, filter, timeMax, cleanupMax, sortMode, chipKey, offline]);
+  }, [
+    recipes,
+    search,
+    filter,
+    timeMax,
+    cleanupMax,
+    sortMode,
+    fridgeItems,
+    chipKey,
+    offline,
+  ]);
 
   /**
    * Client-side post-processing of the SERVER pages: the cleanup filter and
@@ -1731,19 +2091,24 @@ export default function BrowseScreen() {
   const displayRecipes = offline ? visibleRecipes : serverVisible;
 
   const hasAdvancedFilters =
-    timeMax != null || cleanupMax != null || sortMode !== "default";
+    timeMax != null ||
+    cleanupMax != null ||
+    sortMode !== "default" ||
+    fridgeItems.length > 0;
 
   /** Count of active advanced filters — drives the toggle badge + label. */
   const advancedFilterCount =
     (timeMax != null ? 1 : 0) +
     (cleanupMax != null ? 1 : 0) +
-    (sortMode !== "default" ? 1 : 0);
+    (sortMode !== "default" ? 1 : 0) +
+    fridgeItems.length;
 
   const hasActiveFilters =
     search.trim().length > 0 ||
     filter.kind !== "all" ||
     timeMax != null ||
-    cleanupMax != null;
+    cleanupMax != null ||
+    fridgeItems.length > 0;
 
   const renderItem: ListRenderItem<Recipe> = useCallback(
     ({ item }) => (
@@ -1796,8 +2161,17 @@ export default function BrowseScreen() {
         onClear: () => setSortMode("default"),
       });
     }
+    for (const item of fridgeItems) {
+      const staple = FRIDGE_STAPLE_MAP.get(item);
+      const itemLabel = staple ? t(staple.labelKey) : item;
+      out.push({
+        key: `fridge-${item}`,
+        label: t("browse.fridgeChip", { item: itemLabel }),
+        onClear: () => handleToggleFridgeItem(item),
+      });
+    }
     return out;
-  }, [filter, timeMax, sortMode, t]);
+  }, [filter, timeMax, sortMode, fridgeItems, handleToggleFridgeItem, t]);
 
   const showSkeletons =
     (state === "loading" && recipes.length === 0) ||
@@ -1827,6 +2201,7 @@ export default function BrowseScreen() {
   // Scroll content starts below the whole chrome block (title bar pad +
   // search row) — the block is an overlay, content scrolls under it.
   const contentTop = barPad + searchBarH;
+  const maxPanelHeight = Math.max(220, height - contentTop - Space.md);
   // Facebook-style hide/reveal for the search row: ONE transform on the
   // whole chrome block (title bar + search row + hairline), driven by the
   // SAME ScrollChrome `hidden` value that moves the tab bar — so scrolling
@@ -2050,8 +2425,12 @@ export default function BrowseScreen() {
             onTimeMaxChange={setTimeMax}
             sortMode={sortMode}
             onSortModeChange={setSortMode}
+            fridgeItems={fridgeItems}
+            onToggleFridgeItem={handleToggleFridgeItem}
+            onAddCustomFridgeItem={handleAddCustomFridgeItem}
             onClearAll={handleClearAdvanced}
             onClose={toggleFilters}
+            maxHeight={maxPanelHeight}
             styles={styles}
           />
         </View>

@@ -91,6 +91,19 @@ export const en: Record<string, string> = {
   "filter.totalTime": "Total time",
   "filter.cleanup": "Cleanup",
   "filter.sort": "Sort",
+  "filter.fridgeTitle": "Cook with what's in your fridge",
+  "filter.fridgePlaceholder": "Add ingredient (e.g. garlic)…",
+  "filter.fridgeAdd": "Add ingredient",
+  "filter.fridgeCount": "{count}/{max}",
+  "filter.fridgeLimit": "Up to {max} ingredients",
+  "filter.ingChicken": "Chicken",
+  "filter.ingRice": "Rice",
+  "filter.ingBeef": "Beef",
+  "filter.ingEggs": "Eggs",
+  "filter.ingPasta": "Pasta",
+  "filter.ingPotato": "Potato",
+  "filter.ingTomato": "Tomato",
+  "filter.ingLentils": "Lentils",
   "filter.clearAll": "Clear all",
 
   // ---- Browse -------------------------------------------------------------
@@ -108,6 +121,7 @@ export const en: Record<string, string> = {
   "browse.addRecipe": "Add a recipe",
   "browse.filtersActive": "Active filters: {count}",
   "browse.removeFilter": "Remove {label}",
+  "browse.fridgeChip": "Fridge: {item}",
 
   // ---- Recipe detail ------------------------------------------------------
   "detail.freeLimitTitle": "Free limit reached",
