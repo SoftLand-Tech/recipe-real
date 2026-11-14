@@ -24,6 +24,12 @@ jobs:
         working-directory: backend
         run: composer install --prefer-dist --no-progress --no-interaction
 
+      - name: Prepare environment
+        working-directory: backend
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
       - name: Pint (lint)
         working-directory: backend
         run: vendor/bin/pint --test
