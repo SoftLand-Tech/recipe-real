@@ -1,4 +1,4 @@
-name: 🐞 Bug report
+name: Bug report
 description: Something is broken in the app, API, or site
 labels: [bug]
 body:

@@ -1,4 +1,4 @@
-# 🍳 RecipeReal
+# RecipeReal
 
 > **Honest cook times for real kitchens.** Recipes say “25 minutes” — dinner says otherwise. RecipeReal measures what recipes *really* take with a stopwatch in guided Cook Mode, then calibrates every estimate to *your* pace.
 
@@ -11,13 +11,13 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](mobile/)
 [![Version](https://img.shields.io/badge/version-1.1.0-E86A33)](mobile/app.config.js)
 
-**🌐 Live:** [recipe-real.softland.tech](https://recipe-real.softland.tech) &nbsp;·&nbsp; **📥 APK:** [recipe-real.softland.tech/download](https://recipe-real.softland.tech/download) &nbsp;·&nbsp; **🔒 Privacy:** [/privacy](https://recipe-real.softland.tech/privacy)
+**Live:** [recipe-real.softland.tech](https://recipe-real.softland.tech) &nbsp;·&nbsp; **APK:** [recipe-real.softland.tech/download](https://recipe-real.softland.tech/download) &nbsp;·&nbsp; **Privacy:** [/privacy](https://recipe-real.softland.tech/privacy)
 
 ![RecipeReal — honest cook times, offline, EN/AR](store/assets/feature-graphic-1024x500.png)
 
 ---
 
-## ✨ Why RecipeReal?
+## Why RecipeReal?
 
 Published recipe times systematically omit prep, cleanup, and real-life interruptions. A recipe that claims 25 minutes routinely takes 60–90 in a real kitchen.
 
@@ -35,31 +35,31 @@ The “aha” moment: *“I knew this would take 52 minutes before I started cho
 | One generic number | Calibrated to *your* onion-dice speed |
 | Test-kitchen fantasy | Includes cleanup + your interruption level |
 
-## 🎯 Features
+## Features
 
 | Area | What’s in 1.1.0 |
 |---|---|
-| ⏱️ **Honest times** | Claimed vs. measured (“Really takes”) on every recipe; Reality Index leaderboard of most under/over-estimated recipes |
-| 🧑‍🍳 **Guided Cook Mode** | Full-screen step-by-step stopwatch, step alarms, pause/resume, per-step timing — works with screen locked |
-| 📊 **Calibrated to you** | Pace calibration learns your speed after a few cooks; serving scaler; ingredient checklist + shopping list |
-| 📚 **20,000+ recipes** | Offline-first library (SQLite on device); categories, search with pagination, fridge/multi-ingredient filter |
-| 🌍 **EN/AR + RTL** | Full bilingual app with complete right-to-left support |
-| 🤝 **Community** | Posts (“tries”), likes, comments, follows, public notes, user recipes, share pages (`/r`, `/p`, `/u`) with App Links |
-| 🛡️ **Halal-first** | Explicit pork & alcohol screening on community content, user recipes, and AI imports (`recipereal:audit-halal-library`) |
-| 🤖 **Recipe import** | URL / image / video → queued AI extraction → private review draft → owner publishes (never auto-public) |
-| 📴 **Offline** | Library downloads to the phone; browse + cook with no signal |
-| 🆓 **Free** | Free to download and use. Premium ($5.99/mo) is planned — checkout not live in this build |
+| **Honest times** | Claimed vs. measured (“Really takes”) on every recipe; Reality Index leaderboard of most under/over-estimated recipes |
+| **Guided Cook Mode** | Full-screen step-by-step stopwatch, step alarms, pause/resume, per-step timing — works with screen locked |
+| **Calibrated to you** | Pace calibration learns your speed after a few cooks; serving scaler; ingredient checklist + shopping list |
+| **20,000+ recipes** | Offline-first library (SQLite on device); categories, search with pagination, fridge/multi-ingredient filter |
+| **EN/AR + RTL** | Full bilingual app with complete right-to-left support |
+| **Community** | Posts (“tries”), likes, comments, follows, public notes, user recipes, share pages (`/r`, `/p`, `/u`) with App Links |
+| **Halal-first** | Explicit pork & alcohol screening on community content, user recipes, and AI imports (`recipereal:audit-halal-library`) |
+| **Recipe import** | URL / image / video → queued AI extraction → private review draft → owner publishes (never auto-public) |
+| **Offline** | Library downloads to the phone; browse + cook with no signal |
+| **Free** | Free to download and use. Premium ($5.99/mo) is planned — checkout not live in this build |
 
-## 🏗️ Architecture
+## Architecture
 
 ```mermaid
 flowchart LR
-    subgraph Client["📱 mobile/ — Expo SDK 57, React Native"]
+    subgraph Client["mobile/ — Expo SDK 57, React Native"]
         UI[expo-router screens]
         DB[(expo-sqlite cache)]
         UI <--> DB
     end
-    subgraph Server["⚙️ backend/ — Laravel 13, PHP 8.4"]
+    subgraph Server["backend/ — Laravel 13, PHP 8.4"]
         API[REST API /api]
         WEB[Landing + share pages]
         ADMIN[Filament admin]
@@ -76,7 +76,7 @@ flowchart LR
 
 **Design language:** warm kitchen-table — cream `#FAF6EF`, ink `#26211B`, action orange `#F26B1D`, timing teal `#287C78` (reserved for measured time only). See [DESIGN.md](DESIGN.md).
 
-## 📁 Monorepo layout
+## Monorepo layout
 
 ```
 recipe-real/
@@ -99,7 +99,7 @@ recipe-real/
 └── haram-filter.json # Halal screening rules
 ```
 
-## 🚀 Quickstart
+## Quickstart
 
 ### Backend (Laravel)
 
@@ -145,7 +145,7 @@ RECIPEREAL_API_BASE_URL=http://10.0.2.2:8000 npx expo start
 
 EAS builds inject the production URL automatically via `eas.json` — never hand-edit config. Full client docs: [mobile/README.md](mobile/README.md)
 
-## 🔌 API overview
+## API overview
 
 Base URL `https://recipe-real.softland.tech/api` · Auth: Google ID-token → Sanctum Bearer · Throttled per route group.
 
@@ -167,14 +167,14 @@ Base URL `https://recipe-real.softland.tech/api` · Auth: Google ID-token → Sa
 
 Share pages (deep-link targets, Android App Links verified): `/r/{id}` recipe · `/p/{id}` post · `/u/{id}` profile.
 
-## 📦 Releases & distribution
+## Releases & distribution
 
 - **Primary channel:** direct APK — [/download](https://recipe-real.softland.tech/download) streams the newest signed build from the admin panel’s *App releases* table. `deploy.sh` is the one-command VPS deploy.
 - **Third-party stores:** [store/](store/) is the submission kit for APKPure, Uptodown, Samsung Galaxy Store, Xiaomi GetApps, Huawei AppGallery, Amazon Appstore. Google Play is intentionally out of scope.
 - **Version:** `1.1.0` (`mobile/app.config.js`, package `com.recipereal.app`, min Android 7.0 / API 24).
 - **Screenshots rule:** every store screenshot must be captured from the running 1.1.0 app (`store/screenshots/capture-screenshots.sh`) — never mockups.
 
-## 🗺️ Roadmap
+## Roadmap
 
 - [ ] Stripe Premium checkout ($5.99/mo) — gating + webhooks
 - [ ] Skill-level stratified timing (novice / intermediate / expert distributions)
@@ -184,15 +184,15 @@ Share pages (deep-link targets, Android App Links verified): `/r/{id}` recipe ·
 
 Ideas live in [docs/community-roadmap.md](docs/community-roadmap.md) · launch plan in [docs/launch.md](docs/launch.md) · beta plan in [docs/beta.md](docs/beta.md).
 
-## 🤝 Contributing
+## Contributing
 
 Small, focused PRs welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) first — it covers setup, branch naming, commit style, the orange/teal design rules, and the “no invented numbers” copy rule. By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-## 🔒 Security
+## Security
 
 Found a vulnerability? **Do not open a public issue** — see [SECURITY.md](SECURITY.md) for how to report it privately.
 
-## 📄 License
+## License
 
 MIT — see [LICENSE](LICENSE). © SoftLand-Tech.
 

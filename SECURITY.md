@@ -4,8 +4,8 @@
 
 | Version | Supported |
 |---|---|
-| 1.1.x (current) | ✅ |
-| < 1.1 | ❌ (upgrade to the latest APK) |
+| 1.1.x (current) | Supported |
+| < 1.1 | Not supported (upgrade to the latest APK) |
 
 ## Reporting a vulnerability
 
