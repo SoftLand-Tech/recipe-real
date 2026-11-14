@@ -40,12 +40,15 @@ import { stepMinutes } from "@/utils/recipeTime";
 import { getRecipe, hasToken, submitCookSession } from "@/api/client";
 import { track } from "@/analytics";
 import {
+  cachePaceCalibrations,
   enqueuePendingCookSession,
   flushPendingCookSessions,
+  getCachedPaceCalibrations,
   getCachedRecipe,
   getPendingCookSessionCount,
   upsertRecipes,
 } from "@/db/database";
+import { clearPaceCache } from "../pace";
 import {
   Button,
   Badge,
@@ -66,6 +69,7 @@ import { Radius, Shadow, Space, Type, useThemeColors } from "@/theme";
 import type {
   CookSessionPayload,
   Feedback,
+  PaceCalibration,
   Recipe,
   RecipeStep,
 } from "@/types";
@@ -81,6 +85,7 @@ type CookStatus = "idle" | "running" | "paused" | "finished";
  * tick state lives inside the memoized children below, never in the screen.
  */
 const TICK_MS = 500;
+const COOK_LARGE_TEXT_KEY = "recipereal.cookLargeText";
 
 // ---- Whole-recipe stopwatch math ---------------------------------------------
 
@@ -105,6 +110,72 @@ interface StepVisit {
 /** Round to 2 decimals (matches the submission spec). */
 function round2(v: number): number {
   return Math.round(v * 100) / 100;
+}
+
+function normalizeStepType(raw: string | null | undefined): string {
+  const lower = (raw ?? "").toLowerCase();
+  return lower === "passive" || lower === "cleanup" || lower === "active"
+    ? lower
+    : "active";
+}
+
+/**
+ * Best-effort local pace calibration update on cook completion so pace works
+ * offline and while signed out without waiting on the backend background job.
+ */
+async function updateLocalPaceFromCook(
+  effPerStep: { step: RecipeStep; actual_minutes: number }[],
+): Promise<void> {
+  const grouped = new Map<
+    string,
+    { sumActual: number; sumExpected: number }
+  >();
+  for (const p of effPerStep) {
+    const expected = stepMinutes(p.step);
+    if (expected == null || expected <= 0) continue;
+    const stepType = normalizeStepType(p.step.step_type);
+    const bucket = grouped.get(stepType) ?? { sumActual: 0, sumExpected: 0 };
+    bucket.sumActual += Math.max(0, p.actual_minutes);
+    bucket.sumExpected += expected;
+    grouped.set(stepType, bucket);
+  }
+  if (grouped.size === 0) return;
+
+  const existing = await getCachedPaceCalibrations();
+  const byType = new Map<string, PaceCalibration>(
+    existing.map((c) => [c.step_type, c]),
+  );
+
+  let changed = false;
+  for (const [stepType, { sumActual, sumExpected }] of grouped) {
+    if (sumExpected <= 0 || sumActual <= 0) continue;
+    const sessionMultiplier = Math.min(
+      2.5,
+      Math.max(0.4, sumActual / sumExpected),
+    );
+    const prev = byType.get(stepType);
+    let multiplier: number;
+    if (prev && prev.confidence >= 0.5) {
+      multiplier = round2(prev.multiplier * 0.6 + sessionMultiplier * 0.4);
+    } else if (prev) {
+      multiplier = round2(prev.multiplier * 0.3 + sessionMultiplier * 0.7);
+    } else {
+      multiplier = round2(sessionMultiplier);
+    }
+    const confidence = Math.min(1, round2((prev?.confidence ?? 0) + 0.35));
+    byType.set(stepType, {
+      step_type: stepType,
+      personal_avg_minutes: prev?.personal_avg_minutes ?? null,
+      community_avg_minutes: prev?.community_avg_minutes ?? null,
+      multiplier,
+      confidence,
+    });
+    changed = true;
+  }
+
+  if (!changed) return;
+  await cachePaceCalibrations(Array.from(byType.values()));
+  clearPaceCache();
 }
 
 /** AsyncStorage shape for a cook session that must survive an OS kill. */
@@ -375,6 +446,7 @@ export default function CookModeScreen() {
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "center",
+          flexWrap: "wrap",
           gap: Space.sm,
         },
         alarmChipWrap: {
@@ -395,7 +467,7 @@ export default function CookModeScreen() {
           textAlign: "center",
         },
         descCard: {
-          width: "100%",
+          alignSelf: "stretch",
         },
         stepDescription: {
           ...Type.body,
@@ -403,6 +475,17 @@ export default function CookModeScreen() {
           lineHeight: 24,
           color: colors.ink,
           // Default "auto" alignment follows the layout direction.
+          textAlign: "auto",
+        },
+        stepDescriptionLarge: {
+          fontSize: 23,
+          lineHeight: 33,
+          fontWeight: "500",
+        },
+        tapCardHint: {
+          ...Type.caption,
+          color: colors.inkFaint,
+          marginTop: Space.md,
           textAlign: "auto",
         },
         // Footer
@@ -825,6 +908,32 @@ export default function CookModeScreen() {
   const [adjustedTotal, setAdjustedTotal] = useState<number | null>(null);
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [adjustDraft, setAdjustDraft] = useState("");
+  const [largeText, setLargeText] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(COOK_LARGE_TEXT_KEY)
+      .then((raw) => {
+        if (!cancelled && raw === "true") {
+          setLargeText(true);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const toggleLargeText = useCallback(() => {
+    setLargeText((prev) => {
+      const next = !prev;
+      void AsyncStorage.setItem(
+        COOK_LARGE_TEXT_KEY,
+        next ? "true" : "false",
+      ).catch(() => {});
+      return next;
+    });
+  }, []);
 
   const steps: RecipeStep[] = useMemo(
     () => recipe?.recipe_steps ?? [],
@@ -1555,6 +1664,11 @@ export default function CookModeScreen() {
       setSubmitFailed(false);
       setNeedsAuth(false);
       setAdjustOpen(false);
+      try {
+        await updateLocalPaceFromCook(effPerStep);
+      } catch (paceError) {
+        console.warn("[RecipeReal] local pace update failed:", paceError);
+      }
       // Lazily mint one idempotency key per cook session; it is stable across
       // retries (offline queue stores the whole payload as JSON, key included).
       if (!idempotencyKey.current) idempotencyKey.current = makeId();
@@ -2250,6 +2364,27 @@ export default function CookModeScreen() {
               </IconPressable>
             </View>
           ) : null}
+          <IconPressable
+            onPress={toggleLargeText}
+            hitSlop={Space.xs}
+            accessibilityLabel={
+              largeText ? t("cook.largeTextOn") : t("cook.largeText")
+            }
+          >
+            <Chip
+              tone={largeText ? "accent" : "neutral"}
+              size="sm"
+              variant={largeText ? "filled" : "outline"}
+              icon={
+                <Ionicons
+                  name="text-outline"
+                  size={14}
+                  color={largeText ? colors.accent : colors.inkSecondary}
+                />
+              }
+              label={largeText ? t("cook.largeTextOn") : t("cook.largeText")}
+            />
+          </IconPressable>
         </View>
         {alarmMinutes != null && alarmMinutes > 0 && alarmsUsable === false ? (
           <Text style={styles.alarmNeedsApp}>{t("cook.alarmNeedsAppCaption")}</Text>
@@ -2295,10 +2430,27 @@ export default function CookModeScreen() {
           />
         ) : null}
 
-        <Card style={styles.descCard} padding={Space.xl} shadow="card">
-          <Text style={styles.stepDescription}>
+        <Card
+          style={styles.descCard}
+          padding={Space.xl}
+          shadow="card"
+          onPress={
+            largeText && status === "running" && !onLastStep
+              ? nextStep
+              : undefined
+          }
+        >
+          <Text
+            style={[
+              styles.stepDescription,
+              largeText ? styles.stepDescriptionLarge : null,
+            ]}
+          >
             {lr.stepDescription(step)}
           </Text>
+          {largeText && status === "running" && !onLastStep ? (
+            <Text style={styles.tapCardHint}>{t("cook.tapCardNext")}</Text>
+          ) : null}
         </Card>
 
         {/* Next-step preview — glance ahead while the pot simmers. */}

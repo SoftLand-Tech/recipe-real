@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ComponentProps, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -39,7 +39,16 @@ import {
   seedCacheRemainingPages,
   SEED_PAGE_SIZE,
 } from "@/db/database";
-import { setNudgePref } from "@/utils/prefs";
+import {
+  computeKitchenProfile,
+  getKitchenProfile,
+  saveKitchenProfile,
+  setNudgePref,
+  syncKitchenProfileToLocalPace,
+  type KitchenEnvPref,
+  type KitchenProfile,
+  type PrepSpeedPref,
+} from "@/utils/prefs";
 import { clearPaceCache } from "../pace";
 import { useT } from "@/i18n";
 import type { LangPref } from "@/i18n";
@@ -74,6 +83,18 @@ const LANG_OPTIONS: { pref: LangPref; labelKey: string }[] = [
   { pref: "system", labelKey: "lang.system" },
   { pref: "en", labelKey: "lang.english" },
   { pref: "ar", labelKey: "lang.arabic" },
+];
+
+const PREP_SPEED_OPTIONS: { pref: PrepSpeedPref; labelKey: string }[] = [
+  { pref: "relaxed", labelKey: "settings.prepRelaxed" },
+  { pref: "steady", labelKey: "settings.prepSteady" },
+  { pref: "fast", labelKey: "settings.prepFast" },
+];
+
+const KITCHEN_ENV_OPTIONS: { pref: KitchenEnvPref; labelKey: string }[] = [
+  { pref: "focused", labelKey: "settings.envFocused" },
+  { pref: "busy", labelKey: "settings.envBusy" },
+  { pref: "hectic", labelKey: "settings.envHectic" },
 ];
 
 interface SettingsRowProps {
@@ -220,6 +241,9 @@ export default function SettingsScreen() {
   const barPad = usePinnedBarPad();
 
   const [authed, setAuthed] = useState<boolean | null>(null);
+  const [kitchenProfile, setKitchenProfile] = useState<KitchenProfile>(() =>
+    computeKitchenProfile("steady", "focused"),
+  );
   const [nudgeOn, setNudgeOn] = useState(false);
   const [nudgeBlocked, setNudgeBlocked] = useState(false);
   const [nudgeUnavailable, setNudgeUnavailable] = useState(false);
@@ -346,13 +370,15 @@ export default function SettingsScreen() {
     useCallback(() => {
       let cancelled = false;
       (async () => {
-        const [ok, nudge] = await Promise.all([
+        const [ok, nudge, profile] = await Promise.all([
           hasToken(),
           syncNudgePrefWithPermission(),
+          getKitchenProfile(),
         ]);
         if (cancelled) return;
         setAuthed(ok);
         applyNudgePref(nudge);
+        setKitchenProfile(profile);
       })();
       void reloadCachedCount();
       return () => {
@@ -383,6 +409,26 @@ export default function SettingsScreen() {
   const refreshAuth = useCallback(async () => {
     setAuthed(await hasToken());
   }, []);
+
+  const profileTapSeqRef = useRef(0);
+  const handleKitchenProfileChange = useCallback(
+    async (patch: Partial<Pick<KitchenProfile, "prepSpeed" | "kitchenEnv">>) => {
+      const seq = ++profileTapSeqRef.current;
+      setKitchenProfile((prev) =>
+        computeKitchenProfile(
+          patch.prepSpeed ?? prev.prepSpeed,
+          patch.kitchenEnv ?? prev.kitchenEnv,
+        ),
+      );
+      const next = await saveKitchenProfile(patch);
+      if (seq === profileTapSeqRef.current) {
+        setKitchenProfile(next);
+      }
+      await syncKitchenProfileToLocalPace(next);
+      clearPaceCache();
+    },
+    [],
+  );
 
   const handleSignOut = useCallback(async () => {
     try {
@@ -595,6 +641,56 @@ export default function SettingsScreen() {
                 <Chip
                   label={t(labelKey)}
                   tone={langPref === option ? "accent" : "neutral"}
+                />
+              </IconPressable>
+            ))}
+          />
+        </Card>
+      </View>
+
+      {/* Kitchen profile: baseline prep speed + kitchen environment. */}
+      <View>
+        <Text style={styles.groupCaption}>{t("settings.kitchenProfile")}</Text>
+        <Card padding={0} style={styles.group}>
+          <SettingsRow
+            icon="cut-outline"
+            label={t("settings.prepSpeed")}
+            caption={t("settings.prepSpeedCaption")}
+            below={PREP_SPEED_OPTIONS.map(({ pref: option, labelKey }) => (
+              <IconPressable
+                key={option}
+                onPress={() =>
+                  void handleKitchenProfileChange({ prepSpeed: option })
+                }
+                accessibilityLabel={t(labelKey)}
+              >
+                <Chip
+                  label={t(labelKey)}
+                  tone={
+                    kitchenProfile.prepSpeed === option ? "accent" : "neutral"
+                  }
+                />
+              </IconPressable>
+            ))}
+          />
+          <View style={styles.divider} />
+          <SettingsRow
+            icon="home-outline"
+            label={t("settings.kitchenEnv")}
+            caption={t("settings.kitchenEnvCaption")}
+            below={KITCHEN_ENV_OPTIONS.map(({ pref: option, labelKey }) => (
+              <IconPressable
+                key={option}
+                onPress={() =>
+                  void handleKitchenProfileChange({ kitchenEnv: option })
+                }
+                accessibilityLabel={t(labelKey)}
+              >
+                <Chip
+                  label={t(labelKey)}
+                  tone={
+                    kitchenProfile.kitchenEnv === option ? "accent" : "neutral"
+                  }
                 />
               </IconPressable>
             ))}

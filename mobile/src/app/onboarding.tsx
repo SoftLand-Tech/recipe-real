@@ -15,13 +15,21 @@ import { usePreventRemove } from "expo-router/build/react-navigation/core";
 
 import { updateProfile, uploadAvatar } from "@/api/client";
 import { track } from "@/analytics";
+import {
+  saveKitchenProfile,
+  syncKitchenProfileToLocalPace,
+  type KitchenEnvPref,
+  type PrepSpeedPref,
+} from "@/utils/prefs";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
 import { useT } from "@/i18n";
 import {
   Avatar,
   Button,
   Card,
+  Chip,
   GoogleLogo,
+  IconPressable,
 } from "@/components/ui";
 
 const NAME_MIN = 2;
@@ -29,6 +37,18 @@ const NAME_MAX = 40;
 const BIO_MAX = 500;
 
 type Gender = "male" | "female";
+
+const PREP_SPEED_OPTIONS: { value: PrepSpeedPref; labelKey: string }[] = [
+  { value: "relaxed", labelKey: "onboarding.prepRelaxed" },
+  { value: "steady", labelKey: "onboarding.prepSteady" },
+  { value: "fast", labelKey: "onboarding.prepFast" },
+];
+
+const KITCHEN_ENV_OPTIONS: { value: KitchenEnvPref; labelKey: string }[] = [
+  { value: "focused", labelKey: "onboarding.envFocused" },
+  { value: "busy", labelKey: "onboarding.envBusy" },
+  { value: "hectic", labelKey: "onboarding.envHectic" },
+];
 
 /**
  * First-sign-in onboarding (/onboarding): complete the profile details —
@@ -45,6 +65,8 @@ export default function OnboardingScreen() {
   const [name, setName] = useState("");
   const [gender, setGender] = useState<Gender | null>(null);
   const [bio, setBio] = useState("");
+  const [prepSpeed, setPrepSpeed] = useState<PrepSpeedPref>("steady");
+  const [kitchenEnv, setKitchenEnv] = useState<KitchenEnvPref>("focused");
   const [pickedUri, setPickedUri] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +119,8 @@ export default function OnboardingScreen() {
         gender,
         ...(bio.trim() !== "" ? { bio: bio.trim() } : {}),
       });
+      const profile = await saveKitchenProfile({ prepSpeed, kitchenEnv });
+      await syncKitchenProfileToLocalPace(profile);
       track("onboarding_completed");
       leave();
     } catch (err) {
@@ -105,7 +129,7 @@ export default function OnboardingScreen() {
     } finally {
       setSaving(false);
     }
-  }, [canContinue, pickedUri, name, gender, bio, t, leave]);
+  }, [canContinue, pickedUri, name, gender, bio, prepSpeed, kitchenEnv, t, leave]);
 
   const styles = useMemo(
     () =>
@@ -226,6 +250,11 @@ export default function OnboardingScreen() {
           color: colors.accent,
           fontWeight: "600",
         },
+        chipRow: {
+          flexDirection: "row",
+          flexWrap: "wrap",
+          gap: Space.sm,
+        },
         errorText: {
           ...Type.bodySm,
           color: colors.danger,
@@ -344,6 +373,54 @@ export default function OnboardingScreen() {
           <Text style={styles.charCount}>
             {bio.length}/{BIO_MAX}
           </Text>
+        </Card>
+
+        {/* Prep speed */}
+        <Card style={styles.section}>
+          <Text style={styles.fieldLabel}>
+            {t("onboarding.prepSpeedLabel")}
+          </Text>
+          <View style={styles.chipRow}>
+            {PREP_SPEED_OPTIONS.map(({ value, labelKey }) => {
+              const selected = prepSpeed === value;
+              return (
+                <IconPressable
+                  key={value}
+                  onPress={() => setPrepSpeed(value)}
+                  accessibilityLabel={t(labelKey)}
+                >
+                  <Chip
+                    label={t(labelKey)}
+                    tone={selected ? "accent" : "neutral"}
+                  />
+                </IconPressable>
+              );
+            })}
+          </View>
+        </Card>
+
+        {/* Kitchen environment */}
+        <Card style={styles.section}>
+          <Text style={styles.fieldLabel}>
+            {t("onboarding.kitchenEnvLabel")}
+          </Text>
+          <View style={styles.chipRow}>
+            {KITCHEN_ENV_OPTIONS.map(({ value, labelKey }) => {
+              const selected = kitchenEnv === value;
+              return (
+                <IconPressable
+                  key={value}
+                  onPress={() => setKitchenEnv(value)}
+                  accessibilityLabel={t(labelKey)}
+                >
+                  <Chip
+                    label={t(labelKey)}
+                    tone={selected ? "accent" : "neutral"}
+                  />
+                </IconPressable>
+              );
+            })}
+          </View>
         </Card>
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
