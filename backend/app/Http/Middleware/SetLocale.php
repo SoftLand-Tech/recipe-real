@@ -29,6 +29,7 @@ class SetLocale
         // Admin panel: pinned to English, never translated / never RTL.
         if ($request->is('admin') || $request->is('admin/*')) {
             App::setLocale('en');
+
             return $next($request);
         }
 
@@ -63,7 +64,7 @@ class SetLocale
 
         App::setLocale($locale);
 
-        /** @var \Illuminate\Http\Response|\Symfony\Component\HttpFoundation\Response $response */
+        /** @var \Illuminate\Http\Response|Response $response */
         $response = $next($request);
 
         if ($explicit && method_exists($response, 'withCookie')) {

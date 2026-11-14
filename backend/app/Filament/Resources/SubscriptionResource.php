@@ -2,10 +2,8 @@
 
 namespace App\Filament\Resources;
 
-use BackedEnum;
-use UnitEnum;
-
 use App\Filament\Resources\SubscriptionResource\Pages;
+use BackedEnum;
 use Filament\Actions\ViewAction;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
@@ -17,14 +15,15 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use Laravel\Cashier\Subscription;
+use UnitEnum;
 
 class SubscriptionResource extends Resource
 {
     protected static ?string $model = Subscription::class;
 
-    protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedCreditCard;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCreditCard;
 
-    protected static string | UnitEnum | null $navigationGroup = 'People';
+    protected static string|UnitEnum|null $navigationGroup = 'People';
 
     public static function getModelLabel(): string
     {

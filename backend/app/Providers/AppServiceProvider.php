@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Support\UploadLimits;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -26,7 +27,7 @@ class AppServiceProvider extends ServiceProvider
         // Startup guard for recipe-import uploads: the admin advertises
         // 100 MB videos, so warn early when php.ini would make Livewire
         // fail with "data.primary_file.* failed to upload".
-        foreach (\App\Support\UploadLimits::issues() as $issue) {
+        foreach (UploadLimits::issues() as $issue) {
             Log::warning('upload_limits.too_low', ['issue' => $issue]);
         }
 

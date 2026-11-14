@@ -19,7 +19,7 @@ class GoogleIdTokenService
 {
     /**
      * @return object|null the token claims, or null when the token is
-     *                    invalid, expired, or not issued for THIS client
+     *                     invalid, expired, or not issued for THIS client
      */
     /**
      * Every client ID whose id_tokens are accepted: the primary client plus

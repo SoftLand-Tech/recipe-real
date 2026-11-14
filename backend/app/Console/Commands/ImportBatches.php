@@ -73,6 +73,7 @@ class ImportBatches extends Command
             $r = json_decode($line, true);
             if (! is_array($r) || ! isset($r['id'], $r['title'])) {
                 $this->malformed++;
+
                 continue;
             }
             $buffer[] = $r;
@@ -108,6 +109,7 @@ class ImportBatches extends Command
                 $id = (int) $r['id'];
                 if (isset($existing[$id]) || isset($seen[$id])) {
                     $this->skippedExisting++;
+
                     continue;
                 }
                 $seen[$id] = true;

@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-warmgreen.svg)](LICENSE)
 [![Laravel 13](https://img.shields.io/badge/Laravel-13-FF2D20?logo=laravel&logoColor=white)](backend/)
 [![Expo SDK 57](https://img.shields.io/badge/Expo-SDK%2057-000020?logo=expo&logoColor=white)](mobile/)
-[![PHP 8.3](https://img.shields.io/badge/PHP-8.3-777BB4?logo=php&logoColor=white)](backend/)
+[![PHP 8.4](https://img.shields.io/badge/PHP-8.4-777BB4?logo=php&logoColor=white)](backend/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](mobile/)
 [![Version](https://img.shields.io/badge/version-1.1.0-E86A33)](mobile/app.config.js)
 
@@ -59,7 +59,7 @@ flowchart LR
         DB[(expo-sqlite cache)]
         UI <--> DB
     end
-    subgraph Server["⚙️ backend/ — Laravel 13, PHP 8.3"]
+    subgraph Server["⚙️ backend/ — Laravel 13, PHP 8.4"]
         API[REST API /api]
         WEB[Landing + share pages]
         ADMIN[Filament admin]

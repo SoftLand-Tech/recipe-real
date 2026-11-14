@@ -21,10 +21,13 @@ class GoogleClientTransitionTest extends TestCase
     use RefreshDatabase;
 
     private const PRIMARY = '546591490861-primary-test.apps.googleusercontent.com';
+
     private const LEGACY = '412318680966-legacy-test.apps.googleusercontent.com';
+
     private const OTHER = '999999-other-project.apps.googleusercontent.com';
 
     private string $privateKeyPem = '';
+
     private string $kid = 'test-rsa-key';
 
     protected function setUp(): void

@@ -52,6 +52,7 @@ class FollowController extends Controller
             ->paginate(20);
 
         $users = $rows->getCollection()->map(fn (Follow $f) => $f->follower)->filter();
+
         return response()->json([
             'data' => UserPublicResource::collection($users)->toArray(request()),
             'meta' => [
@@ -72,6 +73,7 @@ class FollowController extends Controller
             ->paginate(20);
 
         $users = $rows->getCollection()->map(fn (Follow $f) => $f->followed)->filter();
+
         return response()->json([
             'data' => UserPublicResource::collection($users)->toArray(request()),
             'meta' => [

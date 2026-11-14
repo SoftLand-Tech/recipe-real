@@ -2,8 +2,8 @@
 
 namespace App\Support;
 
-use App\Models\Post;
 use App\Http\Middleware\SetLocale;
+use App\Models\Post;
 use Illuminate\Support\Facades\Cache;
 
 /**

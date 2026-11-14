@@ -4,9 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\GoogleLoginRequest;
-use App\Services\GoogleIdTokenService;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Services\GoogleIdTokenService;
 use Firebase\JWT\JWK;
 use Firebase\JWT\JWT;
 use Illuminate\Database\QueryException;

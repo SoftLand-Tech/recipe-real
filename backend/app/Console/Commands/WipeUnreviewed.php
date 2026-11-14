@@ -211,6 +211,7 @@ class WipeUnreviewed extends Command
                 $record = json_decode($line, true);
                 if (! is_array($record) || ! is_numeric($record['id'] ?? null)) {
                     $malformed++;
+
                     continue;
                 }
 

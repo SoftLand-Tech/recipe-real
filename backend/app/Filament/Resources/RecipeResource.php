@@ -2,9 +2,6 @@
 
 namespace App\Filament\Resources;
 
-use BackedEnum;
-use UnitEnum;
-
 use App\Filament\Resources\RecipeResource\Pages;
 use App\Filament\Resources\RecipeResource\RelationManagers\NotesRelationManager;
 use App\Filament\Resources\RecipeResource\RelationManagers\StepsRelationManager;
@@ -13,6 +10,7 @@ use App\Models\Recipe;
 use App\Support\CommunityFeedCache;
 use App\Support\ShareCache;
 use App\Support\TypesenseSearch;
+use BackedEnum;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -37,14 +35,15 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\Log;
 use Throwable;
+use UnitEnum;
 
 class RecipeResource extends Resource
 {
     protected static ?string $model = Recipe::class;
 
-    protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedRectangleStack;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
 
-    protected static string | UnitEnum | null $navigationGroup = 'Content';
+    protected static string|UnitEnum|null $navigationGroup = 'Content';
 
     protected static ?string $recordTitleAttribute = 'title';
 

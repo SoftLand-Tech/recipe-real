@@ -331,7 +331,7 @@ class PerformanceOptimizationsTest extends TestCase
 
     public function test_rebuild_search_index_job_is_unique(): void
     {
-        $job = new RebuildSearchIndex();
+        $job = new RebuildSearchIndex;
 
         $this->assertInstanceOf(ShouldBeUniqueUntilProcessing::class, $job);
         $this->assertSame(120, $job->uniqueFor);
@@ -346,13 +346,12 @@ class PerformanceOptimizationsTest extends TestCase
         $first = $this->createQualityRecipe(['title' => 'Alpha Dish']);
         $second = $this->createQualityRecipe(['title' => 'Beta Dish', 'aggregated_rating' => 4.2]);
 
-        $fake = new class($first, $second) extends TypesenseSearch {
+        $fake = new class($first, $second) extends TypesenseSearch
+        {
             /** @var list<string> */
             public array $capturedSorts = [];
 
-            public function __construct(private Recipe $first, private Recipe $second)
-            {
-            }
+            public function __construct(private Recipe $first, private Recipe $second) {}
 
             public function enabled(): bool
             {

@@ -8,6 +8,7 @@ use App\Http\Resources\PostResource;
 use App\Models\Notification;
 use App\Models\Post;
 use App\Models\PostReport;
+use App\Models\User;
 use App\Models\UserBlock;
 use App\Support\CommunityFeedCache;
 use App\Support\HalalGate;
@@ -217,7 +218,7 @@ class PostController extends Controller
 
         // Resolve the effective image list from the request.
         $imagesInput = $request->input('images');
-        $images      = is_array($imagesInput) && count($imagesInput) > 0
+        $images = is_array($imagesInput) && count($imagesInput) > 0
             ? array_values(array_filter($imagesInput, fn ($v) => is_string($v) && $v !== ''))
             : [];
 
@@ -228,12 +229,12 @@ class PostController extends Controller
         $firstImageUrl = count($images) > 0 ? $images[0] : $legacyImageUrl;
 
         $post = Post::create([
-            'user_id'   => $request->user()->id,
-            'body'      => $body,
+            'user_id' => $request->user()->id,
+            'body' => $body,
             'recipe_id' => $request->input('recipe_id'),
             'image_url' => $firstImageUrl,
             // Eloquent's 'array' cast handles json_encode automatically.
-            'images'    => count($images) > 0 ? $images : null,
+            'images' => count($images) > 0 ? $images : null,
         ]);
 
         // The author is about to be redirected to the feed: never let their
@@ -244,9 +245,9 @@ class PostController extends Controller
             'user:id,display_name,name,avatar_url',
             'recipe:id,title,title_ar,image_url',
         ]);
-        $post->likes_count    = 0;
+        $post->likes_count = 0;
         $post->comments_count = 0;
-        $post->liked_by_me    = false;
+        $post->liked_by_me = false;
 
         return (new PostResource($post))
             ->response()
@@ -386,16 +387,16 @@ class PostController extends Controller
 
             if (! $recentlyNotified) {
                 Notification::create([
-                    'user_id'  => $post->user_id,
-                    'type'     => 'like',
+                    'user_id' => $post->user_id,
+                    'type' => 'like',
                     'actor_id' => $request->user()->id,
-                    'post_id'  => $post->id,
+                    'post_id' => $post->id,
                 ]);
             }
         }
 
         return response()->json([
-            'liked'       => $liked,
+            'liked' => $liked,
             'likes_count' => $likesCount,
         ]);
     }
@@ -415,7 +416,7 @@ class PostController extends Controller
     private function paginateTrending(Builder $query): LengthAwarePaginator
     {
         $score = '(SELECT COUNT(*) FROM post_likes WHERE post_likes.post_id = posts.id) * 2'
-            . ' + (SELECT COUNT(*) FROM post_comments WHERE post_comments.post_id = posts.id)';
+            .' + (SELECT COUNT(*) FROM post_comments WHERE post_comments.post_id = posts.id)';
 
         $windowed = (clone $query)
             ->where('posts.created_at', '>=', now()->subDays(7))
@@ -431,7 +432,7 @@ class PostController extends Controller
             ->paginate(20);
     }
 
-    private function paginateSuggested(Builder $query, ?\App\Models\User $user): LengthAwarePaginator
+    private function paginateSuggested(Builder $query, ?User $user): LengthAwarePaginator
     {
         if ($user === null) {
             return $this->paginateTrending($query);
@@ -475,7 +476,7 @@ class PostController extends Controller
 
         $hasAffinity = $affinityRecipeIds !== [] || $followedIds !== [];
 
-        if (!$hasAffinity) {
+        if (! $hasAffinity) {
             return $this->paginateTrending($query);
         }
 
@@ -486,30 +487,30 @@ class PostController extends Controller
         $logEng = $isSqlite ? "ln(1 + ({$engagement}))" : "LOG(1 + ({$engagement}))";
         $hoursAgo = $isSqlite
             ? "(julianday('now') - julianday(posts.created_at)) * 24.0"
-            : "TIMESTAMPDIFF(SECOND, posts.created_at, NOW()) / 3600.0";
+            : 'TIMESTAMPDIFF(SECOND, posts.created_at, NOW()) / 3600.0';
         $decay = "exp(-({$hoursAgo}) / 48.0)";
         $halfLifeBoost = "1.0 + 0.7 * {$decay}";
 
         $followScore = $followedIds !== []
             ? "CASE WHEN posts.user_id IN ({$followedList}) THEN 1.8 ELSE 0 END"
-            : "0";
+            : '0';
 
-        $categoryBoost = "0";
+        $categoryBoost = '0';
         if ($categories !== []) {
             $quoted = implode(',', array_map(fn ($c) => DB::connection()->getPdo()->quote($c), array_slice($categories, 0, 12)));
             $categoryBoost = "CASE WHEN posts.recipe_id IS NOT NULL AND EXISTS (SELECT 1 FROM recipes r2 WHERE r2.id = posts.recipe_id AND r2.category IN ({$quoted})) THEN 0.9 ELSE 0 END";
         }
 
-        $recipeAffinityBoost = "0";
+        $recipeAffinityBoost = '0';
         if ($affinityRecipeIds !== []) {
             $rList = implode(',', array_map('intval', array_slice($affinityRecipeIds, 0, 60)));
             $recipeAffinityBoost = "CASE WHEN posts.recipe_id IN ({$rList}) THEN 1.2 ELSE 0 END";
         }
 
         $recentCommentJd = $isSqlite
-            ? "(SELECT COALESCE(MAX(julianday(post_comments.created_at)), 0) FROM post_comments WHERE post_comments.post_id = posts.id)"
-            : "(SELECT COALESCE(MAX(UNIX_TIMESTAMP(post_comments.created_at)), 0) FROM post_comments WHERE post_comments.post_id = posts.id)";
-        $nowJd = $isSqlite ? "julianday('now')" : "UNIX_TIMESTAMP(NOW()) / 86400.0";
+            ? '(SELECT COALESCE(MAX(julianday(post_comments.created_at)), 0) FROM post_comments WHERE post_comments.post_id = posts.id)'
+            : '(SELECT COALESCE(MAX(UNIX_TIMESTAMP(post_comments.created_at)), 0) FROM post_comments WHERE post_comments.post_id = posts.id)';
+        $nowJd = $isSqlite ? "julianday('now')" : 'UNIX_TIMESTAMP(NOW()) / 86400.0';
         $hasRecentComment = $isSqlite
             ? "CASE WHEN {$recentCommentJd} > {$nowJd} - 2 THEN 0.5 ELSE 0 END"
             : "CASE WHEN {$recentCommentJd} > UNIX_TIMESTAMP(NOW()) - 172800 THEN 0.5 ELSE 0 END";
@@ -538,7 +539,7 @@ class PostController extends Controller
         if ($terms !== []) {
             throw new HttpResponseException(response()->json([
                 'message' => 'Posts cannot contain haram ingredients or alcohol references.',
-                'terms'   => $terms,
+                'terms' => $terms,
             ], 422));
         }
     }

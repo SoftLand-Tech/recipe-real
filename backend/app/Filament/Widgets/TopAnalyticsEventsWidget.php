@@ -12,7 +12,7 @@ class TopAnalyticsEventsWidget extends TableWidget
 {
     protected static ?int $sort = 8;
 
-    protected int | string | array $columnSpan = 'full';
+    protected int|string|array $columnSpan = 'full';
 
     /**
      * Grouped aggregate rows carry only `name` + `total` — no primary key —
@@ -20,7 +20,7 @@ class TopAnalyticsEventsWidget extends TableWidget
      * throws a TypeError ("Return value must be of type string, null
      * returned"). The grouped event name is the stable unique row key.
      */
-    public function getTableRecordKey(Model | array $record): string
+    public function getTableRecordKey(Model|array $record): string
     {
         if (is_array($record)) {
             return parent::getTableRecordKey($record);

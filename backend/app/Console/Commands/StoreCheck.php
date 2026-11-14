@@ -28,7 +28,9 @@ class StoreCheck extends Command
     protected $description = 'Preflight the third-party Android store submission (routes, APK, OAuth config).';
 
     private const PASS = 'PASS';
+
     private const WARN = 'WARN';
+
     private const FAIL = 'FAIL';
 
     public function handle(): int

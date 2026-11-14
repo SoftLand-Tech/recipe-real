@@ -31,21 +31,21 @@ class PublicUserPageTest extends TestCase
     {
         return User::factory()->create($attributes + [
             'display_name' => 'Chef Amal',
-            'avatar_url'   => 'https://example.com/amal.jpg',
-            'bio'          => 'I cook fast, honestly.',
+            'avatar_url' => 'https://example.com/amal.jpg',
+            'bio' => 'I cook fast, honestly.',
         ]);
     }
 
     private function ownedRecipe(User $cook, array $attributes = []): Recipe
     {
         return Recipe::create($attributes + [
-            'owner_id'               => $cook->id,
-            'title'                  => 'Quick Koshari',
-            'title_ar'               => 'كشري سريع',
-            'source_type'            => 'user',
-            'image_url'              => 'https://example.com/koshari.jpg',
+            'owner_id' => $cook->id,
+            'title' => 'Quick Koshari',
+            'title_ar' => 'كشري سريع',
+            'source_type' => 'user',
+            'image_url' => 'https://example.com/koshari.jpg',
             'publisher_time_minutes' => 45,
-            'steps_count'            => 7,
+            'steps_count' => 7,
         ]);
     }
 
@@ -55,7 +55,7 @@ class PublicUserPageTest extends TestCase
         $cook = $this->cook();
         $recipe = $this->ownedRecipe($cook, [
             'reality_minutes' => 80,
-            'reality_source'  => 'community',
+            'reality_source' => 'community',
         ]);
         Follow::create(['follower_id' => User::factory()->create()->id, 'followed_id' => $cook->id]);
 
@@ -105,8 +105,8 @@ class PublicUserPageTest extends TestCase
     {
         $cook = $this->cook();
         $this->ownedRecipe($cook, [
-            'reality_minutes'       => null,
-            'reality_source'        => null,
+            'reality_minutes' => null,
+            'reality_source' => null,
             'community_avg_minutes' => 62.5,
         ]);
 
@@ -118,8 +118,8 @@ class PublicUserPageTest extends TestCase
     public function test_profile_page_never_leaks_internal_account_fields(): void
     {
         $cook = $this->cook([
-            'name'   => 'SecretInternalName',
-            'email'  => 'secret@internal.test',
+            'name' => 'SecretInternalName',
+            'email' => 'secret@internal.test',
             'gender' => 'female',
         ]);
 

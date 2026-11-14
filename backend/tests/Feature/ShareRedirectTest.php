@@ -2,7 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\AppRelease;
+use App\Models\Post;
 use App\Models\Recipe;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -58,7 +61,7 @@ class ShareRedirectTest extends TestCase
     public function test_android_browser_banner_points_at_apk_when_release_uploaded(): void
     {
         config()->set('recipereal.play_store_url', '');
-        \App\Models\AppRelease::create([
+        AppRelease::create([
             'version' => '1.2.0',
             'file_path' => 'apks/test-release.apk',
             'file_size' => 1024,
@@ -78,7 +81,7 @@ class ShareRedirectTest extends TestCase
     public function test_android_banner_carries_intent_open_in_app_pill(): void
     {
         config()->set('recipereal.play_store_url', '');
-        \App\Models\AppRelease::create([
+        AppRelease::create([
             'version' => '1.2.0',
             'file_path' => 'apks/test-release.apk',
             'file_size' => 1024,
@@ -96,7 +99,7 @@ class ShareRedirectTest extends TestCase
     public function test_profile_page_intent_maps_u_onto_user_scheme_route(): void
     {
         config()->set('recipereal.play_store_url', '');
-        $cook = \App\Models\User::factory()->create(['display_name' => 'Intent Chef']);
+        $cook = User::factory()->create(['display_name' => 'Intent Chef']);
 
         $html = $this->get('/u/'.$cook->id, ['User-Agent' => self::ANDROID_CHROME])->getContent();
         $this->assertStringContainsString('intent://user/'.$cook->id.'#Intent;scheme=recipereal', $html);
@@ -142,8 +145,8 @@ class ShareRedirectTest extends TestCase
     {
         config()->set('recipereal.play_store_url', 'https://play.google.com/store/apps/details?id=com.recipereal.app');
         $id = $this->recipe()->id;
-        $postId = \App\Models\Post::create([
-            'user_id' => \App\Models\User::factory()->create()->id,
+        $postId = Post::create([
+            'user_id' => User::factory()->create()->id,
             'body' => 'WhatsApp preview guard test',
         ])->id;
 

@@ -21,6 +21,7 @@ class UploadLimits
         }
 
         $number = (float) substr($value, 0, -1);
+
         return (int) match ($unit) {
             'g' => $number * 1024 * 1024 * 1024,
             'm' => $number * 1024 * 1024,

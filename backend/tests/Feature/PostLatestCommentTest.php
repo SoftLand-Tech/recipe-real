@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Post;
 use App\Models\PostComment;
+use App\Models\Recipe;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -26,7 +27,7 @@ class PostLatestCommentTest extends TestCase
     /** Feed rows embed the newest comment with its author. */
     public function test_feed_rows_embed_the_newest_comment(): void
     {
-        $author     = User::factory()->create();
+        $author = User::factory()->create();
         $commenterA = User::factory()->create();
         // Explicit display_name: UserPublicResource falls back to the
         // account name when null, so only an explicit value round-trips.
@@ -36,18 +37,18 @@ class PostLatestCommentTest extends TestCase
 
         $post = Post::create([
             'user_id' => $author->id,
-            'body'    => 'Made the lemon chicken — worth it.',
+            'body' => 'Made the lemon chicken — worth it.',
         ]);
 
-        $older  = PostComment::create([
+        $older = PostComment::create([
             'post_id' => $post->id,
             'user_id' => $commenterA->id,
-            'body'    => 'first comment',
+            'body' => 'first comment',
         ]);
         $newest = PostComment::create([
             'post_id' => $post->id,
             'user_id' => $commenterB->id,
-            'body'    => 'second (newest) comment',
+            'body' => 'second (newest) comment',
         ]);
 
         $response = $this->getJson('/api/posts');
@@ -78,9 +79,9 @@ class PostLatestCommentTest extends TestCase
     public function test_feed_rows_without_comments_have_null_latest_comment(): void
     {
         $author = User::factory()->create();
-        $post   = Post::create([
+        $post = Post::create([
             'user_id' => $author->id,
-            'body'    => 'Any substitute for sumac?',
+            'body' => 'Any substitute for sumac?',
         ]);
 
         $response = $this->getJson('/api/posts');
@@ -97,16 +98,16 @@ class PostLatestCommentTest extends TestCase
     /** The single-post detail endpoint embeds the same latest_comment block. */
     public function test_show_embeds_latest_comment(): void
     {
-        $author    = User::factory()->create();
+        $author = User::factory()->create();
         $commenter = User::factory()->create();
-        $post      = Post::create([
+        $post = Post::create([
             'user_id' => $author->id,
-            'body'    => 'Souq batch was too salty.',
+            'body' => 'Souq batch was too salty.',
         ]);
         $newest = PostComment::create([
             'post_id' => $post->id,
             'user_id' => $commenter->id,
-            'body'    => 'rinse the leeks next time',
+            'body' => 'rinse the leeks next time',
         ]);
 
         $response = $this->getJson("/api/posts/{$post->id}");
@@ -121,24 +122,24 @@ class PostLatestCommentTest extends TestCase
     /** The recipe_id filter narrows the feed to that recipe's posts. */
     public function test_recipe_id_filter_returns_only_that_recipes_posts(): void
     {
-        $author  = User::factory()->create();
-        $recipeA = \App\Models\Recipe::create([
-            'title'      => 'Recipe A',
+        $author = User::factory()->create();
+        $recipeA = Recipe::create([
+            'title' => 'Recipe A',
             'source_type' => 'foodcom',
         ]);
-        $recipeB = \App\Models\Recipe::create([
-            'title'      => 'Recipe B',
+        $recipeB = Recipe::create([
+            'title' => 'Recipe B',
             'source_type' => 'foodcom',
         ]);
 
         $postA = Post::create([
-            'user_id'   => $author->id,
-            'body'      => 'Tried recipe A.',
+            'user_id' => $author->id,
+            'body' => 'Tried recipe A.',
             'recipe_id' => $recipeA->id,
         ]);
         Post::create([
-            'user_id'   => $author->id,
-            'body'      => 'Tried recipe B.',
+            'user_id' => $author->id,
+            'body' => 'Tried recipe B.',
             'recipe_id' => $recipeB->id,
         ]);
 

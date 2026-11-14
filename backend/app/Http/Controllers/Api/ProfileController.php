@@ -10,6 +10,7 @@ use App\Models\Post;
 use App\Models\Recipe;
 use App\Models\RecipeNote;
 use App\Models\User;
+use App\Support\HalalGate;
 use App\Support\ShareCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -63,7 +64,7 @@ class ProfileController extends Controller
             if ($bio !== null && $bio !== '') {
                 // Bio is PUBLIC user text — same halal gate as posts,
                 // comments and notes (reject with the offending terms).
-                $terms = \App\Support\HalalGate::scan([(string) $bio]);
+                $terms = HalalGate::scan([(string) $bio]);
                 if ($terms !== []) {
                     return response()->json([
                         'message' => 'Bio cannot contain haram ingredients or alcohol references.',

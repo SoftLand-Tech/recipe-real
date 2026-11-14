@@ -197,7 +197,6 @@ class RecipeExtractionNormalizer
         return $payload;
     }
 
-    /** @param mixed $value */
     private function nullableString(mixed $value): ?string
     {
         if (! is_scalar($value)) {
@@ -209,7 +208,6 @@ class RecipeExtractionNormalizer
         return $value === '' ? null : $value;
     }
 
-    /** @param mixed $value */
     private function nullableNumber(mixed $value): int|float|null
     {
         if ($value === null || $value === '' || ! is_numeric($value)) {
@@ -221,7 +219,6 @@ class RecipeExtractionNormalizer
         return floor($number) === $number ? (int) $number : $number;
     }
 
-    /** @param mixed $value */
     private function nullableInteger(mixed $value, int $min, int $max): ?int
     {
         if ($value === null || $value === '' || ! is_numeric($value)) {

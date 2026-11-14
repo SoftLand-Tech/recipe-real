@@ -28,15 +28,15 @@ class PublicPostPageTest extends TestCase
     public function test_share_page_renders_post_body_and_open_graph_meta(): void
     {
         $user = User::factory()->create([
-            'name'         => 'Account Name',
+            'name' => 'Account Name',
             'display_name' => 'Mona Sobhy',
-            'avatar_url'   => 'https://example.com/avatar.jpg',
+            'avatar_url' => 'https://example.com/avatar.jpg',
         ]);
         $body = 'Nailed the one-pan lemon chicken tonight — crispy skin and all. ';
         $post = Post::create([
             'user_id' => $user->id,
-            'body'    => $body . str_repeat('x', 130),
-            'images'  => [
+            'body' => $body.str_repeat('x', 130),
+            'images' => [
                 'https://example.com/plate-1.jpg',
                 'https://example.com/plate-2.jpg',
                 'https://example.com/plate-3.jpg',
@@ -61,7 +61,7 @@ class PublicPostPageTest extends TestCase
             $html,
         );
         $this->assertStringContainsString(
-            '<meta property="og:description" content="' . e(Str::limit(trim($body . str_repeat('x', 130)), 120)) . '">',
+            '<meta property="og:description" content="'.e(Str::limit(trim($body.str_repeat('x', 130)), 120)).'">',
             $html,
         );
         $this->assertStringContainsString(
@@ -82,18 +82,18 @@ class PublicPostPageTest extends TestCase
     /** Attached recipe: small card linking to /r/{recipe} + badge lines. */
     public function test_share_page_with_recipe_renders_the_recipe_link(): void
     {
-        $user   = User::factory()->create();
+        $user = User::factory()->create();
         $recipe = Recipe::create([
-            'title'                  => 'One-Pan Lemon Chicken',
-            'source_type'            => 'foodcom',
-            'image_url'              => 'https://example.com/lemon-chicken.jpg',
+            'title' => 'One-Pan Lemon Chicken',
+            'source_type' => 'foodcom',
+            'image_url' => 'https://example.com/lemon-chicken.jpg',
             'publisher_time_minutes' => 25,
-            'reality_minutes'        => 42,
-            'reality_source'         => 'community',
+            'reality_minutes' => 42,
+            'reality_source' => 'community',
         ]);
         $post = Post::create([
-            'user_id'   => $user->id,
-            'body'      => 'The skin burned before the thighs finished.',
+            'user_id' => $user->id,
+            'body' => 'The skin burned before the thighs finished.',
             'recipe_id' => $recipe->id,
         ]);
 
@@ -102,7 +102,7 @@ class PublicPostPageTest extends TestCase
 
         $html = $response->getContent();
         $this->assertStringContainsString(
-            'href="' . url('/r/' . $recipe->id) . '"',
+            'href="'.url('/r/'.$recipe->id).'"',
             $html,
         );
         $this->assertStringContainsString('One-Pan Lemon Chicken', $html);
@@ -121,7 +121,7 @@ class PublicPostPageTest extends TestCase
         $user = User::factory()->create();
         $post = Post::create([
             'user_id' => $user->id,
-            'body'    => 'Any trick for crispy skin without burning it?',
+            'body' => 'Any trick for crispy skin without burning it?',
         ]);
 
         $html = $this->get("/p/{$post->id}")->getContent();
@@ -142,7 +142,7 @@ class PublicPostPageTest extends TestCase
         $user = User::factory()->create();
         $post = Post::create([
             'user_id' => $user->id,
-            'body'    => 'Cached shakshuka success.',
+            'body' => 'Cached shakshuka success.',
         ]);
 
         $this->get("/p/{$post->id}")->assertOk();

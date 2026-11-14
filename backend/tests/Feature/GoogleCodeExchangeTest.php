@@ -23,11 +23,15 @@ class GoogleCodeExchangeTest extends TestCase
     use RefreshDatabase;
 
     private const PRIMARY = '546591490861-primary-test.apps.googleusercontent.com';
+
     private const LEGACY = '412318680966-legacy-test.apps.googleusercontent.com';
+
     private const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
     private string $privateKeyPem = '';
+
     private string $kid = 'test-rsa-key';
+
     /** @var array<string, mixed> */
     private array $jwks = [];
 
@@ -192,7 +196,7 @@ class GoogleCodeExchangeTest extends TestCase
      * gets a genuinely fresh id_token. Must be the ONLY token stub registered
      * in this test (see setUp — Http::fake merges, first match wins).
      *
-     * @param list<array<string, mixed>> $bodies
+     * @param  list<array<string, mixed>>  $bodies
      */
     private function fakeTokenEndpoint(array $bodies, int $status = 200): void
     {
@@ -218,7 +222,7 @@ class GoogleCodeExchangeTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $extra
+     * @param  array<string, mixed>  $extra
      */
     private function idToken(string $aud, string $nonce, array $extra = []): string
     {

@@ -97,10 +97,10 @@ class PostCommentController extends Controller
 
             if (! $recentlyNotified) {
                 Notification::create([
-                    'user_id'  => $post->user_id,
-                    'type'     => 'comment',
+                    'user_id' => $post->user_id,
+                    'type' => 'comment',
                     'actor_id' => $request->user()->id,
-                    'post_id'  => $post->id,
+                    'post_id' => $post->id,
                 ]);
             }
         }

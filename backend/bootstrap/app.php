@@ -1,10 +1,15 @@
 <?php
 
+use App\Http\Middleware\EnsureNotBanned;
+use App\Http\Middleware\FilterSpam;
+use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\SetLocale;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
@@ -16,11 +21,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // Suspended accounts are rejected from every authed API route (the
         // alias is attached to the auth:sanctum groups in routes/api.php).
         $middleware->alias([
-            'not_banned' => \App\Http\Middleware\EnsureNotBanned::class,
+            'not_banned' => EnsureNotBanned::class,
             // Honeypot spam filter for the public web forms. Attached to
             // the /contact + /account/delete-request POST routes with:
             //   ->middleware('spam')
-            'spam' => \App\Http\Middleware\FilterSpam::class,
+            'spam' => FilterSpam::class,
         ]);
         // Public-web locale negotiation (landing + content + share pages):
         // explicit ?lang= → saved choice → device Accept-Language. The
@@ -28,8 +33,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // SecurityHeaders (M16): nosniff / referrer / frame / HSTS + CSP
         // on non-admin HTML GETs.
         $middleware->web(append: [
-            \App\Http\Middleware\SetLocale::class,
-            \App\Http\Middleware\SecurityHeaders::class,
+            SetLocale::class,
+            SecurityHeaders::class,
         ]);
         // Admin-panel (web) guests are sent to the panel login; API guests
         // get null (no redirect target) so the render handler below can

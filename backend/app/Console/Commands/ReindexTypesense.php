@@ -41,7 +41,7 @@ class ReindexTypesense extends Command
 
             $this->info('Ensuring collection '.$typesense->collection().'...');
             if (! $typesense->ensureCollection()) {
-                $this->error("Could not reach Typesense or create the collection — check the log, then retry.");
+                $this->error('Could not reach Typesense or create the collection — check the log, then retry.');
 
                 return self::FAILURE;
             }

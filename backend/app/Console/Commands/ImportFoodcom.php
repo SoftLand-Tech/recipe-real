@@ -44,6 +44,7 @@ class ImportFoodcom extends Command
     protected $description = 'Import recipes from the Kaggle Food.com (irkaal) CSV dataset.';
 
     private const SOURCE_PREFIX = 'https://www.food.com/recipe/';
+
     private const BATCH = 500;
 
     public function handle(): int
@@ -134,6 +135,7 @@ class ImportFoodcom extends Command
             $record = $this->mapRow($row, $header);
             if ($record === null) {
                 $skipped++;
+
                 continue;
             }
 
@@ -141,6 +143,7 @@ class ImportFoodcom extends Command
                 $rid = (int) substr($record['source_url'], strlen(self::SOURCE_PREFIX));
                 if (! isset($ids[$rid])) {
                     $skipped++;
+
                     continue;
                 }
                 $record['id'] = $rid;
@@ -148,14 +151,17 @@ class ImportFoodcom extends Command
 
             if ($minRating > 0 && $record['rating'] < $minRating) {
                 $skipped++;
+
                 continue;
             }
             if ($limit > 0 && $record['rating'] < $threshold) {
                 $skipped++;
+
                 continue;
             }
             if ($maxTime > 0 && ($record['time'] ?? 0) > $maxTime) {
                 $skipped++;
+
                 continue;
             }
 

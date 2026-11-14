@@ -31,8 +31,7 @@ class RecordRecipeView implements ShouldQueue
         public int $userId,
         public int $recipeId,
         public string $monthKey,
-    ) {
-    }
+    ) {}
 
     public function handle(): void
     {

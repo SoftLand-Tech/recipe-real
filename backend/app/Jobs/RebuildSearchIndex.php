@@ -26,7 +26,7 @@ use Illuminate\Support\Facades\Artisan;
  * later edits to queue cleanly behind an active rebuild, paired with
  * WithoutOverlapping to serialize concurrent workers.
  */
-class RebuildSearchIndex implements ShouldQueue, ShouldBeUniqueUntilProcessing
+class RebuildSearchIndex implements ShouldBeUniqueUntilProcessing, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 

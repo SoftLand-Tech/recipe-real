@@ -5,6 +5,7 @@ namespace App\Filament\Widgets;
 use App\Models\User;
 use Filament\Support\Colors\Color;
 use Filament\Widgets\ChartWidget;
+use Illuminate\Support\Carbon;
 
 class SignupsChartWidget extends ChartWidget
 {
@@ -57,7 +58,7 @@ class SignupsChartWidget extends ChartWidget
                 ],
             ],
             'labels' => array_map(
-                fn (string $date): string => \Illuminate\Support\Carbon::parse($date)->format('M j'),
+                fn (string $date): string => Carbon::parse($date)->format('M j'),
                 array_keys($days),
             ),
         ];

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\FilterSpam;
 use App\Models\Notification;
 use App\Models\Post;
 use App\Models\Recipe;
@@ -123,7 +124,7 @@ class BackendHardeningTest extends TestCase
 
     public function test_public_url_guard_rejects_private_and_noncanonical_hosts(): void
     {
-        $guard = new PublicUrlGuard();
+        $guard = new PublicUrlGuard;
 
         $rejected = [
             'http://[::1]/x',                           // IPv6 loopback literal
@@ -234,8 +235,7 @@ class BackendHardeningTest extends TestCase
         $this->enableTypesense();
 
         Http::fake([
-            'http://typesense-test:8108/collections/recipes/documents/search*' =>
-                Http::response(['found' => 0, 'page' => 1, 'hits' => []]),
+            'http://typesense-test:8108/collections/recipes/documents/search*' => Http::response(['found' => 0, 'page' => 1, 'hits' => []]),
             '*' => Http::response(['ok' => true]),
         ]);
 
@@ -423,7 +423,7 @@ class BackendHardeningTest extends TestCase
 
     public function test_filter_spam_rejects_honeypot_and_fast_submissions(): void
     {
-        $middleware = new \App\Http\Middleware\FilterSpam();
+        $middleware = new FilterSpam;
         $next = fn () => response('ok');
 
         $makeRequest = fn (array $payload): Request => tap(

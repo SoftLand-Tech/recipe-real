@@ -24,8 +24,8 @@ class RecipeSeeder extends Seeder
         // Clear existing rows so re-seeding replaces cleanly. Uses query()->delete()
         // (not truncate()) so it works within transactions and with FKs across
         // both sqlite and MySQL.
-        \App\Models\RecipeStep::query()->delete();
-        \App\Models\Recipe::query()->delete();
+        RecipeStep::query()->delete();
+        Recipe::query()->delete();
 
         // Wrap inserts in a single transaction so seeding ~200 recipes with
         // ~1500 steps stays fast (a few seconds) and atomic.
@@ -82,19 +82,19 @@ class RecipeSeeder extends Seeder
         $t = strtolower($title);
 
         $rules = [
-            'pasta'     => '/spaghetti|penne|pasta|linguine|fettuccine|rigatoni|carbonara|lasagna|gnocchi|macaroni|noodle|cacio|bolognese|pesto|arrabbiata|puttanesca|alfredo|risotto|ramen|udon/',
-            'curry'     => '/curry|tikka|korma|vindaloo|dal|makhani|biryani|masala|rogan/',
-            'taco'      => '/taco|burrito|quesadilla|fajita|enchilada|taquito|nacho/',
-            'pizza'     => '/pizza|flatbread|calzone|margherita|focaccia/',
-            'burger'    => '/burger|slider|patty|patty melt/',
-            'sandwich'  => '/sandwich|panini|wrap|sub |melt|grilled cheese|cuban|banh mi|po.?boy|hoagie|muffuletta/',
-            'soup'      => '/soup|chowder|minestrone|pho|broth|gumbo|bisque|stew|goulash|posole|pozole|ramen|laksa/',
-            'salad'     => '/salad|slaw|caprese|cobb|caesar|niçoise|nicoise|tabbouleh|fattoush/',
+            'pasta' => '/spaghetti|penne|pasta|linguine|fettuccine|rigatoni|carbonara|lasagna|gnocchi|macaroni|noodle|cacio|bolognese|pesto|arrabbiata|puttanesca|alfredo|risotto|ramen|udon/',
+            'curry' => '/curry|tikka|korma|vindaloo|dal|makhani|biryani|masala|rogan/',
+            'taco' => '/taco|burrito|quesadilla|fajita|enchilada|taquito|nacho/',
+            'pizza' => '/pizza|flatbread|calzone|margherita|focaccia/',
+            'burger' => '/burger|slider|patty|patty melt/',
+            'sandwich' => '/sandwich|panini|wrap|sub |melt|grilled cheese|cuban|banh mi|po.?boy|hoagie|muffuletta/',
+            'soup' => '/soup|chowder|minestrone|pho|broth|gumbo|bisque|stew|goulash|posole|pozole|ramen|laksa/',
+            'salad' => '/salad|slaw|caprese|cobb|caesar|niçoise|nicoise|tabbouleh|fattoush/',
             'breakfast' => '/egg|omelet|omelette|pancake|waffle|oatmeal|porridge|frittata|hash|breakfast|granola|shakshuka|avocado toast|french toast|scramble|benedict/',
-            'seafood'   => '/salmon|shrimp|prawn|tuna|cod|halibut|sea bass|seafood|crab|lobster|scallops|mussels|clam|tilapia|trout|swordfish|snapper|barramundi|halibut|oyster/',
-            'bowl'      => '/bowl|poke|bibimbap|grain|quinoa|buddha/',
-            'stirfry'   => '/stir[- ]?fry|lo mein|chow mein|fried rice|kung pao|teriyaki|sweet & sour|sweet and sour|pad thai|drunken noodle|mongolian|peanut/',
-            'sheetpan'  => '/sheet pan|sheet-pan|roasted|roast |baked|traybake|one-pan|one pan|mediterrveg|vegetable/',
+            'seafood' => '/salmon|shrimp|prawn|tuna|cod|halibut|sea bass|seafood|crab|lobster|scallops|mussels|clam|tilapia|trout|swordfish|snapper|barramundi|halibut|oyster/',
+            'bowl' => '/bowl|poke|bibimbap|grain|quinoa|buddha/',
+            'stirfry' => '/stir[- ]?fry|lo mein|chow mein|fried rice|kung pao|teriyaki|sweet & sour|sweet and sour|pad thai|drunken noodle|mongolian|peanut/',
+            'sheetpan' => '/sheet pan|sheet-pan|roasted|roast |baked|traybake|one-pan|one pan|mediterrveg|vegetable/',
         ];
 
         $category = 'default';

@@ -185,8 +185,6 @@ class AiApply extends Command
     /**
      * Validate and (unless dry run) write one record. A junk record only
      * records its id; nothing is ever applied for it.
-     *
-     * @param  array  $record
      */
     private function processRecord(array $record, bool $dryRun): void
     {
@@ -300,7 +298,6 @@ class AiApply extends Command
      * Build the per-step updates for a record. step_id must exist AND belong
      * to the recipe, else the step is warned about and skipped.
      *
-     * @param  array  $record
      * @return array<int, array<string, mixed>>
      */
     private function stepUpdates(array $record, int $recipeId): array

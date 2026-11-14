@@ -32,9 +32,9 @@ class PostFeedCacheTest extends TestCase
     {
         $author = User::factory()->create();
         $recipe = Recipe::create([
-            'title'       => 'Cache Test Recipe',
+            'title' => 'Cache Test Recipe',
             'source_type' => 'user',
-            'owner_id'    => $author->id,
+            'owner_id' => $author->id,
         ]);
 
         // Prime every page-1 bucket the author could come back to: both sorts,
@@ -53,7 +53,7 @@ class PostFeedCacheTest extends TestCase
         // Publish through the API (the exact flow the composer uses).
         $created = $this->actingAs($author, 'sanctum')
             ->postJson('/api/posts', [
-                'body'      => 'Fresh out of the pan.',
+                'body' => 'Fresh out of the pan.',
                 'recipe_id' => $recipe->id,
             ]);
         $created->assertStatus(201);
@@ -86,9 +86,9 @@ class PostFeedCacheTest extends TestCase
     public function test_deleting_a_post_invalidates_the_authors_cached_feed(): void
     {
         $author = User::factory()->create();
-        $post   = Post::create([
+        $post = Post::create([
             'user_id' => $author->id,
-            'body'    => 'Delete me.',
+            'body' => 'Delete me.',
         ]);
 
         // Prime the cache while the post still exists.
@@ -111,9 +111,9 @@ class PostFeedCacheTest extends TestCase
     public function test_updating_a_post_invalidates_the_authors_cached_feed(): void
     {
         $author = User::factory()->create();
-        $post   = Post::create([
+        $post = Post::create([
             'user_id' => $author->id,
-            'body'    => 'Original body.',
+            'body' => 'Original body.',
         ]);
 
         // Prime the cache with the original body.
@@ -136,10 +136,10 @@ class PostFeedCacheTest extends TestCase
     public function test_liking_a_post_invalidates_the_likers_cached_feed(): void
     {
         $author = User::factory()->create();
-        $liker  = User::factory()->create();
-        $post   = Post::create([
+        $liker = User::factory()->create();
+        $post = Post::create([
             'user_id' => $author->id,
-            'body'    => 'Like this post.',
+            'body' => 'Like this post.',
         ]);
 
         // Prime the liker's cache: not liked yet.
@@ -168,10 +168,10 @@ class PostFeedCacheTest extends TestCase
     public function test_unliking_a_post_invalidates_the_likers_cached_feed(): void
     {
         $author = User::factory()->create();
-        $liker  = User::factory()->create();
-        $post   = Post::create([
+        $liker = User::factory()->create();
+        $post = Post::create([
             'user_id' => $author->id,
-            'body'    => 'Unlike this post.',
+            'body' => 'Unlike this post.',
         ]);
 
         $this->actingAs($liker, 'sanctum')
@@ -199,11 +199,11 @@ class PostFeedCacheTest extends TestCase
     /** Commenting refreshes the commenter's count + latest-comment preview. */
     public function test_commenting_invalidates_the_commenters_cached_feed(): void
     {
-        $author    = User::factory()->create();
+        $author = User::factory()->create();
         $commenter = User::factory()->create();
-        $post      = Post::create([
+        $post = Post::create([
             'user_id' => $author->id,
-            'body'    => 'Comment on this post.',
+            'body' => 'Comment on this post.',
         ]);
 
         // Prime the commenter's cache: no comments yet.
@@ -226,11 +226,11 @@ class PostFeedCacheTest extends TestCase
     /** Following flips followed_by_me on the follower's next refresh. */
     public function test_following_invalidates_the_followers_cached_feed(): void
     {
-        $author   = User::factory()->create();
+        $author = User::factory()->create();
         $follower = User::factory()->create();
         Post::create([
             'user_id' => $author->id,
-            'body'    => 'Follow this author.',
+            'body' => 'Follow this author.',
         ]);
 
         // Prime the follower's cache: not following yet.
@@ -252,11 +252,11 @@ class PostFeedCacheTest extends TestCase
     /** Blocking hides (and unblocking restores) the author on next refresh. */
     public function test_blocking_invalidates_the_blockers_cached_feed(): void
     {
-        $author  = User::factory()->create();
+        $author = User::factory()->create();
         $blocker = User::factory()->create();
         Post::create([
             'user_id' => $author->id,
-            'body'    => 'Block this author.',
+            'body' => 'Block this author.',
         ]);
 
         // Prime the blocker's cache while the post is visible.

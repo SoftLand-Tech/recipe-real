@@ -2,9 +2,9 @@
 
 namespace App\Filament\Widgets;
 
+use App\Models\AppInstall;
 use App\Models\CookSession;
 use App\Models\Post;
-use App\Models\AppInstall;
 use App\Models\PostComment;
 use App\Models\Recipe;
 use App\Models\RecipeNote;
@@ -21,9 +21,9 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
 
     protected ?string $pollingInterval = '30s';
 
-    protected int | string | array $columnSpan = 'full';
+    protected int|string|array $columnSpan = 'full';
 
-    protected int | array | null $columns = 4;
+    protected int|array|null $columns = 4;
 
     /**
      * @return array<Stat>

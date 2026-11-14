@@ -31,10 +31,10 @@ class CommunityModerationTest extends TestCase
     public function test_non_author_cannot_edit_or_delete_post(): void
     {
         $author = User::factory()->create();
-        $other  = User::factory()->create();
-        $post   = Post::create([
+        $other = User::factory()->create();
+        $post = Post::create([
             'user_id' => $author->id,
-            'body'    => 'Nailed the flatbread.',
+            'body' => 'Nailed the flatbread.',
         ]);
 
         $this->actingAs($other, 'sanctum')
@@ -55,7 +55,7 @@ class CommunityModerationTest extends TestCase
         $user = User::factory()->create();
         $post = Post::create([
             'user_id' => $user->id,
-            'body'    => 'Burnt the rice.',
+            'body' => 'Burnt the rice.',
         ]);
 
         // Freshly created post is not marked edited.
@@ -95,16 +95,16 @@ class CommunityModerationTest extends TestCase
     /** A non-author gets a JSON 403 on PATCH and DELETE of someone's comment. */
     public function test_non_author_cannot_edit_or_delete_comment(): void
     {
-        $author  = User::factory()->create();
-        $other   = User::factory()->create();
-        $post    = Post::create([
+        $author = User::factory()->create();
+        $other = User::factory()->create();
+        $post = Post::create([
             'user_id' => $author->id,
-            'body'    => 'Great shakshuka.',
+            'body' => 'Great shakshuka.',
         ]);
         $comment = PostComment::create([
             'post_id' => $post->id,
             'user_id' => $author->id,
-            'body'    => 'Thanks for the tip!',
+            'body' => 'Thanks for the tip!',
         ]);
 
         $this->actingAs($other, 'sanctum')
@@ -122,15 +122,15 @@ class CommunityModerationTest extends TestCase
     /** The author edits a comment (edited flag) and deletes it. */
     public function test_author_edits_and_deletes_own_comment(): void
     {
-        $user    = User::factory()->create();
-        $post    = Post::create([
+        $user = User::factory()->create();
+        $post = Post::create([
             'user_id' => $user->id,
-            'body'    => 'How long to soak the beans?',
+            'body' => 'How long to soak the beans?',
         ]);
         $comment = PostComment::create([
             'post_id' => $post->id,
             'user_id' => $user->id,
-            'body'    => 'Overnight usually.',
+            'body' => 'Overnight usually.',
         ]);
 
         // Timestamps are second-granular in sqlite — jump past the created
@@ -160,13 +160,13 @@ class CommunityModerationTest extends TestCase
     /** A comment id from a different post 404s (path scoping). */
     public function test_comment_from_another_post_is_not_found(): void
     {
-        $user    = User::factory()->create();
-        $postA   = Post::create(['user_id' => $user->id, 'kind' => 'try', 'body' => 'A']);
-        $postB   = Post::create(['user_id' => $user->id, 'kind' => 'try', 'body' => 'B']);
+        $user = User::factory()->create();
+        $postA = Post::create(['user_id' => $user->id, 'kind' => 'try', 'body' => 'A']);
+        $postB = Post::create(['user_id' => $user->id, 'kind' => 'try', 'body' => 'B']);
         $comment = PostComment::create([
             'post_id' => $postB->id,
             'user_id' => $user->id,
-            'body'    => 'lives under B',
+            'body' => 'lives under B',
         ]);
 
         $this->actingAs($user, 'sanctum')
@@ -181,9 +181,9 @@ class CommunityModerationTest extends TestCase
     {
         $author = User::factory()->create();
         $reporter = User::factory()->create();
-        $post   = Post::create([
+        $post = Post::create([
             'user_id' => $author->id,
-            'body'    => 'Spammy vibes.',
+            'body' => 'Spammy vibes.',
         ]);
 
         foreach ([1, 2] as $i) {
@@ -197,23 +197,23 @@ class CommunityModerationTest extends TestCase
         $this->assertDatabaseHas('post_reports', [
             'post_id' => $post->id,
             'user_id' => $reporter->id,
-            'reason'  => 'spam',
+            'reason' => 'spam',
         ]);
     }
 
     /** Reporting a comment twice answers 201 {ok:true} both times, one row. */
     public function test_reporting_comment_twice_creates_a_single_row(): void
     {
-        $author   = User::factory()->create();
+        $author = User::factory()->create();
         $reporter = User::factory()->create();
-        $post     = Post::create([
+        $post = Post::create([
             'user_id' => $author->id,
-            'body'    => 'Post body.',
+            'body' => 'Post body.',
         ]);
-        $comment  = PostComment::create([
+        $comment = PostComment::create([
             'post_id' => $post->id,
             'user_id' => $author->id,
-            'body'    => 'Rude comment.',
+            'body' => 'Rude comment.',
         ]);
 
         $first = $this->actingAs($reporter, 'sanctum')
@@ -233,16 +233,16 @@ class CommunityModerationTest extends TestCase
     /** The blocker's feed hides the blocked author's posts; unblock restores. */
     public function test_blocker_feed_hides_blocked_author_posts(): void
     {
-        $author  = User::factory()->create();
+        $author = User::factory()->create();
         $blocker = User::factory()->create();
         $bystander = User::factory()->create();
         $blockedPost = Post::create([
             'user_id' => $author->id,
-            'body'    => 'Blocked author post.',
+            'body' => 'Blocked author post.',
         ]);
         $otherPost = Post::create([
             'user_id' => $bystander->id,
-            'body'    => 'Bystander post.',
+            'body' => 'Bystander post.',
         ]);
 
         // Block: idempotent 201 {ok:true}.
@@ -285,22 +285,22 @@ class CommunityModerationTest extends TestCase
     /** The blocker's comment thread hides the blocked author's comments. */
     public function test_blocker_thread_hides_blocked_author_comments(): void
     {
-        $author  = User::factory()->create();
+        $author = User::factory()->create();
         $blocker = User::factory()->create();
-        $friend  = User::factory()->create();
-        $post    = Post::create([
+        $friend = User::factory()->create();
+        $post = Post::create([
             'user_id' => $blocker->id,
-            'body'    => 'Best pan for dosa?',
+            'body' => 'Best pan for dosa?',
         ]);
         $hiddenComment = PostComment::create([
             'post_id' => $post->id,
             'user_id' => $author->id,
-            'body'    => 'Blocked author comment.',
+            'body' => 'Blocked author comment.',
         ]);
         $visibleComment = PostComment::create([
             'post_id' => $post->id,
             'user_id' => $friend->id,
-            'body'    => 'Cast iron.',
+            'body' => 'Cast iron.',
         ]);
 
         $this->actingAs($blocker, 'sanctum')

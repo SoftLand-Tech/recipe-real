@@ -2,7 +2,7 @@
 
 API + marketing landing + share pages + Filament admin for [RecipeReal](../README.md). Serves the Expo client, the web landing at `/`, deep-link share pages (`/r`, `/p`, `/u`), direct-APK distribution (`/download`), and the admin panel.
 
-**Stack:** PHP 8.3 · Laravel 13 · Sanctum auth (Google ID-token) · SQLite (dev) / SQLite + Redis queue on prod · Vite + Blade · Filament 5 admin.
+**Stack:** PHP 8.4 · Laravel 13 · Sanctum auth (Google ID-token) · SQLite (dev) / SQLite + Redis queue on prod · Vite + Blade · Filament 5 admin.
 
 ## Quickstart
 

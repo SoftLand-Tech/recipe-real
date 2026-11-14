@@ -1,11 +1,13 @@
 <?php
 
+use App\Http\Controllers\AdminGoogleController;
 use App\Models\AppRelease;
 use App\Models\ContactMessage;
 use App\Models\Follow;
 use App\Models\Post;
 use App\Models\Recipe;
 use App\Models\User;
+use App\Support\ShareBanner;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Route;
@@ -30,7 +32,6 @@ use Illuminate\Support\Facades\Storage;
 // App\Support\ShareBanner — routes are CACHED on prod (route:cache),
 // and closures in a cached route file cannot call functions defined
 // in web.php (they never execute at request time).
-
 
 /*
  | Android App Links verification (https://developers.android.com/training/
@@ -222,11 +223,11 @@ Route::get('/r/{recipe}', function (Recipe $recipe, Request $request) {
     // Facebook-style: NO hard redirect — EVERY non-crawler browser sees the
     // real page with a "Get the app" banner (rendered OUTSIDE the 5-minute
     // cache; the banner is per-visitor, the card is not).
-    $bannerUrl = \App\Support\ShareBanner::bannerUrl($request);
+    $bannerUrl = ShareBanner::bannerUrl($request);
 
     return response(str_replace(
         '</body>',
-        \App\Support\ShareBanner::bannerHtml($request, $bannerUrl).'</body>',
+        ShareBanner::bannerHtml($request, $bannerUrl).'</body>',
         Cache::remember(
             "recipe:share:{$recipe->id}:".app()->getLocale(),
             now()->addMinutes(5),
@@ -246,13 +247,13 @@ Route::get('/r/{recipe}', function (Recipe $recipe, Request $request) {
  */
 Route::get('/p/{post}', function (Post $post, Request $request) {
     // Same Facebook-style banner treatment as /r above.
-    $bannerUrl = \App\Support\ShareBanner::bannerUrl($request);
+    $bannerUrl = ShareBanner::bannerUrl($request);
 
     $post->loadMissing(['user', 'recipe']);
 
     return response(str_replace(
         '</body>',
-        \App\Support\ShareBanner::bannerHtml($request, $bannerUrl).'</body>',
+        ShareBanner::bannerHtml($request, $bannerUrl).'</body>',
         Cache::remember(
             "post:share:{$post->id}:".app()->getLocale(),
             now()->addMinutes(5),
@@ -279,11 +280,11 @@ Route::get('/p/{post}', function (Post $post, Request $request) {
  */
 Route::get('/u/{user}', function (User $user, Request $request) {
     // Same Facebook-style banner treatment as /r and /p above.
-    $bannerUrl = \App\Support\ShareBanner::bannerUrl($request);
+    $bannerUrl = ShareBanner::bannerUrl($request);
 
     return response(str_replace(
         '</body>',
-        \App\Support\ShareBanner::bannerHtml($request, $bannerUrl).'</body>',
+        ShareBanner::bannerHtml($request, $bannerUrl).'</body>',
         Cache::remember(
             "user:share:{$user->id}:".app()->getLocale(),
             now()->addMinutes(5),
@@ -332,7 +333,7 @@ Route::get('/auth/callback', function () {
  | its own Google-console redirect URI:
  | https://recipe-real.softland.tech/admin/auth/google/callback
  */
-Route::get('/admin/auth/google', [App\Http\Controllers\AdminGoogleController::class, 'redirect'])
+Route::get('/admin/auth/google', [AdminGoogleController::class, 'redirect'])
     ->name('admin.google.redirect');
-Route::get('/admin/auth/google/callback', [App\Http\Controllers\AdminGoogleController::class, 'callback'])
+Route::get('/admin/auth/google/callback', [AdminGoogleController::class, 'callback'])
     ->name('admin.google.callback');

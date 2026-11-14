@@ -371,6 +371,7 @@ class TranslateArabic extends Command
             } catch (Throwable $e) {
                 // Connection error — let the next email try.
                 $this->rotate("connection error for {$email} ({$e->getMessage()})");
+
                 continue;
             }
 
@@ -398,6 +399,7 @@ class TranslateArabic extends Command
                 }
                 if ($response->status() === 429) {
                     $this->rotate("HTTP 429 persisted for {$email} after back-offs");
+
                     continue;
                 }
             }
@@ -422,6 +424,7 @@ class TranslateArabic extends Command
                 $this->rotate($quotaSignal
                     ? "quota exhausted for {$email}"
                     : 'no translation (responseStatus '.var_export($status, true).") for {$email}");
+
                 continue;
             }
 
@@ -458,8 +461,7 @@ class TranslateArabic extends Command
             $this->throttle();
             $this->lastRequestAt = microtime(true);
             try {
-                $response = Http
-                    ::timeout(8)
+                $response = Http::timeout(8)
                     ->withHeaders(['User-Agent' => 'Mozilla/5.0 (X11; Linux x86_64) RecipeReal/1.0'])
                     ->get('https://translate.googleapis.com/translate_a/single', [
                         'client' => 'gtx',
@@ -475,12 +477,14 @@ class TranslateArabic extends Command
                     return null;
                 }
                 usleep(500_000);
+
                 continue;
             }
 
             if ($response->status() === 429 || $response->status() >= 500) {
                 $this->line('  [rate] google HTTP '.$response->status().' — backing off 30s');
                 sleep(30);
+
                 continue;
             }
             if ($response->status() !== 200) {

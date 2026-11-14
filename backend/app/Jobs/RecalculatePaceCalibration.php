@@ -14,9 +14,7 @@ class RecalculatePaceCalibration implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public function __construct(public int $userId)
-    {
-    }
+    public function __construct(public int $userId) {}
 
     /**
      * Recompute per-step_type pace calibration rows for the user.

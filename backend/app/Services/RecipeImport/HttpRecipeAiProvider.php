@@ -214,7 +214,6 @@ class HttpRecipeAiProvider implements RecipeAiProvider
         };
     }
 
-    /** @param mixed $json */
     private function responseContent(string $protocol, mixed $json, string $body): string
     {
         if (! is_array($json)) {

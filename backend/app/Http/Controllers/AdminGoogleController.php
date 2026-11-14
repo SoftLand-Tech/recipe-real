@@ -20,9 +20,7 @@ use Illuminate\Support\Str;
  */
 class AdminGoogleController extends Controller
 {
-    public function __construct(private readonly GoogleIdTokenService $google)
-    {
-    }
+    public function __construct(private readonly GoogleIdTokenService $google) {}
 
     /**
      * Start the flow: bounce to Google's consent screen with OUR callback

@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Livewire\AgySessionsBadge;
 use App\Models\RecipeImport;
 use App\Models\User;
 use App\Support\AgyProcessInspector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 class AgySessionsTest extends TestCase
@@ -36,7 +38,7 @@ class AgySessionsTest extends TestCase
 
     public function test_inspector_parses_only_recipe_workers_and_never_throws(): void
     {
-        $inspector = new AgyProcessInspector();
+        $inspector = new AgyProcessInspector;
 
         $rows = $inspector->parse(
             "  PID     ELAPSED %CPU %MEM COMMAND\n".
@@ -68,7 +70,7 @@ class AgySessionsTest extends TestCase
             'progress' => 35,
         ]);
 
-        \Livewire\Livewire::test(\App\Livewire\AgySessionsBadge::class)
+        Livewire::test(AgySessionsBadge::class)
             ->assertSee('Agy')
             ->assertSee('<span class="rr-agy-count">1</span>', false);
 

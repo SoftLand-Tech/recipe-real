@@ -28,7 +28,7 @@ class PostMultiImageTest extends TestCase
         // The image-host allowlist must accept this test's CDN host.
         config(['recipereal.uploads.allowed_image_hosts' => ['cdn.example.com']]);
 
-        $user   = User::factory()->create();
+        $user = User::factory()->create();
         $images = [
             'https://cdn.example.com/a.jpg',
             'https://cdn.example.com/b.jpg',
@@ -37,7 +37,7 @@ class PostMultiImageTest extends TestCase
 
         $createResponse = $this->actingAs($user, 'sanctum')
             ->postJson('/api/posts', [
-                'body'   => 'Made shakshuka — absolutely nailed it!',
+                'body' => 'Made shakshuka — absolutely nailed it!',
                 'images' => $images,
             ]);
 
@@ -61,7 +61,7 @@ class PostMultiImageTest extends TestCase
 
         // Verify DB persistence.
         $this->assertDatabaseHas('posts', [
-            'id'        => $postId,
+            'id' => $postId,
             'image_url' => $images[0],
         ]);
         $row = Post::find($postId);
@@ -71,13 +71,13 @@ class PostMultiImageTest extends TestCase
     /** Legacy single-image_url post returns [image_url] in the `images` field. */
     public function test_legacy_single_image_url_post_backfills_images_array(): void
     {
-        $user     = User::factory()->create();
+        $user = User::factory()->create();
         $imageUrl = 'https://cdn.example.com/legacy.jpg';
 
         // Directly insert a legacy post (no `images` column value).
         $post = Post::create([
-            'user_id'   => $user->id,
-            'body'      => 'Burnt the rice again.',
+            'user_id' => $user->id,
+            'body' => 'Burnt the rice again.',
             'image_url' => $imageUrl,
         ]);
 
@@ -96,7 +96,7 @@ class PostMultiImageTest extends TestCase
         $user = User::factory()->create();
         $post = Post::create([
             'user_id' => $user->id,
-            'body'    => 'How long should I marinate chicken?',
+            'body' => 'How long should I marinate chicken?',
         ]);
 
         $response = $this->getJson("/api/posts/{$post->id}");

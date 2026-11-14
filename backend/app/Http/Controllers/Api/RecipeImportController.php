@@ -7,8 +7,8 @@ use App\Http\Requests\CreateRecipeImportRequest;
 use App\Http\Requests\PublishRecipeImportRequest;
 use App\Http\Resources\RecipeImportResource;
 use App\Http\Resources\RecipeResource;
-use App\Jobs\ProcessRecipeImport;
 use App\Jobs\RebuildSearchIndex as RebuildSearchIndexJob;
+use App\Models\Recipe;
 use App\Models\RecipeImport;
 use App\Models\User;
 use App\Services\RecipeImport\RecipeContentRejected;
@@ -167,7 +167,7 @@ class RecipeImportController extends Controller
         }
     }
 
-    private function syncSearch(\App\Models\Recipe $recipe): void
+    private function syncSearch(Recipe $recipe): void
     {
         try {
             $typesense = app(TypesenseSearch::class);

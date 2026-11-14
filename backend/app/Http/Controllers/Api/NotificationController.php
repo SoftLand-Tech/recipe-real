@@ -52,9 +52,9 @@ class NotificationController extends Controller
                 ->all(),
             'meta' => [
                 'current_page' => $notifications->currentPage(),
-                'last_page'    => $notifications->lastPage(),
-                'per_page'     => $notifications->perPage(),
-                'total'        => $notifications->total(),
+                'last_page' => $notifications->lastPage(),
+                'per_page' => $notifications->perPage(),
+                'total' => $notifications->total(),
                 'unread_count' => $unreadCount,
             ],
         ]);
@@ -69,7 +69,7 @@ class NotificationController extends Controller
     public function read(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'ids'   => ['nullable', 'array', 'max:1000'],
+            'ids' => ['nullable', 'array', 'max:1000'],
             'ids.*' => ['integer'],
         ]);
 
@@ -101,22 +101,22 @@ class NotificationController extends Controller
         $actor = $notification->actor;
 
         return [
-            'id'         => $notification->id,
-            'type'       => $notification->type,
-            'read_at'    => $notification->read_at?->toIso8601String(),
+            'id' => $notification->id,
+            'type' => $notification->type,
+            'read_at' => $notification->read_at?->toIso8601String(),
             'created_at' => $notification->created_at?->toIso8601String(),
-            'message'    => $notification->message,
+            'message' => $notification->message,
             // H4 parity: public surfaces carry display_name only (with the
             // same neutral fallback as profiles) — never the account name.
-            'actor'      => $actor !== null ? [
-                'id'           => $actor->id,
+            'actor' => $actor !== null ? [
+                'id' => $actor->id,
                 'display_name' => trim((string) $actor->display_name) !== ''
                     ? $actor->display_name
                     : (app()->getLocale() === 'ar' ? 'طاهٍ' : 'A cook'),
-                'avatar_url'   => $actor->avatar_url,
+                'avatar_url' => $actor->avatar_url,
             ] : null,
-            'post'       => $notification->post !== null ? [
-                'id'   => $notification->post->id,
+            'post' => $notification->post !== null ? [
+                'id' => $notification->post->id,
                 // Snippet only — the mobile row never shows the full body.
                 'body' => Str::limit($notification->post->body, 80),
             ] : null,

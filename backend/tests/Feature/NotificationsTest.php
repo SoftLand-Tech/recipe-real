@@ -32,10 +32,10 @@ class NotificationsTest extends TestCase
     public function test_liking_a_post_creates_one_notification_for_the_author(): void
     {
         $author = User::factory()->create();
-        $liker  = User::factory()->create();
-        $post   = Post::create([
+        $liker = User::factory()->create();
+        $post = Post::create([
             'user_id' => $author->id,
-            'body'    => 'Fluffy focaccia, finally.',
+            'body' => 'Fluffy focaccia, finally.',
         ]);
 
         $this->actingAs($liker, 'sanctum')
@@ -44,11 +44,11 @@ class NotificationsTest extends TestCase
             ->assertJsonPath('liked', true);
 
         $this->assertDatabaseHas('notifications', [
-            'user_id'  => $author->id,
-            'type'     => 'like',
+            'user_id' => $author->id,
+            'type' => 'like',
             'actor_id' => $liker->id,
-            'post_id'  => $post->id,
-            'read_at'  => null,
+            'post_id' => $post->id,
+            'read_at' => null,
         ]);
         // Exactly one row — and nothing in the liker's own inbox.
         $this->assertSame(1, Notification::where('user_id', $author->id)->count());
@@ -59,9 +59,9 @@ class NotificationsTest extends TestCase
     public function test_self_like_creates_no_notification(): void
     {
         $author = User::factory()->create();
-        $post   = Post::create([
+        $post = Post::create([
             'user_id' => $author->id,
-            'body'    => 'Sourdough brick.',
+            'body' => 'Sourdough brick.',
         ]);
 
         $this->actingAs($author, 'sanctum')
@@ -79,10 +79,10 @@ class NotificationsTest extends TestCase
     public function test_unlike_creates_no_notification_but_relike_does(): void
     {
         $author = User::factory()->create();
-        $liker  = User::factory()->create();
-        $post   = Post::create([
+        $liker = User::factory()->create();
+        $post = Post::create([
             'user_id' => $author->id,
-            'body'    => 'Knead less, bake more.',
+            'body' => 'Knead less, bake more.',
         ]);
 
         // Like -> one notification.
@@ -107,11 +107,11 @@ class NotificationsTest extends TestCase
     /** Commenting notifies the post author once; a self-comment never does. */
     public function test_commenting_notifies_author_once_and_self_comment_never(): void
     {
-        $author    = User::factory()->create();
+        $author = User::factory()->create();
         $commenter = User::factory()->create();
-        $post      = Post::create([
+        $post = Post::create([
             'user_id' => $author->id,
-            'body'    => 'Why is my tabbouleh soupy?',
+            'body' => 'Why is my tabbouleh soupy?',
         ]);
 
         // Someone else's comment -> one 'comment' notification.
@@ -121,10 +121,10 @@ class NotificationsTest extends TestCase
 
         $this->assertSame(1, Notification::where('user_id', $author->id)->count());
         $this->assertDatabaseHas('notifications', [
-            'user_id'  => $author->id,
-            'type'     => 'comment',
+            'user_id' => $author->id,
+            'type' => 'comment',
             'actor_id' => $commenter->id,
-            'post_id'  => $post->id,
+            'post_id' => $post->id,
         ]);
 
         // Author commenting on their own post -> no new notification.
@@ -141,26 +141,26 @@ class NotificationsTest extends TestCase
      */
     public function test_index_paginates_newest_first_with_unread_count(): void
     {
-        $author  = User::factory()->create();
-        $post    = Post::create([
+        $author = User::factory()->create();
+        $post = Post::create([
             'user_id' => $author->id,
-            'body'    => str_repeat('a', 200), // longer than the 80-char snippet
+            'body' => str_repeat('a', 200), // longer than the 80-char snippet
         ]);
 
         // 25 notifications: 1 pre-read (oldest) + 24 unread (newest).
         Notification::create([
-            'user_id'  => $author->id,
-            'type'     => 'like',
+            'user_id' => $author->id,
+            'type' => 'like',
             'actor_id' => User::factory()->create()->id,
-            'post_id'  => $post->id,
-            'read_at'  => now(),
+            'post_id' => $post->id,
+            'read_at' => now(),
         ]);
         for ($i = 0; $i < 24; $i++) {
             Notification::create([
-                'user_id'  => $author->id,
-                'type'     => $i % 2 === 0 ? 'like' : 'comment',
+                'user_id' => $author->id,
+                'type' => $i % 2 === 0 ? 'like' : 'comment',
                 'actor_id' => User::factory()->create()->id,
-                'post_id'  => $post->id,
+                'post_id' => $post->id,
             ]);
         }
 
@@ -188,7 +188,7 @@ class NotificationsTest extends TestCase
         $this->assertNotNull($row['actor']['id']);
         $this->assertArrayHasKey('avatar_url', $row['actor']);
         $this->assertSame($post->id, $row['post']['id']);
-                // Snippet = first 80 chars + ellipsis (Str::limit default).
+        // Snippet = first 80 chars + ellipsis (Str::limit default).
         $this->assertSame(Str::limit($post->body, 80), $row['post']['body']);
         $this->assertSame(str_repeat('a', 80), mb_substr($row['post']['body'], 0, 80));
 
@@ -206,31 +206,31 @@ class NotificationsTest extends TestCase
      */
     public function test_read_marks_only_owned_notifications(): void
     {
-        $author    = User::factory()->create();
-        $stranger  = User::factory()->create();
-        $liker     = User::factory()->create();
-        $post      = Post::create([
+        $author = User::factory()->create();
+        $stranger = User::factory()->create();
+        $liker = User::factory()->create();
+        $post = Post::create([
             'user_id' => $author->id,
-            'body'    => 'Crispy shallots.',
+            'body' => 'Crispy shallots.',
         ]);
 
         $authorNotifs = Notification::create([
-            'user_id'  => $author->id,
-            'type'     => 'like',
+            'user_id' => $author->id,
+            'type' => 'like',
             'actor_id' => $liker->id,
-            'post_id'  => $post->id,
+            'post_id' => $post->id,
         ]);
         $authorNotifs2 = Notification::create([
-            'user_id'  => $author->id,
-            'type'     => 'comment',
+            'user_id' => $author->id,
+            'type' => 'comment',
             'actor_id' => $liker->id,
-            'post_id'  => $post->id,
+            'post_id' => $post->id,
         ]);
         $strangerNotif = Notification::create([
-            'user_id'  => $stranger->id,
-            'type'     => 'like',
+            'user_id' => $stranger->id,
+            'type' => 'like',
             'actor_id' => $liker->id,
-            'post_id'  => $post->id,
+            'post_id' => $post->id,
         ]);
 
         // Explicit ids INCLUDING the stranger's row: only owned rows flip.

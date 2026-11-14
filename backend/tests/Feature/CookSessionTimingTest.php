@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\Post;
 use App\Models\Recipe;
 use App\Models\RecipeStep;
 use App\Models\TimingSubmission;

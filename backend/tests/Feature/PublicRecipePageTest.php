@@ -26,14 +26,14 @@ class PublicRecipePageTest extends TestCase
     public function test_share_page_renders_reality_badge_and_open_graph_meta(): void
     {
         $recipe = Recipe::create([
-            'title'                  => 'One-Pan Lemon Chicken',
-            'title_ar'               => 'دجاج الليمون بالمقلاة الواحدة',
-            'source_type'            => 'foodcom',
-            'image_url'              => 'https://example.com/lemon-chicken.jpg',
+            'title' => 'One-Pan Lemon Chicken',
+            'title_ar' => 'دجاج الليمون بالمقلاة الواحدة',
+            'source_type' => 'foodcom',
+            'image_url' => 'https://example.com/lemon-chicken.jpg',
             'publisher_time_minutes' => 25,
-            'reality_minutes'        => 42,
-            'reality_source'         => 'community',
-            'steps_count'            => 9,
+            'reality_minutes' => 42,
+            'reality_source' => 'community',
+            'steps_count' => 9,
         ]);
 
         $response = $this->get("/r/{$recipe->id}");
@@ -76,10 +76,10 @@ class PublicRecipePageTest extends TestCase
     public function test_share_page_without_reality_renders_only_the_claim(): void
     {
         $recipe = Recipe::create([
-            'title'                  => 'Simple Masoor Dal',
-            'source_type'            => 'foodcom',
+            'title' => 'Simple Masoor Dal',
+            'source_type' => 'foodcom',
             'publisher_time_minutes' => 30,
-            'steps_count'            => 4,
+            'steps_count' => 4,
         ]);
 
         $response = $this->get("/r/{$recipe->id}");
@@ -101,7 +101,7 @@ class PublicRecipePageTest extends TestCase
     public function test_share_page_second_hit_serves_from_cache(): void
     {
         $recipe = Recipe::create([
-            'title'       => 'Cached Kabsa',
+            'title' => 'Cached Kabsa',
             'source_type' => 'foodcom',
             'steps_count' => 6,
         ]);

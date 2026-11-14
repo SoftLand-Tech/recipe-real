@@ -192,8 +192,7 @@ class TypesenseSearchTest extends TestCase
 
         // Daemon ranks B, A, C.
         Http::fake([
-            self::BASE.'/collections/recipes/documents/search*' =>
-                Http::response($this->searchBody([(string) $b->id, (string) $a->id, (string) $c->id])),
+            self::BASE.'/collections/recipes/documents/search*' => Http::response($this->searchBody([(string) $b->id, (string) $a->id, (string) $c->id])),
             '*' => Http::response(['ok' => true]),
         ]);
 
