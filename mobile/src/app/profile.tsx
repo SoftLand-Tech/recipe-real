@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -12,6 +11,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
@@ -32,12 +32,13 @@ import {
   uploadAvatar,
 } from "@/api/client";
 import type { MyProfile, PaceCalibration, Post, Recipe, RecipeImportRecord } from "@/types";
-import { AI_IMPORT_ENABLED } from "@/config";
+import { AI_IMPORT_ENABLED, WEB_BASE_URL } from "@/config";
 import { useLang, useLocalizedRecipe, useT } from "@/i18n";
 import { Radius, Shadow, Space, Type, useThemeColors } from "@/theme";
 import { bestMinutes } from "@/utils/recipeTime";
 import { memberSince, relativeDate } from "@/utils/format";
 import { setPostPreview } from "@/utils/postPreview";
+import { shareLink } from "@/utils/share";
 import {
   Avatar,
   Button,
@@ -165,6 +166,8 @@ export default function ProfileScreen() {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  // Web fallback confirmation (Share sheet is unavailable on web).
+  const [linkCopied, setLinkCopied] = useState(false);
 
   // Stat & tab pressed states (avoid Pressable style callbacks)
   const [pressedStat, setPressedStat] = useState<string | null>(null);
@@ -327,6 +330,12 @@ export default function ProfileScreen() {
     return () => clearTimeout(timer);
   }, [saved]);
 
+  useEffect(() => {
+    if (!linkCopied) return;
+    const timer = setTimeout(() => setLinkCopied(false), SAVED_CAPTION_MS);
+    return () => clearTimeout(timer);
+  }, [linkCopied]);
+
   const loadMoreRecipes = useCallback(async () => {
     if (loadingRecipes || !recipesHasMore || signedIn !== true) return;
     setLoadingRecipes(true);
@@ -396,6 +405,36 @@ export default function ProfileScreen() {
       setAvatarUploading(false);
     }
   }, [avatarUploading, profile, t]);
+
+  /**
+   * Opens the system share sheet with a link to this profile. We share the
+   * public https URL (https://recipe-real.softland.tech/u/{id}): on devices
+   * with the app installed it opens the app via Android App Links, everyone
+   * else lands on the web profile page with a download banner — unlike the
+   * old recipereal:// deep link, which was a dead end for recipients without
+   * the app. On web the RN Share sheet doesn't exist: copy the link to the
+   * clipboard instead and confirm with a caption.
+   */
+  const handleShareProfile = useCallback(async () => {
+    const me = profileRef.current;
+    if (!me) return;
+    const url = `${WEB_BASE_URL}/u/${me.user.id}`;
+    if (Platform.OS === "web") {
+      try {
+        await navigator.clipboard.writeText(url);
+        setLinkCopied(true);
+      } catch (err) {
+        console.warn("[RecipeReal] profile link copy failed:", err);
+        setError(t("profile.errCopyLink"));
+      }
+      return;
+    }
+    try {
+      await shareLink(url, t("profile.shareMessage"));
+    } catch {
+      // The user dismissed the sheet (or the platform errored) — best-effort.
+    }
+  }, [t]);
 
   const enterEdit = useCallback(() => {
     if (!profile) return;
@@ -872,6 +911,20 @@ export default function ProfileScreen() {
         rights={
           signedIn === true
             ? [
+                profile != null ? (
+                  <IconPressable
+                    key="share"
+                    onPress={() => void handleShareProfile()}
+                    hitSlop={Space.xs}
+                    accessibilityLabel={t("profile.shareA11y")}
+                  >
+                    <Ionicons
+                      name="arrow-redo-outline"
+                      size={22}
+                      color={colors.ink}
+                    />
+                  </IconPressable>
+                ) : null,
                 <IconPressable
                   key="settings"
                   onPress={() => router.push("/settings")}
@@ -1083,6 +1136,9 @@ export default function ProfileScreen() {
               </View>
 
               {saved ? <Text style={styles.savedCaption}>{t("profile.nameSaved")}</Text> : null}
+              {linkCopied ? (
+                <Text style={styles.savedCaption}>{t("profile.linkCopied")}</Text>
+              ) : null}
               {error && !isEditing ? (
                 <Text style={styles.errorCaption}>{error}</Text>
               ) : null}
@@ -1599,7 +1655,7 @@ export default function ProfileScreen() {
         onRequestClose={cancelEdit}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior="padding"
           style={styles.modalOverlay}
         >
           <View style={styles.modalCard}>

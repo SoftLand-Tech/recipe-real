@@ -106,6 +106,8 @@ export const en: Record<string, string> = {
   "browse.offlineCaption": "Offline — showing saved recipes",
   "browse.loadingMore": "Loading more…",
   "browse.addRecipe": "Add a recipe",
+  "browse.filtersActive": "Active filters: {count}",
+  "browse.removeFilter": "Remove {label}",
 
   // ---- Recipe detail ------------------------------------------------------
   "detail.freeLimitTitle": "Free limit reached",
@@ -490,6 +492,8 @@ export const en: Record<string, string> = {
     "This permanently deletes your account, cook times, and pace history. This cannot be undone.",
   "settings.deleteConfirmBtn": "Delete",
   "settings.deleteFailed": "Couldn't delete your account. Please try again.",
+  "settings.signOutConfirmTitle": "Sign out?",
+  "settings.signOutConfirmMessage": "Are you sure you want to sign out?",
   "settings.about": "RecipeReal v{version}",
 
   // ---- Login ----------------------------------------------------------------
@@ -659,6 +663,10 @@ export const en: Record<string, string> = {
   "profile.paceSummary": "{x}× pace · {cooks}",
   "profile.paceTapHint": "View calibrations & cook history",
   "profile.followingBtn": "Following",
+  "profile.shareA11y": "Share profile",
+  "profile.shareMessage": "Check out my kitchen on RecipeReal!",
+  "profile.linkCopied": "Profile link copied ✓",
+  "profile.errCopyLink": "Couldn't copy the link. Please try again.",
 
   // ---- Recipe detail (declutter additions; appended at the end) -------------
   "detail.statReally": "Really takes",
@@ -717,6 +725,7 @@ export const en: Record<string, string> = {
   "a11y.removePhoto": "Remove photo",
   "a11y.openingPost": "Opening post",
   "a11y.openingRecipe": "Opening recipe",
+  "a11y.openingProfile": "Opening profile",
   "community.editAction": "Edit",
   "community.deleteAction": "Delete",
   "community.reportAction": "Report",

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -11,6 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -1278,9 +1278,14 @@ export default function PostComposerScreen() {
         </View>
       </View>
 
+      {/* Plain ScrollView + KAV (single mechanism): the sticky attachment
+          toolbar below must ride the keyboard, and an extra
+          KeyboardAwareScrollView here would double-count the keyboard as a
+          scrollable empty band. The composer's inputs sit top/mid-screen,
+          so the KAV lift alone keeps them visible. */}
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior="padding"
       >
         <ScreenScrollView
           style={styles.scroll}

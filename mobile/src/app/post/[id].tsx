@@ -2,13 +2,13 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
+  FlatList,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -51,7 +51,6 @@ import {
   IconPressable,
   ImageViewerModal,
   PostImageGrid,
-  ScreenFlatList,
 } from "@/components/ui";
 import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
 
@@ -753,15 +752,15 @@ export default function PostDetailScreen() {
           justifyContent: "center",
           gap: Space.sm,
           padding: Space.xxl,
-          paddingHorizontal: Space.lg,
         },
         errorTitle: { ...Type.h3, color: colors.danger },
         errorCaption: { ...Type.body, color: colors.inkSecondary, textAlign: "center" },
         listContent: {
+          paddingHorizontal: 0,
           gap: Space.lg,
           paddingBottom: insets.bottom + Space.xxl,
         },
-        card: { gap: Space.sm, padding: Space.lg },
+        card: { gap: Space.sm, padding: Space.md },
         headRow: { flexDirection: "row", alignItems: "center", gap: Space.sm },
         headMain: { flex: 1, gap: 2 },
         author: { ...Type.title, color: colors.ink, flexShrink: 1 },
@@ -832,8 +831,8 @@ export default function PostDetailScreen() {
           borderTopColor: colors.hairline,
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: colors.hairline,
-          marginHorizontal: -Space.lg,
-          paddingHorizontal: Space.lg,
+          marginHorizontal: -Space.md,
+          paddingHorizontal: Space.md,
         },
         action: {
           flex: 1,
@@ -1369,9 +1368,9 @@ export default function PostDetailScreen() {
 
       <KeyboardAvoidingView
         style={styles.container}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior="padding"
       >
-        <ScreenFlatList
+        <FlatList
           data={comments}
           keyExtractor={(c) => String(c.id)}
           renderItem={({ item }) => (

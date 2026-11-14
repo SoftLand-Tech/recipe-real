@@ -5,21 +5,21 @@ import {
   useRef,
   useState,
   type ReactNode,
-  type RefObject,
 } from "react";
 import {
   ActivityIndicator,
   Alert,
   Keyboard,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import {
+  KeyboardAwareScrollView,
+  type KeyboardAwareScrollViewRef,
+} from "react-native-keyboard-controller";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -52,7 +52,6 @@ import {
   Card,
   Chip,
   IconPressable,
-  ScreenScrollView,
   SectionHeader,
 } from "@/components/ui";
 
@@ -231,7 +230,7 @@ export default function RecipeComposerScreen() {
   const [needsAuth, setNeedsAuth] = useState(false);
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
 
-  const scrollRef = useRef<ScrollView | null>(null);
+  const scrollRef = useRef<KeyboardAwareScrollViewRef | null>(null);
   const ingredientInputRefs = useRef<Array<TextInput | null>>([]);
 
   // ---- Auth gate --------------------------------------------------------------
@@ -285,9 +284,13 @@ export default function RecipeComposerScreen() {
           fontWeight: "700",
         },
         scrollContent: {
+          paddingHorizontal: Space.lg,
           paddingTop: Space.md,
           paddingBottom: Space.mega,
           gap: Space.lg,
+          maxWidth: 720,
+          width: "100%",
+          alignSelf: "center",
         },
         section: {
           gap: Space.sm,
@@ -579,7 +582,6 @@ export default function RecipeComposerScreen() {
           justifyContent: "center",
           gap: Space.sm,
           padding: Space.xxl,
-          paddingHorizontal: Space.lg,
         },
         muted: {
           ...Type.body,
@@ -1520,10 +1522,12 @@ export default function RecipeComposerScreen() {
   const setSecondaryTitleValue = isArabicPrimary ? setTitle : setTitleAr;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
+    // KeyboardAwareScrollView alone handles avoidance (single mechanism —
+    // a KeyboardAvoidingView wrapper here double-counted the keyboard and
+    // left a scrollable empty band at the bottom while typing). The Save
+    // pill lives in the header, so nothing pinned needs to ride the
+    // keyboard.
+    <View style={styles.container}>
       {/* Top bar: BackChevron on start, centered title, prominent Save pill on end */}
       <PinnedHeaderBar
         title={headerTitle}
@@ -1559,8 +1563,8 @@ export default function RecipeComposerScreen() {
           </Pressable>,
         ]}
       />
-      <ScreenScrollView
-        scrollViewRef={scrollRef as RefObject<ScrollView>}
+      <KeyboardAwareScrollView
+        ref={scrollRef}
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
@@ -2176,7 +2180,7 @@ export default function RecipeComposerScreen() {
             />
           ) : null}
         </View>
-      </ScreenScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
+    </View>
   );
 }

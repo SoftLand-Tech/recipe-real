@@ -2,22 +2,28 @@
 
 use App\Models\AppRelease;
 use App\Models\ContactMessage;
+use App\Models\Follow;
 use App\Models\Post;
 use App\Models\Recipe;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 
 /*
- | ---- Android App Links + Play Store smart redirect -----------------------
- | The share pages (/r, /p) are the targets of shared links. On phones with
- | the app installed AND verified App Links, Android opens the app directly
- | and the backend never sees the hit. Everyone else lands here, and Android
- | BROWSERS (not crawlers, not desktop, not iOS — no app exists there yet)
- | are redirected straight to the Play Store listing when PLAY_STORE_URL is
- | configured. Link-preview crawlers must receive the real page or WhatsApp
- | preview cards break.
+ | ---- Android App Links + smart share banner ------------------------------
+ | The share pages (/r, /p, /u) are the targets of shared links. On phones
+ | with the app installed AND verified App Links, Android opens the app
+ | directly and the backend never sees the hit. Everyone else lands here
+ | and sees the real page with a "Get the app" banner — EVERY non-crawler
+ | browser, desktop included (product decision: a visitor must be told the
+ | app is the way in, not silently left on the web page). The banner's
+ | LINK is the only smart part (ShareBanner::bannerUrl): the Play Store
+ | listing when PLAY_STORE_URL is configured, the direct APK (/download)
+ | on Android browsers, else the landing page with its download badges.
+ | Link-preview crawlers must receive the real page with NO banner or
+ | WhatsApp preview cards break.
  */
 
 // Share-page helpers (crawler detection + the store banner) live in
@@ -213,15 +219,14 @@ Route::post('/account/delete-request', function (Request $request) {
  | cache.serializable_classes = false restriction).
  */
 Route::get('/r/{recipe}', function (Recipe $recipe, Request $request) {
-    $store = trim((string) config('recipereal.play_store_url', ''));
-    // Facebook-style: NO hard redirect — Android browsers without the app
-    // see the real page with a "Get the app" banner (rendered OUTSIDE the
-    // 5-minute cache; the banner is per-visitor, the card is not).
-    $storeBanner = ($store !== '' && \App\Support\ShareBanner::isAndroidBrowser($request)) ? $store : null;
+    // Facebook-style: NO hard redirect — EVERY non-crawler browser sees the
+    // real page with a "Get the app" banner (rendered OUTSIDE the 5-minute
+    // cache; the banner is per-visitor, the card is not).
+    $bannerUrl = \App\Support\ShareBanner::bannerUrl($request);
 
     return response(str_replace(
         '</body>',
-        \App\Support\ShareBanner::bannerHtml($storeBanner).'</body>',
+        \App\Support\ShareBanner::bannerHtml($request, $bannerUrl).'</body>',
         Cache::remember(
             "recipe:share:{$recipe->id}:".app()->getLocale(),
             now()->addMinutes(5),
@@ -240,15 +245,14 @@ Route::get('/r/{recipe}', function (Recipe $recipe, Request $request) {
  * string pattern as the recipe page above).
  */
 Route::get('/p/{post}', function (Post $post, Request $request) {
-    $store = trim((string) config('recipereal.play_store_url', ''));
     // Same Facebook-style banner treatment as /r above.
-    $storeBanner = ($store !== '' && \App\Support\ShareBanner::isAndroidBrowser($request)) ? $store : null;
+    $bannerUrl = \App\Support\ShareBanner::bannerUrl($request);
 
     $post->loadMissing(['user', 'recipe']);
 
     return response(str_replace(
         '</body>',
-        \App\Support\ShareBanner::bannerHtml($storeBanner).'</body>',
+        \App\Support\ShareBanner::bannerHtml($request, $bannerUrl).'</body>',
         Cache::remember(
             "post:share:{$post->id}:".app()->getLocale(),
             now()->addMinutes(5),
@@ -256,6 +260,53 @@ Route::get('/p/{post}', function (Post $post, Request $request) {
         ),
     ));
 })->name('posts.share');
+
+/*
+ | Public web profile page (GET /u/{user}): the share target behind the
+ * app's profile Share button (the mobile app is switching from the dead
+ * recipereal://user/{id} scheme to this URL in a parallel PR). PUBLIC
+ * identity only — the internal users.name, email and gender never render
+ * here (the API's publicOnly payload in ProfileController is the
+ * allowlist): display name with the same neutral bilingual fallback,
+ * avatar (a full URL or null — the view falls back to an initials tile),
+ * bio, and the follower/following/recipes counts the public API exposes.
+ * Up to 6 of the user's newest recipes render as small cards linking to
+ * /r/{id}, so a visitor without the app keeps browsing real content.
+ * Unknown ids 404 via route model binding. Rendered HTML cached 5 minutes
+ * per user id per locale — same plain-string Cache::remember + str_replace
+ * pattern as /r and /p above (survives cache.serializable_classes =
+ * false), with the banner injected OUTSIDE the cache.
+ */
+Route::get('/u/{user}', function (User $user, Request $request) {
+    // Same Facebook-style banner treatment as /r and /p above.
+    $bannerUrl = \App\Support\ShareBanner::bannerUrl($request);
+
+    return response(str_replace(
+        '</body>',
+        \App\Support\ShareBanner::bannerHtml($request, $bannerUrl).'</body>',
+        Cache::remember(
+            "user:share:{$user->id}:".app()->getLocale(),
+            now()->addMinutes(5),
+            // Counts + the recipe card rows run INSIDE the closure so they
+            // only cost anything on a cache miss. Recipes use the same
+            // ordering idea as the API's profile recipes endpoint
+            // (ProfileController::recipes: owner filter + latest('id')),
+            // trimmed to the slim card shape the view renders.
+            fn () => view('user-share', [
+                'user' => $user,
+                'recipesCount' => (int) Recipe::query()->where('owner_id', $user->id)->count(),
+                'followersCount' => (int) Follow::query()->where('followed_id', $user->id)->count(),
+                'followingCount' => (int) Follow::query()->where('follower_id', $user->id)->count(),
+                'recipes' => Recipe::query()
+                    ->where('owner_id', $user->id)
+                    ->select('id', 'title', 'title_ar', 'image_url', 'publisher_time_minutes', 'reality_minutes', 'community_avg_minutes')
+                    ->latest('id')
+                    ->limit(6)
+                    ->get(),
+            ])->render(),
+        ),
+    ));
+})->name('users.share');
 
 // Privacy policy (Play Store requirement): linked from the landing footer.
 Route::get('/privacy', function () {

@@ -17,12 +17,15 @@ import {
   Animated,
   InteractionManager,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import {
+  KeyboardAwareScrollView,
+  KeyboardStickyView,
+} from "react-native-keyboard-controller";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -2713,8 +2716,12 @@ export default function RecipeDetailScreen() {
       : null;
 
   return (
+    // Single avoidance mechanism: KeyboardAwareScrollView scrolls the
+    // focused field above the keyboard (a KeyboardAvoidingView wrapper
+    // double-counted it as a scrollable empty band). The pinned Cook-Mode
+    // footer rides the keyboard via KeyboardStickyView instead.
     <View style={styles.screen}>
-      <ScrollView
+      <KeyboardAwareScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.content, { paddingBottom: 120 }]}
       >
@@ -3098,13 +3105,15 @@ export default function RecipeDetailScreen() {
             </>
           )}
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {/* Pinned footer: Cook Mode button stays visible regardless of scroll.
           Disabled (dimmed, no-press) while the loaded recipe has no
-          structured steps yet — Cook Mode walks the step list. */}
+          structured steps yet — Cook Mode walks the step list.
+          KeyboardStickyView = the footer lifts above the keyboard while
+          typing in the note composer below it. */}
       {ready && (
-        <View
+        <KeyboardStickyView
           style={[
             styles.cookFooter,
             { paddingBottom: insets.bottom + Space.sm },
@@ -3118,7 +3127,7 @@ export default function RecipeDetailScreen() {
             disabled={steps.length === 0}
             onPress={() => router.push(`/cook/${id}`)}
           />
-        </View>
+        </KeyboardStickyView>
       )}
     </View>
   );

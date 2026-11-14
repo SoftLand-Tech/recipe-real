@@ -6,7 +6,6 @@ import {
   BackHandler,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -14,6 +13,7 @@ import {
   View,
   type ViewStyle,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { isAxiosError } from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -46,7 +46,15 @@ import {
   getPendingCookSessionCount,
   upsertRecipes,
 } from "@/db/database";
-import { Button, Badge, Chip, Card, IconPressable, StepDots } from "@/components/ui";
+import {
+  Button,
+  Badge,
+  Chip,
+  Card,
+  ConfirmDialog,
+  IconPressable,
+  StepDots,
+} from "@/components/ui";
 import {
   useFmtMinutes,
   useLang,
@@ -619,74 +627,6 @@ export default function CookModeScreen() {
           color: colors.inkSecondary,
           textAlign: "auto",
         },
-        // Centered confirmation modals (discard / finish early)
-        modalScrim: {
-          flex: 1,
-          backgroundColor: colors.scrim,
-          alignItems: "center",
-          justifyContent: "center",
-          padding: Space.xl,
-        },
-        modalCard: {
-          backgroundColor: colors.surface,
-          borderRadius: Radius.lg,
-          borderWidth: 1,
-          borderColor: colors.hairline,
-          padding: Space.xl,
-          maxWidth: 360,
-          width: "100%",
-          alignItems: "center",
-          gap: Space.md,
-          ...Shadow.floating,
-        },
-        modalIconBadge: {
-          width: 56,
-          height: 56,
-          borderRadius: Radius.pill,
-          alignItems: "center",
-          justifyContent: "center",
-          marginBottom: Space.xs,
-        },
-        modalTitle: {
-          ...Type.h3,
-          color: colors.ink,
-          textAlign: "center",
-        },
-        modalMessage: {
-          ...Type.bodySm,
-          color: colors.inkSecondary,
-          textAlign: "center",
-          lineHeight: 20,
-        },
-        modalActions: {
-          alignSelf: "stretch",
-          gap: Space.sm,
-          marginTop: Space.xs,
-        },
-        modalPillBtn: {
-          minHeight: 48,
-        },
-        modalDestructiveBtn: {
-          alignSelf: "stretch",
-          minHeight: 48,
-          borderRadius: Radius.pill,
-          backgroundColor: colors.dangerSoft,
-          borderWidth: 1,
-          borderColor: colors.dangerSoft,
-          alignItems: "center",
-          justifyContent: "center",
-          paddingVertical: Space.md,
-          paddingHorizontal: Space.xl,
-        },
-        modalDestructivePressed: {
-          opacity: 0.75,
-        },
-        modalDestructiveText: {
-          fontSize: Type.title.fontSize,
-          fontWeight: "600",
-          color: colors.danger,
-          textAlign: "center",
-        },
         // Manual time adjustment (feedback phase).
         adjustWrap: {
           width: "100%",
@@ -851,7 +791,6 @@ export default function CookModeScreen() {
   // finishing an active cook, and discarding one via ✕ / back.
   const [confirmFinish, setConfirmFinish] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
-  const [discardPressed, setDiscardPressed] = useState(false);
   // Alarms need the NATIVE notifee module: null = still resolving,
   // false = Expo Go / unavailable (chip renders muted + caption).
   const [alarmsUsable, setAlarmsUsable] = useState<boolean | null>(null);
@@ -1871,6 +1810,9 @@ export default function CookModeScreen() {
     ];
 
     return (
+      // KeyboardAwareScrollView alone handles avoidance (single mechanism —
+      // a KeyboardAvoidingView wrapper here double-counted the keyboard and
+      // left a scrollable empty band at the bottom while typing).
       <View
         style={[
           styles.fullScreen,
@@ -1880,7 +1822,7 @@ export default function CookModeScreen() {
           },
         ]}
       >
-        <ScrollView
+        <KeyboardAwareScrollView
           contentContainerStyle={styles.feedbackScroll}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -2160,7 +2102,7 @@ export default function CookModeScreen() {
               />
             ) : null}
           </View>
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </View>
     );
   }
@@ -2455,125 +2397,43 @@ export default function CookModeScreen() {
       </View>
 
       {/* Finish confirmation — centered dialog card, never end an active cook on a stray tap. */}
-      <Modal
+      <ConfirmDialog
         visible={confirmFinish}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        navigationBarTranslucent
-        onRequestClose={() => setConfirmFinish(false)}
-      >
-        <View style={styles.modalScrim}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={() => setConfirmFinish(false)}
-            accessibilityLabel={t("common.cancel")}
-          />
-          <View style={styles.modalCard}>
-            <View
-              style={[
-                styles.modalIconBadge,
-                { backgroundColor: colors.accentSoft },
-              ]}
-            >
-              <Ionicons
-                name="checkmark-circle-outline"
-                size={28}
-                color={colors.accent}
-              />
-            </View>
-            <Text style={styles.modalTitle}>{t("cook.finishTitle")}</Text>
-            <Text style={styles.modalMessage}>{finishModalMessage}</Text>
-            <View style={styles.modalActions}>
-              <Button
-                title={t("cook.finishLogTime")}
-                variant="primary"
-                size="lg"
-                fullWidth
-                onPress={() => {
-                  setConfirmFinish(false);
-                  finishCooking();
-                }}
-                style={styles.modalPillBtn}
-              />
-              <Button
-                title={t("cook.keepCooking")}
-                variant="secondary"
-                size="lg"
-                fullWidth
-                onPress={() => setConfirmFinish(false)}
-                style={styles.modalPillBtn}
-              />
-            </View>
-          </View>
-        </View>
-      </Modal>
+        tone="neutral"
+        icon="checkmark-circle-outline"
+        title={t("cook.finishTitle")}
+        message={finishModalMessage}
+        confirmLabel={t("cook.finishLogTime")}
+        cancelLabel={t("cook.keepCooking")}
+        onConfirm={() => {
+          setConfirmFinish(false);
+          finishCooking();
+        }}
+        onCancel={() => setConfirmFinish(false)}
+      />
 
       {/* Discard confirmation (✕ / hardware back on an active session). */}
-      <Modal
+      <ConfirmDialog
         visible={confirmDiscard}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        navigationBarTranslucent
-        onRequestClose={() => setConfirmDiscard(false)}
-      >
-        <View style={styles.modalScrim}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={() => setConfirmDiscard(false)}
-            accessibilityLabel={t("common.cancel")}
-          />
-          <View style={styles.modalCard}>
-            <View
-              style={[
-                styles.modalIconBadge,
-                { backgroundColor: colors.dangerSoft },
-              ]}
-            >
-              <Ionicons name="exit-outline" size={26} color={colors.danger} />
-            </View>
-            <Text style={styles.modalTitle}>{t("cook.discardTitle")}</Text>
-            <Text style={styles.modalMessage}>{t("cook.discardMessage")}</Text>
-            <View style={styles.modalActions}>
-              <Button
-                title={t("cook.keepCooking")}
-                variant="primary"
-                size="lg"
-                fullWidth
-                onPress={() => setConfirmDiscard(false)}
-                style={styles.modalPillBtn}
-              />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t("cook.discardExitBtn")}
-                onPress={() => {
-                  setDiscardPressed(false);
-                  setConfirmDiscard(false);
-                  // Discarded by the user: must not resurrect on next visit.
-                  clearPersistedSession();
-                  if (router.canGoBack()) {
-                    router.back();
-                  } else {
-                    router.replace(`/recipe/${id}`);
-                  }
-                }}
-                onPressIn={() => setDiscardPressed(true)}
-                onPressOut={() => setDiscardPressed(false)}
-                style={
-                  discardPressed
-                    ? [styles.modalDestructiveBtn, styles.modalDestructivePressed]
-                    : styles.modalDestructiveBtn
-                }
-              >
-                <Text style={styles.modalDestructiveText}>
-                  {t("cook.discardExitBtn")}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        tone="destructive"
+        icon="exit-outline"
+        iconSize={26}
+        title={t("cook.discardTitle")}
+        message={t("cook.discardMessage")}
+        confirmLabel={t("cook.discardExitBtn")}
+        cancelLabel={t("cook.keepCooking")}
+        onConfirm={() => {
+          setConfirmDiscard(false);
+          // Discarded by the user: must not resurrect on next visit.
+          clearPersistedSession();
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace(`/recipe/${id}`);
+          }
+        }}
+        onCancel={() => setConfirmDiscard(false)}
+      />
     </View>
   );
 }

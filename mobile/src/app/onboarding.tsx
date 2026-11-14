@@ -6,6 +6,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -21,7 +22,6 @@ import {
   Button,
   Card,
   GoogleLogo,
-  ScreenScrollView,
 } from "@/components/ui";
 
 const NAME_MIN = 2;
@@ -116,9 +116,13 @@ export default function OnboardingScreen() {
           paddingBottom: insets.bottom,
         },
         scrollContent: {
+          paddingHorizontal: Space.lg,
           paddingTop: insets.top + Space.lg,
           paddingBottom: Space.xxl,
           gap: Space.lg,
+          maxWidth: 560,
+          width: "100%",
+          alignSelf: "center",
         },
         heading: {
           gap: Space.xs,
@@ -232,8 +236,12 @@ export default function OnboardingScreen() {
   );
 
   return (
+    // KeyboardAwareScrollView alone handles avoidance here (scrolls the
+    // focused field above the keyboard + temporary bottom padding) — the
+    // extra KeyboardAvoidingView wrapper double-counted the keyboard and
+    // left a scrollable empty band while typing.
     <View style={styles.container}>
-      <ScreenScrollView contentContainerStyle={styles.scrollContent}>
+      <KeyboardAwareScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.heading}>
           <Text style={styles.headline}>{t("onboarding.welcome")}</Text>
           <Text style={styles.subtitle}>{t("onboarding.subtitle")}</Text>
@@ -349,7 +357,7 @@ export default function OnboardingScreen() {
           disabled={!canContinue}
           onPress={() => void handleContinue()}
         />
-      </ScreenScrollView>
+      </KeyboardAwareScrollView>
     </View>
   );
 }

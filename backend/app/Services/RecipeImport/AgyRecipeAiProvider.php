@@ -47,6 +47,7 @@ class AgyRecipeAiProvider implements RecipeAiProvider
             $assets = $this->storage->stageCliAssets($import, $workspace.'/media');
 
             $this->writeJson($workspace.'/recipe-source.json', [
+                'import_id' => $import->id,
                 'source_url' => $source['source_url'] ?? $import->source_url,
                 'platform' => $source['platform'] ?? $import->source_platform,
                 'metadata' => $source['metadata'] ?? [],

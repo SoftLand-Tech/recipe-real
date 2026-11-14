@@ -1,12 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import * as ImagePicker from "expo-image-picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, useFocusEffect } from "expo-router";
@@ -18,13 +18,7 @@ import {
   type RecipeImportMediaInput,
 } from "@/api/client";
 import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
-import {
-  Button,
-  Card,
-  IconPressable,
-  ScreenScrollView,
-  SectionHeader,
-} from "@/components/ui";
+import { Button, Card, IconPressable, SectionHeader } from "@/components/ui";
 import { AI_IMPORT_ENABLED } from "@/config";
 import { useT } from "@/i18n";
 import { Radius, Space, Type, useThemeColors } from "@/theme";
@@ -63,9 +57,13 @@ export default function RecipeImportScreen() {
       StyleSheet.create({
         screen: { flex: 1, backgroundColor: colors.canvas },
         content: {
+          paddingHorizontal: Space.lg,
           paddingTop: Space.md,
           paddingBottom: Space.mega,
           gap: Space.lg,
+          maxWidth: 720,
+          width: "100%",
+          alignSelf: "center",
         },
         section: { gap: Space.sm },
         label: { ...Type.bodySm, color: colors.inkSecondary, fontWeight: "600" },
@@ -112,7 +110,6 @@ export default function RecipeImportScreen() {
           justifyContent: "center",
           gap: Space.md,
           padding: Space.xxl,
-          paddingHorizontal: Space.lg,
           backgroundColor: colors.canvas,
         },
         muted: { ...Type.body, color: colors.inkSecondary, textAlign: "center" },
@@ -206,10 +203,10 @@ export default function RecipeImportScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior="padding"
     >
       <PinnedHeaderBar title={t("stack.aiImport")} leading={<BackChevron />} />
-      <ScreenScrollView
+      <ScrollView
         style={styles.screen}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -265,7 +262,7 @@ export default function RecipeImportScreen() {
           onPress={() => void startImport()}
           disabled={starting}
         />
-      </ScreenScrollView>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }

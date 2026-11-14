@@ -54,6 +54,7 @@ import {
   Button,
   Card,
   Chip,
+  ConfirmDialog,
   IconPressable,
   Toggle,
   useHeaderActionsRights,
@@ -235,6 +236,10 @@ export default function SettingsScreen() {
   const [deleting, setDeleting] = useState(false);
   /** Whether the last account-deletion attempt failed (inline caption). */
   const [deleteFailed, setDeleteFailed] = useState(false);
+  /** Centered sign-out confirmation (never a native Alert). */
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const styles = useMemo(
     () =>
@@ -416,24 +421,11 @@ export default function SettingsScreen() {
 
   /**
    * Single destructive confirmation for account deletion — Play requires
-   * discoverability, not friction, so one confirm alert is enough.
+   * discoverability, not friction, so one confirm is enough.
    */
   const confirmDeleteAccount = useCallback(() => {
-    Alert.alert(
-      t("settings.deleteConfirmTitle"),
-      t("settings.deleteConfirmMessage"),
-      [
-        { text: t("common.cancel"), style: "cancel" },
-        {
-          text: t("settings.deleteConfirmBtn"),
-          style: "destructive",
-          onPress: () => {
-            void handleDeleteAccount();
-          },
-        },
-      ],
-    );
-  }, [t, handleDeleteAccount]);
+    setConfirmDelete(true);
+  }, []);
 
   const handleNudgeToggle = useCallback(async (value: boolean) => {
     setNudgeOn(value);
@@ -510,17 +502,8 @@ export default function SettingsScreen() {
 
   /** Destructive confirm before clearing the offline library. */
   const confirmClearCache = useCallback(() => {
-    Alert.alert(t("settings.clearCache"), t("settings.clearCacheConfirm"), [
-      { text: t("common.cancel"), style: "cancel" },
-      {
-        text: t("settings.clearCache"),
-        style: "destructive",
-        onPress: () => {
-          void handleClearCache();
-        },
-      },
-    ]);
-  }, [t, handleClearCache]);
+    setConfirmClear(true);
+  }, []);
 
   const version = Constants.expoConfig?.version ?? "1.0.0";
 
@@ -774,7 +757,7 @@ export default function SettingsScreen() {
               label={t("common.signOut")}
               chevron
               disabled={authed === null}
-              onPress={handleSignOut}
+              onPress={() => setConfirmSignOut(true)}
             />
             <View style={styles.divider} />
             <SettingsRow
@@ -824,6 +807,54 @@ export default function SettingsScreen() {
           rights={headerRights}
         />
       </View>
+
+      {/* Sign-out confirmation — same centered dialog as cook mode, never a
+          native Alert; the session only ends once the user confirms. */}
+      <ConfirmDialog
+        visible={confirmSignOut}
+        tone="destructive"
+        icon="log-out-outline"
+        iconSize={26}
+        title={t("settings.signOutConfirmTitle")}
+        message={t("settings.signOutConfirmMessage")}
+        confirmLabel={t("common.signOut")}
+        cancelLabel={t("common.cancel")}
+        onConfirm={() => {
+          setConfirmSignOut(false);
+          void handleSignOut();
+        }}
+        onCancel={() => setConfirmSignOut(false)}
+      />
+      {/* Delete-account + clear-library confirmations — migrated off native
+          Alert onto the same centered dialog (never Alert.alert). */}
+      <ConfirmDialog
+        visible={confirmDelete}
+        tone="destructive"
+        icon="trash-outline"
+        title={t("settings.deleteConfirmTitle")}
+        message={t("settings.deleteConfirmMessage")}
+        confirmLabel={t("settings.deleteConfirmBtn")}
+        cancelLabel={t("common.cancel")}
+        onConfirm={() => {
+          setConfirmDelete(false);
+          void handleDeleteAccount();
+        }}
+        onCancel={() => setConfirmDelete(false)}
+      />
+      <ConfirmDialog
+        visible={confirmClear}
+        tone="destructive"
+        icon="cloud-offline-outline"
+        title={t("settings.clearCache")}
+        message={t("settings.clearCacheConfirm")}
+        confirmLabel={t("settings.clearCache")}
+        cancelLabel={t("common.cancel")}
+        onConfirm={() => {
+          setConfirmClear(false);
+          void handleClearCache();
+        }}
+        onCancel={() => setConfirmClear(false)}
+      />
     </View>
   );
 }
