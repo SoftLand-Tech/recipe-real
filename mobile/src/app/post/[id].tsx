@@ -2,7 +2,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   StyleSheet,
   Text,
   TextInput,
@@ -51,6 +50,7 @@ import {
   IconPressable,
   ImageViewerModal,
   PostImageGrid,
+  ScreenFlatList,
 } from "@/components/ui";
 import { BackChevron, PinnedHeaderBar } from "@/components/chrome";
 
@@ -752,11 +752,11 @@ export default function PostDetailScreen() {
           justifyContent: "center",
           gap: Space.sm,
           padding: Space.xxl,
+          paddingHorizontal: Space.lg,
         },
         errorTitle: { ...Type.h3, color: colors.danger },
         errorCaption: { ...Type.body, color: colors.inkSecondary, textAlign: "center" },
         listContent: {
-          paddingHorizontal: 0,
           gap: Space.lg,
           paddingBottom: insets.bottom + Space.xxl,
         },
@@ -1370,7 +1370,7 @@ export default function PostDetailScreen() {
         style={styles.container}
         behavior="padding"
       >
-        <FlatList
+        <ScreenFlatList
           data={comments}
           keyExtractor={(c) => String(c.id)}
           renderItem={({ item }) => (

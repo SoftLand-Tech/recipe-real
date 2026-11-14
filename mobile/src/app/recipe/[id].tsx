@@ -897,7 +897,7 @@ function createDetailStyles(colors: ThemeColors, dir: LangDir) {
           justifyContent: "center",
           gap: Space.sm,
           paddingVertical: Space.mega,
-          paddingHorizontal: Space.xxl,
+          paddingHorizontal: Space.lg,
         },
         muted: {
           ...Type.body,

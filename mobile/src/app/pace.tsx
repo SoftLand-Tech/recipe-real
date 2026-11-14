@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -22,6 +21,7 @@ import {
   Button,
   Card,
   Chip,
+  ScreenScrollView,
   SectionHeader,
   StatPill,
   type ChipProps,
@@ -279,7 +279,6 @@ export default function PaceScreen() {
           backgroundColor: colors.canvas,
         },
         content: {
-          paddingHorizontal: 0,
           paddingBottom: 40,
         },
         list: {
@@ -352,7 +351,12 @@ export default function PaceScreen() {
           justifyContent: "center",
           gap: Space.sm,
           paddingVertical: 64,
-          paddingHorizontal: Space.xxl,
+          paddingHorizontal: Space.lg,
+        },
+        // Empty-state variant rendered inside the padded scroll: the 16px
+        // screen gutter already applies, so no extra horizontal inset.
+        centerInList: {
+          paddingHorizontal: 0,
         },
         muted: {
           ...Type.body,
@@ -425,7 +429,7 @@ export default function PaceScreen() {
   return (
     <View style={styles.container}>
       <PinnedHeaderBar title={t("tabs.pace")} leading={<BackChevron />} />
-      <ScrollView
+      <ScreenScrollView
         style={{ flex: 1 }}
         contentContainerStyle={styles.content}
         refreshControl={
@@ -449,7 +453,7 @@ export default function PaceScreen() {
       />
 
       {calibrations.length === 0 ? (
-        <View style={styles.center}>
+        <View style={[styles.center, styles.centerInList]}>
           <Text style={styles.muted}>{t("pace.emptyCalibrations")}</Text>
         </View>
       ) : (
@@ -543,7 +547,7 @@ export default function PaceScreen() {
           </View>
         </View>
       ) : null}
-    </ScrollView>
+    </ScreenScrollView>
     </View>
   );
 }

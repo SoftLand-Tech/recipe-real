@@ -65,7 +65,10 @@ export function PinnedHeaderBar({ title, titleContent, hidden, leading, rights }
           flexDirection: "row",
           alignItems: "center",
           gap: Space.sm,
-          paddingHorizontal: leading ? Space.xs : Space.lg,
+          // Always the screen gutter — a leading back chevron used to collapse
+          // this to 4px, so the chevron/title aligned with neither the padded
+          // content (16) nor the full-bleed screens (0).
+          paddingHorizontal: Space.lg,
         },
         title: {
           ...Type.title,
@@ -87,7 +90,7 @@ export function PinnedHeaderBar({ title, titleContent, hidden, leading, rights }
           backgroundColor: colors.hairline,
         },
       }),
-    [colors, insets.top, leading],
+    [colors, insets.top],
   );
 
   // Slide the whole bar (incl. hairline) off-screen when the chrome hides.
@@ -166,7 +169,9 @@ export function ScreenCaption({ text }: { text: string }) {
         caption: {
           ...Type.bodySm,
           color: colors.inkSecondary,
-          paddingHorizontal: Space.lg,
+          // No horizontal padding: caption renders inside the screen's
+          // content gutter (ScreenScrollView/ScreenFlatList), so adding its
+          // own would double the inset.
           paddingBottom: Space.sm,
         },
       }),
