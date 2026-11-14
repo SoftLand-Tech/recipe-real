@@ -3,10 +3,12 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   View,
   useWindowDimensions,
   type ListRenderItem,
 } from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, useFocusEffect } from "expo-router";
 import {
   PinnedHeaderBar,
@@ -28,6 +30,14 @@ import { useLang, useLocalizedRecipe, useT, type Lang } from "@/i18n";
 import { Radius, Space, Type, useThemeColors, type ThemeColors } from "@/theme";
 import { bestMinutes } from "@/utils/recipeTime";
 import {
+  addShoppingListItems,
+  clearCheckedShoppingListItems,
+  getShoppingList,
+  removeShoppingListItem,
+  toggleShoppingListItem,
+  type ShoppingListItem,
+} from "@/utils/shoppingList";
+import {
   Button,
   Card,
   Chip,
@@ -44,8 +54,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 type LoadState = "loading" | "ready" | "error";
 
-/** Which of the two peer lists the screen shows. */
-type FavoritesTab = "favorites" | "notes";
+/** Which of the three peer lists the screen shows. */
+type FavoritesTab = "favorites" | "notes" | "shopping";
 
 /** Persists the last-selected tab so the screen reopens where you left it. */
 const FAVORITES_TAB_KEY = "recipereal.favoritesTab";
@@ -63,6 +73,7 @@ const EMPTY_RECIPES: Recipe[] = [];
 const FLEX_ONE_STYLE = { flex: 1 } as const;
 const recipeKeyExtractor = (item: Recipe) => String(item.id);
 const noteKeyExtractor = (item: NotedRecipe) => String(item.recipe.id);
+const shoppingKeyExtractor = (item: ShoppingListItem) => item.id;
 
 function setMatchesIds(prev: Set<number>, ids: number[]): boolean {
   if (prev.size !== ids.length) return false;
@@ -199,6 +210,66 @@ function createStyles(colors: ThemeColors) {
       alignSelf: "flex-start",
       marginTop: Space.xs,
     },
+    shoppingAddRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: Space.sm,
+    },
+    shoppingAddInput: {
+      ...Type.body,
+      color: colors.ink,
+      backgroundColor: colors.surfaceSoft,
+      borderWidth: 1,
+      borderColor: colors.hairline,
+      borderRadius: Radius.md,
+      paddingVertical: Space.md,
+      paddingHorizontal: Space.md,
+      flex: 1,
+    },
+    shoppingAddInputLtr: {
+      textAlign: "left",
+    },
+    shoppingAddInputRtl: {
+      textAlign: "right",
+    },
+    shoppingAddBtn: {
+      padding: Space.xs,
+    },
+    shoppingAddBtnDisabled: {
+      opacity: 0.5,
+    },
+    shoppingRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: Space.sm,
+    },
+    shoppingCheckBtn: {
+      paddingTop: 1,
+    },
+    shoppingBody: {
+      flex: 1,
+      gap: Space.xs,
+    },
+    shoppingTextWrap: {
+      alignSelf: "stretch",
+    },
+    shoppingText: {
+      ...Type.body,
+      color: colors.ink,
+    },
+    shoppingTextChecked: {
+      color: colors.inkFaint,
+      textDecorationLine: "line-through",
+    },
+    shoppingRecipeBadge: {
+      alignSelf: "flex-start",
+    },
+    shoppingRemoveBtn: {
+      padding: Space.xs,
+    },
+    shoppingFooter: {
+      paddingTop: Space.xs,
+    },
   });
 }
 
@@ -310,6 +381,152 @@ const NoteCard = memo(function NoteCard({
   );
 });
 
+interface ShoppingQuickAddProps {
+  onAdd: (text: string) => Promise<void>;
+  colors: ThemeColors;
+  styles: FavoritesStyles;
+}
+
+const ShoppingQuickAdd = memo(function ShoppingQuickAdd({
+  onAdd,
+  colors,
+  styles,
+}: ShoppingQuickAddProps) {
+  const t = useT();
+  const { dir } = useLang();
+  const [draft, setDraft] = useState("");
+  const canAdd = draft.trim().length > 0;
+
+  const handleSubmit = useCallback(() => {
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    setDraft("");
+    void onAdd(trimmed);
+  }, [draft, onAdd]);
+
+  return (
+    <View style={styles.shoppingAddRow}>
+      <TextInput
+        style={[
+          styles.shoppingAddInput,
+          dir === "rtl" ? styles.shoppingAddInputRtl : styles.shoppingAddInputLtr,
+        ]}
+        value={draft}
+        onChangeText={setDraft}
+        placeholder={t("favorites.shoppingAddPlaceholder")}
+        placeholderTextColor={colors.inkFaint}
+        returnKeyType="done"
+        onSubmitEditing={handleSubmit}
+        maxLength={200}
+      />
+      <IconPressable
+        onPress={handleSubmit}
+        disabled={!canAdd}
+        accessibilityLabel={t("favorites.shoppingAddA11y")}
+        hitSlop={Space.xs}
+        style={[
+          styles.shoppingAddBtn,
+          !canAdd ? styles.shoppingAddBtnDisabled : null,
+        ]}
+      >
+        <Ionicons
+          name="add-circle"
+          size={32}
+          color={canAdd ? colors.accent : colors.inkFaint}
+        />
+      </IconPressable>
+    </View>
+  );
+});
+
+interface ShoppingItemCardProps {
+  item: ShoppingListItem;
+  onToggle: (id: string) => void;
+  onRemove: (id: string) => void;
+  onOpenRecipe: (recipeId: number) => void;
+  accentColor: string;
+  inkFaintColor: string;
+  styles: FavoritesStyles;
+}
+
+const ShoppingItemCard = memo(function ShoppingItemCard({
+  item,
+  onToggle,
+  onRemove,
+  onOpenRecipe,
+  accentColor,
+  inkFaintColor,
+  styles,
+}: ShoppingItemCardProps) {
+  const t = useT();
+  const handleToggle = useCallback(() => {
+    onToggle(item.id);
+  }, [onToggle, item.id]);
+  const handleRemove = useCallback(() => {
+    onRemove(item.id);
+  }, [onRemove, item.id]);
+  const handleOpenRecipe = useCallback(() => {
+    if (item.recipeId != null) onOpenRecipe(item.recipeId);
+  }, [onOpenRecipe, item.recipeId]);
+
+  return (
+    <Card padding={Space.md}>
+      <View style={styles.shoppingRow}>
+        <IconPressable
+          onPress={handleToggle}
+          accessibilityRole="button"
+          accessibilityLabel={item.text}
+          hitSlop={Space.sm}
+          style={styles.shoppingCheckBtn}
+        >
+          <Ionicons
+            name={item.checked ? "checkbox" : "square-outline"}
+            size={22}
+            color={item.checked ? accentColor : inkFaintColor}
+          />
+        </IconPressable>
+        <View style={styles.shoppingBody}>
+          <IconPressable
+            onPress={handleToggle}
+            accessibilityRole="button"
+            accessibilityLabel={item.text}
+            hitSlop={Space.xs}
+            style={styles.shoppingTextWrap}
+          >
+            <Text
+              style={[
+                styles.shoppingText,
+                item.checked ? styles.shoppingTextChecked : null,
+              ]}
+            >
+              {item.text}
+            </Text>
+          </IconPressable>
+          {item.recipeId != null && item.recipeTitle ? (
+            <IconPressable
+              onPress={handleOpenRecipe}
+              accessibilityRole="button"
+              accessibilityLabel={item.recipeTitle}
+              hitSlop={Space.xs}
+              style={styles.shoppingRecipeBadge}
+            >
+              <Chip size="sm" tone="neutral" label={item.recipeTitle} />
+            </IconPressable>
+          ) : null}
+        </View>
+        <IconPressable
+          onPress={handleRemove}
+          accessibilityLabel={t("favorites.shoppingRemoveA11y")}
+          hitSlop={Space.sm}
+          style={styles.shoppingRemoveBtn}
+        >
+          <Ionicons name="trash-outline" size={18} color={inkFaintColor} />
+        </IconPressable>
+      </View>
+    </Card>
+  );
+});
+
 /**
  * The Favorites tab: all locally favorited recipes as a card grid. Data is
  * re-loaded from SQLite on mount AND on every focus, so un-hearting a recipe
@@ -337,14 +554,14 @@ export default function FavoritesScreen() {
   const [noteIds, setNoteIds] = useState<Set<number>>(new Set());
   const [notedRecipes, setNotedRecipes] = useState<NotedRecipe[]>([]);
   const [showAllNotes, setShowAllNotes] = useState(false);
+  const [shoppingItems, setShoppingItems] = useState<ShoppingListItem[]>([]);
 
-  // Favorites/Notes peer tabs — notes live one tap away instead of an
-  // endless scroll below the grid (or vice versa).
+  // Favorites/Notes/Shopping peer tabs — each list stays one tap away.
   const [tab, setTab] = useState<FavoritesTab>("favorites");
   useEffect(() => {
     AsyncStorage.getItem(FAVORITES_TAB_KEY)
       .then((saved) => {
-        if (saved === "notes") setTab("notes");
+        if (saved === "notes" || saved === "shopping") setTab(saved);
       })
       .catch(() => {
         // Best-effort restore.
@@ -376,9 +593,10 @@ export default function FavoritesScreen() {
   const load = useCallback(async () => {
     if (firstLoadRef.current) setState("loading");
     try {
-      const [recipes, noted] = await Promise.all([
+      const [recipes, noted, shopping] = await Promise.all([
         getFavoriteRecipes(),
         getNotedRecipes(),
+        getShoppingList(),
       ]);
       const nextFavIds = recipes.map((r) => r.id);
       const nextNoteIds = noted.map((n) => n.recipe.id);
@@ -390,6 +608,7 @@ export default function FavoritesScreen() {
         setMatchesIds(prev, nextNoteIds) ? prev : new Set(nextNoteIds),
       );
       setNotedRecipes(noted);
+      setShoppingItems(shopping);
       setState("ready");
       // Fire-and-forget analytics: favorites rendered with data, once.
       if (recipes.length > 0 && !viewedTrackedRef.current) {
@@ -499,6 +718,49 @@ export default function FavoritesScreen() {
     ],
   );
 
+  const handleAddShoppingItem = useCallback(async (text: string) => {
+    try {
+      const next = await addShoppingListItems([{ text }]);
+      setShoppingItems(next);
+    } catch (error) {
+      console.warn("[RecipeReal] add shopping item failed:", error);
+    }
+  }, []);
+
+  const handleToggleShoppingItem = useCallback(async (id: string) => {
+    setShoppingItems((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, checked: !item.checked } : item,
+      ),
+    );
+    try {
+      const next = await toggleShoppingListItem(id);
+      setShoppingItems(next);
+    } catch (error) {
+      console.warn("[RecipeReal] toggle shopping item failed:", error);
+    }
+  }, []);
+
+  const handleRemoveShoppingItem = useCallback(async (id: string) => {
+    setShoppingItems((prev) => prev.filter((item) => item.id !== id));
+    try {
+      const next = await removeShoppingListItem(id);
+      setShoppingItems(next);
+    } catch (error) {
+      console.warn("[RecipeReal] remove shopping item failed:", error);
+    }
+  }, []);
+
+  const handleClearCheckedShopping = useCallback(async () => {
+    setShoppingItems((prev) => prev.filter((item) => !item.checked));
+    try {
+      const next = await clearCheckedShoppingListItems();
+      setShoppingItems(next);
+    } catch (error) {
+      console.warn("[RecipeReal] clear checked shopping items failed:", error);
+    }
+  }, []);
+
   const renderNoteItem: ListRenderItem<NotedRecipe> = useCallback(
     ({ item }) => (
       <NoteCard
@@ -511,11 +773,33 @@ export default function FavoritesScreen() {
     [lang, handleOpenRecipe, styles],
   );
 
+  const renderShoppingItem: ListRenderItem<ShoppingListItem> = useCallback(
+    ({ item }) => (
+      <ShoppingItemCard
+        item={item}
+        onToggle={handleToggleShoppingItem}
+        onRemove={handleRemoveShoppingItem}
+        onOpenRecipe={handleOpenRecipe}
+        accentColor={colors.accent}
+        inkFaintColor={colors.inkFaint}
+        styles={styles}
+      />
+    ),
+    [
+      handleToggleShoppingItem,
+      handleRemoveShoppingItem,
+      handleOpenRecipe,
+      colors.accent,
+      colors.inkFaint,
+      styles,
+    ],
+  );
+
   const listHeader = useMemo(
     () => (
       <>
         <ScreenCaption text={t("favorites.subtitle")} />
-        {/* Peer tabs: the two lists never bury each other in one scroll. */}
+        {/* Peer tabs: none of the lists bury each other in one scroll. */}
         {state === "ready" ? (
           <View style={styles.tabsRow}>
             <IconPressable
@@ -536,6 +820,15 @@ export default function FavoritesScreen() {
                 tone={tab === "notes" ? "accent" : "neutral"}
               />
             </IconPressable>
+            <IconPressable
+              onPress={() => selectTab("shopping")}
+              accessibilityRole="button"
+            >
+              <Chip
+                label={`${t("favorites.tabShopping")} · ${shoppingItems.length}`}
+                tone={tab === "shopping" ? "accent" : "neutral"}
+              />
+            </IconPressable>
           </View>
         ) : null}
       </>
@@ -548,7 +841,22 @@ export default function FavoritesScreen() {
       favorites.length,
       tab,
       notedRecipes.length,
+      shoppingItems.length,
     ],
+  );
+
+  const shoppingHeader = useMemo(
+    () => (
+      <>
+        {listHeader}
+        <ShoppingQuickAdd
+          onAdd={handleAddShoppingItem}
+          colors={colors}
+          styles={styles}
+        />
+      </>
+    ),
+    [listHeader, handleAddShoppingItem, colors, styles],
   );
 
   const listContentStyle = useMemo(
@@ -644,6 +952,47 @@ export default function FavoritesScreen() {
     [notedRecipes.length, showAllNotes, t, styles.showAllButton],
   );
 
+  const shoppingEmpty = useMemo(
+    () => (
+      <View style={styles.center}>
+        <Ionicons name="cart-outline" size={40} color={colors.inkFaint} />
+        <Text style={styles.emptyTitle}>
+          {t("favorites.shoppingEmptyTitle")}
+        </Text>
+        <Text style={styles.emptyCaption}>
+          {t("favorites.shoppingEmptyCaption")}
+        </Text>
+      </View>
+    ),
+    [styles, colors.inkFaint, t],
+  );
+
+  const hasCheckedShopping = useMemo(
+    () => shoppingItems.some((item) => item.checked),
+    [shoppingItems],
+  );
+
+  const shoppingFooter = useMemo(
+    () =>
+      hasCheckedShopping ? (
+        <View style={styles.shoppingFooter}>
+          <Button
+            title={t("favorites.shoppingClearChecked")}
+            variant="ghost"
+            onPress={handleClearCheckedShopping}
+            style={styles.showAllButton}
+          />
+        </View>
+      ) : null,
+    [
+      hasCheckedShopping,
+      t,
+      handleClearCheckedShopping,
+      styles.shoppingFooter,
+      styles.showAllButton,
+    ],
+  );
+
   return (
     <View style={styles.container}>
       {state === "ready" && tab === "notes" ? (
@@ -662,6 +1011,26 @@ export default function FavoritesScreen() {
           ListFooterComponent={notesFooter}
           initialNumToRender={8}
           maxToRenderPerBatch={8}
+          windowSize={5}
+          removeClippedSubviews
+        />
+      ) : state === "ready" && tab === "shopping" ? (
+        <ScreenFlatList
+          key="shopping"
+          data={shoppingItems}
+          keyExtractor={shoppingKeyExtractor}
+          renderItem={renderShoppingItem}
+          style={FLEX_ONE_STYLE}
+          contentContainerStyle={listContentStyle}
+          onScroll={chrome.onScroll}
+          scrollEventThrottle={chrome.scrollEventThrottle}
+          refreshControl={refreshControl}
+          ListHeaderComponent={shoppingHeader}
+          ListEmptyComponent={shoppingEmpty}
+          ListFooterComponent={shoppingFooter}
+          keyboardShouldPersistTaps="handled"
+          initialNumToRender={12}
+          maxToRenderPerBatch={12}
           windowSize={5}
           removeClippedSubviews
         />

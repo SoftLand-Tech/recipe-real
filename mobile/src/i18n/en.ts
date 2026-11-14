@@ -141,6 +141,12 @@ export const en: Record<string, string> = {
   "detail.stepCaption": "Step {n}",
   "detail.ingredients": "Ingredients",
   "detail.noIngredients": "No ingredients listed.",
+  "detail.servingsScaled": "{n} servings",
+  "detail.scaleMultiplierA11y": "Scale ingredients {n}×",
+  "detail.clearChecked": "Clear",
+  "detail.addAllToShopping": "Add {n} to shopping list",
+  "detail.addUncheckedToShopping": "Add {n} unchecked to shopping list",
+  "detail.addedToShopping": "Added to shopping list ✓",
   "detail.notesTitle": "Notes",
   "detail.notesTabPersonal": "Your notes",
   "detail.addNote": "Add a note",
@@ -431,6 +437,14 @@ export const en: Record<string, string> = {
 
   // ---- Favorites ------------------------------------------------------------
   "favorites.subtitle": "Cook again — your saved recipes",
+  "favorites.tabShopping": "Shopping",
+  "favorites.shoppingAddPlaceholder": "Add item (e.g. olive oil, garlic)…",
+  "favorites.shoppingAddA11y": "Add item to shopping list",
+  "favorites.shoppingRemoveA11y": "Remove item",
+  "favorites.shoppingClearChecked": "Clear checked",
+  "favorites.shoppingEmptyTitle": "Shopping list is empty",
+  "favorites.shoppingEmptyCaption":
+    "Add ingredients from any recipe or type items above.",
   "favorites.couldNotLoad": "Could not load your favorites.",
   "favorites.emptyTitle": "No favorites yet",
   "favorites.emptyCaption": "Tap the heart on any recipe to save it here.",

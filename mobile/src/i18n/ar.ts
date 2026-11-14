@@ -142,6 +142,12 @@ export const ar: Record<string, string> = {
   "detail.stepCaption": "الخطوة {n}",
   "detail.ingredients": "المكونات",
   "detail.noIngredients": "لا توجد مكونات مدرجة.",
+  "detail.servingsScaled": "{n} حصص",
+  "detail.scaleMultiplierA11y": "مضاعفة المكونات {n}×",
+  "detail.clearChecked": "مسح",
+  "detail.addAllToShopping": "أضف {n} إلى قائمة التسوق",
+  "detail.addUncheckedToShopping": "أضف {n} المتبقية إلى قائمة التسوق",
+  "detail.addedToShopping": "أُضيفت إلى قائمة التسوق ✓",
   "detail.notesTitle": "الملاحظات",
   "detail.notesTabPersonal": "ملاحظاتك",
   "detail.addNote": "أضف ملاحظة",
@@ -430,6 +436,14 @@ export const ar: Record<string, string> = {
 
   // ---- المفضلة ----------------------------------------------------------------
   "favorites.subtitle": "اطبخها مجددًا — وصفاتك المحفوظة",
+  "favorites.tabShopping": "التسوق",
+  "favorites.shoppingAddPlaceholder": "أضف غرضًا (مثل: زيت زيتون، ثوم)…",
+  "favorites.shoppingAddA11y": "إضافة عنصر إلى قائمة التسوق",
+  "favorites.shoppingRemoveA11y": "حذف العنصر",
+  "favorites.shoppingClearChecked": "مسح المحددة",
+  "favorites.shoppingEmptyTitle": "قائمة التسوق فارغة",
+  "favorites.shoppingEmptyCaption":
+    "أضف مكونات من أي وصفة أو اكتب أغراضك أعلاه.",
   "favorites.couldNotLoad": "تعذّر تحميل المفضلة.",
   "favorites.emptyTitle": "لا مفضلات بعد",
   "favorites.emptyCaption": "اضغط القلب على أي وصفة لحفظها هنا.",
