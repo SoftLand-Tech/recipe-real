@@ -158,6 +158,7 @@ return [
     'share_shared_post' => 'shared a post on RecipeReal',
     'share_fallback_recipe' => 'Recipe',
     'banner_tag' => 'You need the RecipeReal app to open this link — download it first',
+    'banner_open' => 'Open in app',
     'banner_go' => 'Install',
 
     // ---- User profile share page (GET /u/{user}) ----

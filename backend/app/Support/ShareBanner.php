@@ -99,8 +99,19 @@ class ShareBanner
      * Empty URL renders nothing. Strings follow the request locale
      * (SetLocale runs before the route) with logical properties so the
      * banner flips automatically in RTL.
+     *
+     * Android browsers additionally get an "Open in app" pill that fires a
+     * `package=`-pinned intent:// link (scheme recipereal). That launch
+     * path does NOT need domain verification — it is how visitors on
+     * devices whose verifier failed (Xiaomi/MIUI sideloads, state 1024)
+     * still get the one-tap jump into the app from Chrome. Chrome opens
+     * the app when installed and silently falls back to
+     * S.browser_fallback_url (this same page) when not. The /u deep path
+     * maps to user/{id} — the scheme route that ALSO exists on builds
+     * older than the /u App Links wave, so an outdated install still
+     * lands on the public profile screen instead of not-found.
      */
-    public static function bannerHtml(?string $storeUrl): string
+    public static function bannerHtml(Request $request, ?string $storeUrl): string
     {
         if ($storeUrl === null || $storeUrl === '') {
             return '';
@@ -109,23 +120,40 @@ class ShareBanner
         $tag = __('site.banner_tag');
         $go = __('site.banner_go');
 
+        $openPill = '';
+        $openStyle = '';
+        if (self::isAndroidBrowser($request)) {
+            $path = (string) $request->path();
+            // /u/{id} → user/{id}; everything else maps 1:1 onto the
+            // scheme routes the app's bridges already handle (/r → r,
+            // /p → p). rstrip the "u/" prefix, never str_replace.
+            $deepPath = str_starts_with($path, 'u/') ? 'user/'.substr($path, 2) : $path;
+            $intent = 'intent://'.$deepPath.'#Intent;scheme=recipereal;package=com.recipereal.app;S.browser_fallback_url='.rawurlencode($request->fullUrl()).';end';
+            $openPill = '<a class="rr-open" href="'.e($intent).'" rel="noopener">'.e(__('site.banner_open')).'</a>';
+            $openStyle = '#rr-store-banner .rr-open{color:#FBF8F3;background:transparent;border:1px solid rgba(251,248,243,.4);'
+                .'border-radius:999px;padding:8px 14px;font-size:13px;font-weight:600;white-space:nowrap;text-decoration:none}';
+        }
+
         return str_replace(
-            ['__STORE_URL__', '__BANNER_TAG__', '__BANNER_GO__'],
-            [e($storeUrl), e($tag), e($go)],
+            ['__STORE_URL__', '__BANNER_TAG__', '__BANNER_GO__', '__OPEN_PILL__', '__OPEN_STYLE__'],
+            [e($storeUrl), e($tag), e($go), $openPill, $openStyle],
             <<<'HTML'
         <style>
             #rr-store-banner{position:fixed;bottom:0;left:0;right:0;z-index:50;display:flex;
-                align-items:center;gap:12px;padding:12px 16px;background:#241D17;color:#FBF8F3;
-                font-family:-apple-system,system-ui,"Segoe UI",Tahoma,"Noto Sans Arabic",sans-serif;text-decoration:none;
+                align-items:center;gap:10px;padding:12px 16px;background:#241D17;color:#FBF8F3;
+                font-family:-apple-system,system-ui,"Segoe UI",Tahoma,"Noto Sans Arabic",sans-serif;
                 box-shadow:0 -4px 16px rgba(0,0,0,.18)}
             #rr-store-banner strong{font-size:14px}#rr-store-banner span{font-size:12px;opacity:.75}
-            #rr-store-banner .rr-go{margin-inline-start:auto;background:#E86A33;color:#fff;
-                border-radius:999px;padding:8px 16px;font-size:13px;font-weight:700;white-space:nowrap}
+            #rr-store-banner .rr-txt{min-width:0;flex:1}
+            __OPEN_STYLE__
+            #rr-store-banner .rr-go{background:#E86A33;color:#fff;
+                border-radius:999px;padding:8px 16px;font-size:13px;font-weight:700;white-space:nowrap;text-decoration:none}
         </style>
-        <a id="rr-store-banner" href="__STORE_URL__" rel="noopener">
-            <div><strong>RecipeReal</strong><br><span>__BANNER_TAG__</span></div>
-            <span class="rr-go">__BANNER_GO__</span>
-        </a>
+        <div id="rr-store-banner">
+            <div class="rr-txt"><strong>RecipeReal</strong><br><span>__BANNER_TAG__</span></div>
+            __OPEN_PILL__
+            <a class="rr-go" href="__STORE_URL__" rel="noopener">__BANNER_GO__</a>
+        </div>
         HTML
         );
     }

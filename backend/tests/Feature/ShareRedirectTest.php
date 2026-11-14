@@ -67,7 +67,50 @@ class ShareRedirectTest extends TestCase
         $this->get('/r/'.$this->recipe()->id, ['User-Agent' => self::ANDROID_CHROME])
             ->assertOk()
             ->assertSee('rr-store-banner', false)
-            ->assertSee('/download', false);
+            ->assertSee('/download', false)
+            ->assertSee('Open in app', false);
+    }
+
+    /** Android browsers get the verification-free "Open in app" intent pill:
+     * a package-pinned intent:// link that Chrome turns into an app launch
+     * even when the domain verification failed (MIUI sideloads), falling
+     * back to this same page when the app is not installed. */
+    public function test_android_banner_carries_intent_open_in_app_pill(): void
+    {
+        config()->set('recipereal.play_store_url', '');
+        \App\Models\AppRelease::create([
+            'version' => '1.2.0',
+            'file_path' => 'apks/test-release.apk',
+            'file_size' => 1024,
+        ]);
+
+        $response = $this->get('/r/'.$this->recipe()->id, ['User-Agent' => self::ANDROID_CHROME]);
+        $html = $response->getContent();
+        $this->assertStringContainsString('intent://r/', $html);
+        $this->assertStringContainsString('scheme=recipereal;package=com.recipereal.app', $html);
+        $this->assertStringContainsString('S.browser_fallback_url=', $html);
+    }
+
+    /** The /u page's intent maps onto the user/{id} scheme route that also
+     * exists on builds older than the /u App Links wave. */
+    public function test_profile_page_intent_maps_u_onto_user_scheme_route(): void
+    {
+        config()->set('recipereal.play_store_url', '');
+        $cook = \App\Models\User::factory()->create(['display_name' => 'Intent Chef']);
+
+        $html = $this->get('/u/'.$cook->id, ['User-Agent' => self::ANDROID_CHROME])->getContent();
+        $this->assertStringContainsString('intent://user/'.$cook->id.'#Intent;scheme=recipereal', $html);
+    }
+
+    /** Desktop/iOS banners never carry the intent pill (intent:// is an
+     * Android-only launch mechanism). */
+    public function test_desktop_banner_has_no_intent_pill(): void
+    {
+        config()->set('recipereal.play_store_url', '');
+
+        $html = $this->get('/r/'.$this->recipe()->id, ['User-Agent' => self::DESKTOP_FIREFOX])->getContent();
+        $this->assertStringContainsString('rr-store-banner', $html);
+        $this->assertStringNotContainsString('intent://', $html);
     }
 
     /** No release uploaded either: the banner falls back to the landing
@@ -90,7 +133,8 @@ class ShareRedirectTest extends TestCase
         foreach ([self::IPHONE, self::DESKTOP_FIREFOX] as $ua) {
             $this->get('/r/'.$this->recipe()->id, ['User-Agent' => $ua])
                 ->assertOk()
-                ->assertSee('rr-store-banner', false);
+                ->assertSee('rr-store-banner', false)
+                ->assertDontSee('intent://', false);
         }
     }
 
