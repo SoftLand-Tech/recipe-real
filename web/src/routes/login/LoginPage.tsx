@@ -108,15 +108,14 @@ export default function LoginPage() {
     <div className="flex min-h-dvh flex-col bg-cream text-ink">
       <div className="mx-auto flex w-full max-w-[1100px] flex-1 flex-col justify-center px-4 py-12 md:px-6">
         <Card className="mx-auto w-full max-w-lg px-7 py-10 text-center md:px-10 md:py-12">
-          {/* Four-point spark ornament (landing vocabulary). */}
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 24 24"
-            className="mx-auto h-10 w-10 text-orange"
-            fill="currentColor"
-          >
-            <path d="M12 1c.9 5.8 5.2 10.1 11 11-5.8.9-10.1 5.2-11 11-.9-5.8-5.2-10.1-11-11C6.8 11.1 11.1 6.8 12 1Z" />
-          </svg>
+          {/* The shipped brand mark — same file the landing header uses. */}
+          <img
+            src="/app/img/recipereallogo.webp"
+            alt=""
+            width={72}
+            height={70}
+            className="mx-auto h-[72px] w-[72px] object-contain"
+          />
 
           <h1 className="mt-4 font-display text-[clamp(2rem,4vw,2.8rem)] font-semibold leading-[1.1] tracking-tight text-ink">
             {t("auth.title")}
