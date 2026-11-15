@@ -97,7 +97,7 @@ export function AppShell() {
           <Brand />
 
           {/* Desktop links: main tabs + Create, per nav.ts. */}
-          <nav className="ms-6 hidden items-center gap-1 md:flex" aria-label={t("nav.home")}>
+          <nav className="ms-6 hidden items-center gap-1 md:flex" aria-label={t("nav.primary")}>
             {MAIN_TABS.map((item) => (
               <NavLink
                 key={item.to}
@@ -151,7 +151,7 @@ export function AppShell() {
 
       {/* ---- Mobile bottom tab bar (≥768px hides; desktop uses top bar) ----- */}
       <nav
-        aria-label={t("nav.browse")}
+        aria-label={t("nav.tabs")}
         className="fixed inset-x-0 bottom-0 z-40 border-t border-hair bg-white/95 backdrop-blur md:hidden"
       >
         <div className="mx-auto flex max-w-[1100px] items-stretch justify-around px-2 pb-[env(safe-area-inset-bottom)]">

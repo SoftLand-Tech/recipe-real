@@ -12,4 +12,9 @@ export const en: Record<string, string> = {
   "nav.settings": "Settings",
   "nav.notifications": "Notifications",
   "nav.profile": "Profile",
+  // Landmark labels for the two navs — distinct from the tab labels so
+  // screen readers announce "primary"/"tabs" navigation, not "Home"/"Browse"
+  // twice with mismatched meaning.
+  "nav.primary": "Primary",
+  "nav.tabs": "Main tabs",
 };

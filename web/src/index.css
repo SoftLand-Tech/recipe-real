@@ -1,6 +1,26 @@
 @import "tailwindcss";
 
 /*
+ * Self-hosted variable fonts — the same woff2 files the landing ships
+ * (backend/public/fonts, mirrored into web/public/fonts), per DESIGN.md:
+ * no CDN stylesheet, so nothing extra is needed from the CSP and the
+ * fonts work offline-first in dev too. Absolute /app/ paths match the
+ * Vite base in dev and prod alike.
+ */
+@font-face {
+  font-family: "Fraunces";
+  src: url("/app/fonts/Fraunces-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "DM Sans";
+  src: url("/app/fonts/DMSans-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+/*
  * DESIGN.md tokens, expressed as a Tailwind v4 CSS-first theme. Every value
  * below is read from the shipped landing (DESIGN.md) so the web client and
  * the marketing surface share one visual language: warm cream surfaces,

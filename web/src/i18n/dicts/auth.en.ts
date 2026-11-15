@@ -17,7 +17,6 @@ export const en: Record<string, string> = {
     "Google sign-in isn't configured for this deployment yet.",
   "auth.errNotReady": "Google sign-in isn't ready yet. Try again in a moment.",
   "auth.errNotComplete": "Google sign-in didn't complete. Please try again.",
-  "auth.errGeneric": "Something went wrong. Please try again.",
   "auth.errOffline":
     "Couldn't reach the server. Check your connection and try again.",
 

@@ -98,15 +98,18 @@ export function favoriteIds(): string[] {
 }
 
 /**
- * React binding. `ids` is a fresh array on every change (safe to map),
- * `isFavorite`/`toggle` are stable references safe for effect deps.
+ * React binding. `ids` is the cached store array (referentially stable
+ * between mutations — commit() always REPLACES it, never mutates — which
+ * useSyncExternalStore requires: a getSnapshot returning a fresh array
+ * every call re-renders forever). `isFavorite`/`toggle` are stable
+ * references safe for effect deps.
  */
 export function useFavorites(): {
   ids: string[];
   isFavorite: (recipeId: number | string) => boolean;
   toggle: (recipeId: number | string) => void;
 } {
-  const ids = useSyncExternalStore(subscribe, favoriteIds);
+  const ids = useSyncExternalStore(subscribe, current);
 
   const toggle = useCallback((recipeId: number | string): void => {
     toggleFavorite(recipeId);

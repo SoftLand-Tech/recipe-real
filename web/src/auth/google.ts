@@ -111,7 +111,7 @@ export interface GoogleButtonOptions {
  * Render the official GIS "Continue with Google" button into `container`.
  * Resolves once the button is on screen; rejects (with the loadGoogleButton
  * caller catching) when GIS can't load or no client ID is configured — the
- * LoginPage surfaces its errNotConfigured / errGeneric states from that.
+ * LoginPage surfaces its errNotConfigured / errNotReady states from that.
  */
 export async function renderGoogleButton(
   container: HTMLElement,

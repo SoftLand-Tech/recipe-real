@@ -53,6 +53,11 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Client ID availability is render-stable (window config / build env),
+  // so derive it instead of storing it via a setState-in-effect — the
+  // GIS effect below then only manages the external script + button.
+  const clientId = googleClientId();
+
   // Already signed in? Go straight to the destination (e.g. user navigated
   // to /login manually while authed).
   const authed = status === "authed";
@@ -61,12 +66,9 @@ export default function LoginPage() {
     if (authed || busy || !buttonRef.current) return;
     const container = buttonRef.current;
     // No client ID configured (dev without VITE_GOOGLE_CLIENT_ID, or the
-    // serve-time placeholder survived): show the friendly config error
-    // instead of a broken button.
-    if (!googleClientId()) {
-      setError(t("auth.errNotConfigured"));
-      return;
-    }
+    // serve-time placeholder survived): render nothing — the derived
+    // clientId===null branch below shows the config error instead.
+    if (!clientId) return;
     let cancelled = false;
     // The container div remounts after each busy↔idle flip (conditional
     // render); start clean so a re-render never stacks a second button.
@@ -96,7 +98,7 @@ export default function LoginPage() {
     return () => {
       cancelled = true;
     };
-  }, [authed, busy, login, navigate, nonce, returnTo, t]);
+  }, [authed, busy, clientId, login, navigate, nonce, returnTo, t]);
 
   if (authed) {
     return <Navigate to={returnTo} replace />;
@@ -131,12 +133,18 @@ export default function LoginPage() {
                 <Spinner size="sm" />
                 {t("auth.signingIn")}
               </span>
-            ) : (
+            ) : clientId ? (
               <div
                 ref={buttonRef}
                 aria-label={t("auth.googleButton")}
                 data-testid="google-button"
               />
+            ) : (
+              // Dev without VITE_GOOGLE_CLIENT_ID, or the serve-time
+              // placeholder survived — the button cannot exist; say why.
+              <p role="alert" className="font-body text-[14px] font-semibold text-orange-deep">
+                {t("auth.errNotConfigured")}
+              </p>
             )}
           </div>
 
