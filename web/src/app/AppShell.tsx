@@ -71,17 +71,22 @@ function TabIcon({ name }: { name: string }) {
   );
 }
 
-/** Brand lockup: DM Sans wordmark with "Real" in orange (landing style). */
+/** Brand lockup: the shipped RecipeReal mark + DM Sans wordmark ("Real" in
+ *  orange), matching the landing exactly — same 34px `recipereallogo.webp`
+ *  the marketing nav and footer render. */
 function Brand() {
   return (
     <Link
       to="/"
-      className="flex items-center gap-2 rounded-md font-body text-[22px] font-extrabold tracking-tight text-ink"
+      className="flex items-center gap-2.5 rounded-md font-body text-[22px] font-extrabold tracking-tight text-ink"
     >
-      {/* 34px logo mark: the four-point spark in orange. */}
-      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-7 w-7 text-orange" fill="currentColor">
-        <path d="M12 1c.9 5.8 5.2 10.1 11 11-5.8.9-10.1 5.2-11 11-.9-5.8-5.2-10.1-11-11C6.8 11.1 11.1 6.8 12 1Z" />
-      </svg>
+      <img
+        src="/app/img/recipereallogo.webp"
+        alt=""
+        width={34}
+        height={33}
+        className="h-[34px] w-[34px] object-contain"
+      />
       Recipe<span className="text-orange">Real</span>
     </Link>
   );
