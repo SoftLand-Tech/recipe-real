@@ -1,0 +1,49 @@
+name: web
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      # The /app serving route + deploy step are part of the web contract:
+      # changes there can break serving, so they gate this workflow too.
+      - "backend/routes/web.php"
+      - "deploy.sh"
+      - ".github/workflows/web.yml"
+  pull_request:
+    paths:
+      - "web/**"
+      - "backend/routes/web.php"
+      - "deploy.sh"
+      - ".github/workflows/web.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # The build writes into ../backend/public/app (repo-relative), which
+      # only ever exists inside this job's workspace — harmless in CI and
+      # exactly what deploy.sh produces on the VPS.
+      - name: Build
+        run: npm run build

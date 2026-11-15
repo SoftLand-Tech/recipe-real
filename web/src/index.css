@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+/*
+ * DESIGN.md tokens, expressed as a Tailwind v4 CSS-first theme. Every value
+ * below is read from the shipped landing (DESIGN.md) so the web client and
+ * the marketing surface share one visual language: warm cream surfaces,
+ * ink text, one vivid orange for ALL actions, hairline-bordered cards.
+ *
+ * THE TEAL IS TIME RULE (binding, from DESIGN.md): --color-teal #287C78 is
+ * RESERVED for measured "really takes" time — the TimeBadge's measured pill
+ * and nothing else. It must never style buttons, links, success states, or
+ * decoration; orange is the action color. If teal shows up anywhere else,
+ * the reservation is broken.
+ *
+ * (Tailwind's built-in `white` already provides the DESIGN.md plate-white
+ * token, so it is not redeclared here.)
+ */
+@theme {
+  /* Warm neutrals — cream sets the table, ink does the reading. */
+  --color-cream: #faf6ef; /* page ground */
+  --color-cream-deep: #f5eee2; /* secondary cream surface */
+  --color-ink: #26211b; /* primary text */
+  --color-muted: #6e6558; /* secondary text */
+  --color-faint: #988d7e; /* tertiary text */
+  --color-hair: #efe5d6; /* 1px card borders / dividers */
+
+  /* The Orange Is Action Rule: primary action, hover, and its soft tint. */
+  --color-orange: #f26b1d;
+  --color-orange-deep: #ce5710;
+  --color-orange-soft: #fdebdd;
+
+  /* RESERVED: measured "really takes" time only. See header comment. */
+  --color-teal: #287c78;
+
+  /* Slate trio for the rare dark surface (footer, dark buttons). */
+  --color-dark: #232936;
+  --color-dark-2: #1d222c;
+  --color-dark-muted: #aeb5c2;
+
+  /* Fraunces leads h1/h2; DM Sans does everything else. */
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+  --font-body:
+    "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+
+  /* The Pill Rule: anything interactive rounds at 999px; cards at 18–20. */
+  --radius-sm: 12px;
+  --radius-md: 14px;
+  --radius-card: 18px;
+  --radius-quote: 20px;
+  --radius-pill: 999px;
+
+  /* Whispered, ink-tinted shadows (negative spread, low alpha). */
+  --shadow-card: 0 12px 28px -22px rgb(38 33 27 / 0.4);
+  --shadow-card-hover: 0 22px 40px -24px rgb(38 33 27 / 0.5);
+  --shadow-btn: 0 10px 22px -10px rgb(242 107 29 / 0.55);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-body);
+    background-color: var(--color-cream);
+    color: var(--color-ink);
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Focus contract from DESIGN.md: every focusable element gets a visible
+     orange ring via :focus-visible (2.5px, offset 3px). */
+  :focus-visible {
+    outline: 2.5px solid var(--color-orange);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+}
