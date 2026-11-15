@@ -277,12 +277,16 @@ export default function AccountProfilePage() {
               }}
             />
             <div className="flex flex-wrap gap-2">
+              {/* cn() has no tailwind-merge, so plain px-4/py-2 would lose the
+                  cascade against Button's base px-7/py-3.5 — the trailing `!`
+                  important (Tailwind v4 syntax) is what actually shrinks these
+                  to fit side by side at phone widths. */}
               <Button
                 type="button"
                 variant="ghost"
                 disabled={saving}
                 onClick={() => fileInputRef.current?.click()}
-                className="px-4 py-2 text-[13.5px] whitespace-nowrap sm:px-7 sm:py-3.5 sm:text-[15.5px]"
+                className="px-4! py-2! text-[13.5px]! whitespace-nowrap sm:px-7! sm:py-3.5! sm:text-[15.5px]!"
               >
                 {t("profile.changePhoto")}
               </Button>
@@ -295,7 +299,7 @@ export default function AccountProfilePage() {
                     pickAvatar(null);
                     setRemoveAvatar(true);
                   }}
-                  className="px-4 py-2 text-[13.5px] whitespace-nowrap sm:px-7 sm:py-3.5 sm:text-[15.5px]"
+                  className="px-4! py-2! text-[13.5px]! whitespace-nowrap sm:px-7! sm:py-3.5! sm:text-[15.5px]!"
                 >
                   {t("profile.removePhoto")}
                 </Button>
