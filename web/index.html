@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#FAF6EF" />
+    <title>RecipeReal</title>
+    <!-- Fonts per DESIGN.md: Fraunces (display) + DM Sans (body),
+         self-hosted woff2 from public/fonts (see index.css @font-face) —
+         no CDN, CSP-clean, swap so text paints immediately. -->
+    <link rel="preload" href="/app/fonts/Fraunces-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/app/fonts/DMSans-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <script>
+      // Runtime config injected by the Laravel /app serving route: the
+      // placeholder below is string-replaced with the real Google client ID
+      // when the built shell is served. In `npm run dev` (and anywhere the
+      // placeholder survives unreplaced) auth/google.ts falls back to
+      // VITE_GOOGLE_CLIENT_ID from the environment.
+      window.__RECIPEREAL__ = { googleClientId: "__GOOGLE_CLIENT_ID__" };
+    </script>
+    <script>
+      // Apply the persisted language direction before first paint so an
+      // Arabic user never sees an LTR flash (the React provider takes over
+      // once hydrated).
+      try {
+        if (localStorage.getItem("rr_lang") === "ar") {
+          document.documentElement.lang = "ar";
+          document.documentElement.dir = "rtl";
+        }
+      } catch (e) {
+        /* private mode etc. — default en/ltr stands */
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

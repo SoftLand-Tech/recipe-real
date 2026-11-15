@@ -30,6 +30,13 @@ echo "==> migrate --force"
 echo "==> frontend build (vite)"
 ( cd backend && npm ci --no-audit --no-fund && npm run build )
 
+# Web app build: `web/` compiles into backend/public/app (its vite outDir),
+# which the /app serving route in web.php expects to exist on first request
+# after deploy. emptyOutDir wipes ONLY backend/public/app — the landing /
+# Filament assets in backend/public/build above are untouched.
+echo "==> web app build (vite -> backend/public/app)"
+( cd web && npm ci --no-audit --no-fund && npm run build )
+
 echo "==> warm caches"
 ( cd backend && php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan event:cache && php artisan filament:cache-components )
 

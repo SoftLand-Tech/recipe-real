@@ -27,11 +27,28 @@ class SecurityHeaders
         ."font-src 'self' https://fonts.gstatic.com data:; connect-src 'self'; "
         ."frame-ancestors 'self'";
 
+    /**
+     * CSP for the web app shell (/app + deep links). The SPA is the only
+     * surface that talks to Google Identity Services: it loads
+     * accounts.google.com/gsi/client as a script, renders the sign-in
+     * button inside an accounts.google.com iframe, and the GIS client
+     * calls back to accounts.google.com — each needs its directive, or
+     * sign-in is dead in production behind the baseline policy above
+     * (dev/CI never see this: Vite serves without these headers). Scoped
+     * to /app ONLY — the landing, share pages and every other route keep
+     * the strict baseline.
+     */
+    private const CSP_APP = "default-src 'self'; img-src 'self' https: data:; "
+        ."style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://accounts.google.com; "
+        ."font-src 'self' data:; connect-src 'self' https://accounts.google.com; "
+        ."frame-src https://accounts.google.com; frame-ancestors 'self'";
+
     public function handle(Request $request, Closure $next): Response
     {
         $response = $next($request);
 
         $isAdmin = $request->is('admin') || $request->is('admin/*');
+        $isApp = $request->is('app') || $request->is('app/*');
 
         $response->headers->set('X-Content-Type-Options', 'nosniff');
         $response->headers->set('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -42,7 +59,12 @@ class SecurityHeaders
         }
 
         if (! $isAdmin && $request->isMethod('GET') && $this->returnsHtml($response)) {
-            $response->headers->set('Content-Security-Policy', self::CSP);
+            // The app shell (missing build -> 503 explainer included) always
+            // carries the GIS-capable policy; everything else stays strict.
+            $response->headers->set(
+                'Content-Security-Policy',
+                $isApp ? self::CSP_APP : self::CSP,
+            );
         }
 
         return $response;

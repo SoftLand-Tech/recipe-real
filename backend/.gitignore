@@ -15,6 +15,9 @@
 /auth.json
 /node_modules
 /public/build
+# Web app SPA build output (web/ Vite build via deploy.sh) — same rule as
+# /public/build above: generated on the server, never committed.
+/public/app
 /public/fonts-manifest.dev.json
 /public/hot
 /public/storage

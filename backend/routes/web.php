@@ -337,3 +337,46 @@ Route::get('/admin/auth/google', [AdminGoogleController::class, 'redirect'])
     ->name('admin.google.redirect');
 Route::get('/admin/auth/google/callback', [AdminGoogleController::class, 'callback'])
     ->name('admin.google.callback');
+
+/*
+ | ---- Web app SPA (same-origin at /app) --------------------------------------
+ | Serves the Vite build in public/app (deploy.sh builds web/ into it before
+ | caches warm). The catch-all param plus LAST-position registration keep it
+ | from shadowing /admin, /r, /p, /u, /api or any earlier route — Laravel
+ | matches in registration order, and nothing above starts with /app.
+ |
+ | The shell's index.html carries the placeholder __GOOGLE_CLIENT_ID__ inside
+ | a window.__RECIPEREAL__ assignment; it is string-replaced here from
+ | config('services.google.client_id') so the client ID is deployed per
+ | environment without a rebuild. Missing build (fresh clone, botched
+ | deploy) returns a 503 explainer instead of a white screen, so the failure
+ | is diagnosable from the browser. Asset requests under /app/assets/* are
+ | served by the web server directly from public/app — only the HTML shell
+ | (and its deep links) needs this route.
+ */
+Route::get('/app/{any?}', function () {
+    $shell = public_path('app/index.html');
+
+    if (! is_file($shell)) {
+        return response(
+            '<!doctype html><html lang="en"><head><meta charset="utf-8">'.
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'.
+            '<title>RecipeReal — web build missing</title></head>'.
+            '<body style="font-family:system-ui;background:#FAF6EF;color:#26211B;'.
+            'display:flex;align-items:center;justify-content:center;min-height:100vh;'.
+            'margin:0"><p style="max-width:28em;padding:2em;text-align:center">'.
+            'The web app build is missing. Run <code>cd web &amp;&amp; npm run build</code> '.
+            '(deploy.sh does this) and reload.</p></body></html>',
+            503,
+            ['Content-Type' => 'text/html; charset=UTF-8'],
+        );
+    }
+
+    $html = str_replace(
+        '__GOOGLE_CLIENT_ID__',
+        (string) (config('services.google.client_id') ?? ''),
+        file_get_contents($shell),
+    );
+
+    return response($html, 200, ['Content-Type' => 'text/html; charset=UTF-8']);
+})->where('any', '.*')->name('app.spa');
