@@ -1,9 +1,14 @@
 /**
- * Followers list (/u/:id/followers) — OWNED BY SLICE ACCOUNT (stub wired by
- * foundation). Public page. Replace this file's contents only.
+ * Followers list (/u/:id/followers) — OWNED BY SLICE ACCOUNT.
+ * Public page (works signed-out); shared implementation in AccountFollowList.
+ * key={id} remounts the list when the profile id in the URL changes, so
+ * pages never carry rows across users.
  */
-import { Placeholder } from "@/components/Placeholder";
+import { useParams } from "react-router";
+
+import { AccountFollowList } from "@/routes/account/AccountFollowList";
 
 export default function FollowersPage() {
-  return <Placeholder titleKey="follow.followersTitle" />;
+  const { id } = useParams<{ id: string }>();
+  return <AccountFollowList key={id ?? "none"} mode="followers" />;
 }
