@@ -380,4 +380,3 @@ Route::get('/app/{any?}', function () {
 
     return response($html, 200, ['Content-Type' => 'text/html; charset=UTF-8']);
 })->where('any', '.*')->name('app.spa');
-
