@@ -282,6 +282,7 @@ export default function AccountProfilePage() {
                 variant="ghost"
                 disabled={saving}
                 onClick={() => fileInputRef.current?.click()}
+                className="px-4 py-2 text-[13.5px] whitespace-nowrap sm:px-7 sm:py-3.5 sm:text-[15.5px]"
               >
                 {t("profile.changePhoto")}
               </Button>
@@ -294,6 +295,7 @@ export default function AccountProfilePage() {
                     pickAvatar(null);
                     setRemoveAvatar(true);
                   }}
+                  className="px-4 py-2 text-[13.5px] whitespace-nowrap sm:px-7 sm:py-3.5 sm:text-[15.5px]"
                 >
                   {t("profile.removePhoto")}
                 </Button>
