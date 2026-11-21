@@ -50,20 +50,22 @@ final class GenerateRecipeBatch extends Command
 
         $batch = RecipeGenerationBatch::create([
             'requested_count' => $requested,
-            'cuisine' => $this->filled('cuisine') ? (string) $this->option('cuisine') : null,
-            'dish_family' => $this->filled('dish-family') ? (string) $this->option('dish-family') : null,
-            'category' => $this->filled('category') ? (string) $this->option('category') : null,
+            'cuisine' => $this->optionString('cuisine'),
+            'dish_family' => $this->optionString('dish-family'),
+            'category' => $this->optionString('category'),
             // Per-batch knobs ride in params (no columns needed): the
             // batch service reads batch_size / max_attempt_multiplier from
             // here before falling back to config defaults. owner_id is
             // devolved to the generation flow via request meta (the batch
             // table itself has no owner column).
             'params' => array_filter([
-                'brief' => $this->filled('brief') ? (string) $this->option('brief') : null,
+                'brief' => $this->optionString('brief'),
                 'language' => (string) $this->option('language'),
-                'batch_size' => $this->filled('batch-size') ? max(1, (int) $this->option('batch-size')) : null,
-                'max_attempt_multiplier' => $this->filled('max-attempt-multiplier')
-                    ? max(1.0, (float) $this->option('max-attempt-multiplier'))
+                'batch_size' => ($rawBatchSize = $this->optionString('batch-size')) !== null
+                    ? max(1, (int) $rawBatchSize)
+                    : null,
+                'max_attempt_multiplier' => ($rawMultiplier = $this->optionString('max-attempt-multiplier')) !== null
+                    ? max(1.0, (float) $rawMultiplier)
                     : null,
                 'owner_id' => $owner?->id,
             ], fn ($value): bool => $value !== null && $value !== ''),
@@ -157,5 +159,26 @@ final class GenerateRecipeBatch extends Command
             )
             ->orderBy('id')
             ->first();
+    }
+
+    /**
+     * The trimmed option value, or null when the option was not passed /
+     * is blank. (Console commands have no filled() of their own.)
+     */
+    private function optionString(string $name): ?string
+    {
+        $value = $this->option($name);
+
+        if (is_array($value)) {
+            $value = $value[0] ?? null;
+        }
+
+        if ($value === null) {
+            return null;
+        }
+
+        $value = trim((string) $value);
+
+        return $value === '' ? null : $value;
     }
 }

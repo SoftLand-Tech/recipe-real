@@ -172,9 +172,14 @@ class BatchGenerationTest extends TestCase
 
     public function test_needs_review_candidates_are_never_auto_accepted(): void
     {
-        // Classic vs spicy Alfredo is the calibrated verify-band pair: it
-        // reaches the AI judge. A judge outage (on_failure: flag) then
-        // must flag, NOT accept.
+        // Classic vs spicy Alfredo scores 0.92 with the fake embedder —
+        // inside the auto-duplicate band at the production threshold. To
+        // park it in the VERIFY band (judge required), lift the
+        // auto-duplicate threshold above the pair's score: config seam, no
+        // fixture surgery. The judge outage (on_failure: flag) then must
+        // flag, NOT accept.
+        config(['recipe_dedup.thresholds.auto_duplicate' => 0.95]);
+        config(['recipe_dedup.ai_judge.enabled' => true]);
         $classic = Recipe::create(['title' => 'Chicken Alfredo Fettuccine']);
         app(FingerprintService::class)->register($classic, CandidateRecipe::fromDraft(RecipeFixtures::chickenAlfredoClassic()));
 
@@ -348,6 +353,7 @@ class BatchGenerationTest extends TestCase
         $existing = Recipe::create(['title' => 'Egyptian Ful Medames']);
         app(FingerprintService::class)->register($existing, CandidateRecipe::fromDraft(RecipeFixtures::foulMedames()));
 
+        // Every draft IS the pre-existing dish: layer-1 rejects all four.
         $scripted = $this->scripted(array_fill(0, 4, fn (): array => [RecipeFixtures::foulMedames()]));
         // max_attempts = ceil(2 * 2 / 1) = 4 calls; every call is the same dupe.
         $batch = $this->batch(2, ['batch_size' => 1, 'max_attempt_multiplier' => 2]);
@@ -356,12 +362,12 @@ class BatchGenerationTest extends TestCase
 
         $batch = $batch->refresh();
         $this->assertSame(RecipeGenerationBatch::STATUS_EXHAUSTED, $batch->status);
-        $this->assertSame(1, $batch->accepted_count); // exact: first call accepted
-        $this->assertSame(3, $batch->rejected_count);
+        $this->assertSame(0, $batch->accepted_count); // nothing can escape its own dupes
+        $this->assertSame(4, $batch->rejected_count);
         $this->assertSame(4, $batch->generation_attempts);
         $this->assertSame(4, $batch->max_attempts);
         $this->assertSame(4, $scripted->calls); // loop count == cap, no infinite loop
-        $this->assertStringContainsString('Accepted 1 of 2 after 4 generation calls (duplicates: 3, failed: 0, review: 0)', (string) $batch->error);
+        $this->assertStringContainsString('Accepted 0 of 2 after 4 generation calls (duplicates: 4, failed: 0, review: 0)', (string) $batch->error);
         $this->assertStringContainsString('DEDUP_GENERATION_MAX_ATTEMPT_MULTIPLIER', (string) $batch->error);
     }
 
@@ -388,7 +394,9 @@ class BatchGenerationTest extends TestCase
         $this->assertSame('Italian dinner mains with an Egyptian bonus', $batch->params['brief']);
         $this->assertSame('en', $batch->params['language']); // default
         $this->assertSame(1, $batch->params['batch_size']); // per-batch override
-        $this->assertSame(2.0, $batch->params['max_attempt_multiplier']);
+        // Whole floats round-trip through the params JSON cast as ints
+        // (json_encode(2.0) === "2") — assert the numeric value, not type.
+        $this->assertSame(2.0, (float) $batch->params['max_attempt_multiplier']);
         $this->assertSame(2, Recipe::query()->count());
         $this->assertSame(2, $batch->accepted_count);
         $this->assertSame(2, $scripted->calls);
@@ -445,6 +453,12 @@ class BatchGenerationTest extends TestCase
         $staff = User::create(['name' => 'Staff', 'email' => 'staff@example.test', 'password' => 'x']);
         $boss = User::create(['name' => 'Boss', 'email' => 'boss@example.test', 'password' => 'x']);
 
+        // A generator that accepts one draft keeps the sync run on the
+        // success path (this test is about owner resolution, not dedup).
+        $this->scripted([
+            fn (): array => [RecipeFixtures::foulMedames()],
+        ]);
+
         $this->artisan('recipereal:generate-batch', ['requested_count' => '1', '--sync' => true])
             ->assertExitCode(0);
 
@@ -473,7 +487,7 @@ class BatchGenerationTest extends TestCase
      */
     private function scripted(array $script): object
     {
-        return $this->generator = new class($script) implements RecipeCandidateGenerator
+        $generator = new class($script) implements RecipeCandidateGenerator
         {
             public int $calls = 0;
 
@@ -496,9 +510,21 @@ class BatchGenerationTest extends TestCase
 
                 $next = $this->script[$this->calls - 1] ?? null;
 
-                return $next === null ? [] : $next($request);
+                // Real generators map raw drafts through fromDraft() before
+                // returning (contract: list<CandidateRecipe>) — mirror that.
+                return ($next === null) ? [] : array_map(
+                    fn (array $draft): CandidateRecipe => CandidateRecipe::fromDraft($draft),
+                    $next($request),
+                );
             }
         };
+
+        // Wire the scripted generator into the container BEFORE the batch
+        // flow resolves BatchGenerationService — without this binding the
+        // provider's real (unconfigured) generator answers every call.
+        $this->instance(RecipeCandidateGenerator::class, $this->generator = $generator);
+
+        return $generator;
     }
 
     /**
