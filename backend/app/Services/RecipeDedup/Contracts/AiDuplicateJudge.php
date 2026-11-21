@@ -15,10 +15,7 @@ use App\Services\RecipeDedup\Data\CulinaryIdentity;
 interface AiDuplicateJudge
 {
     /**
-     * @param  CandidateRecipe  $candidate
-     * @param  CulinaryIdentity  $candidateIdentity
      * @param  list<array{id:int, title: string, identity: CulinaryIdentity}>  $existing
-     * @return AiJudgeResponse
      *
      * @throws AiJudgeException on transport errors, HTTP errors, timeouts,
      *                          or an unparseable/invalid structured response

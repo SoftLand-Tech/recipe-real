@@ -274,7 +274,6 @@ class OpenAiCompatibleRecipeGeneratorTest extends TestCase
             'lease_seconds' => 900,
             'source_type' => 'ai_batch',
             'owner_email' => '',
-            'scan_existing' => true,
             'generator' => array_merge([
                 'protocol' => 'openai_compatible',
                 'endpoint' => self::ENDPOINT,

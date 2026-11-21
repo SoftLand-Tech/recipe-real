@@ -218,8 +218,6 @@ return [
         // admin; recipes may otherwise have owner_id null like imports).
         'owner_email' => env('DEDUP_GENERATION_OWNER_EMAIL', ''),
 
-        'scan_existing' => (bool) env('DEDUP_GENERATION_SCAN_EXISTING', true),
-
         'generator' => [
             'protocol' => env('DEDUP_GENERATOR_PROTOCOL', 'openai_compatible'), // openai_compatible|anthropic|gemini|generic
             'endpoint' => env('DEDUP_GENERATOR_ENDPOINT', ''),

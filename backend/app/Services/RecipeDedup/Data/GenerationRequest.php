@@ -10,9 +10,6 @@ final class GenerationRequest
     /**
      * @param  string  $brief  freeform brief ("Italian pasta mains")
      * @param  int  $count  recipes requested THIS call
-     * @param  string|null  $cuisine
-     * @param  string|null  $dishFamily
-     * @param  string|null  $category
      * @param  list<string>  $avoidTitles  titles already accepted/attempted in this batch
      * @param  string  $language  output language for new recipes ("en", "ar")
      * @param  int  $iteration  zero-based loop iteration (helps the prompt diversify)
