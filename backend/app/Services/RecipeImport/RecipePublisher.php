@@ -2,6 +2,7 @@
 
 namespace App\Services\RecipeImport;
 
+use App\Jobs\IndexRecipe;
 use App\Models\Recipe;
 use App\Models\RecipeImport;
 use App\Models\RecipeStep;
@@ -41,7 +42,7 @@ class RecipePublisher
             throw new RecipeContentRejected($terms);
         }
 
-        return DB::transaction(function () use ($owner, $data, $import, $publishedBy, $title, $titleAr, $steps): Recipe {
+        $recipe = DB::transaction(function () use ($owner, $data, $import, $publishedBy, $title, $titleAr, $steps): Recipe {
             $lockedImport = $import === null
                 ? null
                 : RecipeImport::query()->lockForUpdate()->findOrFail($import->id);
@@ -129,6 +130,16 @@ class RecipePublisher
 
             return $recipe;
         });
+
+        // Dedup indexing hook (recipe-dedup slice 6, docs/recipe-dedup.md):
+        // the transaction has committed, so the async IndexRecipe job (when
+        // the queue connection runs it) always sees a stored row. Gated by
+        // DEDUP_INDEXING_ENABLED; an unchanged recipe is never re-embedded.
+        if ((bool) config('recipe_dedup.indexing.enabled')) {
+            IndexRecipe::dispatch((int) $recipe->getKey());
+        }
+
+        return $recipe;
     }
 
     /**
