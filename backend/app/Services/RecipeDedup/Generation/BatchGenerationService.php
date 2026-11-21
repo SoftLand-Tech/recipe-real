@@ -96,6 +96,13 @@ final class BatchGenerationService
         // resume from the item rows; this run appends more below.
         $avoidTitles = $this->avoidTitlesFromDb($batch);
 
+        // Recipe attribution (spec: generation picks the owner, the
+        // registrar persists it): the creating command stows the resolved
+        // owner id in params; without one the recipes get owner_id null,
+        // exactly like imports.
+        $params = is_array($batch->params) ? $batch->params : [];
+        $ownerId = is_numeric($params['owner_id'] ?? null) ? (int) $params['owner_id'] : null;
+
         $wallDeadline = microtime(true) + max(1, $settings['max_wall_seconds']);
 
         try {
@@ -134,7 +141,7 @@ final class BatchGenerationService
                     break;
                 }
 
-                $this->driveOneIteration($batch, $target, $settings, $avoidTitles);
+                $this->driveOneIteration($batch, $target, $settings, $avoidTitles, $ownerId);
             }
         } catch (Throwable $e) {
             // Unexpected failure (DB outage, registrar explosion, ...):
@@ -170,6 +177,7 @@ final class BatchGenerationService
         int $target,
         array $settings,
         array &$avoidTitles,
+        ?int $ownerId,
     ): void {
         $remaining = max(0, $target - (int) $batch->accepted_count);
         $params = is_array($batch->params) ? $batch->params : [];
@@ -184,12 +192,12 @@ final class BatchGenerationService
             language: (string) ($params['language'] ?? 'en'),
             // Zero-based call index; carried across resumes via the DB.
             iteration: (int) $batch->generation_attempts,
-            // owner_id rides from the creating command (params) so the
-            // flow's recipes can attribute an owner when one is configured.
+            // $ownerId resolved below is the registrar's attribution source;
+            // the echo in meta keeps per-call records self-describing.
             meta: array_filter([
                 'batch_id' => (int) $batch->id,
                 'target' => $target,
-                'owner_id' => is_numeric($params['owner_id'] ?? null) ? (int) $params['owner_id'] : null,
+                'owner_id' => $ownerId,
             ], fn ($value): bool => $value !== null),
         );
 
@@ -249,7 +257,7 @@ final class BatchGenerationService
                 continue;
             }
 
-            $this->registerCandidate($batch, $candidate);
+            $this->registerCandidate($batch, $candidate, $ownerId);
         }
     }
 
@@ -262,9 +270,9 @@ final class BatchGenerationService
      * regular DB-backed fingerprint/identity lookups — no in-memory batch
      * index exists or is needed here.
      */
-    private function registerCandidate(RecipeGenerationBatch $batch, CandidateRecipe $candidate): void
+    private function registerCandidate(RecipeGenerationBatch $batch, CandidateRecipe $candidate, ?int $ownerId): void
     {
-        $result = $this->registrar->register($candidate, $batch);
+        $result = $this->registrar->register($candidate, $batch, $ownerId);
         $decision = $result->decision;
 
         if ($decision->accepted()) {
@@ -358,12 +366,15 @@ final class BatchGenerationService
         $titles = RecipeGenerationBatchItem::query()
             ->where('batch_id', $batch->id)
             ->whereNotNull('title')
-            ->orderBy('id')
+            // Newest first (the cap must keep the RECENT attempts — the
+            // generator needs to avoid what it just tried) — re-ordered
+            // chronologically below to read naturally in the prompt.
+            ->orderByDesc('id')
             ->limit(self::AVOID_TITLES_CAP)
             ->pluck('title')
             ->all();
 
-        return array_values(array_map(strval(...), $titles));
+        return array_values(array_map(strval(...), array_reverse($titles)));
     }
 
     /** True when the batch row shows NO live lease at all (we lost it). */

@@ -14,7 +14,6 @@ use App\Services\RecipeDedup\Contracts\RecipeCandidateGenerator;
 use App\Services\RecipeDedup\Contracts\VectorStore;
 use App\Services\RecipeDedup\Data\CandidateRecipe;
 use App\Services\RecipeDedup\Data\GenerationRequest;
-use App\Services\RecipeDedup\Detection\DuplicateDetectionService;
 use App\Services\RecipeDedup\Fingerprinting\FingerprintService;
 use App\Services\RecipeDedup\Generation\BatchGenerationService;
 use App\Services\RecipeDedup\GenerationException;
@@ -38,13 +37,6 @@ class BatchGenerationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-
-        // Slice-4 (Detection, merges before this branch) provides the
-        // engine this slice drives. Until that merge lands in the tree the
-        // batch flows cannot resolve — skip rather than hard-fail.
-        if (! class_exists(DuplicateDetectionService::class)) {
-            $this->markTestSkipped('Slice 4 (DuplicateDetectionService/RecipeRegistrar) is not merged yet.');
-        }
 
         // The batch flows never touch the provider network: semantic layer
         // off, vector store off, the judge behind the deterministic fake.
@@ -442,8 +434,10 @@ class BatchGenerationTest extends TestCase
         $batch = RecipeGenerationBatch::query()->sole();
         $this->assertSame($chef->id, (int) $batch->params['owner_id']);
 
-        // The generation request carried the owner into its meta.
+        // The generation request carried the owner into its meta...
         $this->assertSame($chef->id, $scripted->requests[0]->meta['owner_id']);
+        // ...and the registrar persisted it onto the recipe row itself.
+        $this->assertSame($chef->id, (int) Recipe::query()->sole()->owner_id);
     }
 
     public function test_command_falls_back_to_the_first_filament_admin(): void
@@ -465,6 +459,7 @@ class BatchGenerationTest extends TestCase
         $batch = RecipeGenerationBatch::query()->sole();
         // "first admin" = lowest id among the admin.emails list.
         $this->assertSame(min($staff->id, $boss->id), (int) $batch->params['owner_id']);
+        $this->assertSame(min($staff->id, $boss->id), (int) Recipe::query()->sole()->owner_id);
     }
 
     public function test_command_rejects_non_positive_requested_counts(): void

@@ -162,9 +162,13 @@ final class OpenAiCompatibleRecipeGenerator implements RecipeCandidateGenerator
             ? $endpoint
             : rtrim($endpoint, '/').'/v1/messages';
 
-        // Anthropic requires a token budget per request; ~900 tokens per
-        // recipe draft keeps it comfortably under output limits.
-        $maxTokens = min(8_000, max(1_024, 900 * max(1, $count)));
+        // Anthropic requires a token budget per request; the per-recipe
+        // token estimate, request cap and floor are config knobs
+        // (generation.generator.max_tokens / tokens_per_recipe).
+        $maxTokens = min(
+            max(1, (int) ($generator['max_tokens'] ?? 8_000)),
+            max(1_024, (int) ($generator['tokens_per_recipe'] ?? 900) * max(1, $count)),
+        );
 
         $payload = [
             'model' => (string) ($generator['model'] ?? ''),
