@@ -12,8 +12,6 @@ final class DuplicateScore
      * @param  float  $total  normalized weighted score 0.0..1.0
      * @param  array<string, float>  $features  feature => 0..1 value
      * @param  int  $corroborations  how many identity pillars matched
-     * @param  bool  $passesCorroboration
-     * @param  string  $explanation
      */
     public function __construct(
         public readonly float $total,

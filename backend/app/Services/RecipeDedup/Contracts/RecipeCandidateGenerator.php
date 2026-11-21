@@ -3,8 +3,8 @@
 namespace App\Services\RecipeDedup\Contracts;
 
 use App\Services\RecipeDedup\Data\CandidateRecipe;
-use App\Services\RecipeDedup\GenerationException;
 use App\Services\RecipeDedup\Data\GenerationRequest;
+use App\Services\RecipeDedup\GenerationException;
 
 /**
  * Recipe generator adapter for batch generation (recipereal:generate-batch).

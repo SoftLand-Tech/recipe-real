@@ -27,11 +27,7 @@ final class AiJudgeResponse
     ];
 
     /**
-     * @param  string  $classification
-     * @param  bool  $isDuplicate
-     * @param  int|null  $matchedRecipeId
      * @param  float  $confidence  0.0..1.0
-     * @param  string  $reason
      * @param  list<string>  $differences
      */
     public function __construct(

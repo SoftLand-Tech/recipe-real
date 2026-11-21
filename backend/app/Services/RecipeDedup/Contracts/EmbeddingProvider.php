@@ -16,7 +16,6 @@ interface EmbeddingProvider
      * with the given texts.
      *
      * @param  list<string>  $texts
-     * @return EmbeddingResult
      *
      * @throws EmbeddingException on transport errors, HTTP errors, or a
      *                            response whose vector count/shape mismatches

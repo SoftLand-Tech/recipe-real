@@ -131,7 +131,6 @@ final class CulinaryIdentity
     }
 
     /**
-     * @param  mixed  $value
      * @return list<array{item:string,qty:float|null,unit:string|null,raw:string|null}>
      */
     private static function ingredientList(mixed $value): array

@@ -11,19 +11,11 @@ use App\Models\Recipe;
 final class CandidateRecipe
 {
     /**
-     * @param  string  $title
-     * @param  string|null  $description
      * @param  list<string>  $ingredientsRaw  raw ingredient lines ("1/4 cup brown sugar, packed")
      * @param  list<array{item:string,qty:float|null,unit:string|null,raw:string|null,prep:string|null}>  $ingredientsStructured
      * @param  list<string>  $steps
-     * @param  string|null  $category
      * @param  string|null  $cuisineHint  explicit cuisine when the caller knows it (generation brief)
-     * @param  string|null  $dishFamilyHint
      * @param  list<string>  $keywords
-     * @param  int|null  $servings
-     * @param  int|null  $prepTimeMinutes
-     * @param  int|null  $cookTimeMinutes
-     * @param  int|null  $totalTimeMinutes
      * @param  string  $language  "en" | "ar" (affects the embedding text builder)
      * @param  array<string, mixed>  $meta  extra caller context (e.g. generation batch brief)
      */
@@ -174,7 +166,6 @@ final class CandidateRecipe
     }
 
     /**
-     * @param  mixed  $structured
      * @return list<array{item:string,qty:float|null,unit:string|null,raw:string|null,prep:string|null}>
      */
     private static function structuredItems(mixed $structured): array
