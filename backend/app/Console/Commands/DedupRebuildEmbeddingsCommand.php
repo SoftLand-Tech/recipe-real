@@ -37,6 +37,24 @@ final class DedupRebuildEmbeddingsCommand extends Command
 
     public function handle(): int
     {
+        // Refuse to start while a backfill chain is (recently) active: the
+        // cursor + REBUILD_PENDING keys are SHARED state — an interleaved
+        // rebuild would cross-talk a walking chain (and vice versa). The
+        // same --force that skips the confirmation also overrides this
+        // guard (crash resume); a chain older than 30 minutes unlocks.
+        $running = Cache::get(BackfillRecipesChunk::RUNNING_KEY);
+        if (! (bool) $this->option('force')
+            && is_numeric($running)
+            && (now()->getTimestamp() - (int) $running) <= 1800
+        ) {
+            $this->error(sprintf(
+                'A backfill chain appears active since %s — refusing to start a rebuild over it. Check `recipereal:dedup-status`; override with --force when the chain is confirmed dead.',
+                date('Y-m-d H:i:s', (int) $running),
+            ));
+
+            return self::FAILURE;
+        }
+
         $rows = (int) RecipeEmbedding::query()->count();
 
         if (! (bool) $this->option('force')) {

@@ -113,7 +113,10 @@ final class BackfillTest extends TestCase
             ->pluck('attempts', 'recipe_id')
             ->all();
 
-        $this->artisan('recipereal:dedup-index', ['--sync' => true])->assertSuccessful();
+        // The guard's fresh-chain signal is exactly what a dead worker
+        // leaves behind: explicit --force is the operator's resume
+        // override after a crash.
+        $this->artisan('recipereal:dedup-index', ['--sync' => true, '--force' => true])->assertSuccessful();
 
         $this->assertSame(6, RecipeFingerprint::query()->count());
         $this->assertSame(6, RecipeEmbedding::query()->count());

@@ -29,7 +29,7 @@ use Illuminate\Support\Facades\Log;
  */
 final class DedupIndexCommand extends Command
 {
-    protected $signature = 'recipereal:dedup-index {--start-id=1} {--chunk=} {--sync}';
+    protected $signature = 'recipereal:dedup-index {--start-id=1} {--chunk=} {--sync} {--force : Start even when a recent backfill chain signal exists (resume after a crash)}';
 
     protected $description = 'Backfill: fingerprint + index existing recipes chunk by chunk (resumable).';
 
@@ -37,6 +37,25 @@ final class DedupIndexCommand extends Command
     {
         if (! (bool) config('recipe_dedup.enabled')) {
             $this->warn('recipe_dedup.enabled is false — the dedup engine is off, nothing to backfill.');
+
+            return self::FAILURE;
+        }
+
+        // Refuse to start while a backfill chain is (recently) active: the
+        // cursor is SHARED state — two interleaved chains would double
+        // provider work and cross-talk the rebuild-pending flag. A worker
+        // that died mid-chain also leaves a fresh flag, so explicit
+        // --force is the operator's resume-after-crash override (a chain
+        // older than 30 minutes unlocks without it).
+        $running = Cache::get(BackfillRecipesChunk::RUNNING_KEY);
+        if (! (bool) $this->option('force')
+            && is_numeric($running)
+            && (now()->getTimestamp() - (int) $running) <= 1800
+        ) {
+            $this->error(sprintf(
+                'A backfill chain appears active since %s — refusing to start a second one. Check `recipereal:dedup-status`; resume the crashed chain with --force (a chain older than 30 minutes unlocks without it).',
+                date('Y-m-d H:i:s', (int) $running),
+            ));
 
             return self::FAILURE;
         }
@@ -53,9 +72,11 @@ final class DedupIndexCommand extends Command
             ? max($requestedStart, (int) $cursor + 1)
             : $requestedStart;
 
-        // A fresh walk (no cursor) begins: stale done/cursor state from a
-        // previous run must not survive it.
-        if ($startId === $requestedStart) {
+        // A fresh walk (no saved cursor at all) begins: stale done/cursor
+        // state from a previous run must not survive it. A --start-id
+        // BEYOND an existing cursor is NOT a fresh walk — the cursor is
+        // preserved so dedup-status keeps reporting true progress.
+        if (! is_numeric($cursor) || (int) $cursor <= 0) {
             Cache::forget(BackfillRecipesChunk::DONE_KEY);
             Cache::forget(BackfillRecipesChunk::CURSOR_KEY);
         }

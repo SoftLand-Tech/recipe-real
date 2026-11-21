@@ -119,13 +119,12 @@ final class IndexRecipe implements ShouldQueue
             return;
         }
 
-        RecipeDuplicatePair::query()->updateOrCreate(
-            ['recipe_id' => $this->recipeId, 'duplicate_of_recipe_id' => (int) $holder->recipe_id],
-            [
-                'source' => 'engine',
-                'status' => RecipeDuplicatePair::STATUS_FLAGGED,
-                'note' => 'cpu exact fingerprint collision during publish-time indexing',
-            ],
+        // flagFromEngine never regresses a human verdict on a re-index.
+        RecipeDuplicatePair::flagFromEngine(
+            $this->recipeId,
+            (int) $holder->recipe_id,
+            'engine',
+            'cpu exact fingerprint collision during publish-time indexing',
         );
 
         DuplicateCheck::query()->firstOrCreate(

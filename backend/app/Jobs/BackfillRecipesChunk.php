@@ -262,13 +262,14 @@ final class BackfillRecipesChunk implements ShouldQueue
             return;
         }
 
-        RecipeDuplicatePair::query()->updateOrCreate(
-            ['recipe_id' => (int) $recipe->id, 'duplicate_of_recipe_id' => (int) $holder->recipe_id],
-            [
-                'source' => 'engine',
-                'status' => RecipeDuplicatePair::STATUS_FLAGGED,
-                'note' => 'cpu exact fingerprint collision during backfill',
-            ],
+        // flagFromEngine never regresses a human verdict on a re-walk (the
+        // collided recipe has no fingerprint row, so rebuild passes revisit
+        // it — manual distinct/duplicate decisions must survive that).
+        RecipeDuplicatePair::flagFromEngine(
+            (int) $recipe->id,
+            (int) $holder->recipe_id,
+            'engine',
+            'cpu exact fingerprint collision during backfill',
         );
 
         // duplicate_checks is append-only; guard against re-recording the

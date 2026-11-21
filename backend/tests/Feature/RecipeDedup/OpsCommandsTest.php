@@ -330,6 +330,103 @@ final class OpsCommandsTest extends TestCase
         $this->assertSame(RecipeDuplicatePair::query()->count(), 0);
     }
 
+    /**
+     * The engine flags a collision on every re-walk (the collided recipe
+     * has no fingerprint row, so the version skip never exempts it) — a
+     * confirmed human verdict on that pair MUST survive engine re-runs.
+     */
+    public function test_engine_re_flags_never_regress_confirmed_manual_verdicts(): void
+    {
+        // Same fixture AND same title: the full fingerprint hash (which
+        // includes the title-derived canonical dish) is identical, so the
+        // second recipe genuinely collides at layer 1.
+        $older = $this->createFixtureRecipe('carbonaraRaw', 'Spaghetti Carbonara');
+        $younger = $this->createFixtureRecipe('carbonaraRaw', 'Spaghetti Carbonara');
+
+        $this->artisan('recipereal:dedup-index', ['--sync' => true])->assertSuccessful();
+
+        $check = DuplicateCheck::query()->where([
+            'recipe_id' => $younger->id,
+            'matched_recipe_id' => $older->id,
+            'source' => DuplicateCheck::SOURCE_BACKFILL,
+        ])->firstOrFail();
+
+        $reviewer = User::factory()->create(['email' => 'ops2@example.test']);
+        $this->artisan('recipereal:dedup-review', [
+            'check_id' => $check->id,
+            'verdict' => 'distinct',
+            '--user-email' => $reviewer->email,
+        ])->assertSuccessful();
+
+        $confirmed = RecipeDuplicatePair::query()->where('recipe_id', $younger->id)
+            ->where('duplicate_of_recipe_id', $older->id)->firstOrFail();
+        $this->assertSame(RecipeDuplicatePair::STATUS_CONFIRMED_DISTINCT, $confirmed->status);
+
+        // Engine re-runs (backfill + scan) revisit the collidee — the human
+        // verdict must not be overwritten back to 'flagged'/'engine'.
+        $this->artisan('recipereal:dedup-index', ['--sync' => true])->assertSuccessful();
+        $this->artisan('recipereal:dedup-scan', ['--chunk' => 10, '--field' => 'identity_signature'])->assertSuccessful();
+
+        $pair = $confirmed->fresh();
+        $this->assertSame(RecipeDuplicatePair::STATUS_CONFIRMED_DISTINCT, $pair->status);
+        $this->assertSame('manual', $pair->source);
+        $this->assertSame($reviewer->id, (int) $pair->decided_by);
+        $this->assertNotNull($pair->decided_at);
+    }
+
+    /** An active recent backfill chain refuses new starts unless --force; stale unlocks. */
+    public function test_dedup_index_refuses_while_a_chain_is_active_and_restarts_after_staleness(): void
+    {
+        $this->createFixtureRecipe('carbonaraRaw', 'Guarded carbonara');
+
+        Cache::forever(BackfillRecipesChunk::RUNNING_KEY, now()->getTimestamp());
+        $this->artisan('recipereal:dedup-index', ['--sync' => true])->assertExitCode(1);
+        $this->assertSame(0, RecipeFingerprint::query()->count());
+
+        // --force is the explicit resume-after-crash override.
+        $this->artisan('recipereal:dedup-index', ['--sync' => true, '--force' => true])->assertSuccessful();
+        $this->assertSame(1, RecipeFingerprint::query()->count());
+
+        // A chain older than the 30-minute staleness window is dead.
+        $this->createFixtureRecipe('chickenAlfredoClassic', 'Guarded alfredo');
+        Cache::forever(BackfillRecipesChunk::RUNNING_KEY, now()->getTimestamp() - 2000);
+        $this->artisan('recipereal:dedup-index', ['--sync' => true])->assertSuccessful();
+        $this->assertSame(2, RecipeFingerprint::query()->count());
+    }
+
+    /**
+     * The rebuild guard runs BEFORE its confirmation prompt (no --force
+     * needed to see the refusal): an active chain blocks the rebuild and
+     * nothing is deleted or dispatched.
+     */
+    public function test_rebuild_refuses_over_an_active_chain(): void
+    {
+        Cache::forever(BackfillRecipesChunk::RUNNING_KEY, now()->getTimestamp());
+        Queue::fake();
+
+        $this->artisan('recipereal:dedup-rebuild-embeddings')->assertExitCode(1);
+
+        Queue::assertNothingPushed();
+    }
+
+    /** --start-id beyond the cursor dispatches there WITHOUT erasing resume state. */
+    public function test_start_id_beyond_the_cursor_preserves_resume_state(): void
+    {
+        Queue::fake();
+
+        Cache::forever(BackfillRecipesChunk::CURSOR_KEY, 400);
+        Cache::forever(BackfillRecipesChunk::DONE_KEY, true);
+
+        $this->artisan('recipereal:dedup-index', ['--start-id' => '500'])->assertSuccessful();
+
+        Queue::assertPushed(
+            BackfillRecipesChunk::class,
+            fn (BackfillRecipesChunk $job): bool => $job->startId === 500,
+        );
+        $this->assertSame(400, Cache::get(BackfillRecipesChunk::CURSOR_KEY)); // preserved
+        $this->assertTrue((bool) Cache::get(BackfillRecipesChunk::DONE_KEY)); // preserved
+    }
+
     private function createFixtureRecipe(string $fixture, string $title): Recipe
     {
         $draft = RecipeFixtures::{$fixture}();

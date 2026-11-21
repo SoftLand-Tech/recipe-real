@@ -91,19 +91,16 @@ final class DedupScanCommand extends Command
                         continue;
                     }
 
-                    RecipeDuplicatePair::query()->updateOrCreate(
-                        [
-                            'recipe_id' => (int) $member->recipe_id,
-                            'duplicate_of_recipe_id' => (int) $oldest->recipe_id,
-                        ],
-                        [
-                            'source' => 'engine',
-                            'status' => RecipeDuplicatePair::STATUS_FLAGGED,
-                            'note' => 'scan '.$field,
-                        ],
-                    );
-
-                    $pairsWritten++;
+                    // Never regresses confirmed human verdicts on re-scans;
+                    // the count reports only freshly flagged pairs.
+                    if (RecipeDuplicatePair::flagFromEngine(
+                        (int) $member->recipe_id,
+                        (int) $oldest->recipe_id,
+                        'engine',
+                        'scan '.$field,
+                    )) {
+                        $pairsWritten++;
+                    }
                 }
             }
         }

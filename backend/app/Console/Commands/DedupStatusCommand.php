@@ -91,7 +91,7 @@ final class DedupStatusCommand extends Command
             $this->line(self::row(sprintf('  %s / %s', $check->source, $check->action), (string) $check->n));
         }
 
-        $this->line(self::row('duplicate pairs flagged', (string) RecipeDuplicatePair::query()->where('status', 'flagged')->count()));
+        $this->line(self::row('duplicate pairs flagged', (string) RecipeDuplicatePair::query()->where('status', RecipeDuplicatePair::STATUS_FLAGGED)->count()));
         $this->line(self::row('duplicate pairs by status', (string) RecipeDuplicatePair::query()
             ->selectRaw('status, COUNT(*) AS n')->groupBy('status')->get()->map(fn ($row): string => sprintf('%s=%d', $row->status, $row->n))->implode(', ')));
 
