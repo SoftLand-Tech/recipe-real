@@ -228,6 +228,12 @@ return [
             'timeout' => (int) env('DEDUP_GENERATOR_TIMEOUT', 240),
             'temperature' => (float) env('DEDUP_GENERATOR_TEMPERATURE', 0.8),
             'retries' => (int) env('DEDUP_GENERATOR_RETRIES', 2),
+
+            // Anthropic token budget per request: floor, per-recipe estimate
+            // and request cap only apply to protocols that require
+            // max_tokens (anthropic).
+            'max_tokens' => (int) env('DEDUP_GENERATOR_MAX_TOKENS', 8000),
+            'tokens_per_recipe' => (int) env('DEDUP_GENERATOR_TOKENS_PER_RECIPE', 900),
         ],
     ],
 
