@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\RealityController;
 use App\Http\Controllers\Api\RecipeController;
 use App\Http\Controllers\Api\RecipeImportController;
 use App\Http\Controllers\Api\RecipeNoteController;
+use App\Http\Controllers\Api\OpsImportController;
 use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\Api\UsageController;
 use App\Http\Controllers\Api\UserBlockController;
@@ -191,3 +192,10 @@ Route::middleware(['throttle:60,1', 'auth:sanctum', 'not_banned'])->group(functi
 // Stripe webhook: public, no auth, no throttle group (Cashier's signature
 // middleware validates the request using STRIPE_WEBHOOK_SECRET).
 Route::post('/stripe/webhook', [WebhookController::class, 'handleWebhook']);
+
+// Ops machine endpoints: static bearer token checked in the controller
+// (config/recipeops.php — empty token refuses everything). 30/min is plenty
+// for one local dedup workbench syncing curated batches.
+Route::middleware('throttle:30,1')->group(function (): void {
+    Route::post('/ops/import-recipes', [OpsImportController::class, 'store']);
+});
