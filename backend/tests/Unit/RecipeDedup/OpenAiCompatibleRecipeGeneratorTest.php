@@ -69,6 +69,24 @@ class OpenAiCompatibleRecipeGeneratorTest extends TestCase
         });
     }
 
+    public function test_user_prompt_mandates_exact_titles_and_halal_silence(): void
+    {
+        Http::fake(fn () => Http::response($this->assistantResponse(json_encode([$this->smallDraft()])), 200));
+
+        $this->generator()->generate($this->request(count: 1));
+
+        Http::assertSent(function (Request $request): bool {
+            $user = $request->data()['messages'][1]['content'];
+
+            return str_contains($user, 'EXACTLY that dish name') // title = the brief's dish name, verbatim
+                && str_contains($user, 'no country or cuisine names in the title')
+                && str_contains($user, 'present the result simply as the recipe') // adapted = just the recipe
+                && str_contains($user, 'never mention halal, adaptation or substitution')
+                && str_contains($user, 'pork, bacon, ham, prosciutto, pancetta, lard') // banned-term list
+                && str_contains($user, 'sake, mirin, shaoxing');
+        });
+    }
+
     public function test_recipes_wrapper_and_surrounding_prose_are_tolerated(): void
     {
         $payload = json_encode(['recipes' => [
