@@ -159,7 +159,7 @@ class OpsImportController extends Controller
             $steps,
         ));
 
-        [$recipeId] = DB::transaction(function () use ($batchName, $recipe, $steps, $ingredientsAr, $publisherMinutes): array {
+        [$recipeId] = DB::transaction(function () use ($recipe, $steps, $ingredientsAr, $publisherMinutes): array {
             $new = Recipe::create([
                 'external_id' => $recipe['external_id'],
                 'source_type' => 'official',
