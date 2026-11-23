@@ -23,6 +23,9 @@ class Recipe extends Model
         // RecipeResource's raw passthrough stays consistent for both.
         'owner_id',
         'source_type',
+        // The dedup workbench's sync idempotency key ("{batch}:{line id}");
+        // null for every other recipe (unique where present).
+        'external_id',
         'title_ar',
         'ingredients_ar',
         'steps_ar',
