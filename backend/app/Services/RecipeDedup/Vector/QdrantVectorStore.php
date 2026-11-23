@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Http;
  */
 final class QdrantVectorStore implements VectorStore
 {
-    /** Points per upsert POST: Qdrant's own guidance for one upload batch. */
+    /** Points per upsert PUT: Qdrant's own guidance for one upload batch. */
     private const UPSERT_CHUNK = 200;
 
     public function __construct(private readonly array $config) {}
@@ -71,9 +71,10 @@ final class QdrantVectorStore implements VectorStore
             return;
         }
 
-        // POST /collections/{name}/points?wait=true: chunked (200/batch) and
+        // PUT /collections/{name}/points?wait=true: chunked (200/batch) and
         // wait=true makes each upsert synchronous so a following search sees
-        // the point.
+        // the point. (POST on this path is Qdrant's point-selector endpoint
+        // and rejects upsert bodies with HTTP 400 "missing field `ids`".)
         $chunks = array_chunk(array_values($points), self::UPSERT_CHUNK);
 
         foreach ($chunks as $chunk) {
@@ -85,7 +86,7 @@ final class QdrantVectorStore implements VectorStore
                 ], $chunk),
             ];
 
-            $response = $this->send(fn (): Response => $this->request()->post(
+            $response = $this->send(fn (): Response => $this->request()->put(
                 "collections/{$this->collection()}/points?wait=true",
                 $body
             ));

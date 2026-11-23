@@ -10,7 +10,7 @@ use Tests\TestCase;
 
 class QdrantVectorStoreTest extends TestCase
 {
-    public function test_upsert_posts_one_point_per_recipe_with_integer_id(): void
+    public function test_upsert_puts_one_point_per_recipe_with_integer_id(): void
     {
         Http::fake(fn () => Http::response(['result' => ['status' => 'completed']], 200));
 
@@ -19,15 +19,17 @@ class QdrantVectorStoreTest extends TestCase
             ['id' => 8, 'vector' => [0.4, 0.5, 0.6], 'payload' => ['recipe_id' => 8, 'dish_family' => 'soup']],
         ]);
 
-        // URL shape: /collections/<name>/points?wait=true
+        // URL shape: /collections/<name>/points?wait=true — upsert MUST be a
+        // PUT: POST on this path is Qdrant's point-selector endpoint and
+        // rejects the upsert body (HTTP 400 "missing field `ids`").
         Http::assertSent(function ($request): bool {
-            return $request->method() === 'POST'
+            return $request->method() === 'PUT'
                 && str_contains((string) $request->url(), '/collections/recipe_embeddings/points')
                 && str_contains((string) $request->url(), 'wait=true');
         });
 
-        $posted = $this->sentBodies('POST', 'points?wait=true');
-        $this->assertCount(1, $posted); // 2 points, chunk limit 200 → one POST
+        $posted = $this->sentBodies('PUT', 'points?wait=true');
+        $this->assertCount(1, $posted); // 2 points, chunk limit 200 → one PUT
 
         $points = $posted[0]['points'];
         $this->assertCount(2, $points);
@@ -189,7 +191,7 @@ class QdrantVectorStoreTest extends TestCase
 
         $this->store()->upsertMany($points);
 
-        $posted = $this->sentBodies('POST', 'points?wait=true');
+        $posted = $this->sentBodies('PUT', 'points?wait=true');
         $this->assertCount(2, $posted); // 250 points → 200 + 50
 
         $this->assertCount(200, $posted[0]['points']);
