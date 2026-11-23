@@ -96,6 +96,17 @@ final class OpenAiCompatibleRecipeGenerator implements RecipeCandidateGenerator
             $hints === [] ? null : implode('. ', $hints).'.',
             'Each array element must be one recipe object with exactly this shape (ingredients may be plain strings or structured items):'
                 ."\n".$schema,
+            'TITLES: use the plain dish name only. When the brief names a specific dish, the title must be '
+                .'EXACTLY that dish name — no added qualifiers, no parentheticals, no country or cuisine '
+                .'names in the title, and never words like "Halal" or "Alcohol-Free" in a title.',
+            'HALAL: this library is halal-only. Some classic dishes are traditionally made with non-halal '
+                .'ingredients; for those, apply the standard substitution silently (beef or chicken instead '
+                .'of pork products, grape juice or stock instead of wine or spirits, a sweet rice seasoning '
+                .'instead of sake or mirin) and present the result simply as the recipe. NEVER mention the '
+                .'original ingredient — and never mention halal, adaptation or substitution — anywhere in '
+                .'the title, description, ingredients, steps or keywords. These banned terms must never '
+                .'appear in any field: pork, bacon, ham, prosciutto, pancetta, lard, wine, sherry, sake, '
+                .'mirin, shaoxing, beer, spirits, alcohol.',
             $avoidBlock === '' ? null : $avoidBlock,
             sprintf('Write every title, description, ingredient and step in language code "%s".', $request->language),
             sprintf(
