@@ -1,0 +1,153 @@
+name: mobile-apk
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile-apk.yml"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "Build profile (production-apk = arm64-v8a for /download; store-apk = armeabi-v7a + arm64-v8a)"
+        required: true
+        default: "production-apk"
+        type: choice
+        options:
+          - production-apk
+          - store-apk
+      version_code:
+        description: "Optional explicit Android versionCode (defaults to github.run_number + 1)"
+        required: false
+        type: string
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck and lint
+        working-directory: mobile
+        run: |
+          npx tsc --noEmit
+          npx expo lint
+
+      - name: Decode Android release keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ] || [ -z "$KEYSTORE_PASS" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASS" ]; then
+            echo "::error::Missing one or more ANDROID_KEYSTORE_* / ANDROID_KEY_* repository secrets."
+            exit 1
+          fi
+          echo "$KEYSTORE_B64" | base64 --decode > "${RUNNER_TEMP}/release.keystore"
+
+      - name: Resolve build configuration
+        run: |
+          PROFILE="${{ inputs.profile || 'production-apk' }}"
+          VERSION_CODE="${{ inputs.version_code }}"
+          if [ -z "$VERSION_CODE" ]; then
+            VERSION_CODE=$((GITHUB_RUN_NUMBER + 1))
+          fi
+          APP_VERSION=$(node -p "require('./mobile/package.json').version")
+          echo "BUILD_PROFILE=$PROFILE" >> "$GITHUB_ENV"
+          echo "RECIPEREAL_ANDROID_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+          if [ "$PROFILE" = "store-apk" ]; then
+            echo "RECIPE_REAL_STORE_ABI=arm" >> "$GITHUB_ENV"
+          fi
+          echo "Building profile=$PROFILE version=$APP_VERSION versionCode=$VERSION_CODE"
+
+      - name: Prebuild Android project
+        working-directory: mobile
+        env:
+          RECIPEREAL_API_BASE_URL: https://recipe-real.softland.tech
+          EAS_BUILD_PROFILE: ${{ env.BUILD_PROFILE }}
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Build signed release APK
+        working-directory: mobile/android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Package and verify APK
+        run: |
+          RAW_APK="mobile/android/app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$RAW_APK" ]; then
+            echo "::error::Expected APK not found at $RAW_APK"
+            exit 1
+          fi
+
+          mkdir -p dist-apk
+          if [ "$BUILD_PROFILE" = "production-apk" ]; then
+            OUT_NAME="RecipeReal-${APP_VERSION}.apk"
+          else
+            OUT_NAME="RecipeReal-${APP_VERSION}-${BUILD_PROFILE}.apk"
+          fi
+          OUT_APK="dist-apk/${OUT_NAME}"
+          cp "$RAW_APK" "$OUT_APK"
+
+          BUILD_TOOLS_DIR=$(ls -d "${ANDROID_HOME}/build-tools"/* | sort -V | tail -n 1)
+          "${BUILD_TOOLS_DIR}/aapt2" dump badging "$OUT_APK" | head -n 5
+          "${BUILD_TOOLS_DIR}/apksigner" verify --print-certs "$OUT_APK"
+
+          ABIS=$(unzip -l "$OUT_APK" | awk '/lib\/[^/]+\// {split($4,a,"/"); print a[2]}' | sort -u)
+          echo "Packaged ABIs:"
+          echo "$ABIS"
+          if [ "$BUILD_PROFILE" = "production-apk" ] && [ "$ABIS" != "arm64-v8a" ]; then
+            echo "::error::Expected only arm64-v8a for production-apk, got: $ABIS"
+            exit 1
+          fi
+          if [ "$BUILD_PROFILE" = "store-apk" ] && [ "$ABIS" != $'arm64-v8a\narmeabi-v7a' ]; then
+            echo "::error::Expected arm64-v8a + armeabi-v7a for store-apk, got: $ABIS"
+            exit 1
+          fi
+
+          SIZE_BYTES=$(stat -c%s "$OUT_APK")
+          echo "APK size: $SIZE_BYTES bytes"
+          if [ "$SIZE_BYTES" -gt 67108864 ]; then
+            echo "::error::APK exceeds 64 MB admin upload limit ($SIZE_BYTES bytes)."
+            exit 1
+          fi
+
+          (cd dist-apk && sha256sum "$OUT_NAME" > "${OUT_NAME}.sha256")
+          cat "dist-apk/${OUT_NAME}.sha256"
+
+      - name: Clean up decoded keystore
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/release.keystore"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RecipeReal-${{ env.APP_VERSION }}-${{ env.BUILD_PROFILE }}
+          path: dist-apk/*
+          retention-days: 30

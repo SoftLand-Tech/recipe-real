@@ -13,6 +13,12 @@
 const API_BASE_URL =
   process.env.RECIPEREAL_API_BASE_URL || "https://recipe-real.softland.tech";
 
+const parsedVersionCode = Number(process.env.RECIPEREAL_ANDROID_VERSION_CODE);
+const ANDROID_VERSION_CODE =
+  Number.isInteger(parsedVersionCode) && parsedVersionCode > 0
+    ? parsedVersionCode
+    : undefined;
+
 export default {
   name: "RecipeReal",
   slug: "vibe-labs",
@@ -35,6 +41,7 @@ export default {
   },
   android: {
     package: "com.recipereal.app",
+    ...(ANDROID_VERSION_CODE ? { versionCode: ANDROID_VERSION_CODE } : {}),
     intentFilters: [
       {
         action: "VIEW",
@@ -106,6 +113,7 @@ export default {
       },
     ],
     "./plugins/arm64-only",
+    "./plugins/release-signing",
     [
       "expo-build-properties",
       {
